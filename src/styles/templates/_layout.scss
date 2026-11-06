@@ -1,0 +1,16 @@
+.app { min-height: 100vh; display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(260px, 340px); grid-template-rows: auto minmax(0, 1fr) auto; }
+.topbar { grid-column: 1 / -1; }
+.sidebar { grid-column: 1; grid-row: 2 / 4; }
+.main-panel { grid-column: 2; }
+.rotation { grid-column: 3; }
+.transport { grid-column: 2 / 4; }
+@media (max-width: 850px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto auto; }
+  .topbar, .sidebar, .main-panel, .rotation, .transport { grid-column: 1; grid-row: auto; }
+  .topbar { flex-wrap: wrap; gap: 10px; }
+  .topbar h1 { min-width: 150px; }
+  .sidebar { display: flex; padding: 6px 12px; gap: 4px; overflow-x: auto; }
+  .sidebar .eyebrow { display: none; }
+  .nav-item { width: auto; white-space: nowrap; }
+  .rotation { border-left: 0; border-top: 1px solid var(--line); }
+}

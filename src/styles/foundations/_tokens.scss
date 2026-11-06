@@ -1,0 +1,35 @@
+:root {
+  font-family: 'Nunito Sans', 'Avenir Next', Avenir, 'Novecento Sans', sans-serif;
+  font-synthesis: none;
+  color-scheme: dark;
+  --bg: #090e18;
+  --panel: #101724;
+  --panel-raised: #1a2638;
+  --panel-selected: #132c42;
+  --text: #f4f2e9;
+  --muted: #b9c2d0;
+  --line: #334052;
+  --accent: #0eb7ff;
+  --purple: #c7adff;
+  --danger: #ffbbbf;
+  --focus: #0eb7ff;
+}
+:root[data-theme='day'] {
+  color-scheme: light;
+  --bg: #fdfef8;
+  --panel: #f3f2e9;
+  --panel-raised: #e7e7df;
+  --panel-selected: #d9ecf5;
+  --text: #1c1a18;
+  --muted: #625e58;
+  --line: #c8c8bf;
+  --accent: #1765a6;
+  --purple: #423f9f;
+  --danger: #a02a3a;
+  --focus: #1765a6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+button, input, select { font: inherit; }
+button, select { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
