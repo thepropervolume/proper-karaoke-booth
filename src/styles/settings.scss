@@ -1,0 +1,17 @@
+.settings-dialog {
+  max-width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: .8rem;
+  background: var(--panel);
+  color: var(--text);
+  &::backdrop { background: rgba(0, 0, 0, .65); }
+  form { display: grid; gap: .8rem; }
+  h2, p { margin: 0; }
+  label:not(.settings-check) { display: grid; gap: .35rem; }
+  .settings-check { display: flex; align-items: center; gap: .6rem; }
+  .settings-check input { width: 1.2rem; min-height: 1.2rem; padding: 0; flex: none; }
+  .settings-path { overflow-wrap: anywhere; font-size: .8rem; }
+  .settings-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+}

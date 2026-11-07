@@ -116,6 +116,8 @@ function shortString(x: unknown): x is string { return typeof x === 'string' && 
 function validateCommand(value: unknown): Command | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
   switch (value.type) {
+    case 'editVersion':
+      return shortString(value.id) && shortString(value.title) && typeof value.artist === 'string' && value.artist.length <= 500 ? { type: 'editVersion', id: value.id, title: value.title, artist: value.artist } : null;
     case 'addSinger':
       return isRecord(value.singer) && shortString(value.singer.id) && shortString(value.singer.name) ? { type: 'addSinger', singer: { id: value.singer.id, name: value.singer.name } } : null;
     case 'request':

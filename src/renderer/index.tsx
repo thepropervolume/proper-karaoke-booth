@@ -3,10 +3,12 @@ import '@fontsource/nunito-sans/400.css';
 import '@fontsource/nunito-sans/700.css';
 import '@fontsource/nunito-sans/800.css';
 import { createRoot } from 'react-dom/client';
-import type { Command, ShowState, SongRequest } from '../domain/index';
+import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, visibleVersions } from '../domain/index';
 import type { MissingSongRequest } from '../domain/missing-request';
+import { EditMetadataDialog } from './EditMetadataDialog';
 import '../styles/main.scss';
+import '../styles/settings.scss';
 
 type Theme = 'night' | 'day' | 'system';
 type Screen = 'library' | 'requests' | 'singers';
@@ -36,6 +38,7 @@ function App() {
   const [missingSinger, setMissingSinger] = useState('');
   const [missingTitle, setMissingTitle] = useState('');
   const [missingArtist, setMissingArtist] = useState('');
+  const [editingVersion, setEditingVersion] = useState<Version | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -154,7 +157,7 @@ function App() {
           <div aria-label="Songs">
             {filtered.map(version => <div className="track-row" key={version.id}>
               <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'}</small></div>
-              <div className="track-actions"><button className={version.id === selectedVersion?.id ? 'primary' : ''} aria-pressed={version.id === selectedVersion?.id} onClick={() => setSelectedVersionId(version.id)}>{version.id === selectedVersion?.id ? 'Selected' : 'Select'}</button></div>
+              <div className="track-actions"><button onClick={() => setEditingVersion(version)} aria-label={`Edit ${version.title}`}>Edit</button><button className={version.id === selectedVersion?.id ? 'primary' : ''} aria-pressed={version.id === selectedVersion?.id} onClick={() => setSelectedVersionId(version.id)}>{version.id === selectedVersion?.id ? 'Selected' : 'Select'}</button></div>
             </div>)}
             {!filtered.length && <p className="empty">{versions.length ? 'No songs match this search.' : 'Import a local MP4 to begin. Your original file stays in place.'}</p>}
           </div>
@@ -206,6 +209,10 @@ function App() {
       </div>
       <div className="transport__status">Key, tempo, seek, filler and output selection are not yet available in this rehearsal build.</div>
     </footer>
+    {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist) => {
+      const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist });
+      if (!result.ok) throw new Error(result.error || 'The song could not be updated.');
+    }} />}
   </div>;
 }
 
