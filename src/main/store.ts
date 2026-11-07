@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { MissingSongRequest } from '../domain/missing-request';
 
 /** The private path never leaves the main process. */
 export interface StoredMedia {
@@ -16,7 +17,8 @@ export class Store<T> {
     this.db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;
       CREATE TABLE IF NOT EXISTS show_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL, position REAL NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL, position REAL NOT NULL);
+      CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);`);
   }
 
   load(): T | undefined {
@@ -52,6 +54,16 @@ export class Store<T> {
   position(generation: string): number {
     const row = this.db.prepare('SELECT position FROM checkpoint WHERE id = 1 AND generation = ?').get(generation) as { position: number } | undefined;
     return row?.position ?? 0;
+  }
+
+  addMissingSongRequest(request: MissingSongRequest): void {
+    this.db.prepare('INSERT INTO missing_song_requests (id, singer, title, artist, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(request.id, request.singer, request.title, request.artist, request.createdAt);
+  }
+
+  missingSongRequests(): MissingSongRequest[] {
+    const rows = this.db.prepare('SELECT id, singer, title, artist, created_at AS createdAt FROM missing_song_requests ORDER BY created_at DESC, rowid DESC').all() as unknown as MissingSongRequest[];
+    return rows.map(row => ({ ...row }));
   }
 
   close(): void { this.db.close(); }

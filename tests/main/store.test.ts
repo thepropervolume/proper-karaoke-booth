@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../src/main/store';
+import { normalizeMissingRequest } from '../../src/domain/missing-request';
 
 test('persists show state and private media across a reopen', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpv-store-'));
@@ -34,4 +35,27 @@ test('rolls back media if show state cannot be saved', () => {
     assert.equal(db.position('generation-b'), 0);
     db.close();
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('missing-song requests are validated and persist independently of show state', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-missing-'));
+  let db: Store<{ revision: number }> | undefined;
+  try {
+    assert.equal(normalizeMissingRequest({ singer: '   ', title: 'Song', artist: '' }), null);
+    assert.equal(normalizeMissingRequest({ singer: 'Singer', title: 'x'.repeat(201), artist: '' }), null);
+    assert.equal(normalizeMissingRequest({ singer: 'Singer', title: 'Song', artist: 7 }), null);
+    const input = normalizeMissingRequest({ singer: '  Alex ', title: ' A Song ', artist: ' An Artist ' });
+    assert.deepEqual(input, { singer: 'Alex', title: 'A Song', artist: 'An Artist' });
+    const file = join(dir, 'show.sqlite');
+    db = new Store<{ revision: number }>(file);
+    db.save({ revision: 1 });
+    db.addMissingSongRequest({ ...input!, id: 'request-1', createdAt: '2026-01-01T00:00:00.000Z' });
+    db.close(); db = undefined;
+    db = new Store(file);
+    assert.deepEqual(db.missingSongRequests(), [{ id: 'request-1', singer: 'Alex', title: 'A Song', artist: 'An Artist', createdAt: '2026-01-01T00:00:00.000Z' }]);
+    assert.deepEqual(db.load(), { revision: 1 });
+    assert.throws(() => db!.addMissingSongRequest({ ...input!, id: 'request-1', createdAt: '2026-01-01T00:00:00.000Z' }));
+    assert.equal(db.missingSongRequests().length, 1);
+    db.close(); db = undefined;
+  } finally { db?.close(); rmSync(dir, { recursive: true, force: true }); }
 });
