@@ -1,0 +1,92 @@
+The Proper Volume Karaoke — development handoff
+Ben wants to develop a dependable desktop karaoke application, with companion web apps, for hosts, venues, and karaoke jockeys. The immediate goal is a practical local rehearsal build that can eventually grow into a production application. Local hosting must work without internet access.
+
+The TPV marketing website and published branding guide are separate projects.
+Project location and repository
+The project directory is in Dropbox, relative to your home directory:
+
+Dropbox/Audio/Karaoke/Code/Proper Karaoke Booth/
+
+The repository is in its proper-karaoke-booth subdirectory:
+
+https://github.com/thepropervolume/proper-karaoke-booth
+
+The initial build was committed and pushed to main:
+- Commit: d258d12361026d1c8ec51e7f8188ca1d9deeb89e
+- Message: Build local karaoke rehearsal foundation
+On the original laptop, the working tree was clean after the push. Its Git remote was changed to SSH because HTTPS Git authentication was unavailable; that setting may differ on your machine.
+
+Inspect the checkout and working tree on your machine before changing anything. The repository is in Dropbox, so consider sync state and avoid concurrent edits from both machines. Preserve any work already present. Do not reset, clean, or overwrite files to make your checkout match the commit.
+Reference materials
+The sibling planning/ directory contains:
+- TPV_Karaoke_Product_Specification_v0_1.docx — despite the filename, the document’s internal revision is 0.3, dated November 5, 2026.
+- TPV_Karaoke_Mockups_Dark_and_Light_v0_3.pdf
+Read the relevant materials before implementing their interfaces. The accepted mockups show a desktop host with a library, singer rotation, and persistent player; a separate queue view; companion surfaces; and an uncluttered singer display. These materials describe intended software, not features already implemented.
+
+Potential TPV logo and style-guide assets were found elsewhere in the Karaoke Dropbox directory, including Assets/Brand Graphics/TPV-Logo.png. Inspect the available assets and their licensing before redistributing fonts or other files.
+What has been built
+The first slice is an Electron application using TypeScript, React, SCSS, and SQLite:
+- A desktop host with local MP4 import, SHA-256 fingerprinting and duplicate detection; source files remain in place.
+- A searchable library, singers, moderated requests, a basic round-robin rotation, locked staging, and explicit Start.
+- Pause/resume, stop, and confirmed skip.
+- A separate singer-display window, with an explicit monitor chooser.
+- Night, Day, and Follow system themes in the host, using locally packaged Nunito Sans.
+- A pure domain command layer with role checks, revision and epoch fields, command receipts, version-policy predicates, and playback-generation checks.
+- SQLite transactions for show state and media paths, playback checkpoints, and recovery of an interrupted show paused without autoplay.
+- A narrow Electron preload bridge with context isolation and sandboxed renderers.
+Read these repository documents for implementation details and priorities:
+- README.md
+- docs/architecture.md
+- docs/roadmap.md
+- docs/local-api.md
+- docs/provider-research.md
+The shared domain has the beginnings of a local API boundary, but there is no API listener yet. The desktop bridge currently generates command IDs itself, so external retry and outcome-unknown semantics are not complete.
+Verification and limits
+The original laptop was Pop!_OS 24.04 Linux, with Node 26.13 and Electron 45. The following passed there:
+- npm run build
+- Nine domain and persistence tests via npm test
+- An automated Electron rehearsal under Xvfb using a generated H.264/AAC MP4. It exercised import, request, acceptance, staging, video decoding and advancing time, pause/resume, display closure, forced termination, paused recovery, completion, and rejection of stale media events.
+- npm audit reported no known vulnerabilities at that time.
+The automated rehearsal muted audio. Physical speakers, an external mixer, real monitor unplugging, and audio-device failure were not verified. Windows and macOS have not yet been tested. Inspect your own OS, runtimes, display and audio environment rather than assuming they match the original laptop.
+
+The application is early development software, not yet suitable for a live show. The current media player is a proof of concept, not a permanent engine decision.
+
+Not yet implemented include MP3/CDG and ZIP imports, relinking, seek UI, key/tempo processing, filler music, explicit audio-device selection and loss handling, richer queue management, companions, local API, providers, and billing. Display-loss handling is conservative: disconnecting a monitor previously used by the open singer window may pause playback after the window has moved elsewhere. See the repository docs for further detail.
+Confirmed product direction
+The desktop application is the single authority for playback, the durable queue, and the current karaoke session. “Party” and “show” mean the same session. Cloud services may support companions, accounts, billing, and approved integrations; they do not own rotation or audio.
+
+The commercial model is confirmed: hosts or venues pay a subscription; singers participate free. Prices, tiers, trials, billing cadence, device limits, and simultaneous-show limits are undecided.
+
+The planned surfaces share the same authoritative show state:
+1. Desktop Host: library, imports, show setup, playback, rotation, requests, settings, outputs, providers, and recovery.
+2. KJ Remote: authenticated phone/tablet transport and show controls.
+3. Staff Queue Manager: moderation, attendance, holds, and future queue management; staff do not automatically receive playback or output permissions.
+4. Singer App: free browser-based joining, discovery, requests, personal song management, and public rotation.
+5. Singer Display: separate audience-facing video or CDG lyrics, current singer, optional upcoming singers, and join instructions.
+Guests should join with a show link or QR code without a mandatory account. Optional profiles support persistent choices across devices.
+Important implementation requirements
+- Keep domain rules separate from UI, persistence, media playback, and transport. Share typed commands, events, validation, and permission rules across future interfaces.
+- Preserve original media files. Support MP4, paired MP3/CDG, and safe ZIP imports; handle duplicates, relinking, archive path/expansion safety, and ambiguous pairings. Distinguish a song from its exact recording/version.
+- The media engine owns the playback clock. Only one karaoke track may be audible; preparing a track must not start it. Unsupported capabilities need clear explanations.
+- Filler is separate from karaoke. Proposed fades are 1.5 seconds in and 1 second out, with filler silent before karaoke starts. Normal pause must not automatically start filler. Microphones initially remain on an external mixer.
+- Audio-device loss must pause karaoke and stop filler without silent rerouting. Singer-display loss pauses by default; recovery requires a deliberate output choice and resume.
+- Default to moderated requests, round-robin singers, host-controlled starts, and three pending or accepted future requests per singer. New singers join the current round’s remaining tail until its final turn has begun. Holds, absence, restoration, and reordering need deterministic behavior.
+- A completed or explicitly skipped performance consumes one turn exactly once; preparation failure consumes none. Pending, accepted, staged, and active states are distinct. A staged item remains locked until explicitly released or replaced.
+- Persist mutations before acknowledging success. Use command IDs, show IDs, host epochs, expected revisions, and playback generations as appropriate. Retries return the original outcome; reused IDs with altered payloads are rejected. Stale callbacks cannot advance a newer performance. Reconnect from authoritative state without automatically replaying stale actions.
+- Song policy must apply at every discovery and action boundary, including search, direct IDs, restored queues, staging, Start, and APIs. Exclusions win. At an age-restricted party, unrated, uncertain, and conflicting ratings are ineligible and must not appear to guests. Policy changes invalidate future readiness but must not silently stop an active track.
+- Rating evidence belongs to the exact version and should include source, confidence, coverage, timestamp, and provenance. Distinguish provider advisories, automated assessments, and host decisions. A missing explicit flag is not proof of a clean rating.
+- The optional local API must default off. When implemented, use authenticated loopback with revocable scoped tokens; LAN is a separate explicitly enabled mode requiring authenticated TLS. Publish OpenAPI and event schemas, enforce ownership and roles, and redact private paths, credentials, and media URLs.
+- Preserve search query, filters, selection, and scroll position when queue state changes. Queue edits must not interrupt playback.
+- The roadmap includes history, favorites, saved lists, per-version key/tempo, uncertain wait estimates, pre-arrival planning, opt-in notifications, and accepted/declined group invitations. A duet uses one version and the lead singer’s turn; it does not merge identities or consume additional turns.
+- Provider candidates include KaraFun, Party Tyme, Sunfly, and Stingray; they are not approved integrations. Verify licensing, access, platforms, entitlements, and reporting before implementation. Never bypass protected playback or silently substitute a recording. Keep provider entitlements separate from the application subscription.
+- For commercial release, a proposed design uses server-verified subscriptions and signed device-bound offline entitlements. Define a bounded grant for an already-started show before launch; ordinary subscription expiry must not abruptly cut it off.
+Visual and accessibility direction
+Preserve the accepted mockup layouts. Implement complete Night, Day, and Follow system modes across future surfaces without disrupting playback, queue state, focus, or entered data. Do not recolor source lyrics or protected provider rendering.
+
+Use Nunito Sans with Avenir Next, Avenir, Novecento Sans, and sans-serif fallbacks. Core colors: blue #0EB7FF, purple #601CE9, pink #FF007F, warm cream #FFFFF3, and white.
+
+Use modular SCSS organized around foundations/tokens, atoms, molecules, organisms, templates, and screen compositions. Provide keyboard access, visible focus, accessible labels and status announcements, adequate contrast, and touch targets of at least 44 CSS pixels; do not use color as the only status signal.
+Recommended immediate next work
+Inspect the checkout and reference documents, then establish what actually works on this machine. Prioritize a real audible MP4 rehearsal and physical display/audio behavior, followed by investigating synchronized CDG, key/tempo, filler transitions, output selection, and recovery before choosing a permanent media engine. Continue building toward a dependable local rehearsal slice, with meaningful regression tests and documentation.
+
+Use the existing README and architecture notes as a starting point, but verify current source and machine state. Keep changes small and reviewable; do not assume the original Linux results establish Windows or macOS support. Commits, pushes, deployment, and external account changes require Ben’s authorization.

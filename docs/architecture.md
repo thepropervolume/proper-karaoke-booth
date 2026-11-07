@@ -8,6 +8,10 @@ State is currently stored as a serialized show in SQLite, with media locations a
 
 The host renderer gets no arbitrary filesystem or generic IPC access. Imports go through a native file picker, SHA-256 fingerprints are stored, and the video is delivered through a generation-scoped local protocol. This is a rehearsal implementation requiring further adversarial security, permission, renderer and output-loss testing. Avoid adding remote content to either renderer.
 
+Metadata corrections currently update the local library only; embedded tag reading and write-back are not yet implemented. Product direction is a per-edit choice: local-only by default, or explicitly request writing supported embedded tags as well. A failed or unsupported file update must be reported without discarding the local correction. Import, rescan, and ordinary edits must never implicitly modify source media. See the [write-back plan](metadata-writeback-plan.md) for the preservation and concurrency requirements.
+
+New requests default to automatic approval, with optional moderation. This supersedes the original handoff's moderated-by-default direction. A setting change affects new requests rather than silently approving pending ones. FIFO and singer-round choices operate on the same durable queue; staged requests remain locked.
+
 ## Media investigation
 
 On this laptop, FFmpeg advertises CDG decoding, H.264/AAC/MP3 codecs, rubberband/atempo and fades; mpv 0.37, GStreamer and PipeWire are installed. Their presence does not establish a working synchronized player. Evaluate paired CDG/audio timing and seek reconstruction, independent real-time pitch/tempo, output-device selection and loss, single-audio ownership, filler transitions and packaging/licensing on each platform before choosing an engine. MP4 is a container; codec support varies.

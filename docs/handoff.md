@@ -1,0 +1,30 @@
+# Development handoff
+
+Updated 6 November 2026. This is the maintained handoff for the local working copy. The [original handoff](original-development-handoff.txt) is retained verbatim as historical context; where its defaults conflict with the decisions below, these decisions govern. The [product review and work list](feature-review.md) records the broader KaraFun comparison and the remaining work.
+
+The planning Word specification (internal revision 0.3) still states the earlier moderation and media-preservation defaults. Until its revised edition is visually verified and published, the decisions below supersede those conflicting passages.
+
+## Product direction and decisions
+
+- The desktop host is the authority for playback, the durable queue and the current show. A party and a show are the same session. Local hosting must work without internet access. Hosts or venues will eventually pay; singer participation is free. Prices, plans and limits remain undecided. The marketing site and branding guide are separate projects.
+- New song requests default to **automatic approval**. The host can choose moderation. This supersedes the original handoff's moderated-by-default decision. Switching modes affects new requests; existing pending requests are not silently approved.
+- Hosts should be able to edit artist and title locally and choose **per edit** whether supported embedded file metadata should also be changed. Local-only is the default. No import, rescan or ordinary local edit should implicitly modify source media. If an explicitly requested embedded write fails or is unsupported, report that outcome and retain the local edit. The per-edit choice and embedded write-back are **not yet implemented**; the current edit only changes the local database.
+- Preserve the accepted mockups and the original handoff's domain, playback safety, privacy, security and accessibility requirements. The requested work list extends those requirements; it does not turn planned features into implemented features.
+
+## Working copy and verification
+
+The original handoff identifies GitHub commit `d258d12361026d1c8ec51e7f8188ca1d9deeb89e` as the starting foundation. Inspect the actual checkout, current changes, platform and build results before modifying or publishing; do not assume an earlier laptop's state applies. Preserve the project and concurrent work. The owner has given standing authorization to commit and push project changes as ongoing work. Keep commits small and focused, include applicable tests and host, singer and developer documentation, and keep commit messages concise. Deployment and external account changes still require authorization.
+
+The first slice is Electron, TypeScript, React, SCSS and SQLite. The main process owns show state; isolated renderers use narrow preload bridges; a separate singer window owns the experimental media element. The database holds show state, private paths and recovery checkpoints. The previous Linux rehearsal tested a generated MP4 with muted audio. It did not prove audible output, a real mixer, physical display unplugging or Windows/macOS behavior. The [README](../README.md) has the current commands and boundaries; consult the latest test output for this working copy instead of assuming a prior result.
+
+The review changes include preferences, auto-approval and FIFO/fair rotation, file and recursive-folder MP4 import, singer entry while adding a request, local metadata corrections and filename parsing, several layouts, transport icons, host entry of missing-song requests, and two configurable shortcuts. These are development changes requiring appropriate build, integration and physical-device verification, not a claim of live-show readiness. Settings and shortcut files currently cover only a subset of the requested configuration and actions. Missing-song entry is local host functionality, not a remote singer app.
+
+## Important remaining boundaries
+
+- Embedded tag reading and the host's per-edit file-write choice are not implemented. MP3/CDG pairs, ZIP, relinking, seek UI, pitch/tempo, filler music, output selection and robust device-loss handling also remain work.
+- Shared user profiles, the full Host/Co-host/Moderator/Singer/Audience permission model, remote singer requests, companions, the CLI, an authenticated local API, provider integrations and billing are not implemented. The existing domain roles are a foundation, not a complete access-control system. Do not add a second authority or direct CLI database writer.
+- Continue to enforce queue invariants: persist before acknowledgment, staged requests remain locked until released or replaced, preparation never starts audio, a completed or explicitly skipped performance consumes one turn exactly once, and stale media callbacks cannot advance a newer performance. Restored playback must not autoplay.
+- Before a permanent media-engine choice, verify synchronized CDG, seek reconstruction, pitch/tempo, single-audio ownership, filler transitions, output loss and platform packaging. Device or display recovery must be deliberate. Source MP4 containers can contain unsupported codecs.
+- Policy must eventually apply at all discovery and playback boundaries; age-restricted shows exclude uncertain, conflicting and unrated material. Providers require separate licensing and entitlement validation. Avoid silently substituting recordings or bypassing protected playback.
+
+Maintain this document when decisions, implementation state or verification change. Consult [architecture](architecture.md), [roadmap](roadmap.md), [local API](local-api.md), [keyboard shortcuts](keyboard-shortcuts.md) and [provider research](provider-research.md) for details.
