@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import '@fontsource/nunito-sans/400.css';
 import '@fontsource/nunito-sans/700.css';
 import '@fontsource/nunito-sans/800.css';
@@ -6,6 +6,8 @@ import { createRoot } from 'react-dom/client';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, visibleVersions } from '../domain/index';
 import type { MissingSongRequest } from '../domain/missing-request';
+import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import { Icon } from './Icon';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import '../styles/main.scss';
 import '../styles/settings.scss';
@@ -17,6 +19,8 @@ declare global {
   interface Window {
     tpv: {
       getState: () => Promise<ShowState>;
+      getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
+      onFocusSearch: (callback: () => void) => () => void;
       subscribe: (callback: (state: ShowState) => void) => () => void;
       importFiles: (kind?: 'files' | 'folder') => Promise<void>;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
@@ -31,6 +35,10 @@ function App() {
   const [state, setState] = useState<ShowState | null>(null);
   const [screen, setScreen] = useState<Screen>('library');
   const [search, setSearch] = useState('');
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  const focusSearch = () => { setEditingVersion(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
+  const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [selectedSingerId, setSelectedSingerId] = useState('');
   const [singerName, setSingerName] = useState('');
@@ -64,6 +72,14 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let alive = true;
+    void window.tpv.getShortcuts().then(result => {
+      if (alive) { setShortcuts(result.shortcuts); if (result.error) setNotice(`${result.error} Defaults are active until the file is fixed and the app restarted.`); }
+    }).catch(error => { if (alive) setNotice(`Could not load keyboard shortcuts: ${String(error)}`); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
     const preference = window.matchMedia('(prefers-color-scheme: light)');
     const update = () => { document.documentElement.dataset.theme = theme === 'system' ? (preference.matches ? 'day' : 'night') : theme; };
     update();
@@ -71,6 +87,9 @@ function App() {
     preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
   }, [theme]);
+
+  useEffect(() => window.tpv.onFocusSearch(focusSearch), []);
+  useEffect(() => { if (searchFocusRequest) searchInput.current?.focus(); }, [searchFocusRequest, screen, !!state]);
 
   const versions = useMemo(() => state ? visibleVersions(state) : [], [state]);
   const filtered = useMemo(() => {
@@ -102,6 +121,23 @@ function App() {
     finally { setBusy(false); }
   };
   const command = (payload: Command, success?: string) => run(() => window.tpv.command(payload), success);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const input = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey };
+      if (!event.repeat && matchesShortcut(shortcuts, 'search', input)) {
+        event.preventDefault();
+        focusSearch();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (!matchesShortcut(shortcuts, 'playPause', input) || event.repeat ||
+          target?.closest('input, textarea, select, button, [contenteditable="true"]') || busy || !state?.playback) return;
+      event.preventDefault();
+      void command({ type: state.playback.status === 'paused' ? 'resume' : 'pause' });
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [state, busy, shortcuts]);
   const addSinger = (event: React.FormEvent) => {
     event.preventDefault();
     const name = singerName.trim();
@@ -153,7 +189,8 @@ function App() {
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">▥</span><span>The Proper Volume<small>Karaoke host</small></span></div>
       <h1>Local rehearsal</h1>
-      <button onClick={() => void run(() => window.tpv.openDisplay())}>Singer display</button>
+      <button className="icon-button" aria-label="Open library search" title="Search library" onClick={focusSearch}><Icon name="search" /></button>
+      <button className="icon-button" aria-label="Singer display" title="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button>
       <label>Appearance <select value={theme} onChange={e => setTheme(e.target.value as Theme)}><option value="system">Follow system</option><option value="night">Night</option><option value="day">Day</option></select></label>
     </header>
     <nav className="sidebar" aria-label="Workspace">
@@ -166,7 +203,7 @@ function App() {
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
           <div className="section-heading"><h2>Song library</h2><div><button className="primary" disabled={busy} onClick={() => void run(() => window.tpv.importFiles('files'))}>Import MP4</button> <button disabled={busy} onClick={() => void run(() => window.tpv.importFiles('folder'))}>Import folder</button></div></div>
-          <div className="library-toolbar"><input type="search" aria-label="Search library" placeholder="Search title, artist or filename" value={search} onChange={e => setSearch(e.target.value)} /></div>
+          <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search title or artist" value={search} onChange={e => setSearch(e.target.value)} /></div>
           <div className="eyebrow">Title / artist <span className="muted"> · Local MP4</span></div>
           <div aria-label="Songs">
             {filtered.map(version => <div className="track-row" key={version.id}>
@@ -216,10 +253,10 @@ function App() {
     <footer className="transport" aria-label="Playback controls">
       <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Staged' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Stage an accepted request to begin'}</small></div>
       <div className="transport__controls">
-        <button className="primary" disabled={busy || !staged || !!active} onClick={() => void command({ type: 'start', generationId: crypto.randomUUID() })}>Start</button>
-        <button disabled={busy || !active} onClick={() => void command({ type: state?.playback?.status === 'paused' ? 'resume' : 'pause' })}>{state?.playback?.status === 'paused' ? 'Resume' : 'Pause'}</button>
-        <button disabled={busy || !active} onClick={() => void command({ type: 'stop' })}>Stop</button>
-        <button disabled={busy || !active} onClick={skip}>Skip</button>
+        <button className="primary icon-button" aria-label="Start" title="Start" disabled={busy || !staged || !!active} onClick={() => void command({ type: 'start', generationId: crypto.randomUUID() })}><Icon name="play" /></button>
+        <button className="icon-button" aria-label={state?.playback?.status === 'paused' ? 'Resume' : 'Pause'} title={state?.playback?.status === 'paused' ? 'Resume' : 'Pause'} disabled={busy || !active} onClick={() => void command({ type: state?.playback?.status === 'paused' ? 'resume' : 'pause' })}><Icon name={state?.playback?.status === 'paused' ? 'play' : 'pause'} /></button>
+        <button className="icon-button" aria-label="Stop" title="Stop" disabled={busy || !active} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button>
+        <button className="icon-button" aria-label="Skip" title="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button>
       </div>
       <div className="transport__status">Key, tempo, seek, filler and output selection are not yet available in this rehearsal build.</div>
     </footer>

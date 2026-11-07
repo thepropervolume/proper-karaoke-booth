@@ -8,6 +8,8 @@ import { applyCommand, createInitialState, type Command, type ShowState } from '
 import { normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromFilename } from '../domain/metadata';
 import { Store } from './store';
+import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import { readShortcuts } from './shortcuts';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -16,6 +18,9 @@ let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
 let state: ShowState;
+let shortcuts: Shortcuts = DEFAULT_SHORTCUTS;
+let shortcutsPath: string;
+let shortcutError = '';
 let displayReady = false;
 let choosingDisplay = false;
 let shuttingDown = false;
@@ -96,6 +101,28 @@ async function createDisplay(): Promise<void> {
     width: Math.min(1280, target.workArea.width), height: Math.min(800, target.workArea.height), title: 'Singer Display',
     backgroundColor: '#000000', webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   restrictWindow(display);
+  // The singer display is a separate renderer, so host keyboard listeners do not
+  // receive its keystrokes. Only expose these specific host shortcuts here.
+  display.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+    if (matchesShortcut(shortcuts, 'search', input)) {
+      event.preventDefault();
+      if (host && !host.isDestroyed()) {
+        if (host.isMinimized()) host.restore();
+        host.show(); host.focus();
+        host.webContents.send('host:focus-search');
+      }
+      return;
+    }
+    if (matchesShortcut(shortcuts, 'playPause', input) && state.playback) {
+      event.preventDefault();
+      const command: Command = { type: state.playback.status === 'paused' ? 'resume' : 'pause' };
+      const reason = playable(command);
+      if (reason) {
+        if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: reason });
+      } else perform(command);
+    }
+  });
   const loseDisplay = () => {
     displayReady = false;
     pauseForOutputLoss();
@@ -224,6 +251,9 @@ else {
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
   app.whenReady().then(() => {
   app.setName('The Proper Volume Karaoke');
+  shortcutsPath = join(app.getPath('userData'), 'keybindings.json');
+  try { shortcuts = readShortcuts(shortcutsPath); }
+  catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
   state = store.load() ?? createInitialState(randomUUID(), randomUUID());
   // A restarted host is a new authority; an interrupted performance is never resumed automatically.
@@ -232,6 +262,7 @@ else {
   store.save(state);
   protocol.handle('tpv-media', serveMedia);
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
+  ipcMain.handle('host:get-shortcuts', event => { guardHost(event.sender.id); return { shortcuts, path: shortcutsPath, error: shortcutError }; });
   ipcMain.handle('host:get-missing-song-requests', event => { guardHost(event.sender.id); return store.missingSongRequests(); });
   ipcMain.handle('host:add-missing-song-request', (event, input: unknown) => {
     guardHost(event.sender.id);
