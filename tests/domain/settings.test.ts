@@ -8,6 +8,13 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.equal(parseSettings({ autoApprove: false }).autoApprove, false);
   assert.equal(parseSettings({ layout: 'rotation' }).layout, 'rotation');
   assert.equal(parseSettings({ layout: 'library' }).layout, 'library');
+  assert.equal(parseSettings({ masterVolume: 0 }).masterVolume, 0);
+  assert.equal(parseSettings({ masterVolume: 0.42 }).masterVolume, 0.42);
+  assert.deepEqual(parseSettings({ metadataTemplates: ['${Artist} - ${Title}'] }).metadataTemplates, ['${Artist} - ${Title}']);
+  assert.throws(() => parseSettings({ metadataTemplates: ['${Artist}${Title}'] }));
+  assert.equal(parseSettings({ showNextSingers: true }).showNextSingers, true);
+  assert.throws(() => parseSettings({ showDisplayLogo: 'yes' }));
+  for (const masterVolume of [-1, 1.1, '0.5', null]) assert.throws(() => parseSettings({ masterVolume }));
   assert.throws(() => parseSettings({ layout: 'unknown' }));
   assert.throws(() => parseSettings({ autoApprove: 'false' }));
   assert.throws(() => parseSettings({ autoAprove: false }));
