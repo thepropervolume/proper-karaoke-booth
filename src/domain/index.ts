@@ -5,10 +5,11 @@ import { DEFAULT_SETTINGS, type Settings } from './settings';
 export type Role = 'host' | 'staff' | 'singer' | 'engine';
 export type Actor = { role: Role; id: string };
 export type Rating = 'clean' | 'explicit' | 'unrated' | 'uncertain';
-export type Version = { id: string; title: string; artist: string; rating: Rating };
+export type Version = { id: string; title: string; artist: string; rating: Rating;
+  djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string };
 export type Singer = { id: string; name: string };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
-export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped';
+export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed';
 export type SongRequest = { id: string; singerId: string; versionId: string; status: RequestStatus; round: number | null; order: number | null };
 export type Playback = { requestId: string; generationId: string; status: 'playing' | 'paused' };
 export type Command =
@@ -17,6 +18,7 @@ export type Command =
   | { type: 'addSinger'; singer: Singer }
   | { type: 'request'; requestId: string; singerId: string; versionId: string }
   | { type: 'accept'; requestId: string }
+  | { type: 'removeRequest'; requestId: string }
   | { type: 'stage' }
   | { type: 'release' }
   | { type: 'start'; generationId: string }
@@ -57,7 +59,7 @@ export function visibleVersions(state: ShowState): Version[] {
 /** The staged request remains locked when the scheduling mode changes. */
 export function orderedFuture(state: ShowState, mode: Settings['rotationMode']): SongRequest[] {
   const position = (singerId: string) => Math.min(...state.requests
-    .filter(r => r.singerId === singerId && r.order !== null).map(r => r.order!));
+    .filter(r => r.singerId === singerId && r.order !== null && r.status !== 'removed').map(r => r.order!));
   return state.requests.filter(r => r.status === 'accepted' || r.status === 'staged')
     .sort((a, b) => (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
       // Request arrays are append-only, so this also preserves FIFO for older
@@ -67,7 +69,7 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode']):
 
 function acceptRequest(state: ShowState, request: SongRequest): void {
   let round = state.currentRound + (state.finalTurnBegun ? 1 : 0);
-  while (state.requests.some(r => r.singerId === request.singerId && r.round === round)) round++;
+  while (state.requests.some(r => r.singerId === request.singerId && r.round === round && r.status !== 'removed')) round++;
   request.status = 'accepted'; request.round = round; request.order = state.nextOrder++;
 }
 
@@ -107,7 +109,9 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
   else switch (cmd.type) {
     case 'addVersion': {
       const v = cmd.version;
-      if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating)) reject('INVALID', 'Invalid version');
+      if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating) ||
+          (v.djCode !== undefined && typeof v.djCode !== 'string') || (v.trackNumber !== undefined && typeof v.trackNumber !== 'string') ||
+          (v.metadataAmbiguous !== undefined && typeof v.metadataAmbiguous !== 'boolean') || (v.metadataTemplate !== undefined && typeof v.metadataTemplate !== 'string')) reject('INVALID', 'Invalid version');
       else if (state.versions.some(x => x.id === v.id)) reject('DUPLICATE', 'Version already exists');
       else state.versions.push({ ...v });
       break;
@@ -115,7 +119,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     case 'editVersion': {
       const version = state.versions.find(v => v.id === cmd.id);
       if (!version || !nonempty(cmd.title) || cmd.title.length > 500 || typeof cmd.artist !== 'string' || cmd.artist.length > 500) reject('INVALID', 'Invalid song metadata');
-      else { version.title = cmd.title.trim(); version.artist = cmd.artist.trim(); }
+      else { version.title = cmd.title.trim(); version.artist = cmd.artist.trim(); if (version.metadataAmbiguous) version.metadataAmbiguous = false; }
       break;
     }
     case 'addSinger':
@@ -140,6 +144,15 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else if (!isVersionAllowed(state, request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
         acceptRequest(state, request);
+      }
+      break;
+    }
+    case 'removeRequest': {
+      const request = state.requests.find(r => r.id === cmd.requestId);
+      if (!request || !['pending', 'accepted', 'staged'].includes(request.status)) reject('INVALID_STATE', 'Only a pending, accepted, or staged request can be removed');
+      else {
+        if (state.stagedRequestId === request.id) state.stagedRequestId = null;
+        request.status = 'removed';
       }
       break;
     }

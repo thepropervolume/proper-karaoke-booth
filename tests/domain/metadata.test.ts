@@ -23,3 +23,16 @@ test('host metadata edits persist in state, validate input and are not allowed t
   assert.equal(send({ type: 'editVersion', id: 'v', title: ' ', artist: 'Artist' }).ok, false);
   assert.equal(send({ type: 'editVersion', id: 'v', title: 'Bad', artist: 'Artist' }, 'singer').ok, false);
 });
+
+test('a manual correction clears an ambiguous import without losing its source fields', () => {
+  let state = createInitialState('show', 'epoch'); let n = 0;
+  const send = (command: Command) => {
+    const result = applyCommand(state, { commandId: `${++n}`, showId: 'show', hostEpoch: 'epoch', expectedRevision: state.revision, actor: { role: 'host', id: 'host' }, command });
+    assert.equal(result.outcome.ok, true); state = result.state;
+  };
+  send({ type: 'addVersion', version: { id: 'v', title: 'Popular', artist: 'Nada Surf', rating: 'unrated', djCode: 'DJID-002', trackNumber: '03', metadataAmbiguous: true, metadataTemplate: '${DJ Code} - ${Artist} - ${Title}' } });
+  send({ type: 'editVersion', id: 'v', title: 'Popular', artist: 'Nada Surf' });
+  assert.equal(state.versions[0].metadataAmbiguous, false);
+  assert.equal(state.versions[0].djCode, 'DJID-002');
+  assert.equal(state.versions[0].trackNumber, '03');
+});

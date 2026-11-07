@@ -25,6 +25,23 @@ function accept(s: ReturnType<typeof setup>, id: string, singerId: string, versi
   s.ok({ type: 'accept', requestId: id });
 }
 
+test('removing a queued request frees its turn and never removes an active performance', () => {
+  const s = setup(); library(s); accept(s, 'a1', 'a');
+  s.ok({ type: 'stage' });
+  s.ok({ type: 'removeRequest', requestId: 'a1' });
+  assert.equal(s.get().stagedRequestId, null);
+  assert.equal(s.get().requests.find(r => r.id === 'a1')?.status, 'removed');
+  accept(s, 'b1', 'b');
+  accept(s, 'a2', 'a');
+  assert.equal(s.get().requests.find(r => r.id === 'a2')?.round, 1);
+  s.ok({ type: 'stage' });
+  assert.equal(s.get().stagedRequestId, 'b1');
+  s.ok({ type: 'removeRequest', requestId: 'b1' });
+  s.ok({ type: 'stage' }); s.ok({ type: 'start', generationId: 'g1' });
+  assert.equal(s.send({ type: 'removeRequest', requestId: 'a2' }).outcome.ok, false);
+  assert.equal(s.get().playback?.requestId, 'a2');
+});
+
 test('rounds schedule one song per singer and lock the staged track', () => {
   const s = setup(); library(s);
   accept(s, 'a1', 'a'); accept(s, 'a2', 'a'); accept(s, 'b1', 'b');
