@@ -89,6 +89,11 @@ try {
   await songRow.click();
   await host.waitForFunction(() => [...document.querySelectorAll('[role="listbox"][aria-label="Songs"] [role="option"][aria-selected="true"]')].some(row => row.textContent?.includes('Popular')));
   assert.equal(await songRow.getAttribute('aria-selected'), 'true', 'Single-click must select the song.');
+  await songRow.dblclick();
+  await host.getByRole('dialog', { name: 'Add to Queue' }).waitFor({ state: 'visible' });
+  await host.keyboard.press('Control+f');
+  await host.getByRole('dialog', { name: 'Add to Queue' }).waitFor({ state: 'hidden' });
+  await host.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search library');
   const layout = await host.evaluate(() => {
     const list = document.querySelector('.song-list');
     const added = Array.from({ length: 100 }, () => { const row = document.createElement('div'); row.style.height = '62px'; list.append(row); return row; });

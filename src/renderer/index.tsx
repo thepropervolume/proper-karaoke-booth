@@ -52,7 +52,7 @@ function App() {
   const [search, setSearch] = useState('');
   const searchInput = useRef<HTMLInputElement>(null);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
-  const focusSearch = () => { setSettingsOpen(false); setEditingVersion(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
+  const focusSearch = () => { setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState('');
   const [queueVersion, setQueueVersion] = useState<Version | null>(null);
