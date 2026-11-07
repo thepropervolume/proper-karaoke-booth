@@ -4,24 +4,26 @@ import '@fontsource/nunito-sans/700.css';
 import '@fontsource/nunito-sans/800.css';
 import { createRoot } from 'react-dom/client';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
-import { isVersionAllowed, visibleVersions } from '../domain/index';
-import type { MissingSongRequest } from '../domain/missing-request';
+import { isVersionAllowed, orderedFuture, visibleVersions } from '../domain/index';
+import { DEFAULT_SETTINGS, type Settings } from '../domain/settings';
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import type { MissingSongRequest } from '../domain/missing-request';
 import { Icon } from './Icon';
+import { SettingsDialog } from './SettingsDialog';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import '../styles/main.scss';
-import '../styles/settings.scss';
 
-type Theme = 'night' | 'day' | 'system';
 type Screen = 'library' | 'requests' | 'singers';
 type Result = { ok: boolean; error?: string };
 declare global {
   interface Window {
     tpv: {
       getState: () => Promise<ShowState>;
+      getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
-      onFocusSearch: (callback: () => void) => () => void;
+      saveSettings: (settings: Settings) => Promise<Settings>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
+      onFocusSearch: (callback: () => void) => () => void;
       importFiles: (kind?: 'files' | 'folder') => Promise<void>;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
       addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
@@ -37,8 +39,7 @@ function App() {
   const [search, setSearch] = useState('');
   const searchInput = useRef<HTMLInputElement>(null);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
-  const focusSearch = () => { setEditingVersion(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
-  const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
+  const focusSearch = () => { setSettingsOpen(false); setEditingVersion(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [selectedSingerId, setSelectedSingerId] = useState('');
   const [singerName, setSingerName] = useState('');
@@ -47,13 +48,14 @@ function App() {
   const [missingSinger, setMissingSinger] = useState('');
   const [missingTitle, setMissingTitle] = useState('');
   const [missingArtist, setMissingArtist] = useState('');
-  const [editingVersion, setEditingVersion] = useState<Version | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('tpv-theme');
-    return saved === 'day' || saved === 'night' ? saved : 'system';
-  });
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settingsPath, setSettingsPath] = useState('');
+  const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
+  const [shortcutsPath, setShortcutsPath] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editingVersion, setEditingVersion] = useState<Version | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -74,19 +76,30 @@ function App() {
   useEffect(() => {
     let alive = true;
     void window.tpv.getShortcuts().then(result => {
-      if (alive) { setShortcuts(result.shortcuts); if (result.error) setNotice(`${result.error} Defaults are active until the file is fixed and the app restarted.`); }
+      if (alive) { setShortcuts(result.shortcuts); setShortcutsPath(result.path); if (result.error) setNotice(`${result.error} Defaults are active until the file is fixed and the app restarted.`); }
     }).catch(error => { if (alive) setNotice(`Could not load keyboard shortcuts: ${String(error)}`); });
     return () => { alive = false; };
   }, []);
 
   useEffect(() => {
+    let alive = true;
+    void window.tpv.getSettings().then(async result => {
+      let loaded = result.settings;
+      const previousTheme = localStorage.getItem('tpv-theme');
+      if (result.created && (previousTheme === 'day' || previousTheme === 'night'))
+        loaded = await window.tpv.saveSettings({ ...loaded, appearance: previousTheme });
+      if (alive) { setSettings(loaded); setSettingsPath(result.path); }
+    }).catch(error => { if (alive) setNotice(`Could not load preferences: ${String(error)}`); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
     const preference = window.matchMedia('(prefers-color-scheme: light)');
-    const update = () => { document.documentElement.dataset.theme = theme === 'system' ? (preference.matches ? 'day' : 'night') : theme; };
+    const update = () => { document.documentElement.dataset.theme = settings.appearance === 'system' ? (preference.matches ? 'day' : 'night') : settings.appearance; };
     update();
-    localStorage.setItem('tpv-theme', theme);
     preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
-  }, [theme]);
+  }, [settings.appearance]);
 
   useEffect(() => window.tpv.onFocusSearch(focusSearch), []);
   useEffect(() => { if (searchFocusRequest) searchInput.current?.focus(); }, [searchFocusRequest, screen, !!state]);
@@ -99,10 +112,7 @@ function App() {
   const selectedVersion = versions.find(v => v.id === selectedVersionId);
   const selectedSinger = state?.singers.find(s => s.id === selectedSingerId);
   const pending = state?.requests.filter(r => r.status === 'pending') ?? [];
-  const position = (singerId: string) => Math.min(...(state?.requests ?? [])
-    .filter(r => r.singerId === singerId && r.order !== null).map(r => r.order!));
-  const future = (state?.requests.filter(r => r.status === 'accepted' || r.status === 'staged') ?? [])
-    .sort((a, b) => (a.round ?? 0) - (b.round ?? 0) || position(a.singerId) - position(b.singerId) || (a.order ?? 0) - (b.order ?? 0));
+  const future = state ? orderedFuture(state, settings.rotationMode) : [];
   const eligibleFuture = state && future.some(r => r.status === 'accepted' && isVersionAllowed(state, r.versionId));
   const staged = state?.requests.find(r => r.id === state.stagedRequestId);
   const active = state?.requests.find(r => r.id === state.playback?.requestId);
@@ -165,7 +175,7 @@ function App() {
         setNewRequestSingerName('');
       }
       return window.tpv.command({ type: 'request', requestId: crypto.randomUUID(), singerId, versionId: selectedVersion.id });
-    }, 'Request added for review.');
+    }, settings.autoApprove ? 'Request added to the queue.' : 'Request added for review.');
   };
   const requestMissingSong = (event: React.FormEvent) => {
     event.preventDefault();
@@ -185,13 +195,13 @@ function App() {
   const current = describe(active);
   const stage = describe(staged);
 
-  return <div className="app">
+  return <div className="app" data-layout={settings.layout}>
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">▥</span><span>The Proper Volume<small>Karaoke host</small></span></div>
       <h1>Local rehearsal</h1>
       <button className="icon-button" aria-label="Open library search" title="Search library" onClick={focusSearch}><Icon name="search" /></button>
       <button className="icon-button" aria-label="Singer display" title="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button>
-      <label>Appearance <select value={theme} onChange={e => setTheme(e.target.value as Theme)}><option value="system">Follow system</option><option value="night">Night</option><option value="day">Day</option></select></label>
+      <button onClick={() => setSettingsOpen(true)} disabled={!settingsPath}>Preferences</button>
     </header>
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
@@ -242,11 +252,11 @@ function App() {
       </>}
     </main>
     <aside className="rotation" aria-label="Singer rotation">
-      <h2>Singer rotation</h2><span className="badge">Host moderated</span>
+      <h2>{settings.rotationMode === 'singer' ? 'Singer rotation' : 'Request queue'}</h2><span className="badge">{settings.autoApprove ? 'Auto-approve' : 'Host moderated'}</span>
       <div className="eyebrow">On stage</div>
       <div className="on-stage">{active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small></> : <span className="muted">No singer on stage</span>}</div>
       <div className="section-heading"><span className="eyebrow">Up next</span><button disabled={busy || !!staged || !eligibleFuture} onClick={() => void command({ type: 'stage' })}>Stage next</button></div>
-      {future.map((request, index) => { const item = describe(request); return <div className="queue-row" key={request.id}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? 'Staged · locked' : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : `Round ${request.round}`}</small></div></div></div>; })}
+      {future.map((request, index) => { const item = describe(request); return <div className="queue-row" key={request.id}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? 'Staged · locked' : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div></div></div>; })}
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       {staged && <button disabled={busy} onClick={() => void command({ type: 'release' })}>Release staged song</button>}
     </aside>
@@ -260,6 +270,7 @@ function App() {
       </div>
       <div className="transport__status">Key, tempo, seek, filler and output selection are not yet available in this rehearsal build.</div>
     </footer>
+    {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} onClose={() => setSettingsOpen(false)} onSave={async value => { const saved = await window.tpv.saveSettings(value); setSettings(saved); }} />}
     {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist) => {
       const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist });
       if (!result.ok) throw new Error(result.error || 'The song could not be updated.');

@@ -1,0 +1,58 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { applyCommand, createInitialState, orderedFuture, type Command } from '../../src/domain/index';
+import { DEFAULT_SETTINGS, parseSettings } from '../../src/domain/settings';
+
+test('settings have validated defaults and reject malformed or misspelled values', () => {
+  assert.deepEqual(parseSettings({}), DEFAULT_SETTINGS);
+  assert.equal(parseSettings({ autoApprove: false }).autoApprove, false);
+  assert.equal(parseSettings({ layout: 'rotation' }).layout, 'rotation');
+  assert.equal(parseSettings({ layout: 'library' }).layout, 'library');
+  assert.throws(() => parseSettings({ layout: 'unknown' }));
+  assert.throws(() => parseSettings({ autoApprove: 'false' }));
+  assert.throws(() => parseSettings({ autoAprove: false }));
+});
+
+test('auto approval and queue modes determine staging while preserving the locked song', () => {
+  let state = createInitialState('show', 'epoch');
+  let n = 0;
+  const send = (command: Command, rotationMode: 'singer' | 'fifo' = 'singer', autoApprove = true) => {
+    const result = applyCommand(state, { commandId: `${++n}`, showId: 'show', hostEpoch: 'epoch', expectedRevision: state.revision, actor: { role: 'host', id: 'host' }, command }, { autoApprove, rotationMode });
+    assert.equal(result.outcome.ok, true, JSON.stringify(result.outcome)); state = result.state;
+  };
+  send({ type: 'addVersion', version: { id: 'v', title: 'Song', artist: 'Artist', rating: 'clean' } });
+  for (const id of ['a', 'b']) send({ type: 'addSinger', singer: { id, name: id } });
+  for (const [id, singerId] of [['a1', 'a'], ['a2', 'a'], ['b1', 'b']]) send({ type: 'request', requestId: id, singerId, versionId: 'v' });
+  assert.deepEqual(orderedFuture(state, 'singer').map(r => r.id), ['a1', 'b1', 'a2']);
+  assert.deepEqual(orderedFuture(state, 'fifo').map(r => r.id), ['a1', 'a2', 'b1']);
+  send({ type: 'stage' }, 'singer');
+  assert.equal(orderedFuture(state, 'fifo')[0].id, 'a1');
+  send({ type: 'release' });
+  send({ type: 'stage' }, 'fifo');
+  assert.equal(state.stagedRequestId, 'a1');
+  send({ type: 'start', generationId: 'g' });
+  send({ type: 'stage' }, 'fifo');
+  assert.equal(state.stagedRequestId, 'a2');
+  send({ type: 'request', requestId: 'b2', singerId: 'b', versionId: 'v' }, 'fifo', false);
+  assert.equal(state.requests.find(r => r.id === 'b2')?.status, 'pending');
+});
+
+test('FIFO follows request time when older pending requests are approved later', () => {
+  let state = createInitialState('show', 'epoch');
+  let n = 0;
+  const send = (command: Command) => {
+    const result = applyCommand(state, { commandId: `${++n}`, showId: 'show', hostEpoch: 'epoch', expectedRevision: state.revision, actor: { role: 'host', id: 'host' }, command }, { autoApprove: false, rotationMode: 'fifo' });
+    assert.equal(result.outcome.ok, true); state = result.state;
+  };
+  send({ type: 'addVersion', version: { id: 'v', title: 'Song', artist: '', rating: 'clean' } });
+  send({ type: 'addSinger', singer: { id: 'a', name: 'A' } });
+  send({ type: 'request', requestId: 'first', singerId: 'a', versionId: 'v' });
+  send({ type: 'request', requestId: 'second', singerId: 'a', versionId: 'v' });
+  send({ type: 'accept', requestId: 'second' });
+  send({ type: 'accept', requestId: 'first' });
+  // Serialized old shows already contain their requests in arrival order.
+  state = JSON.parse(JSON.stringify(state));
+  assert.deepEqual(orderedFuture(state, 'fifo').map(r => r.id), ['first', 'second']);
+  send({ type: 'stage' });
+  assert.equal(state.stagedRequestId, 'first');
+});

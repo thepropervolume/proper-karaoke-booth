@@ -28,8 +28,6 @@ try {
   await host.getByRole('button', { name: 'Select', exact: true }).click();
   await host.getByLabel('Search library').fill('tpv-rehearsal');
   await host.getByRole('button', { name: 'Add request' }).click();
-  await host.getByRole('button', { name: /Requests/ }).click();
-  await host.getByRole('button', { name: 'Accept', exact: true }).click();
   await host.getByRole('button', { name: 'Stage next' }).click();
   await host.getByRole('button', { name: 'Singer display' }).click();
   let display;
@@ -43,10 +41,13 @@ try {
   await host.getByRole('button', { name: 'Start', exact: true }).click();
   await display.waitForFunction(() => { const v = document.querySelector('video'); return v && v.currentTime > 1 && v.videoWidth > 0 && !v.paused; }, null, { timeout: 15000 });
   const measured = await display.locator('video').evaluate(v => ({ time: v.currentTime, width: v.videoWidth, height: v.videoHeight, readyState: v.readyState }));
-  await host.getByRole('button', { name: 'Pause', exact: true }).click();
+  await display.bringToFront();
+  await display.keyboard.press('Space');
   await display.waitForFunction(() => document.querySelector('video')?.paused === true);
-  await host.getByRole('button', { name: 'Resume', exact: true }).click();
+  await display.keyboard.press('Space');
   await display.waitForFunction(() => document.querySelector('video')?.paused === false);
+  await display.keyboard.press('Control+f');
+  await host.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search library');
   await display.close();
   await host.getByRole('button', { name: 'Resume', exact: true }).waitFor();
   if ((await host.evaluate(() => window.tpv.getState())).playback?.status !== 'paused') throw new Error('Closing singer display did not pause playback');
@@ -57,8 +58,12 @@ try {
   await display.waitForFunction(() => document.querySelector('video')?.paused === false);
   await host.getByRole('button', { name: 'Library', exact: true }).click();
   if (await host.getByLabel('Search library').inputValue() !== 'tpv-rehearsal') throw new Error('Search did not survive queue updates');
+  await host.getByRole('button', { name: 'Preferences' }).click();
   await host.getByLabel('Appearance').selectOption('day');
+  await host.getByLabel('Workspace layout').selectOption('rotation');
+  await host.getByRole('button', { name: 'Save preferences' }).click();
   if (await host.locator('html').getAttribute('data-theme') !== 'day') throw new Error('Day theme was not applied');
+  if (await host.locator('.app').getAttribute('data-layout') !== 'rotation') throw new Error('Workspace layout was not applied');
   await host.screenshot({ path: '/tmp/tpv-rehearsal-host.png' });
   const process = app.process();
   process.kill('SIGKILL');
@@ -86,7 +91,7 @@ try {
   const next = await restored.evaluate(async () => {
     const s = await window.tpv.getState();
     const commands = [ {type:'request', requestId:crypto.randomUUID(), singerId:s.singers[0].id, versionId:s.versions[0].id} ];
-    commands.push({type:'accept', requestId:commands[0].requestId}, {type:'stage'}, {type:'start'});
+    commands.push({type:'stage'}, {type:'start'});
     for (const command of commands) { const result = await window.tpv.command(command); if (!result.ok) throw new Error(result.error); }
     return (await window.tpv.getState()).playback.generationId;
   });

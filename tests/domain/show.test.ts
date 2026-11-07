@@ -8,7 +8,7 @@ function setup() {
   const host: Actor = { role: 'host', id: 'host' };
   const send = (command: Command, actor = host) => {
     const envelope: Envelope = { commandId: `c${++n}`, showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision, actor, command };
-    const result = applyCommand(state, envelope); state = result.state;
+    const result = applyCommand(state, envelope, { autoApprove: false, rotationMode: 'singer' }); state = result.state;
     return { ...result, envelope };
   };
   const ok = (command: Command, actor = host) => { const r = send(command, actor); assert.equal(r.outcome.ok, true, JSON.stringify(r.outcome)); return r; };
@@ -46,6 +46,30 @@ test('new singers join the current tail until its last turn starts', () => {
   s.ok({ type: 'complete', generationId: 'g1' }, { role: 'engine', id: 'engine' }); s.ok({ type: 'stage' });
   s.ok({ type: 'addSinger', singer: { id: 'c', name: 'C' } }); accept(s, 'c1', 'c');
   assert.equal(s.get().requests.find(r => r.id === 'c1')?.round, 2);
+});
+
+test('stopping the final performance reopens its round for a newly arriving singer', () => {
+  const s = setup(); library(s); accept(s, 'a1', 'a');
+  s.ok({ type: 'stage' }); s.ok({ type: 'start', generationId: 'g1' });
+  assert.equal(s.get().finalTurnBegun, true);
+  s.ok({ type: 'stop' });
+  accept(s, 'b1', 'b');
+  assert.equal(s.get().requests.find(r => r.id === 'b1')?.round, 1);
+  s.ok({ type: 'stage' });
+  assert.equal(s.get().stagedRequestId, 'a1');
+});
+
+test('staging a later round does not advance the round before its performance starts', () => {
+  const s = setup(); library(s); accept(s, 'a1', 'a'); accept(s, 'a2', 'a');
+  s.ok({ type: 'stage' }); s.ok({ type: 'start', generationId: 'g1' });
+  s.ok({ type: 'stage' });
+  assert.equal(s.get().stagedRequestId, 'a2');
+  assert.equal(s.get().currentRound, 1);
+  s.ok({ type: 'stop' });
+  accept(s, 'b1', 'b');
+  assert.equal(s.get().requests.find(r => r.id === 'b1')?.round, 1);
+  s.ok({ type: 'release' }); s.ok({ type: 'stage' });
+  assert.equal(s.get().stagedRequestId, 'a1');
 });
 
 test('command receipts preserve success and failure outcomes and detect changed retries', () => {

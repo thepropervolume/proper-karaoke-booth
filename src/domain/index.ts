@@ -1,3 +1,5 @@
+import { DEFAULT_SETTINGS, type Settings } from './settings';
+
 /** Pure show rules. Callers authenticate actors and must persist the returned state,
  * including receipt-only updates, before acknowledging a command. */
 export type Role = 'host' | 'staff' | 'singer' | 'engine';
@@ -52,6 +54,23 @@ export function visibleVersions(state: ShowState): Version[] {
   return state.versions.filter(v => isVersionAllowed(state, v.id));
 }
 
+/** The staged request remains locked when the scheduling mode changes. */
+export function orderedFuture(state: ShowState, mode: Settings['rotationMode']): SongRequest[] {
+  const position = (singerId: string) => Math.min(...state.requests
+    .filter(r => r.singerId === singerId && r.order !== null).map(r => r.order!));
+  return state.requests.filter(r => r.status === 'accepted' || r.status === 'staged')
+    .sort((a, b) => (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
+      // Request arrays are append-only, so this also preserves FIFO for older
+      // shows and for requests approved in a different order than they arrived.
+      (mode === 'fifo' ? state.requests.indexOf(a) - state.requests.indexOf(b) : a.round! - b.round! || position(a.singerId) - position(b.singerId) || a.order! - b.order!));
+}
+
+function acceptRequest(state: ShowState, request: SongRequest): void {
+  let round = state.currentRound + (state.finalTurnBegun ? 1 : 0);
+  while (state.requests.some(r => r.singerId === request.singerId && r.round === round)) round++;
+  request.status = 'accepted'; request.round = round; request.order = state.nextOrder++;
+}
+
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -68,7 +87,7 @@ function permitted(actor: Actor, command: Command): boolean {
   return actor.role === 'singer' && command.type === 'request' && command.singerId === actor.id;
 }
 
-export function applyCommand(original: ShowState, envelope: Envelope): CommandResult {
+export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> = DEFAULT_SETTINGS): CommandResult {
   const fail = (code: string, message: string): Outcome => ({ ok: false, code, message, revision: original.revision });
   // These checks are deliberately before receipt lookup: untrusted callers must not
   // learn stored outcomes or occupy command IDs. The service still authenticates actors.
@@ -109,30 +128,26 @@ export function applyCommand(original: ShowState, envelope: Envelope): CommandRe
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
       else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (state.requests.filter(r => r.singerId === cmd.singerId && ['pending', 'accepted', 'staged'].includes(r.status)).length >= 3) reject('LIMIT', 'Singer has three future requests');
-      else state.requests.push({ id: cmd.requestId, singerId: cmd.singerId, versionId: cmd.versionId, status: 'pending', round: null, order: null });
+      else {
+        const request: SongRequest = { id: cmd.requestId, singerId: cmd.singerId, versionId: cmd.versionId, status: 'pending', round: null, order: null };
+        state.requests.push(request);
+        if (settings.autoApprove) acceptRequest(state, request);
+      }
       break;
     case 'accept': {
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || request.status !== 'pending') reject('INVALID_STATE', 'Request is not pending');
       else if (!isVersionAllowed(state, request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
-        let round = state.currentRound + (state.finalTurnBegun ? 1 : 0);
-        while (state.requests.some(r => r.singerId === request.singerId && r.round === round)) round++;
-        request.status = 'accepted'; request.round = round; request.order = state.nextOrder++;
+        acceptRequest(state, request);
       }
       break;
     }
     case 'stage': {
       if (state.stagedRequestId) { reject('LOCKED', 'Release the staged track first'); break; }
-      // A singer's first accepted request establishes their rotation position.
-      // Later songs retain that position even if accepted in a different order.
-      const position = (singerId: string) => Math.min(...state.requests
-        .filter(r => r.singerId === singerId && r.order !== null).map(r => r.order!));
-      const next = state.requests.filter(r => r.status === 'accepted' && isVersionAllowed(state, r.versionId))
-        .sort((a, b) => a.round! - b.round! || position(a.singerId) - position(b.singerId) || a.order! - b.order!)[0];
+      const next = orderedFuture(state, settings.rotationMode).find(r => r.status === 'accepted' && isVersionAllowed(state, r.versionId));
       if (!next) reject('NOT_AVAILABLE', 'No eligible accepted request');
       else {
-        if (next.round! > state.currentRound) { state.currentRound = next.round!; state.finalTurnBegun = false; }
         next.status = 'staged'; state.stagedRequestId = next.id;
       }
       break;
@@ -150,6 +165,8 @@ export function applyCommand(original: ShowState, envelope: Envelope): CommandRe
       else if (!isVersionAllowed(state, staged.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (!nonempty(cmd.generationId) || state.usedGenerationIds.includes(cmd.generationId)) reject('INVALID', 'Playback generation must be new');
       else {
+        // Preparing a later song does not consume or advance the active round.
+        if (staged.round! > state.currentRound) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
         staged.status = 'playing'; state.stagedRequestId = null;
         state.playback = { requestId: staged.id, generationId: cmd.generationId, status: 'playing' };
         state.usedGenerationIds.push(cmd.generationId);
@@ -168,7 +185,12 @@ export function applyCommand(original: ShowState, envelope: Envelope): CommandRe
     case 'stop': {
       const active = state.requests.find(r => r.id === state.playback?.requestId && r.status === 'playing');
       if (!active) reject('INVALID_STATE', 'No active track');
-      else { active.status = 'accepted'; state.playback = null; }
+      else {
+        // A stopped performance has not consumed its turn. If it closed the
+        // current round on start, reopen that round for singers arriving now.
+        if (active.round === state.currentRound) state.finalTurnBegun = false;
+        active.status = 'accepted'; state.playback = null;
+      }
       break;
     }
     case 'complete': case 'skip': {

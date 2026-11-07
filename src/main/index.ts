@@ -8,6 +8,8 @@ import { applyCommand, createInitialState, type Command, type ShowState } from '
 import { normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromFilename } from '../domain/metadata';
 import { Store } from './store';
+import { readSettings, writeSettings } from './settings';
+import type { Settings } from '../domain/settings';
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts } from './shortcuts';
 
@@ -18,6 +20,9 @@ let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
 let state: ShowState;
+let settings: Settings;
+let settingsPath: string;
+let settingsCreated = false;
 let shortcuts: Shortcuts = DEFAULT_SHORTCUTS;
 let shortcutsPath: string;
 let shortcutError = '';
@@ -52,7 +57,7 @@ function publishDisplay(): void {
 }
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
   const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
-    expectedRevision: state.revision, actor: { role: actor, id: actor }, command });
+    expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings);
   store.save(result.state);
   state = result.state;
   broadcast();
@@ -178,7 +183,7 @@ async function importFiles(kind: 'files' | 'folder'): Promise<void> {
     : { title: 'Import local MP4 files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
   if (selection.canceled || shuttingDown) return;
   // A folder import can take time; use one parsing rule for the entire batch.
-  const metadataFormat = 'artist-title';
+  const metadataFormat = settings.metadataFormat;
   let duplicates = 0, failed = 0;
   // Do not follow symbolic links when traversing: they can form cycles or escape the chosen folder.
   async function* candidates(paths: string[]): AsyncGenerator<string> {
@@ -251,9 +256,12 @@ else {
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
   app.whenReady().then(() => {
   app.setName('The Proper Volume Karaoke');
+  settingsPath = join(app.getPath('userData'), 'settings.json');
   shortcutsPath = join(app.getPath('userData'), 'keybindings.json');
   try { shortcuts = readShortcuts(shortcutsPath); }
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
+  settingsCreated = !existsSync(settingsPath);
+  settings = readSettings(settingsPath);
   store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
   state = store.load() ?? createInitialState(randomUUID(), randomUUID());
   // A restarted host is a new authority; an interrupted performance is never resumed automatically.
@@ -270,6 +278,13 @@ else {
     if (!request) return { ok: false, error: 'Enter a singer and song title within the length limits.' };
     store.addMissingSongRequest({ ...request, id: randomUUID(), createdAt: new Date().toISOString() });
     return { ok: true };
+  });
+  ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
+  ipcMain.handle('host:save-settings', (event, value: unknown) => {
+    guardHost(event.sender.id);
+    settings = writeSettings(settingsPath, value);
+    settingsCreated = false;
+    return settings;
   });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
   ipcMain.handle('host:import', async (event, kind: unknown) => {
@@ -305,6 +320,10 @@ else {
     }
   });
   createHost();
-  }).catch(error => { console.error('Unable to start application:', error); app.quit(); });
+  }).catch(error => {
+    console.error('Unable to start application:', error);
+    dialog.showErrorBox('Unable to start The Proper Volume Karaoke', error instanceof Error ? error.message : String(error));
+    app.quit();
+  });
 }
 app.on('before-quit', () => { shuttingDown = true; importAbort?.abort(); store?.close(); });

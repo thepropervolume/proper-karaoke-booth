@@ -4,6 +4,13 @@
 .main-panel { grid-column: 2; }
 .rotation { grid-column: 3; }
 .transport { grid-column: 2 / 4; }
+@media (min-width: 851px) {
+  .app[data-layout='rotation'] { grid-template-columns: 160px minmax(0, 1fr) minmax(360px, 42vw); }
+  .app[data-layout='library'] { grid-template-columns: 190px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; }
+  .app[data-layout='library'] .sidebar { grid-row: 2 / 5; }
+  .app[data-layout='library'] .rotation { grid-column: 2; grid-row: 3; border-left: 0; border-top: 1px solid var(--line); }
+  .app[data-layout='library'] .transport { grid-column: 2; grid-row: 4; }
+}
 @media (max-width: 850px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto auto; }
   .topbar, .sidebar, .main-panel, .rotation, .transport { grid-column: 1; grid-row: auto; }

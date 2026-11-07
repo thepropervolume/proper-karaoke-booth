@@ -3,7 +3,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 contextBridge.exposeInMainWorld('tpv', {
   getState: () => ipcRenderer.invoke('host:get-state'),
+  getSettings: () => ipcRenderer.invoke('host:get-settings'),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
+  saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
   subscribe: (callback: (state: unknown) => void) => {
     const listener = (_event: unknown, state: unknown) => callback(state);
     ipcRenderer.on('host:state', listener);
