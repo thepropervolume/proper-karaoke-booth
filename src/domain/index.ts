@@ -11,6 +11,7 @@ export type SongRequest = { id: string; singerId: string; versionId: string; sta
 export type Playback = { requestId: string; generationId: string; status: 'playing' | 'paused' };
 export type Command =
   | { type: 'addVersion'; version: Version }
+  | { type: 'editVersion'; id: string; title: string; artist: string }
   | { type: 'addSinger'; singer: Singer }
   | { type: 'request'; requestId: string; singerId: string; versionId: string }
   | { type: 'accept'; requestId: string }
@@ -90,6 +91,12 @@ export function applyCommand(original: ShowState, envelope: Envelope): CommandRe
       if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating)) reject('INVALID', 'Invalid version');
       else if (state.versions.some(x => x.id === v.id)) reject('DUPLICATE', 'Version already exists');
       else state.versions.push({ ...v });
+      break;
+    }
+    case 'editVersion': {
+      const version = state.versions.find(v => v.id === cmd.id);
+      if (!version || !nonempty(cmd.title) || cmd.title.length > 500 || typeof cmd.artist !== 'string' || cmd.artist.length > 500) reject('INVALID', 'Invalid song metadata');
+      else { version.title = cmd.title.trim(); version.artist = cmd.artist.trim(); }
       break;
     }
     case 'addSinger':
