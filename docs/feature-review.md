@@ -4,6 +4,8 @@ Reviewed 6 November 2026 against the local working files based on commit `d258d1
 
 ## Changes made during this review
 
+On 7 November the host gained collapsible preferences, ordered filename/folder templates with ambiguity indicators, selectable songs and queue items, double-click requests, playlist/history views, volume, and optional next-singer and logo display. A Windows build and two isolated, muted synthetic rehearsals passed; physical output and hot-plug tests remain open. Genre metadata, bumper music, output-device selection, inter-song pauses and remote queueing are not yet implemented.
+
 The working copy now includes singer-display Space and cross-window search shortcuts, accessible transport/display icons, file and recursive folder import, inline singer creation, preferences and three layouts, default auto-approval, FIFO and singer-rotation choices, local artist/title edits and filename parsing options, and host entry of missing-song requests into SQLite. It also creates a keybindings JSON file for search and play/pause. These changes have domain/database tests and type checking, but still require a complete Electron build and real Windows display/audio testing. The checklist retains items that need that verification or further work. In particular, metadata edits do not yet write embedded file tags; missing-song requests are entered locally by the host, not by remote singers; and shortcut customization does not yet cover every action.
 
 ## What exists today
