@@ -1,0 +1,8 @@
+export type Playlist = { id: string; name: string; singerId: string | null };
+export type PlaylistItem = { playlistId: string; versionId: string };
+export type HistoryEntry = { generationId: string; singerId: string; singer: string; versionId: string; title: string; artist: string; outcome: 'completed' | 'skipped'; at: string };
+export type CollectionsSnapshot = { playlists: Playlist[]; items: PlaylistItem[]; history: HistoryEntry[] };
+export type CollectionsAction =
+  | { type: 'create'; id: string; name: string; singerId: string }
+  | { type: 'add'; playlistId: string; versionId: string }
+  | { type: 'remove'; playlistId: string; versionId: string };

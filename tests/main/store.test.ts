@@ -37,6 +37,18 @@ test('rolls back media if show state cannot be saved', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('performance history and the show state commit or roll back together', () => {
+  const db = new Store<{ revision: number }>(':memory:');
+  try {
+    const history = { generationId: 'g1', singerId: 's1', singer: 'Singer', versionId: 'v1', title: 'Song', artist: 'Artist', outcome: 'completed' as const, at: '2026-11-07T00:00:00Z' };
+    db.save({ revision: 1 }, [], history);
+    assert.equal(db.collections.snapshot().history.length, 1);
+    assert.throws(() => db.save({ revision: 2 }, [], { ...history, generationId: '' }));
+    assert.deepEqual(db.load(), { revision: 1 });
+    assert.equal(db.collections.snapshot().history.length, 1);
+  } finally { db.close(); }
+});
+
 test('missing-song requests are validated and persist independently of show state', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpv-missing-'));
   let db: Store<{ revision: number }> | undefined;

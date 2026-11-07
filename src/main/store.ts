@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { MissingSongRequest } from '../domain/missing-request';
+import type { HistoryEntry } from '../domain/collections';
+import { Collections } from './collections';
 
 /** The private path never leaves the main process. */
 export interface StoredMedia {
@@ -11,6 +13,7 @@ export interface StoredMedia {
 /** One synchronous SQLite transaction commits state and any imported media together. */
 export class Store<T> {
   private db: DatabaseSync;
+  readonly collections: Collections;
 
   constructor(filename: string) {
     this.db = new DatabaseSync(filename);
@@ -19,6 +22,7 @@ export class Store<T> {
       CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL, position REAL NOT NULL);
       CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);`);
+    this.collections = new Collections(this.db);
   }
 
   load(): T | undefined {
@@ -26,12 +30,13 @@ export class Store<T> {
     return row ? JSON.parse(row.value) as T : undefined;
   }
 
-  save(state: T, media: StoredMedia[] = []): void {
+  save(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
       for (const item of media) putMedia.run(item.id, item.path, item.fingerprint);
       this.db.prepare('INSERT INTO show_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(JSON.stringify(state));
+      if (history) this.collections.record(history);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
