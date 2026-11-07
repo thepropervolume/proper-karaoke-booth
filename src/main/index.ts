@@ -1,17 +1,19 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, screen } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { readdir, stat } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { readdir, stat, unlink } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { applyCommand, createInitialState, type Command, type ShowState } from '../domain';
+import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, visibleVersions, type Command, type ShowState } from '../domain';
+import type { HistoryEntry } from '../domain/collections';
 import { normalizeMissingRequest } from '../domain/missing-request';
-import { metadataFromFilename } from '../domain/metadata';
+import { metadataFromPath } from '../domain/metadata';
 import { Store } from './store';
 import { readSettings, writeSettings } from './settings';
 import type { Settings } from '../domain/settings';
-import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import { DEFAULT_SHORTCUTS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts } from './shortcuts';
+import { loadLogo, saveLogo } from './logo';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -25,6 +27,9 @@ let settingsPath: string;
 let settingsCreated = false;
 let shortcuts: Shortcuts = DEFAULT_SHORTCUTS;
 let shortcutsPath: string;
+let logoPath: string;
+let logoData: string | null = null;
+let choosingLogo = false;
 let shortcutError = '';
 let displayReady = false;
 let choosingDisplay = false;
@@ -47,18 +52,29 @@ function publishDisplay(): void {
   const request = state.requests.find(r => r.id === playback?.requestId);
   const version = state.versions.find(v => v.id === request?.versionId);
   const singer = state.singers.find(s => s.id === request?.singerId);
-  if (!playback || !request || !version || !singer || !store.media(version.id)) {
-    display.webContents.send('display:state', null);
-    return;
-  }
-  display.webContents.send('display:state', { generation: playback.generationId, status: playback.status,
+  const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode)
+    .filter(r => isVersionAllowed(state, r.versionId)).slice(0, 3)
+    .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
+  const current = playback && request && version && singer && store.media(version.id) ? { generation: playback.generationId, status: playback.status,
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
-    position: store.position(playback.generationId), title: version.title, singer: singer.name });
+    position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume } : null;
+  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts });
 }
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
   const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
     expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings);
-  store.save(result.state);
+  let history: HistoryEntry | undefined;
+  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip') && state.playback) {
+    const request = state.requests.find(r => r.id === state.playback?.requestId);
+    if (request) {
+      const singer = state.singers.find(s => s.id === request.singerId);
+      const version = state.versions.find(v => v.id === request.versionId);
+      history = { generationId: state.playback.generationId, singerId: request.singerId, singer: singer?.name ?? 'Unknown singer',
+        versionId: request.versionId, title: version?.title ?? 'Unknown song', artist: version?.artist ?? '',
+        outcome: command.type === 'complete' ? 'completed' : 'skipped', at: new Date().toISOString() };
+    }
+  }
+  store.save(result.state, [], history);
   state = result.state;
   broadcast();
   return result.outcome;
@@ -106,28 +122,6 @@ async function createDisplay(): Promise<void> {
     width: Math.min(1280, target.workArea.width), height: Math.min(800, target.workArea.height), title: 'Singer Display',
     backgroundColor: '#000000', webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   restrictWindow(display);
-  // The singer display is a separate renderer, so host keyboard listeners do not
-  // receive its keystrokes. Only expose these specific host shortcuts here.
-  display.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.isAutoRepeat) return;
-    if (matchesShortcut(shortcuts, 'search', input)) {
-      event.preventDefault();
-      if (host && !host.isDestroyed()) {
-        if (host.isMinimized()) host.restore();
-        host.show(); host.focus();
-        host.webContents.send('host:focus-search');
-      }
-      return;
-    }
-    if (matchesShortcut(shortcuts, 'playPause', input) && state.playback) {
-      event.preventDefault();
-      const command: Command = { type: state.playback.status === 'paused' ? 'resume' : 'pause' };
-      const reason = playable(command);
-      if (reason) {
-        if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: reason });
-      } else perform(command);
-    }
-  });
   const loseDisplay = () => {
     displayReady = false;
     pauseForOutputLoss();
@@ -156,6 +150,7 @@ function validateCommand(value: unknown): Command | null {
     case 'request':
       return shortString(value.requestId) && shortString(value.singerId) && shortString(value.versionId) ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
     case 'accept': return shortString(value.requestId) ? { type: 'accept', requestId: value.requestId } : null;
+    case 'removeRequest': return shortString(value.requestId) ? { type: 'removeRequest', requestId: value.requestId } : null;
     case 'start': return { type: 'start', generationId: randomUUID() };
     case 'skip': return shortString(value.generationId) && value.confirmed === true ? { type: 'skip', generationId: value.generationId, confirmed: true } : null;
     case 'stage': case 'release': case 'pause': case 'resume': case 'stop': return { type: value.type };
@@ -184,7 +179,8 @@ async function importFiles(kind: 'files' | 'folder'): Promise<void> {
   if (selection.canceled || shuttingDown) return;
   // A folder import can take time; use one parsing rule for the entire batch.
   const metadataFormat = settings.metadataFormat;
-  let duplicates = 0, failed = 0;
+  const metadataTemplates = [...settings.metadataTemplates];
+  let duplicates = 0, failed = 0, ambiguous = 0;
   // Do not follow symbolic links when traversing: they can form cycles or escape the chosen folder.
   async function* candidates(paths: string[]): AsyncGenerator<string> {
     for (const path of paths) {
@@ -209,17 +205,21 @@ async function importFiles(kind: 'files' | 'folder'): Promise<void> {
       if (shuttingDown) return;
       if (store.byFingerprint(hash)) { duplicates++; continue; }
       const id = randomUUID();
-      const { artist, title } = metadataFromFilename(basename(path, extname(path)), metadataFormat);
+      const parsed = metadataFromPath(path, metadataTemplates, metadataFormat);
+      const { artist, title, djCode, trackNumber, matchedTemplate } = parsed;
       const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision,
-        actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: { id, title, artist, rating: 'unrated' } } });
+        actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: { id, title, artist, rating: 'unrated',
+          ...(djCode ? { djCode } : {}), ...(trackNumber ? { trackNumber } : {}),
+          ...(matchedTemplate ? { metadataTemplate: matchedTemplate } : {}), metadataAmbiguous: parsed.ambiguous } } });
       if (!result.outcome.ok) { failed++; continue; }
       store.save(result.state, [{ id, path, fingerprint: hash }]);
       state = result.state;
       imported++;
+      if (parsed.ambiguous) ambiguous++;
       broadcast();
     } catch { failed++; }
   }
-  if (host && (kind === 'folder' || duplicates || failed)) await dialog.showMessageBox(host, { type: failed ? 'warning' : 'info', message: 'Import finished', detail: `${imported} file(s) imported; ${duplicates} duplicate file(s) skipped; ${failed} file(s) or folder(s) could not be read or imported.` });
+  if (host && (kind === 'folder' || duplicates || failed || ambiguous)) await dialog.showMessageBox(host, { type: failed || ambiguous ? 'warning' : 'info', message: 'Import finished', detail: `${imported} file(s) imported; ${duplicates} duplicate file(s) skipped; ${failed} file(s) or folder(s) could not be read or imported.${ambiguous ? ` ${ambiguous} song(s) matched multiple patterns or possible splits; review their metadata in the library.` : ''}` });
 }
 async function serveMedia(request: Request): Promise<Response> {
   const playback = state.playback;
@@ -254,14 +254,16 @@ else {
   });
   // Playback still requires a host Start; the singer window receives no input gesture.
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
   app.setName('The Proper Volume Karaoke');
   settingsPath = join(app.getPath('userData'), 'settings.json');
+  logoPath = join(app.getPath('userData'), 'singer-display-logo');
   shortcutsPath = join(app.getPath('userData'), 'keybindings.json');
   try { shortcuts = readShortcuts(shortcutsPath); }
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   settingsCreated = !existsSync(settingsPath);
   settings = readSettings(settingsPath);
+  logoData = await loadLogo(logoPath);
   store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
   state = store.load() ?? createInitialState(randomUUID(), randomUUID());
   // A restarted host is a new authority; an interrupted performance is never resumed automatically.
@@ -270,6 +272,19 @@ else {
   store.save(state);
   protocol.handle('tpv-media', serveMedia);
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
+  ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
+  ipcMain.handle('host:reveal-media', (event, versionId: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId)) throw new Error('Song unavailable.');
+    const media = store.media(versionId);
+    if (!media || !existsSync(media.path)) throw new Error('The source file is unavailable.');
+    shell.showItemInFolder(media.path);
+  });
+  ipcMain.handle('host:mutate-collections', (event, action: unknown) => {
+    guardHost(event.sender.id);
+    store.collections.mutate(action, state.singers, visibleVersions(state));
+    return store.collections.snapshot();
+  });
   ipcMain.handle('host:get-shortcuts', event => { guardHost(event.sender.id); return { shortcuts, path: shortcutsPath, error: shortcutError }; });
   ipcMain.handle('host:get-missing-song-requests', event => { guardHost(event.sender.id); return store.missingSongRequests(); });
   ipcMain.handle('host:add-missing-song-request', (event, input: unknown) => {
@@ -284,7 +299,34 @@ else {
     guardHost(event.sender.id);
     settings = writeSettings(settingsPath, value);
     settingsCreated = false;
+    publishDisplay();
     return settings;
+  });
+  ipcMain.handle('host:reveal-config-file', (event, kind: unknown) => {
+    guardHost(event.sender.id);
+    if (kind !== 'settings' && kind !== 'shortcuts') throw new Error('Invalid configuration file.');
+    const path = kind === 'settings' ? settingsPath : shortcutsPath;
+    if (!existsSync(path)) throw new Error('Configuration file is unavailable.');
+    shell.showItemInFolder(path);
+  });
+  ipcMain.handle('host:choose-display-logo', async event => {
+    guardHost(event.sender.id);
+    if (!host || choosingLogo) return false;
+    choosingLogo = true;
+    try {
+      const result = await dialog.showOpenDialog(host, { title: 'Choose singer display logo', properties: ['openFile'], filters: [{ name: 'PNG or JPEG image', extensions: ['png', 'jpg', 'jpeg'] }] });
+      if (result.canceled || !result.filePaths[0]) return false;
+      logoData = await saveLogo(result.filePaths[0], logoPath);
+      publishDisplay();
+      return true;
+    } finally { choosingLogo = false; }
+  });
+  ipcMain.handle('host:clear-display-logo', async event => {
+    guardHost(event.sender.id);
+    if (choosingLogo) throw new Error('Finish choosing a logo first.');
+    try { await unlink(logoPath); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    logoData = null;
+    publishDisplay();
   });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
   ipcMain.handle('host:import', async (event, kind: unknown) => {
@@ -306,6 +348,18 @@ else {
     return result.ok ? { ok: true } : { ok: false, error: result.message };
   });
   ipcMain.on('display:ready', event => { if (senderIsDisplay(event.sender.id)) { displayReady = true; publishDisplay(); } });
+  ipcMain.on('display:shortcut', (event, action: unknown) => {
+    if (!senderIsDisplay(event.sender.id) || !displayReady) return;
+    if (action === 'search') {
+      if (host && !host.isDestroyed()) { if (host.isMinimized()) host.restore(); host.show(); host.focus(); host.webContents.send('host:focus-search'); }
+    } else if (action === 'playPause') {
+      if (!state.playback && !state.stagedRequestId && !perform({ type: 'stage' }).ok) return;
+      const command: Command = state.playback ? { type: state.playback.status === 'paused' ? 'resume' : 'pause' } : { type: 'start', generationId: randomUUID() };
+      const reason = playable(command);
+      if (reason) { if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: reason }); }
+      else perform(command);
+    }
+  });
   ipcMain.on('display:event', (event, value: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !isRecord(value) || !state.playback || value.generation !== state.playback.generationId) return;
     if (typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);

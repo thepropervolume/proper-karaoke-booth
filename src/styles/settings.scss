@@ -14,4 +14,14 @@
   .settings-check input { width: 1.2rem; min-height: 1.2rem; padding: 0; flex: none; }
   .settings-path { overflow-wrap: anywhere; font-size: .8rem; }
   .settings-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+  .settings-groups { display: grid; gap: .5rem; }
+  .settings-group { border: 1px solid var(--line); border-radius: .45rem; }
+  .settings-group summary { padding: .7rem .8rem; cursor: pointer; font-weight: 700; }
+  .settings-group__content { display: grid; gap: .7rem; padding: 0 .8rem .8rem; }
+  .settings-logo-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .settings-file { width: auto; min-height: 0; padding: .2rem 0; color: var(--accent); text-align: left; text-decoration: underline; border: 0; background: transparent; font-weight: 400; }
+  .settings-tooltip { position: relative; display: inline-block; max-width: 100%; }
+  .settings-tooltip [role='tooltip'] { position: absolute; z-index: 10; left: 0; bottom: calc(100% + .3rem); width: max-content; max-width: min(28rem, 75vw); padding: .5rem .65rem; border: 1px solid var(--accent); border-radius: .35rem; color: var(--text); background: var(--panel-raised); box-shadow: 0 .25rem .75rem #0008; overflow-wrap: anywhere; visibility: hidden; pointer-events: none; }
+  .settings-tooltip:hover [role='tooltip'], .settings-tooltip:focus-within [role='tooltip'] { visibility: visible; }
+  textarea { width: 100%; padding: .6rem; color: var(--text); background: var(--panel-raised); border: 1px solid var(--line); border-radius: .4rem; font: inherit; resize: vertical; }
 }

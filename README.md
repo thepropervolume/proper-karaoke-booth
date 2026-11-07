@@ -4,7 +4,7 @@ A local-first desktop karaoke rehearsal foundation. This is early development so
 
 ## Run on this laptop
 
-Prerequisites: Node.js and npm. Development has been checked on Pop!_OS 24.04 Linux with Node 26.13 and Electron 45. Windows and macOS are targets, not yet tested. Install dependencies once (internet required), then build and start:
+Prerequisites: Node.js and npm. Automated rehearsals have run on Linux and Windows with Electron 45; macOS and physical audio/display devices still need testing. Install dependencies once (internet required), then build and start:
 
 ```bash
 npm ci
@@ -16,24 +16,24 @@ Electron may download its runtime on first use. The app keeps its SQLite databas
 
 ## Rehearse
 
-1. Select **Import MP4** to choose files, or **Import folder** to scan a folder and its subfolders for MP4 files. Files are fingerprinted and duplicate contents are skipped; the file is not copied. Filename `Artist - Title.mp4` is split into artist and title.
-2. Select the song in the library and choose a singer, or add a new singer in the request form. Add the request. Requests are approved automatically by default; if auto-approval is disabled, accept them in **Requests**.
-3. Select **Stage next**, then **Singer display**, and choose the intended monitor. Move the display window as needed. Select **Start** explicitly. Pause, resume, stop and confirmed skip are available.
+1. Use **Import Video File** or **Import Custom Directory** to add MP4 files. A directory scan includes subfolders; duplicate contents are skipped and originals stay in place.
+2. Double-click a song, choose an existing singer or enter a new name, and select **Add to Queue**. A single click only selects the song. Requests are auto-approved by default; with moderation enabled, accept them in **Requests**.
+3. Open **Singer Display** and choose the monitor. **Play/Pause** stages the next eligible song if necessary and starts it, or pauses/resumes an active performance. Stop and confirmed skip are available. Select a waiting queue item and press **Delete** to remove it; the active performance is not removed.
 4. On restart the interrupted show is restored paused; open the singer display and deliberately resume. Stopping returns the current request to the queue; skipping consumes its turn.
 
-Use the search icon or **Ctrl+F** to open library search, including from the singer display. Search matches artist and title. **Space** pauses or resumes an active performance when the singer display is focused; in the host window it also works when focus is not in a text field or on a control. See [keyboard shortcuts](docs/keyboard-shortcuts.md) for defaults and customization.
+Use the search icon or **Ctrl+F** to open library search, including from the singer display. Search matches artist and title. **Space** runs Play/Pause in either window when the host is not typing or operating a focused control. See [keyboard shortcuts](docs/keyboard-shortcuts.md) for defaults and customization.
 
-If a song is missing, enter the singer's name, title and optional artist under **Can't find a song?** in the library. The request is saved locally and appears under **Missing-song requests** on the Requests screen; it does not add a song to the library or rotation. There is no remote singer app yet. See the [singer guide](docs/singer-guide.md) for the current host-assisted experience.
+Right-click a library song to add it to a playlist or the queue, edit its local metadata, or show the source file in the file manager. **Playlists** contains host-managed singer lists, KJ Picks, artist browsing and completed/skipped performance history. Genre browsing is not available until genre metadata exists. If a song is missing, use **Can't Find a Song?**; the request is saved for review and does not enter the rotation. There is no remote singer app yet. See the [singer guide](docs/singer-guide.md).
 
 Use your system's existing audio output. Explicit device selection and reliable audio-device loss handling are not implemented; do not rely on this build to prevent operating-system rerouting. Singer-display and audio recovery need further testing on real hardware. Disconnecting a display previously used by the singer window may conservatively pause playback even after the window has moved elsewhere. Other MP4 codecs may not be playable even though the container is `.mp4`.
 
 ## Preferences
 
-Open **Preferences** to choose the host appearance and layout, the filename format for newly imported songs, automatic request approval, and queue order. Singer rotation allocates requests to rounds, giving each singer a turn before their next song; first requested, first played uses the order in which requests arrived, even when they are approved out of order. A staged song remains locked until released. Switching approval mode affects new requests only; existing pending requests still need approval.
+Open the **Preferences** gear for collapsible Appearance, Library Settings, Queue Management, Audio Controls and Singer Display groups. **Rotate singers fairly** gives each singer a turn before their next song; when unchecked, songs follow request order. A staged song remains locked until released or removed. Switching approval mode affects new requests only. Playback volume also appears below the transport; Singer Display can show upcoming singers and a host-selected PNG/JPEG logo.
 
-Preferences are saved in `settings.json` in Electron's user-data directory; the full path appears in the dialog. Close the app before editing this UTF-8 JSON file by hand and restart it to load changes. The available fields are `appearance` (`system`, `night`, or `day`), `autoApprove` (boolean), `rotationMode` (`singer` or `fifo`), `layout` (`standard`, `rotation`, or `library`), and `metadataFormat` (`artist-title`, `title-artist`, or `filename`). Missing fields use defaults; invalid values or unknown fields are rejected rather than silently changing settings. Back up this file with the show database. This file currently covers these preferences, not every application setting or keyboard shortcut.
+Preferences are saved in `settings.json` in Electron's user-data directory. Use **Configuration Files** to reveal it or `keybindings.json` in the file manager; hover for the full path. Close the app before editing either file and restart to apply changes. Settings include appearance, layout, auto-approval, rotation mode, filename fallback, ordered `metadataTemplates`, master volume and singer-display options. Missing fields use defaults; invalid values or unknown fields are rejected. Back up these files with the show database.
 
-The filename-format preference applies to newly imported files and does not rewrite existing library entries. Use **Edit** next to a song to correct its displayed title or artist in the local database. Reading embedded tags and writing edits back to media files are not yet supported; the original video remains unchanged. The intended future behavior is to let the host choose on each edit whether to update supported embedded tags as well, with local-only selected by default and a clear result if file writing fails.
+Filename templates apply to new imports in priority order. Examples include `${DJ Code} - ${Artist} - ${Title}`, `${Track Number}.${Artist} - ${Title}`, `${Artist}/${Track Name}.mp4` and `${Title} - ${Artist}`. Fields cannot be repeated or adjacent without a separator; use `/` between folder components. Ambiguous matches are marked for metadata review. If nothing matches, the fallback format is used. Right-click and choose **Edit Metadata** to correct a local entry. Embedded tags are not read or written yet; originals remain unchanged.
 
 ## Verify
 
@@ -42,9 +42,10 @@ npm test
 npm run build
 ./scripts/make-rehearsal-fixture.sh /tmp/tpv-rehearsal-fixture.mp4
 xvfb-run -a node scripts/rehearsal-smoke.mjs /tmp/tpv-rehearsal-fixture.mp4
+node scripts/interaction-smoke.mjs . /tmp/tpv-rehearsal-fixture.mp4
 ```
 
-The fixture script needs FFmpeg with H.264/AAC encoders and refuses to overwrite an existing file. The Linux smoke test needs Xvfb and uses an isolated temporary profile and muted audio. It checks import, request, staging, video decoding and clock, transport, display closure, forced termination, paused recovery, completion, and rejection of stale media events. It does not verify speakers, external mixer, HDMI hot-plug or audio-device failure. Delete the synthetic fixture when finished.
+The fixture script needs FFmpeg with H.264/AAC encoders and refuses to overwrite an existing file. The smoke scripts need a graphical session (or Xvfb on Linux), use isolated temporary profiles and mute audio. They cover import, requests, queue removal, playlists/history, transport, display closure, forced termination and recovery. They do not verify speakers, an external mixer, HDMI hot-plug or audio-device failure. Delete the synthetic fixture when finished.
 
 ## Current boundaries
 
