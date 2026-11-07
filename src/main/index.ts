@@ -5,6 +5,7 @@ import { stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, type Command, type ShowState } from '../domain';
+import { normalizeMissingRequest } from '../domain/missing-request';
 import { Store } from './store';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
@@ -210,6 +211,14 @@ else {
   store.save(state);
   protocol.handle('tpv-media', serveMedia);
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
+  ipcMain.handle('host:get-missing-song-requests', event => { guardHost(event.sender.id); return store.missingSongRequests(); });
+  ipcMain.handle('host:add-missing-song-request', (event, input: unknown) => {
+    guardHost(event.sender.id);
+    const request = normalizeMissingRequest(input);
+    if (!request) return { ok: false, error: 'Enter a singer and song title within the length limits.' };
+    store.addMissingSongRequest({ ...request, id: randomUUID(), createdAt: new Date().toISOString() });
+    return { ok: true };
+  });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
   ipcMain.handle('host:import', async event => {
     guardHost(event.sender.id);

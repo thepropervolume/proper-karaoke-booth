@@ -5,6 +5,7 @@ import '@fontsource/nunito-sans/800.css';
 import { createRoot } from 'react-dom/client';
 import type { Command, ShowState, SongRequest } from '../domain/index';
 import { isVersionAllowed, visibleVersions } from '../domain/index';
+import type { MissingSongRequest } from '../domain/missing-request';
 import '../styles/main.scss';
 
 type Theme = 'night' | 'day' | 'system';
@@ -16,6 +17,8 @@ declare global {
       getState: () => Promise<ShowState>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
       importFiles: () => Promise<void>;
+      getMissingSongRequests: () => Promise<MissingSongRequest[]>;
+      addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
       command: (payload: Command) => Promise<Result>;
       openDisplay: () => Promise<void>;
     };
@@ -29,6 +32,10 @@ function App() {
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [selectedSingerId, setSelectedSingerId] = useState('');
   const [singerName, setSingerName] = useState('');
+  const [missingRequests, setMissingRequests] = useState<MissingSongRequest[]>([]);
+  const [missingSinger, setMissingSinger] = useState('');
+  const [missingTitle, setMissingTitle] = useState('');
+  const [missingArtist, setMissingArtist] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -43,6 +50,13 @@ function App() {
     window.tpv.getState().then(value => { if (alive) setState(current => !current || value.revision >= current.revision ? value : current); })
       .catch(error => { if (alive) setNotice(`Could not load the show: ${String(error)}`); });
     return () => { alive = false; unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void window.tpv.getMissingSongRequests().then(value => { if (alive) setMissingRequests(value); })
+      .catch(error => { if (alive) setNotice(`Could not load missing-song requests: ${String(error)}`); });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -100,6 +114,17 @@ function App() {
     if (!selectedSinger || !selectedVersion) return;
     void command({ type: 'request', requestId: crypto.randomUUID(), singerId: selectedSinger.id, versionId: selectedVersion.id }, 'Request added for review.');
   };
+  const requestMissingSong = (event: React.FormEvent) => {
+    event.preventDefault();
+    void run(async () => {
+      const result = await window.tpv.addMissingSongRequest({ singer: missingSinger, title: missingTitle, artist: missingArtist });
+      if (result.ok) {
+        setMissingSinger(''); setMissingTitle(''); setMissingArtist('');
+        setMissingRequests(await window.tpv.getMissingSongRequests());
+      }
+      return result;
+    }, 'Missing-song request saved.');
+  };
   const skip = () => {
     if (state?.playback && window.confirm('Skip this performance? This consumes the singer’s turn.'))
       void command({ type: 'skip', generationId: state.playback.generationId, confirmed: true });
@@ -138,11 +163,22 @@ function App() {
             <button type="submit" disabled={busy || !selectedVersion || !selectedSinger}>Add request</button>
           </form>
           {!state.singers.length && <p className="muted">Add a singer in the Singers section before requesting a song.</p>}
+          <h3>Can't find a song?</h3>
+          <p className="muted">Save a request for the host to review. This does not add it to the rotation.</p>
+          <form className="request-form" onSubmit={requestMissingSong}>
+            <label>Singer name<input value={missingSinger} onChange={e => setMissingSinger(e.target.value)} maxLength={100} required /></label>
+            <label>Song title<input value={missingTitle} onChange={e => setMissingTitle(e.target.value)} maxLength={200} required /></label>
+            <label>Artist (optional)<input value={missingArtist} onChange={e => setMissingArtist(e.target.value)} maxLength={200} /></label>
+            <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
+          </form>
         </>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button></div>; })}
           {!pending.length && <p className="empty">No requests waiting for review.</p>}
+          <h3>Missing-song requests</h3>
+          {missingRequests.map(request => <div className="track-row" key={request.id}><div><strong>{request.title}</strong><small>{request.artist ? `${request.artist} · ` : ''}{request.singer}</small></div></div>)}
+          {!missingRequests.length && <p className="empty">No missing-song requests yet.</p>}
         </>}
         {screen === 'singers' && <>
           <h2>Singers</h2><form className="inline-form" onSubmit={addSinger}><label>Singer name<input autoComplete="off" value={singerName} onChange={e => setSingerName(e.target.value)} placeholder="Enter a name" maxLength={100} /></label><button className="primary" disabled={busy || !singerName.trim()} type="submit">Add singer</button></form>
