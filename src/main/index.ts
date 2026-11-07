@@ -1,11 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, screen } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, type Command, type ShowState } from '../domain';
 import { normalizeMissingRequest } from '../domain/missing-request';
+import { metadataFromFilename } from '../domain/metadata';
 import { Store } from './store';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
@@ -143,12 +144,32 @@ async function fingerprint(path: string, signal: AbortSignal): Promise<string> {
   for await (const chunk of createReadStream(path, { signal })) hash.update(chunk as Buffer);
   return hash.digest('hex');
 }
-async function importFiles(): Promise<void> {
+async function importFiles(kind: 'files' | 'folder'): Promise<void> {
   if (!host) return;
-  const selection = await dialog.showOpenDialog(host, { title: 'Import local MP4 files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
+  const selection = await dialog.showOpenDialog(host, kind === 'folder'
+    ? { title: 'Import MP4 folder', properties: ['openDirectory'] }
+    : { title: 'Import local MP4 files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
   if (selection.canceled || shuttingDown) return;
+  // A folder import can take time; use one parsing rule for the entire batch.
+  const metadataFormat = 'artist-title';
   let duplicates = 0, failed = 0;
-  for (const path of selection.filePaths) {
+  // Do not follow symbolic links when traversing: they can form cycles or escape the chosen folder.
+  async function* candidates(paths: string[]): AsyncGenerator<string> {
+    for (const path of paths) {
+      if (shuttingDown) return;
+      if (kind === 'files') { yield path; continue; }
+      let entries;
+      try { entries = await readdir(path, { withFileTypes: true }); }
+      catch { failed++; continue; }
+      for (const entry of entries) {
+        const child = join(path, entry.name);
+        if (entry.isDirectory()) yield* candidates([child]);
+        else if (entry.isFile() && extname(entry.name).toLowerCase() === '.mp4') yield child;
+      }
+    }
+  }
+  let imported = 0;
+  for await (const path of candidates(selection.filePaths)) {
     if (shuttingDown) return;
     try {
       if (extname(path).toLowerCase() !== '.mp4' || !(await stat(path)).isFile()) { failed++; continue; }
@@ -156,19 +177,17 @@ async function importFiles(): Promise<void> {
       if (shuttingDown) return;
       if (store.byFingerprint(hash)) { duplicates++; continue; }
       const id = randomUUID();
-      const label = basename(path, extname(path));
-      const split = label.indexOf(' - ');
-      const artist = split > 0 ? label.slice(0, split).trim() : '';
-      const title = split > 0 ? label.slice(split + 3).trim() : label;
+      const { artist, title } = metadataFromFilename(basename(path, extname(path)), metadataFormat);
       const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision,
         actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: { id, title, artist, rating: 'unrated' } } });
       if (!result.outcome.ok) { failed++; continue; }
       store.save(result.state, [{ id, path, fingerprint: hash }]);
       state = result.state;
+      imported++;
       broadcast();
     } catch { failed++; }
   }
-  if (host && (duplicates || failed)) await dialog.showMessageBox(host, { type: failed ? 'warning' : 'info', message: 'Import finished', detail: `${duplicates} duplicate file(s) skipped; ${failed} file(s) could not be imported.` });
+  if (host && (kind === 'folder' || duplicates || failed)) await dialog.showMessageBox(host, { type: failed ? 'warning' : 'info', message: 'Import finished', detail: `${imported} file(s) imported; ${duplicates} duplicate file(s) skipped; ${failed} file(s) or folder(s) could not be read or imported.` });
 }
 async function serveMedia(request: Request): Promise<Response> {
   const playback = state.playback;
@@ -222,12 +241,13 @@ else {
     return { ok: true };
   });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
-  ipcMain.handle('host:import', async event => {
+  ipcMain.handle('host:import', async (event, kind: unknown) => {
     guardHost(event.sender.id);
+    if (kind !== undefined && kind !== 'files' && kind !== 'folder') throw new Error('Invalid import type.');
     if (importing) throw new Error('An import is already in progress.');
     importing = true;
     importAbort = new AbortController();
-    try { await importFiles(); }
+    try { await importFiles(kind === 'folder' ? 'folder' : 'files'); }
     finally { importing = false; importAbort = null; }
   });
   ipcMain.handle('host:command', (event, input: unknown) => {

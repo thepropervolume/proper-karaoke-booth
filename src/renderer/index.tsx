@@ -18,7 +18,7 @@ declare global {
     tpv: {
       getState: () => Promise<ShowState>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
-      importFiles: () => Promise<void>;
+      importFiles: (kind?: 'files' | 'folder') => Promise<void>;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
       addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
       command: (payload: Command) => Promise<Result>;
@@ -34,6 +34,7 @@ function App() {
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [selectedSingerId, setSelectedSingerId] = useState('');
   const [singerName, setSingerName] = useState('');
+  const [newRequestSingerName, setNewRequestSingerName] = useState('');
   const [missingRequests, setMissingRequests] = useState<MissingSongRequest[]>([]);
   const [missingSinger, setMissingSinger] = useState('');
   const [missingTitle, setMissingTitle] = useState('');
@@ -114,8 +115,21 @@ function App() {
   };
   const makeRequest = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedSinger || !selectedVersion) return;
-    void command({ type: 'request', requestId: crypto.randomUUID(), singerId: selectedSinger.id, versionId: selectedVersion.id }, 'Request added for review.');
+    if (!selectedVersion) return;
+    const name = newRequestSingerName.trim();
+    if (!selectedSinger && (selectedSingerId !== '__new__' || !name)) return;
+    void run(async () => {
+      let singerId = selectedSinger?.id;
+      if (!singerId) {
+        singerId = crypto.randomUUID();
+        const added = await window.tpv.command({ type: 'addSinger', singer: { id: singerId, name } });
+        if (!added.ok) return added;
+        // Retain the newly created singer even if the subsequent request fails.
+        setSelectedSingerId(singerId);
+        setNewRequestSingerName('');
+      }
+      return window.tpv.command({ type: 'request', requestId: crypto.randomUUID(), singerId, versionId: selectedVersion.id });
+    }, 'Request added for review.');
   };
   const requestMissingSong = (event: React.FormEvent) => {
     event.preventDefault();
@@ -151,7 +165,7 @@ function App() {
       {notice && <p className="notice" role="status">{notice}</p>}
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
-          <div className="section-heading"><h2>Song library</h2><button className="primary" disabled={busy} onClick={() => void run(() => window.tpv.importFiles())}>Import MP4</button></div>
+          <div className="section-heading"><h2>Song library</h2><div><button className="primary" disabled={busy} onClick={() => void run(() => window.tpv.importFiles('files'))}>Import MP4</button> <button disabled={busy} onClick={() => void run(() => window.tpv.importFiles('folder'))}>Import folder</button></div></div>
           <div className="library-toolbar"><input type="search" aria-label="Search library" placeholder="Search title, artist or filename" value={search} onChange={e => setSearch(e.target.value)} /></div>
           <div className="eyebrow">Title / artist <span className="muted"> · Local MP4</span></div>
           <div aria-label="Songs">
@@ -162,10 +176,10 @@ function App() {
             {!filtered.length && <p className="empty">{versions.length ? 'No songs match this search.' : 'Import a local MP4 to begin. Your original file stays in place.'}</p>}
           </div>
           <form className="request-form" onSubmit={makeRequest}>
-            <label>Singer for {selectedVersion ? `“${selectedVersion.title}”` : 'selected song'}<select value={selectedSingerId} onChange={e => setSelectedSingerId(e.target.value)}><option value="">Choose a singer</option>{state.singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select></label>
-            <button type="submit" disabled={busy || !selectedVersion || !selectedSinger}>Add request</button>
+            <label>Singer for {selectedVersion ? `“${selectedVersion.title}”` : 'selected song'}<select value={selectedSingerId} onChange={e => setSelectedSingerId(e.target.value)}><option value="">Choose a singer</option>{state.singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}<option value="__new__">Add a new singer…</option></select></label>
+            {selectedSingerId === '__new__' && <label>New singer name<input autoComplete="off" value={newRequestSingerName} onChange={e => setNewRequestSingerName(e.target.value)} maxLength={100} /></label>}
+            <button type="submit" disabled={busy || !selectedVersion || (!selectedSinger && !(selectedSingerId === '__new__' && newRequestSingerName.trim()))}>Add request</button>
           </form>
-          {!state.singers.length && <p className="muted">Add a singer in the Singers section before requesting a song.</p>}
           <h3>Can't find a song?</h3>
           <p className="muted">Save a request for the host to review. This does not add it to the rotation.</p>
           <form className="request-form" onSubmit={requestMissingSong}>

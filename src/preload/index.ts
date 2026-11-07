@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('tpv', {
     ipcRenderer.on('host:state', listener);
     return () => ipcRenderer.removeListener('host:state', listener);
   },
-  importFiles: () => ipcRenderer.invoke('host:import'),
+  importFiles: (kind?: 'files' | 'folder') => ipcRenderer.invoke('host:import', kind),
   getMissingSongRequests: () => ipcRenderer.invoke('host:get-missing-song-requests'),
   addMissingSongRequest: (request: unknown) => ipcRenderer.invoke('host:add-missing-song-request', request),
   command: (command: unknown) => ipcRenderer.invoke('host:command', command),
