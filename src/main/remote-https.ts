@@ -153,7 +153,10 @@ export async function startLanTransport(options: LanTransportOptions, createServ
     const error = (cause: Error) => reject(cause);
     server.once('error', error);
     server.listen({ host: address, port, exclusive: true }, () => {
-      server.on('error', cause => { server.close(); try { options.onError(cause); } catch { /* owner callbacks must not crash the host */ } });
+      server.on('error', cause => {
+        server.close(); server.closeAllConnections();
+        try { options.onError(cause); } catch { /* owner callbacks must not crash the host */ }
+      });
       server.off('error', error); resolve();
     });
   });

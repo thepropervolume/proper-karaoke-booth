@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer, request, type Server, type ServerOptions } from 'node:https';
 import type { RequestListener } from 'node:http';
-import { connect as tcpConnect } from 'node:net';
+import { connect as tcpConnect, type Socket } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
 import { test } from 'node:test';
 import { startLanTransport, type LanTransportOptions } from '../../src/main/remote-https';
@@ -107,34 +107,31 @@ test('join revision conflict is distinct only for the typed pre-commit failure',
 test('idle TLS connections expire and the listener limits concurrent sockets', async () => {
   const server = await startLanTransport({ ...base, timeoutMs: 250, maxConnections: 1 });
   const port = Number(new URL(server.origin).port);
+  // A paused readable socket need not emit close on FIN until it is drained.
+  // Subscribe before doing other awaits so a fast server close cannot be missed.
+  const waitForClose = (socket: Socket, message: string) => new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => { socket.destroy(); reject(new Error(message)); }, 5000);
+    socket.once('close', () => { clearTimeout(timer); resolve(); });
+    socket.resume();
+  });
   const first = tcpConnect(port, '127.0.0.1');
+  const firstClosed = waitForClose(first, 'TLS handshake did not time out');
   try {
     await new Promise<void>((resolve, reject) => { first.once('connect', resolve); first.once('error', reject); });
     const second = tcpConnect(port, '127.0.0.1');
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { second.destroy(); reject(new Error('Excess socket was not refused')); }, 2000);
-      second.once('close', () => { clearTimeout(timer); resolve(); });
-      second.once('error', () => { /* a reset is also a refusal */ });
-    });
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { first.destroy(); reject(new Error('TLS handshake did not time out')); }, 2000);
-      first.once('close', () => { clearTimeout(timer); resolve(); });
-    });
+    second.once('error', () => { /* a reset is also a refusal */ });
+    await waitForClose(second, 'Excess socket was not refused');
+    await firstClosed;
     const idle = tlsConnect({ host: '127.0.0.1', port, servername: 'localhost', ca: cert });
+    const idleClosed = waitForClose(idle, 'Idle connection did not time out');
     await new Promise<void>((resolve, reject) => { idle.once('secureConnect', resolve); idle.once('error', reject); });
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { idle.destroy(); reject(new Error('Idle connection did not time out')); }, 2000);
-      idle.once('close', () => { clearTimeout(timer); resolve(); });
-    });
+    await idleClosed;
     const slow = tlsConnect({ host: '127.0.0.1', port, servername: 'localhost', ca: cert });
+    const slowClosed = waitForClose(slow, 'Slow headers did not time out');
     await new Promise<void>((resolve, reject) => { slow.once('secureConnect', resolve); slow.once('error', reject); });
     slow.write('POST /api/v1/snapshot HTTP/1.1\r\nX-Slow: ');
     const drip = setInterval(() => slow.write('x'), 50);
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { clearInterval(drip); slow.destroy(); reject(new Error('Slow headers did not time out')); }, 2500);
-      slow.once('close', () => { clearTimeout(timer); clearInterval(drip); resolve(); });
-      slow.resume();
-    });
+    try { await slowClosed; } finally { clearInterval(drip); }
   } finally { first.destroy(); await server.close(); }
 });
 
