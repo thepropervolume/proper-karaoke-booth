@@ -4,7 +4,7 @@ import '@fontsource/nunito-sans/700.css';
 import '@fontsource/nunito-sans/800.css';
 import { createRoot } from 'react-dom/client';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
-import { isVersionAllowed, orderedFuture, visibleVersions } from '../domain/index';
+import { isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
 import { DEFAULT_SETTINGS, type Settings } from '../domain/settings';
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
 import type { MissingSongRequest } from '../domain/missing-request';
@@ -16,6 +16,7 @@ import { SongRequestDialog } from './SongRequestDialog';
 import { Tooltip } from './Tooltip';
 import { SettingsDialog } from './SettingsDialog';
 import { EditMetadataDialog } from './EditMetadataDialog';
+import type { BumperInfo } from './BumperPanel';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
 
@@ -41,6 +42,12 @@ declare global {
       revealConfigFile: (kind: 'settings' | 'shortcuts') => Promise<void>;
       chooseDisplayLogo: () => Promise<boolean>;
       clearDisplayLogo: () => Promise<void>;
+      getBumpers: () => Promise<BumperInfo>;
+      addBumpers: () => Promise<BumperInfo>;
+      removeBumper: (id: string) => Promise<BumperInfo>;
+      startBumper: (id: string) => Promise<BumperInfo>;
+      stopBumper: () => Promise<BumperInfo>;
+      onBumperState: (callback: (state: BumperInfo) => void) => () => void;
       revealMedia: (versionId: string) => Promise<void>;
     };
   }
@@ -48,6 +55,7 @@ declare global {
 
 function App() {
   const [state, setState] = useState<ShowState | null>(null);
+  const [clockMs, setClockMs] = useState(() => Date.now());
   const [screen, setScreen] = useState<Screen>('library');
   const [search, setSearch] = useState('');
   const searchInput = useRef<HTMLInputElement>(null);
@@ -74,6 +82,17 @@ function App() {
   const [shortcutsPath, setShortcutsPath] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingVersion, setEditingVersion] = useState<Version | null>(null);
+
+  useEffect(() => {
+    const deadline = state?.nextStartAtMs ?? 0;
+    setClockMs(Date.now());
+    if (deadline <= Date.now()) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now(); setClockMs(now);
+      if (now >= deadline) window.clearInterval(timer);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [state?.nextStartAtMs]);
 
   useEffect(() => {
     let alive = true;
@@ -147,6 +166,7 @@ function App() {
   const eligibleFuture = state && future.some(r => r.status === 'accepted' && isVersionAllowed(state, r.versionId));
   const staged = state?.requests.find(r => r.id === state.stagedRequestId);
   const active = state?.requests.find(r => r.id === state.playback?.requestId);
+  const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
   const describe = (request?: SongRequest) => {
     const singer = state?.singers.find(s => s.id === request?.singerId)?.name ?? 'Unknown singer';
     const song = state?.versions.find(v => v.id === request?.versionId);
@@ -164,6 +184,8 @@ function App() {
   const command = (payload: Command, success?: string) => run(() => window.tpv.command(payload), success);
   const playPause = () => run(async () => {
     if (state?.playback) return window.tpv.command({ type: state.playback.status === 'paused' ? 'resume' : 'pause' });
+    const remaining = state ? remainingPauseSeconds(state, Date.now()) : 0;
+    if (remaining) return { ok: false, error: `Wait ${remaining} seconds before starting the next song.` };
     if (!state?.stagedRequestId) {
       const staged = await window.tpv.command({ type: 'stage' });
       if (!staged.ok) return staged;
@@ -312,12 +334,12 @@ function App() {
     <footer className="transport" aria-label="Playback controls">
       <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Staged' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Stage an accepted request to begin'}</small></div>
       <div className="transport__controls">
-        <Tooltip text={`Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && !staged && !eligibleFuture)} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
+        <Tooltip text={`Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text="Stop"><button className="icon-button" aria-label="Stop" disabled={busy || !active} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
         <Tooltip text="Skip"><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
         <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" value={Math.round(settings.masterVolume * 100)} onChange={event => { const next = { ...settings, masterVolume: Number(event.target.value) / 100 }; setSettings(next); void window.tpv.saveSettings(next).catch(error => setNotice(`Could not save volume: ${String(error)}`)); }} /></label>
       </div>
-      <div className="transport__status">Key, tempo, seek, filler and output selection are not yet available in this rehearsal build.</div>
+      <div className="transport__status" role="status">{!active && pauseRemaining > 0 ? `Pause interval: ${pauseRemaining}s remaining. Press Play when ready.` : 'Key, tempo, seek and filler are not yet available in this rehearsal build.'}</div>
     </footer>
     {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} onClose={() => setSettingsOpen(false)} onSave={async value => { const saved = await window.tpv.saveSettings(value); setSettings(saved); }} />}
     {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist) => {

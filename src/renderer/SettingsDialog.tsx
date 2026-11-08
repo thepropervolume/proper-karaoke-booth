@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Settings } from '../domain/settings';
+import { AudioOutputPicker } from './AudioOutputPicker';
+import { BumperControls } from './BumperPanel';
 import '../styles/settings.scss';
 
 export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: {
@@ -60,9 +62,12 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
         <details className="settings-group">
           <summary>Audio Controls</summary>
           <div className="settings-group__content">
+            <AudioOutputPicker value={draft.audioOutputId} onChange={audioOutputId => setDraft({ ...draft, audioOutputId })} />
             <label>Playback Volume <input type="range" aria-label="Playback Volume" min="0" max="100" step="1" value={Math.round(draft.masterVolume * 100)} onChange={event => setDraft({ ...draft, masterVolume: Number(event.target.value) / 100 })} /><span>{Math.round(draft.masterVolume * 100)}%</span></label>
-            <p className="muted">Controls the song video volume. Changes apply when you save. Audio uses the system's current output.</p>
-            <p className="muted">Output-device selection, pause intervals and bumper audio are not available yet.</p>
+            <p className="muted">Controls song and bumper volume. Changes apply when you save.</p>
+            <label>Pause Interval (seconds)<input type="number" min="0" max="300" step="1" value={draft.pauseIntervalSeconds} onChange={event => setDraft({ ...draft, pauseIntervalSeconds: Number(event.target.value) })} /></label>
+            <p className="muted">Wait this long after a song ends or is skipped before starting the next. The host still presses Play; 0 disables the interval.</p>
+            <BumperControls />
           </div>
         </details>
         <details className="settings-group">

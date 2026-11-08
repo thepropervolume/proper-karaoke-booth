@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld('tpv', {
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),
   clearDisplayLogo: () => ipcRenderer.invoke('host:clear-display-logo'),
+  getBumpers: () => ipcRenderer.invoke('host:get-bumpers'),
+  addBumpers: () => ipcRenderer.invoke('host:add-bumpers'),
+  removeBumper: (id: string) => ipcRenderer.invoke('host:remove-bumper', id),
+  startBumper: (id: string) => ipcRenderer.invoke('host:start-bumper', id),
+  stopBumper: () => ipcRenderer.invoke('host:stop-bumper'),
+  onBumperState: (callback: (state: unknown) => void) => {
+    const listener = (_event: unknown, state: unknown) => callback(state);
+    ipcRenderer.on('host:bumper-state', listener);
+    return () => ipcRenderer.removeListener('host:bumper-state', listener);
+  },
   subscribe: (callback: (state: unknown) => void) => {
     const listener = (_event: unknown, state: unknown) => callback(state);
     ipcRenderer.on('host:state', listener);
@@ -33,6 +43,14 @@ contextBridge.exposeInMainWorld('tpvDisplay', {
   ready: () => ipcRenderer.send('display:ready'),
   shortcut: (action: 'search' | 'playPause') => ipcRenderer.send('display:shortcut', action),
   event: (event: unknown) => ipcRenderer.send('display:event', event),
+  bumperAck: (value: unknown) => ipcRenderer.send('display:bumper-ack', value),
+  bumperEvent: (value: unknown) => ipcRenderer.send('display:bumper-event', value),
+  bumperDeviceChange: () => ipcRenderer.send('display:bumper-devicechange'),
+  onBumperCommand: (callback: (request: unknown) => void) => {
+    const listener = (_event: unknown, request: unknown) => callback(request);
+    ipcRenderer.on('display:bumper-command', listener);
+    return () => ipcRenderer.removeListener('display:bumper-command', listener);
+  },
   subscribe: (callback: (state: unknown) => void) => {
     const listener = (_event: unknown, state: unknown) => callback(state);
     ipcRenderer.on('display:state', listener);

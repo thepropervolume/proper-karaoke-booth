@@ -19,6 +19,9 @@
   .settings-group summary { padding: .7rem .8rem; cursor: pointer; font-weight: 700; }
   .settings-group__content { display: grid; gap: .7rem; padding: 0 .8rem .8rem; }
   .settings-logo-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .bumper-panel { display: grid; gap: .6rem; border-top: 1px solid var(--line); padding-top: .8rem; }
+  .bumper-panel h3 { margin: 0; }
+  .bumper-panel__actions { display: flex; flex-wrap: wrap; gap: .5rem; }
   .settings-file { width: auto; min-height: 0; padding: .2rem 0; color: var(--accent); text-align: left; text-decoration: underline; border: 0; background: transparent; font-weight: 400; }
   .settings-tooltip { position: relative; display: inline-block; max-width: 100%; }
   .settings-tooltip [role='tooltip'] { position: absolute; z-index: 10; left: 0; bottom: calc(100% + .3rem); width: max-content; max-width: min(28rem, 75vw); padding: .5rem .65rem; border: 1px solid var(--accent); border-radius: .35rem; color: var(--text); background: var(--panel-raised); box-shadow: 0 .25rem .75rem #0008; overflow-wrap: anywhere; visibility: hidden; pointer-events: none; }

@@ -7,7 +7,7 @@ The current app is operated by the host on a computer. There is not yet a singer
 1. Tell the host your name and the song or artist you would like to sing.
 2. The host searches the local library and double-clicks a song. They can choose your name or enter a new name in the request dialog.
 3. Requests are approved automatically by default. If the host has switched to manual approval, the request waits for their review before joining the queue.
-4. The host starts the performance when it is your turn. Queue order depends on whether the host selected singer rotation or first requested, first played. If enabled, the singer display shows upcoming singers.
+4. The host starts the performance when it is your turn. Queue order depends on whether the host selected singer rotation or first requested, first played. If enabled, the singer display shows upcoming singers; the host may also set a gap between songs. The host starts the next song after the gap; it does not start automatically.
 
 ## Ask for a song that is missing
 

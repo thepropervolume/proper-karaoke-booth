@@ -4,16 +4,21 @@ import { createReadStream, existsSync } from 'node:fs';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, visibleVersions, type Command, type ShowState } from '../domain';
+import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
 import type { HistoryEntry } from '../domain/collections';
 import { normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
 import { Store } from './store';
 import { readSettings, writeSettings } from './settings';
-import type { Settings } from '../domain/settings';
+import { parseSettings, type Settings } from '../domain/settings';
 import { DEFAULT_SHORTCUTS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts } from './shortcuts';
 import { loadLogo, saveLogo } from './logo';
+import { BumperCatalog } from './bumper-catalog';
+import { BumperController, type BumperTrack } from './bumper-controller';
+import { BumperDisplayOutput } from './bumper-display-output';
+import { builtInBumperTracks } from './bumper-builtins';
+import { serveBumper } from './bumper-media';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -35,6 +40,12 @@ let displayReady = false;
 let choosingDisplay = false;
 let shuttingDown = false;
 let importing = false;
+let bumperCatalog: BumperCatalog | null = null;
+let bumperOutput: BumperDisplayOutput | null = null;
+let bumper: BumperController | null = null;
+let builtInBumpers: BumperTrack[] = [];
+let bumperError = '';
+let playbackTransition = false;
 let importAbort: AbortController | null = null;
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
@@ -42,9 +53,17 @@ const uiRoot = join(__dirname, '../ui/src');
 function senderIsHost(id: number): boolean { return !!host && !host.isDestroyed() && host.webContents.id === id; }
 function senderIsDisplay(id: number): boolean { return !!display && !display.isDestroyed() && display.webContents.id === id; }
 function guardHost(id: number): void { if (!senderIsHost(id)) throw new Error('Operation unavailable'); }
+function bumperInfo() {
+  return { tracks: [...builtInBumpers.map(({ id, name }) => ({ id, name, builtIn: true })), ...(bumperCatalog?.list() ?? []).map(track => ({ ...track, builtIn: false }))],
+    status: bumper?.getState() ?? { status: 'stopped', trackId: null, generation: null },
+    outputReady: !!bumper && displayReady && !!settings.audioOutputId && settings.audioOutputId !== 'default',
+    karaokeActive: !!state.playback || playbackTransition, error: bumperError };
+}
+function publishBumper(): void { if (host && !host.isDestroyed()) host.webContents.send('host:bumper-state', bumperInfo()); }
 function broadcast(): void {
   if (host && !host.isDestroyed()) host.webContents.send('host:state', state);
   publishDisplay();
+  publishBumper();
 }
 function publishDisplay(): void {
   if (!display || display.isDestroyed() || !displayReady) return;
@@ -57,12 +76,12 @@ function publishDisplay(): void {
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
   const current = playback && request && version && singer && store.media(version.id) ? { generation: playback.generationId, status: playback.status,
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
-    position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume } : null;
-  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts });
+    position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
+  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume });
 }
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
   const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
-    expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings);
+    expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings, Date.now());
   let history: HistoryEntry | undefined;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip') && state.playback) {
     const request = state.requests.find(r => r.id === state.playback?.requestId);
@@ -76,6 +95,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   }
   store.save(result.state, [], history);
   state = result.state;
+  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
   broadcast();
   return result.outcome;
 }
@@ -135,7 +155,11 @@ async function createDisplay(): Promise<void> {
     displayId = screen.getDisplayMatching(display.getBounds()).id;
     displayOutputIds.add(displayId);
   });
-  display.on('closed', () => { display = null; displayReady = false; displayId = null; displayOutputIds.clear(); pauseForOutputLoss(); });
+  display.on('closed', () => {
+    display = null; displayReady = false; displayId = null; displayOutputIds.clear();
+    bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
+    pauseForOutputLoss(); publishBumper();
+  });
   void display.loadFile(join(uiRoot, 'display/index.html'));
 }
 function isRecord(x: unknown): x is Record<string, unknown> { return !!x && typeof x === 'object' && !Array.isArray(x); }
@@ -159,12 +183,36 @@ function validateCommand(value: unknown): Command | null {
 }
 function playable(command: Command): string | null {
   if (command.type !== 'start' && command.type !== 'resume') return null;
+  const remaining = remainingPauseSeconds(state, Date.now());
+  if (command.type === 'start' && remaining) return `Wait ${remaining} seconds before starting the next song.`;
   if (!display || display.isDestroyed() || !displayReady) return 'Open the singer display before starting or resuming.';
   const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
   const request = state.requests.find(r => r.id === requestId);
   const media = request && store.media(request.versionId);
   if (!media || !existsSync(media.path)) return 'The source file is unavailable. Relinking is not yet supported.';
   return null;
+}
+async function executeHostCommand(command: Command): Promise<{ ok: boolean; error?: string }> {
+  if (playbackTransition && ['start', 'resume', 'pause', 'stop', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
+    return { ok: false, error: 'Wait for the current playback transition to finish.' };
+  const initial = playable(command);
+  if (initial) return { ok: false, error: initial };
+  if (command.type === 'start' || command.type === 'resume') {
+    playbackTransition = true; publishBumper();
+    try {
+      await bumper?.karaokeStarting();
+      const reason = playable(command);
+      if (reason) { if (!state.playback) bumper?.karaokeEnded(); return { ok: false, error: reason }; }
+      const result = perform(command);
+      if (!result.ok && !state.playback) bumper?.karaokeEnded();
+      return result.ok ? { ok: true } : { ok: false, error: result.message };
+    } catch (error) {
+      if (!state.playback) bumper?.karaokeEnded();
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally { playbackTransition = false; publishBumper(); }
+  }
+  const result = perform(command);
+  return result.ok ? { ok: true } : { ok: false, error: result.message };
 }
 async function fingerprint(path: string, signal: AbortSignal): Promise<string> {
   const hash = createHash('sha256');
@@ -222,8 +270,9 @@ async function importFiles(kind: 'files' | 'folder'): Promise<void> {
   if (host && (kind === 'folder' || duplicates || failed || ambiguous)) await dialog.showMessageBox(host, { type: failed || ambiguous ? 'warning' : 'info', message: 'Import finished', detail: `${imported} file(s) imported; ${duplicates} duplicate file(s) skipped; ${failed} file(s) or folder(s) could not be read or imported.${ambiguous ? ` ${ambiguous} song(s) matched multiple patterns or possible splits; review their metadata in the library.` : ''}` });
 }
 async function serveMedia(request: Request): Promise<Response> {
-  const playback = state.playback;
   const url = new URL(request.url);
+  if (url.hostname === 'bumper') return bumper ? serveBumper(request, bumper.getState(), [...builtInBumpers, ...(bumperCatalog?.forPlayback() ?? [])]) : new Response(null, { status: 404 });
+  const playback = state.playback;
   if (request.method !== 'GET' || url.hostname !== 'play' || !playback || url.pathname !== `/${encodeURIComponent(playback.generationId)}`) return new Response(null, { status: 404 });
   const song = state.requests.find(r => r.id === playback.requestId);
   const media = song && store.media(song.versionId);
@@ -270,6 +319,16 @@ else {
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
+  try {
+    bumperCatalog = new BumperCatalog(join(app.getPath('userData'), 'bumper-tracks.json'));
+    builtInBumpers = builtInBumperTracks(join(app.getPath('userData'), 'bumper-builtins'));
+    bumperOutput = new BumperDisplayOutput(request => {
+      if (!display || display.isDestroyed() || !displayReady) throw new Error('Open the singer display first.');
+      display.webContents.send('display:bumper-command', request);
+    }, () => settings.masterVolume, () => settings.audioOutputId);
+    bumper = new BumperController(bumperOutput, () => [...builtInBumpers, ...(bumperCatalog?.forPlayback() ?? [])], publishBumper);
+    if (state.playback) await bumper.karaokeStarting();
+  } catch (error) { bumper = null; bumperOutput = null; bumperError = error instanceof Error ? error.message : String(error); }
   protocol.handle('tpv-media', serveMedia);
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
@@ -295,12 +354,20 @@ else {
     return { ok: true };
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
-  ipcMain.handle('host:save-settings', (event, value: unknown) => {
+  ipcMain.handle('host:save-settings', async (event, value: unknown) => {
     guardHost(event.sender.id);
-    settings = writeSettings(settingsPath, value);
-    settingsCreated = false;
-    publishDisplay();
-    return settings;
+    const proposed = parseSettings(value);
+    const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
+    if (changingOutput && playbackTransition) throw new Error('Wait for the current playback transition.');
+    if (changingOutput) { playbackTransition = true; publishBumper(); }
+    try {
+      if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
+      settings = writeSettings(settingsPath, proposed);
+      settingsCreated = false;
+      if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
+      publishDisplay();
+      return settings;
+    } finally { if (changingOutput) { playbackTransition = false; publishBumper(); } }
   });
   ipcMain.handle('host:reveal-config-file', (event, kind: unknown) => {
     guardHost(event.sender.id);
@@ -329,6 +396,33 @@ else {
     publishDisplay();
   });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
+  ipcMain.handle('host:get-bumpers', event => { guardHost(event.sender.id); return bumperInfo(); });
+  ipcMain.handle('host:add-bumpers', async event => {
+    guardHost(event.sender.id);
+    if (!host || !bumper || !bumperCatalog) throw new Error(bumperError || 'Bumper music is unavailable.');
+    const selection = await dialog.showOpenDialog(host, { title: 'Choose bumper music', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Audio', extensions: ['mp3', 'm4a', 'wav', 'ogg'] }] });
+    if (selection.canceled) return bumperInfo();
+    const errors: string[] = [];
+    for (const path of selection.filePaths) { try { bumperCatalog.addSelectedFile(path); } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); } }
+    publishBumper();
+    if (errors.length) throw new Error(`Some files could not be added: ${errors.join(' ')}`);
+    return bumperInfo();
+  });
+  ipcMain.handle('host:remove-bumper', async (event, id: unknown) => {
+    guardHost(event.sender.id);
+    if (!bumper || !bumperCatalog || typeof id !== 'string') throw new Error('Bumper music is unavailable.');
+    await bumper.removeTrack(id, () => bumperCatalog!.remove(id)); publishBumper(); return bumperInfo();
+  });
+  ipcMain.handle('host:start-bumper', async (event, id: unknown) => {
+    guardHost(event.sender.id);
+    if (!bumper || typeof id !== 'string' || state.playback || playbackTransition) throw new Error('Bumper music is unavailable while a song is active.');
+    if (!displayReady || !settings.audioOutputId || settings.audioOutputId === 'default') throw new Error('Choose an explicit audio output and open the singer display first.');
+    bumperError = '';
+    await bumper.setOutputAvailable(true);
+    if (!await bumper.start(id)) throw new Error('Could not start bumper music.');
+    publishBumper(); return bumperInfo();
+  });
+  ipcMain.handle('host:stop-bumper', async event => { guardHost(event.sender.id); if (bumper) await bumper.stop(); publishBumper(); return bumperInfo(); });
   ipcMain.handle('host:import', async (event, kind: unknown) => {
     guardHost(event.sender.id);
     if (kind !== undefined && kind !== 'files' && kind !== 'folder') throw new Error('Invalid import type.');
@@ -338,33 +432,45 @@ else {
     try { await importFiles(kind === 'folder' ? 'folder' : 'files'); }
     finally { importing = false; importAbort = null; }
   });
-  ipcMain.handle('host:command', (event, input: unknown) => {
+  ipcMain.handle('host:command', async (event, input: unknown) => {
     guardHost(event.sender.id);
     const command = validateCommand(input);
     if (!command) return { ok: false, error: 'Invalid or unsupported command.' };
-    const reason = playable(command);
-    if (reason) return { ok: false, error: reason };
-    const result = perform(command);
-    return result.ok ? { ok: true } : { ok: false, error: result.message };
+    return executeHostCommand(command);
   });
-  ipcMain.on('display:ready', event => { if (senderIsDisplay(event.sender.id)) { displayReady = true; publishDisplay(); } });
-  ipcMain.on('display:shortcut', (event, action: unknown) => {
+  ipcMain.on('display:ready', event => { if (senderIsDisplay(event.sender.id)) { displayReady = true; bumperOutput?.displayReady(); void bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default'); publishDisplay(); publishBumper(); } });
+  ipcMain.on('display:bumper-ack', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) bumperOutput?.acknowledge(value); });
+  ipcMain.on('display:bumper-devicechange', event => {
+    if (!senderIsDisplay(event.sender.id) || !bumper) return;
+    void bumper.setOutputAvailable(false).catch(error => { bumperError = String(error); }).finally(publishBumper);
+  });
+  ipcMain.on('display:bumper-event', (event, value: unknown) => {
+    if (!senderIsDisplay(event.sender.id) || !bumper || !isRecord(value) || typeof value.generation !== 'string') return;
+    if (value.type === 'ended') void bumper.ended(value.generation).catch(error => { bumperError = String(error); publishBumper(); });
+    else if (value.type === 'error' && bumper.getState().generation === value.generation) {
+      bumperError = 'Bumper audio could not play or its output changed. Check the output and try again.';
+      void bumper.setOutputAvailable(false).catch(error => { bumperError = String(error); }).finally(publishBumper);
+    }
+  });
+  ipcMain.on('display:shortcut', async (event, action: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !displayReady) return;
     if (action === 'search') {
       if (host && !host.isDestroyed()) { if (host.isMinimized()) host.restore(); host.show(); host.focus(); host.webContents.send('host:focus-search'); }
     } else if (action === 'playPause') {
-      if (!state.playback && !state.stagedRequestId && !perform({ type: 'stage' }).ok) return;
+      if (!state.playback && !state.stagedRequestId && !(await executeHostCommand({ type: 'stage' })).ok) return;
       const command: Command = state.playback ? { type: state.playback.status === 'paused' ? 'resume' : 'pause' } : { type: 'start', generationId: randomUUID() };
-      const reason = playable(command);
-      if (reason) { if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: reason }); }
-      else perform(command);
+      const result = await executeHostCommand(command);
+      if (!result.ok && host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: result.error || 'Playback could not start.' });
     }
   });
   ipcMain.on('display:event', (event, value: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !isRecord(value) || !state.playback || value.generation !== state.playback.generationId) return;
     if (typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);
     if (value.type === 'ended' && state.playback.status === 'playing') perform({ type: 'complete', generationId: state.playback.generationId }, 'engine');
-    else if (value.type === 'error') pauseForOutputLoss();
+    else if (value.type === 'output-error') {
+      pauseForOutputLoss();
+      if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Audio output needs attention', detail: typeof value.message === 'string' ? value.message.slice(0, 500) : 'Choose the output in Preferences and resume when ready.' });
+    } else if (value.type === 'error') pauseForOutputLoss();
   });
   screen.on('display-removed', (_event, removed) => {
     if (displayOutputIds.has(removed.id) && display && !display.isDestroyed()) {

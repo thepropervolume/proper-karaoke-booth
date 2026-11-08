@@ -43,9 +43,9 @@ try {
   const effectiveProfile = await app.evaluate(({ app }) => app.getPath('userData'));
   assert.equal(await realpath(effectiveProfile), canonicalProfile, 'Refusing to interact: Electron userData is not the disposable profile.');
   await app.evaluate(({ dialog }, paths) => {
-    dialog.showOpenDialog = async (_window, options) => ({ canceled: false, filePaths: [options?.title === 'Choose singer display logo' ? paths.logo : paths.video] });
+    dialog.showOpenDialog = async (_window, options) => ({ canceled: false, filePaths: [options?.title === 'Choose singer display logo' ? paths.logo : options?.title === 'Choose bumper music' ? paths.bumper : paths.video] });
     dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
-  }, { video: copiedFixture, logo: logoFixture });
+  }, { video: copiedFixture, logo: logoFixture, bumper: join(canonicalProfile, 'bumper-builtins', 'builtin-ambient-v1.wav') });
   const host = await app.firstWindow();
   const untilState = async (predicate, description) => {
     for (let attempt = 0; attempt < 200; attempt++) {
@@ -70,8 +70,15 @@ try {
   await host.getByText('Singer Display', { exact: true }).click();
   await host.getByLabel('Show the next singers').check();
   await host.getByRole('button', { name: 'Choose logo…' }).click();
+  await host.getByText('Audio Controls', { exact: true }).click();
+  await host.getByLabel('Pause Interval (seconds)').fill('2');
+  const outputPicker = host.getByRole('combobox', { name: 'Output Device' });
+  await outputPicker.waitFor();
+  const availableOutputs = await outputPicker.locator('option').evaluateAll(options => options.map(option => option.value).filter(Boolean));
+  if (availableOutputs.length) await outputPicker.selectOption(availableOutputs[0]);
   await host.getByRole('button', { name: 'Save preferences' }).click();
   assert.deepEqual((await host.evaluate(() => window.tpv.getSettings())).settings.metadataTemplates, ['${DJ Code} - ${Artist} - ${Track Name}']);
+  if (availableOutputs.length) assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.audioOutputId, availableOutputs[0]);
   await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
   const song = (await untilState(state => state.versions.length === 1, 'import')).versions[0];
   assert.equal(song.artist, 'Nada Surf');
@@ -140,12 +147,29 @@ try {
   await display.locator('video').waitFor({ state: 'attached' });
   await display.getByText('Coming up: QA Singer').waitFor();
   await display.waitForFunction(() => { const logo = document.querySelector('#idle-logo'); return logo && !logo.hidden && logo.complete && logo.naturalWidth > 0; });
+  await host.getByRole('button', { name: 'Preferences', exact: true }).click();
+  await host.getByText('Audio Controls', { exact: true }).click();
+  const bumperPanel = host.getByRole('region', { name: 'Bumper music' });
+  await bumperPanel.getByRole('button', { name: 'Add audio (0/5)' }).click();
+  await bumperPanel.getByRole('button', { name: 'Add audio (1/5)' }).waitFor();
+  if (availableOutputs.length) {
+    await bumperPanel.getByRole('button', { name: 'Play bumper' }).click();
+    await host.waitForFunction(async () => (await window.tpv.getBumpers()).status.status === 'playing');
+  }
+  await host.getByRole('button', { name: 'Cancel', exact: true }).click();
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await untilState(state => state.playback?.status === 'playing', 'playback');
+  if (availableOutputs.length) assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped', 'Bumper audio must stop before karaoke starts.');
   await display.waitForFunction(() => { const v = document.querySelector('video'); return v && v.videoWidth > 0 && !v.paused; }, null, { timeout: 15000 });
+  if (availableOutputs.length) await display.waitForFunction(id => document.querySelector('video')?.sinkId === id, availableOutputs[0]);
   await host.getByLabel('Global Volume').fill('45');
   await display.waitForFunction(() => Math.abs(document.querySelector('video').volume - 0.45) < 0.001);
   assert.equal(await display.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight), true);
+  await display.evaluate(() => navigator.mediaDevices.dispatchEvent(new Event('devicechange')));
+  await untilState(state => state.playback?.status === 'paused', 'audio device change pause');
+  assert.equal(await display.locator('video').evaluate(video => video.muted && video.paused), true);
+  await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
+  await untilState(state => state.playback?.status === 'playing', 'explicit resume after device change');
   await display.bringToFront();
   await display.keyboard.press('Space');
   await untilState(state => state.playback?.status === 'paused', 'pause');
@@ -154,8 +178,14 @@ try {
   await untilState(state => state.playback?.status === 'playing', 'resume');
   await display.waitForFunction(() => document.querySelector('video')?.paused === false);
   await host.bringToFront();
+  await requestSong();
+  await untilState(state => state.requests.some(r => r.status === 'accepted'), 'next song queued');
   await host.getByRole('button', { name: 'Skip', exact: true }).click();
   await untilState(state => state.requests.some(r => r.status === 'skipped'), 'skip');
+  await host.waitForFunction(() => document.querySelector('button[aria-label="Play/Pause"]')?.disabled);
+  assert.equal(await host.getByRole('button', { name: 'Play/Pause', exact: true }).isDisabled(), true, 'The inter-song interval must block starting the next song.');
+  await host.waitForFunction(() => !document.querySelector('button[aria-label="Play/Pause"]')?.disabled, null, { timeout: 5000 });
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'Ending the interval must not autoplay.');
   await host.getByRole('button', { name: 'Playlists', exact: true }).click();
   await host.getByRole('button', { name: 'History', exact: true }).click();
   await host.getByText('QA Singer', { exact: false }).last().waitFor();
@@ -169,7 +199,7 @@ try {
   await restored.waitForFunction(() => !!window.tpv);
   const restoredHistory = (await restored.evaluate(() => window.tpv.getCollections())).history;
   assert.ok(restoredHistory.some(h => h.singerId === singer.id && h.versionId === song.id && h.outcome === 'skipped'), 'History did not persist across restart.');
-  console.log('PASS: isolated preferences/template import, song selection/double-click request, queue Delete, singer-display pause/resume and history. Audio was muted.');
+  console.log(`PASS: isolated preferences/template import, song selection/double-click request, queue Delete, output routing/device-change pause, inter-song gap, bumper file selection${availableOutputs.length ? ' and bumper-to-karaoke transition' : ' (bumper playback skipped: no explicit output)'}, singer-display pause/resume and history. Audio was muted.`);
 } finally {
   if (app) await app.close().catch(() => {});
   // Only the exact directory created by mkdtemp for this run is removed.

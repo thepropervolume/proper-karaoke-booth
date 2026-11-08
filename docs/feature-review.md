@@ -4,16 +4,16 @@ Reviewed 6 November 2026 against the local working files based on commit `d258d1
 
 ## Changes made during this review
 
-On 7 November the host gained collapsible preferences, ordered filename/folder templates with ambiguity indicators, selectable songs and queue items, double-click requests, playlist/history views, volume, and optional next-singer and logo display. A Windows build and two isolated, muted synthetic rehearsals passed; physical output and hot-plug tests remain open. Genre metadata, bumper music, output-device selection, inter-song pauses and remote queueing are not yet implemented.
+On 7 November the host gained collapsible preferences, ordered filename/folder templates with ambiguity indicators, selectable songs and queue items, double-click requests, playlist/history views, volume and output selection, and optional next-singer and logo display. A Windows build and isolated, muted synthetic rehearsals passed; physical output and hot-plug tests remain open. The host can set a 0–300 second inter-song gap and manually start experimental bumper music on an explicitly selected output. Genre metadata and remote queueing are not yet implemented. Bumper audio and device loss still need physical verification.
 
-The working copy now includes singer-display Space and cross-window search shortcuts, accessible transport/display icons, file and recursive folder import, inline singer creation, preferences and three layouts, default auto-approval, FIFO and singer-rotation choices, local artist/title edits and filename parsing options, and host entry of missing-song requests into SQLite. It also creates a keybindings JSON file for search and play/pause. These changes have domain/database tests and type checking, but still require a complete Electron build and real Windows display/audio testing. The checklist retains items that need that verification or further work. In particular, metadata edits do not yet write embedded file tags; missing-song requests are entered locally by the host, not by remote singers; and shortcut customization does not yet cover every action.
+The working copy now includes singer-display Space and cross-window search shortcuts, accessible transport/display icons, file and recursive folder import, inline singer creation, preferences and three layouts, default auto-approval, FIFO and singer-rotation choices, local artist/title edits and filename parsing options, and host entry of missing-song requests into SQLite. It also creates a keybindings JSON file for search and play/pause. These changes have domain/database tests, type checking and an isolated Windows Electron build and muted rehearsal; they still require real Windows display and audio testing. The checklist retains items that need that verification or further work. In particular, metadata edits do not yet write embedded file tags; missing-song requests are entered locally by the host, not by remote singers; and shortcut customization does not yet cover every action.
 
 ## What exists today
 
 - Local MP4 import with content fingerprinting and duplicate detection; filename-derived artist/title; local SQLite state and paused recovery.
 - Singer records, pending requests, a three-future-request limit, simple round-based rotation, staged songs and host transport controls.
 - A separate singer display, display selection, theme choices, and a policy domain foundation.
-- Domain and store tests plus a Linux rehearsal smoke script. The existing README says Windows/macOS, audio routing, and physical display recovery need verification.
+- Domain and store tests and isolated Linux and Windows rehearsal scripts. Physical audio routing, device loss, display recovery and macOS still need verification.
 
 ## Priority 0 — dependable show operation
 
@@ -67,7 +67,8 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Add volume and explicit audio-output device selection, with loss and rerouting behavior tested on real hardware.
 - [ ] Add pitch/key and tempo controls, with per-song and per-singer defaults and reset.
 - [ ] Support independent lead/backing vocal controls only for sources that actually provide separate stems or compatible multiplex audio.
-- [ ] Add intermission/filler music, transitions and volume/fade controls.
+- [ ] Extend the experimental, manually started bumper music with automatic intermission scheduling, transitions and fade controls; verify playback and output changes on real hardware. Three synthesized themes and up to five custom files are available in Audio Controls.
+- [ ] Verify the configurable inter-song gap on actual show hardware, including completion, skip and restart. The current countdown requires the host to start the next song manually.
 - [ ] Offer fullscreen, monitor selection and configurable idle/now-playing/next-up singer screens.
 - [ ] Add accessibility coverage for keyboard-only use, focus order, screen readers, high contrast and text scaling.
 - [ ] Add automated integration tests for display focus, shortcuts, recovery, import and end-to-end queue flows.
@@ -75,7 +76,7 @@ The working copy now includes singer-display Space and cross-window search short
 ## Priority 2 — users, remote use and administration
 
 - [ ] Define identity, account ownership, sign-in/recovery and privacy rules before exposing user profiles remotely.
-- [ ] Add local-network singer browsing and requests with authentication, role checks, rate limits and reconnect behavior.
+- [ ] Add singer browsing and requests on both local Wi-Fi and the internet with authentication, role checks, rate limits, reconnect behavior and a secure internet relay.
 - [ ] Give users a clear way to view, export and delete their personal data; protect host-only notes.
 - [ ] Add host management of roles and moderation actions with an audit trail.
 - [ ] Add configurable content policy controls, including rating visibility and explicit-content restrictions.

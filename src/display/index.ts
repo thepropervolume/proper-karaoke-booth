@@ -1,7 +1,9 @@
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
-type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number };
-type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts };
-declare global { interface Window { tpvDisplay: { ready(): void; shortcut(action: 'search' | 'playPause'): void; event(event: unknown): void; subscribe(callback: (state: DisplayState) => void): () => void } } }
+import { AudioOutputRouter } from './audio-output';
+import { createBumperPlayer, type BumperRequest } from './bumper-player';
+type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
+type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
+declare global { interface Window { tpvDisplay: { ready(): void; shortcut(action: 'search' | 'playPause'): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
@@ -10,6 +12,21 @@ const logos = document.querySelectorAll<HTMLImageElement>('#idle-logo, #header-l
 let current: PlaybackState | null = null;
 let updateSequence = 0;
 let shortcuts = DEFAULT_SHORTCUTS;
+const bumperPlayer = createBumperPlayer(value => window.tpvDisplay.bumperAck(value), value => window.tpvDisplay.bumperEvent(value));
+window.tpvDisplay.onBumperCommand(request => bumperPlayer.handle(request));
+const output = new AudioOutputRouter(async () => {
+  if (!navigator.mediaDevices?.enumerateDevices) throw new Error('Audio output enumeration is unavailable.');
+  return navigator.mediaDevices.enumerateDevices();
+});
+navigator.mediaDevices?.addEventListener('devicechange', () => {
+  bumperPlayer.muteForOutputChange();
+  window.tpvDisplay.bumperDeviceChange();
+  if (!current || current.status !== 'playing') return;
+  const generation = current.generation;
+  ++updateSequence;
+  output.invalidate(video);
+  window.tpvDisplay.event({ type: 'output-error', generation, position: video.currentTime || 0, message: 'Audio devices changed. Check the output in Preferences, then resume when ready.' });
+});
 window.addEventListener('keydown', event => {
   if (event.repeat) return;
   const input = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey };
@@ -48,6 +65,7 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   return player;
 }
 window.tpvDisplay.subscribe(async (view) => {
+  bumperPlayer.setVolume(view.bumperVolume);
   const sequence = ++updateSequence;
   shortcuts = view.shortcuts;
   const state = view.playback;
@@ -59,7 +77,7 @@ window.tpvDisplay.subscribe(async (view) => {
   });
   if (!state) {
     current = null;
-    video.pause(); video.removeAttribute('src'); video.load();
+    output.invalidate(video); video.removeAttribute('src'); video.load();
     waiting.hidden = false; caption.textContent = '';
     return;
   }
@@ -69,11 +87,20 @@ window.tpvDisplay.subscribe(async (view) => {
   const player = changed ? playerFor(state) : video;
   player.volume = state.volume;
   if (state.status === 'playing') {
-    try { await player.play(); } catch {
-      if (sequence === updateSequence && video === player && current?.generation === state.generation)
-        window.tpvDisplay.event({ type: 'error', generation: state.generation, position: player.currentTime || 0 });
+    let ready = false;
+    try {
+      ready = await output.prepare(player, state.outputId, () => sequence === updateSequence && video === player && current?.generation === state.generation && current.status === 'playing');
+    } catch (error) {
+      if (sequence === updateSequence && video === player && current?.generation === state.generation) {
+        player.pause();
+        window.tpvDisplay.event({ type: 'output-error', generation: state.generation, position: player.currentTime || 0, message: error instanceof Error ? error.message : 'Could not use the selected output.' });
+      }
     }
-  } else player.pause();
+    if (ready) {
+      try { await player.play(); }
+      catch { if (sequence === updateSequence && video === player && current?.generation === state.generation) window.tpvDisplay.event({ type: 'error', generation: state.generation, position: player.currentTime || 0 }); }
+    }
+  } else output.invalidate(player);
 });
 window.tpvDisplay.ready();
 export {};
