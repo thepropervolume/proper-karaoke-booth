@@ -3,11 +3,10 @@ import { X509Certificate } from 'node:crypto';
 import { createServer, type Server, type ServerOptions } from 'node:https';
 import { isIP } from 'node:net';
 import type { Duplex } from 'node:stream';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { JoinRevisionConflict, type RemoteQueue } from './remote-queue';
+import type { ServerResponse } from 'node:http';
+import { createGuestApiHandler, type GuestAuthority } from './remote-guest-api';
 import type { SingerStaticHandler } from './remote-static';
 
-type GuestAuthority = Pick<RemoteQueue, 'admissionInfo' | 'join' | 'resume' | 'snapshot' | 'catalog' | 'outcome' | 'submit' | 'submitMissing'>;
 export type LanTransportOptions = {
   /** A specific local interface address, never a wildcard. */
   address: string;
@@ -28,12 +27,9 @@ export type LanTransportOptions = {
 };
 export type LanTransport = { origin: string; close: () => Promise<void> };
 
-const MAX_BODY = 8192;
 // Allow a full 100-item page containing worst-case escaped metadata, with a hard ceiling.
 const MAX_RESPONSE = 2 * 1024 * 1024;
 const MAX_CLIENTS = 2048;
-function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
-function exact(value: Record<string, unknown>, fields: string[]): boolean { return Object.keys(value).every(key => fields.includes(key)) && fields.every(key => key in value); }
 function hostForUrl(hostname: string): string { return isIP(hostname) === 6 ? `[${hostname}]` : hostname; }
 function localAddress(address: string): boolean {
   if (isIP(address) === 4) {
@@ -51,25 +47,6 @@ function reply(response: ServerResponse, status: number, value: unknown): void {
   response.end(body);
 }
 function fail(response: ServerResponse, status: number): void { reply(response, status, { error: 'Request could not be completed.' }); }
-class BodyLimitError extends Error {}
-function refuseLarge(request: IncomingMessage, response: ServerResponse): void {
-  response.setHeader('Connection', 'close');
-  response.once('finish', () => request.socket.destroy());
-  fail(response, 413); request.resume();
-}
-function body(request: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let size = 0; const chunks: Buffer[] = [];
-    request.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > MAX_BODY) { reject(new BodyLimitError()); request.resume(); return; }
-      chunks.push(chunk);
-    });
-    request.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Error('invalid JSON')); } });
-    request.on('error', reject);
-    request.on('aborted', () => reject(new Error('aborted')));
-  });
-}
 
 /** Opens only the specified interface. Certificate trust/provisioning is the host's responsibility. */
 export async function startLanTransport(options: LanTransportOptions, createServerFn: typeof createServer = createServer): Promise<LanTransport> {
@@ -90,6 +67,7 @@ export async function startLanTransport(options: LanTransportOptions, createServ
   const tls: ServerOptions = { cert: options.cert, key: options.key, minVersion: 'TLSv1.2', handshakeTimeout: timeoutMs,
     connectionsCheckingInterval: Math.max(100, Math.min(1000, timeoutMs)) };
   const limits = new Map<string, { start: number; count: number }>();
+  const guestApi = createGuestApiHandler(authority);
   let origin = '', hostHeader = '';
   const server: Server = createServerFn(tls, async (request, response) => {
     const addressKey = request.socket.remoteAddress ?? '';
@@ -116,49 +94,7 @@ export async function startLanTransport(options: LanTransportOptions, createServ
       fail(response, 404); return;
     }
     if (request.headers.origin !== origin) { fail(response, 403); return; }
-    if (request.method !== 'POST' || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '') ||
-        !request.url || request.url.includes('?') || request.url.includes('#')) { fail(response, 400); return; }
-    const length = request.headers['content-length'];
-    if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > MAX_BODY)) { refuseLarge(request, response); return; }
-    let payload: unknown;
-    try { payload = await body(request); } catch (error) { if (error instanceof BodyLimitError) refuseLarge(request, response); else fail(response, 400); return; }
-    if (!object(payload)) { fail(response, 400); return; }
-    const bearer = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.authorization ?? '')?.[1];
-    try {
-      let result: unknown;
-      switch (request.url) {
-        case '/api/v1/admission':
-          if (!exact(payload, ['invitation']) || bearer) throw new Error();
-          result = authority.admissionInfo(payload.invitation); break;
-        case '/api/v1/join':
-          if (!exact(payload, ['invitation', 'joinId', 'resumeSecret', 'name', 'expectedRevision']) || bearer) throw new Error();
-          result = authority.join(payload.invitation, payload.joinId, payload.resumeSecret, payload.name, payload.expectedRevision); break;
-        case '/api/v1/resume':
-          if (!exact(payload, ['resumeSecret']) || bearer) throw new Error();
-          result = authority.resume(payload.resumeSecret); break;
-        case '/api/v1/snapshot':
-          if (!exact(payload, []) || !bearer) throw new Error();
-          result = authority.snapshot(bearer); break;
-        case '/api/v1/catalog':
-          if (!exact(payload, ['offset', 'limit']) || !bearer || typeof payload.offset !== 'number' || typeof payload.limit !== 'number') throw new Error();
-          result = authority.catalog(bearer, payload.offset, payload.limit); break;
-        case '/api/v1/outcome':
-          if (!exact(payload, ['commandId']) || !bearer) throw new Error();
-          result = authority.outcome(bearer, payload.commandId); break;
-        case '/api/v1/request':
-          if (!exact(payload, ['command']) || !bearer) throw new Error();
-          result = authority.submit(bearer, payload.command); break;
-        case '/api/v1/missing-request':
-          if (!exact(payload, ['command']) || !bearer) throw new Error();
-          result = authority.submitMissing(bearer, payload.command); break;
-        default: fail(response, 404); return;
-      }
-      reply(response, 200, result);
-    } catch (error) {
-      // This typed error is emitted only by the trusted authority before a join commits.
-      if (request.url === '/api/v1/join' && error instanceof JoinRevisionConflict) reply(response, 409, { error: 'REVISION_CONFLICT' });
-      else fail(response, 400);
-    }
+    await guestApi(request, response);
   });
   const sockets = new Set<Duplex>();
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
