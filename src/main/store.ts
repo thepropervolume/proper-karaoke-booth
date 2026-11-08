@@ -18,6 +18,7 @@ export class Store<T> {
   private db: DatabaseSync;
   private authorityFault = false;
   private remoteQueueOpened = false;
+  private remoteQueueDisabled = false;
   readonly collections: Collections;
 
   constructor(filename: string) {
@@ -54,10 +55,17 @@ export class Store<T> {
     if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
   }
 
+  /** Irreversibly block new or existing guest authority in this process; local host writes are unaffected. */
+  disableRemoteQueue(): void { this.remoteQueueDisabled = true; }
+  private assertRemoteAuthority(): void {
+    this.assertAuthority();
+    if (this.remoteQueueDisabled) throw new Error('Remote queueing is shutting down.');
+  }
+
   /** Same SQLite connection as host writes; creates no network listener. */
   openRemoteQueue(this: Store<ShowState>, settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>,
     installCommitted: (state: ShowState) => void, now: () => number = Date.now): RemoteQueue {
-    this.assertAuthority();
+    this.assertRemoteAuthority();
     if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
     const queue = new RemoteQueue(this.db, settings, state => {
       try {
@@ -75,7 +83,7 @@ export class Store<T> {
         this.authorityFault = true;
         throw new Error('Show authority needs recovery. Restart the application before making further changes.');
       }
-    }, now, () => this.assertAuthority());
+    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); });
     this.remoteQueueOpened = true;
     return queue;
   }

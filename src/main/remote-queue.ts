@@ -26,7 +26,7 @@ export class RemoteQueue {
   private readonly runId = randomUUID();
   constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
-    private readonly assertAuthority: () => void = () => {}) {
+    private readonly assertAuthority: (cleanup?: boolean) => void = () => {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_sessions (token_hash TEXT PRIMARY KEY, guest_id TEXT NOT NULL, run_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
@@ -34,8 +34,8 @@ export class RemoteQueue {
       CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS remote_missing_song_owners (request_id TEXT PRIMARY KEY, guest_id TEXT NOT NULL, singer_id TEXT NOT NULL, show_id TEXT NOT NULL);`);
   }
-  private state(): ShowState {
-    this.assertAuthority();
+  private state(cleanup = false): ShowState {
+    this.assertAuthority(cleanup);
     const row = this.db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: string } | undefined;
     if (!row) throw new Error('Show is unavailable.');
     return JSON.parse(row.value) as ShowState;
@@ -135,7 +135,7 @@ export class RemoteQueue {
   revokeInvitations(): void { this.db.prepare('UPDATE remote_invitations SET revoked = 1 WHERE show_id = ?').run(this.state().showId); }
   /** Host-only: permanently close this room and all guest/resume credentials. */
   closeRoom(): void {
-    const showId = this.state().showId;
+    const showId = this.state(true).showId;
     this.transaction(() => {
       this.db.prepare('UPDATE remote_invitations SET revoked = 1 WHERE show_id = ?').run(showId);
       this.db.prepare('UPDATE remote_guests SET revoked = 1 WHERE show_id = ?').run(showId);
