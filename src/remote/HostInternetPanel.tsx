@@ -38,16 +38,17 @@ export function HostInternetPanel({ bridge }: { bridge: InternetRelayBridge }) {
     const seconds = Number(ttl), roomId = statusRef.current?.roomId, startedAt = Date.now();
     if (!Number.isInteger(seconds) || seconds < 60 || seconds > 3600 || !roomId) { setMessage('Choose an invitation duration from 1 to 60 minutes.'); return; }
     const value = await bridge.createInvitation(seconds);
-    if (!statusRef.current?.available || statusRef.current.state !== 'online' || statusRef.current.roomId !== roomId || !validInternetInvitation(value, statusRef.current.origin)) { setMessage('The invitation could not be displayed safely.'); return; }
+    if (Date.now() >= startedAt + seconds * 1000 || !statusRef.current?.available || statusRef.current.state !== 'online' || statusRef.current.roomId !== roomId || !validInternetInvitation(value, statusRef.current.origin)) { setMessage('The invitation could not be displayed safely.'); return; }
     setLink(value); setExpiresAt(startedAt + seconds * 1000);
   });
   const online = !!status?.available && status.state === 'online';
-  const canPrepare = !!status?.available && (status.state === 'stopped' || status.state === 'failed');
+  const canPrepare = !!status?.available && status.state === 'stopped';
   const canStart = canPrepare && status.connector.state === 'verified' && status.loopbackTls === 'ready';
   return <section className="remote-host-panel" aria-label="Internet queueing">
     <h2>Internet Queueing</h2>
     <p>Experimental development feature. Cloudflare relays this traffic and can see guest requests and credentials.</p>
     <p role="status">{message || status?.message || (status ? `Internet relay: ${status.state}` : 'Loading internet queue status…')}</p>
+    {status?.available && status.state === 'failed' && <button type="button" disabled={busy} onClick={() => void run(() => bridge.stop())}>Retry stopping internet queueing</button>}
     {canPrepare && <>
       <p>Select a trusted, compatible cloudflared executable. This app does not download or update it automatically.</p>
       <button type="button" disabled={busy} onClick={() => void run(() => bridge.chooseConnector())}>Choose connector…</button>
