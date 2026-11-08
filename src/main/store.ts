@@ -5,6 +5,7 @@ import type { ShowState } from '../domain';
 import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
 import { RemoteQueue } from './remote-queue';
+import { migrateShowSchema } from './schema-migrations';
 
 /** The private path never leaves the main process. */
 export interface StoredMedia {
@@ -23,12 +24,11 @@ export class Store<T> {
 
   constructor(filename: string) {
     this.db = new DatabaseSync(filename);
-    this.db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;
-      CREATE TABLE IF NOT EXISTS show_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL, position REAL NOT NULL);
-      CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);`);
-    this.collections = new Collections(this.db, () => this.assertAuthority());
+    try {
+      migrateShowSchema(this.db);
+      this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
+      this.collections = new Collections(this.db, () => this.assertAuthority());
+    } catch (error) { this.db.close(); throw error; }
   }
 
   load(): T | undefined {
