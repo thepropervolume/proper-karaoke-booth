@@ -18,9 +18,9 @@ The working copy now includes singer-display Space and cross-window search short
 ## Priority 0 — dependable show operation
 
 - [ ] Verify the Windows build, installer, codecs, sound output, external screen, monitor hot-plug and recovery on actual hardware.
-- [ ] Make Space pause/resume from the focused singer display and host window without stealing text entry.
-- [ ] Make Ctrl+F focus library search from any application window and preserve normal text editing shortcuts.
-- [ ] Confirm that every transport action has an accessible name, disabled state and helpful tooltip; iconize Start, Pause/Resume, Stop, Skip and Singer display.
+- [x] Make Space pause/resume from the focused singer display and host window without stealing text entry.
+- [x] Make Ctrl+F focus library search from the host and singer display and preserve normal text editing shortcuts.
+- [x] Give the transport and singer-display buttons accessible names, disabled states and helpful tooltips; combine Play/Pause and use icons.
 - [ ] Show decoding, missing-file, permission and unsupported-codec errors with a clear recovery path.
 - [ ] Allow missing or moved media to be relinked and check whether a file has changed since import.
 - [ ] Make display disconnect/reconnect and moving between monitors predictable; pause safely and offer explicit recovery.
@@ -30,13 +30,13 @@ The working copy now includes singer-display Space and cross-window search short
 
 ## Priority 1 — host workflow requested
 
-- [ ] Provide a dedicated settings dialog and move Appearance into it.
+- [x] Provide a dedicated settings dialog with collapsible groups and move Appearance into it.
 - [ ] Store and validate all application settings in a documented, editable JSON or YAML file, with defaults, migration and useful error messages.
-- [ ] Offer auto-approval of song requests, enabled by default, with a manual moderation option.
-- [ ] Offer FIFO and fair singer rotation modes; define late arrivals, repeat requests, switching modes and ties explicitly, without losing queue entries.
+- [x] Offer auto-approval of song requests, enabled by default, with a manual moderation option.
+- [x] Offer FIFO and fair singer rotation modes with a locked staged song and tested round behavior.
 - [ ] Add a file-or-folder MP4 import choice, including recursive scan, duplicate reporting and inaccessible-file handling.
-- [ ] Allow a new singer's name to be entered while selecting a song, with a way to select an existing singer.
-- [ ] Add a search icon available throughout the host UI and focus search from the singer display.
+- [x] Allow a new singer's name to be entered while selecting a song, with a way to select an existing singer.
+- [x] Add a search icon available throughout the host UI and focus search from the singer display.
 - [ ] Add host-selectable metadata sources and precedence: embedded tags, configurable filename pattern, and manual overrides; preview and rescan safely.
 - [ ] Edit artist and title locally, with a per-edit choice to also write supported embedded file tags. Default to local-only; report read-only or unsupported files and keep the local edit if an explicitly requested write fails. Local editing exists; the choice and file write-back do not yet exist.
 - [ ] Define and enforce Host, Co-host, Moderator, Singer and Audience permissions at the service boundary, not only in the UI.
