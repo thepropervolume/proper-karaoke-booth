@@ -41,7 +41,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Edit artist and title locally, with a per-edit choice to also write supported embedded file tags. Default to local-only; report read-only or unsupported files and keep the local edit if an explicitly requested write fails. Local editing exists; the choice and file write-back do not yet exist.
 - [ ] Define and enforce Host, Co-host, Moderator, Singer and Audience permissions at the service boundary, not only in the UI.
 - [ ] Add persistent user profiles with name, account email, favorites, playlists, private notes and access level; allow self-editing except notes and access level.
-- [ ] Add an unavailable-song request form and a persistent local requests table with host review and status.
+- [x] Add an unavailable-song request form and a persistent local requests table with host review and status.
 - [ ] Offer useful host layouts: show/rotation focused, library focused, and compact single-screen; persist selection and keep critical controls visible.
 - [ ] Provide a text keybindings file listing defaults and overrides for every actionable command, with conflict detection and a reset path.
 - [ ] Provide a CLI for all app actions through one authenticated local authority, with help, structured output and stable exit codes; avoid a second SQLite writer.
@@ -55,7 +55,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Make per-singer future-request limits configurable and explain why a request is rejected.
 - [ ] Support duets/groups and multiple performers on a request.
 - [ ] Start, save, restore and end shows; retain searchable singer and song history and export it to CSV.
-- [ ] Search filenames as well as artist/title; add sort, filtering and responsive large-library navigation.
+- [ ] Search filenames as well as artist/title; add sort, filtering and responsive large-library navigation. Filename search and host-side sorting and filtering are available; large-library responsiveness still needs verification and improvement.
 - [ ] Support watch/rescan of chosen folders, missing-file review, duplicate review and alternate song versions.
 - [ ] Add batch metadata review and editing, including source/provenance and reversible local overrides.
 - [ ] Add playlists and favorites with import/export and per-singer organization.

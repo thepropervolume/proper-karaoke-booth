@@ -6,7 +6,7 @@ import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
 import type { HistoryEntry } from '../domain/collections';
-import { normalizeMissingRequest } from '../domain/missing-request';
+import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
 import { Store } from './store';
 import { readSettings, writeSettings } from './settings';
@@ -26,6 +26,7 @@ import { createSingerStaticHandler } from './remote-static';
 import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
 import { mediaErrorDetail } from './media-error-message';
 import { ImportJob } from './import-job';
+import { ShowBackup } from './show-backup';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -56,6 +57,12 @@ let playbackTransition = false;
 let importJob: ImportJob | null = null;
 let importParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
 let relinking = false;
+const showBackup = new ShowBackup(async () => {
+  if (!host || host.isDestroyed() || shuttingDown) return null;
+  const result = await dialog.showSaveDialog(host, { title: 'Back up show to a new file', defaultPath: 'karaoke-show-backup.sqlite',
+    filters: [{ name: 'Show backup', extensions: ['sqlite'] }], properties: ['showOverwriteConfirmation'] });
+  return result.canceled ? null : result.filePath ?? null;
+}, destination => store.backup(destination));
 const mediaChecks = new Set<AbortController>();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
@@ -63,7 +70,10 @@ const publishRemoteStatus = (value: ReturnType<HostRemoteLifecycle['status']>) =
   if (host && !host.isDestroyed()) host.webContents.send('host:remote-status', value);
 };
 const publishMissingRequests = () => {
-  if (!shuttingDown && host && !host.isDestroyed()) host.webContents.send('host:missing-song-requests', store.missingSongRequests());
+  if (!shuttingDown && host && !host.isDestroyed()) {
+    try { host.webContents.send('host:missing-song-requests', store.missingSongRequests());
+      host.webContents.send('host:missing-song-reviews', store.missingSongReviews()); } catch { /* State already committed; refresh on next view load. */ }
+  }
 };
 let remoteHost = new HostRemoteLifecycle(null, publishRemoteStatus, publishMissingRequests);
 let remoteAuthority: RemoteAuthorityCoordinator | null = null;
@@ -375,6 +385,9 @@ else {
     if (state.playback) await bumper.karaokeStarting();
   } catch (error) { bumper = null; bumperOutput = null; bumperError = error instanceof Error ? error.message : String(error); }
   protocol.handle('tpv-media', serveMedia);
+  ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
+  ipcMain.handle('host:backup-cleanup', event => { guardHost(event.sender.id); return showBackup.retryCleanup(); });
+  ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
   ipcMain.handle('host:reveal-media', (event, versionId: unknown) => {
@@ -417,12 +430,19 @@ else {
     return store.collections.snapshot();
   });
   ipcMain.handle('host:get-shortcuts', event => { guardHost(event.sender.id); return { shortcuts, path: shortcutsPath, error: shortcutError }; });
+  ipcMain.handle('host:get-missing-song-reviews', event => { guardHost(event.sender.id); return store.missingSongReviews(); });
+  ipcMain.handle('host:set-missing-song-status', (event, id: unknown, expected: unknown, next: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof id !== 'string' || !isMissingSongStatus(expected) || !isMissingSongStatus(next)) throw new Error('Invalid missing-song review.');
+    const changed = store.setMissingSongStatus(id, expected, next); if (changed) publishMissingRequests(); return changed;
+  });
   ipcMain.handle('host:get-missing-song-requests', event => { guardHost(event.sender.id); return store.missingSongRequests(); });
   ipcMain.handle('host:add-missing-song-request', (event, input: unknown) => {
     guardHost(event.sender.id);
     const request = normalizeMissingRequest(input);
     if (!request) return { ok: false, error: 'Enter a singer and song title within the length limits.' };
     store.addMissingSongRequest({ ...request, id: randomUUID(), createdAt: new Date().toISOString() });
+    publishMissingRequests();
     return { ok: true };
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
@@ -596,14 +616,16 @@ app.on('before-quit', event => {
   if (quitReady) { closeStore(); return; }
   if (quitStarted) { event.preventDefault(); return; }
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
-  const wait = remoteHost.needsShutdownWait() || importing;
+  const wait = remoteHost.needsShutdownWait() || importing || showBackup.needsShutdownWait();
   const shutdown = remoteHost.shutdown();
+  const backupShutdown = showBackup.shutdown();
   if (!wait) { quitReady = true; closeStore(); return; }
   event.preventDefault();
   quitStarted = true;
   const importShutdown = importing && importJob ? waitForImport(importJob) : Promise.resolve(true);
-  void Promise.all([shutdown, importShutdown]).then(([remoteClean, importClean]) => {
-    if (!remoteClean || !importClean) {
+  const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
+  void Promise.all([shutdown, importShutdown, boundedBackup]).then(([remoteClean, importClean, backupClean]) => {
+    if (!remoteClean || !importClean || !backupClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;

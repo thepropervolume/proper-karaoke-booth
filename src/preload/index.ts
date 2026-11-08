@@ -3,6 +3,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 contextBridge.exposeInMainWorld('tpv', {
   getState: () => ipcRenderer.invoke('host:get-state'),
+  getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
+  backupShow: () => ipcRenderer.invoke('host:backup-show'),
+  retryBackupCleanup: () => ipcRenderer.invoke('host:backup-cleanup'),
   getCollections: () => ipcRenderer.invoke('host:get-collections'),
   mutateCollections: (action: unknown) => ipcRenderer.invoke('host:mutate-collections', action),
   revealMedia: (versionId: string) => ipcRenderer.invoke('host:reveal-media', versionId),
@@ -58,6 +61,13 @@ contextBridge.exposeInMainWorld('tpv', {
     },
     cancel: (jobId: string) => ipcRenderer.invoke('host:import-cancel', jobId),
     results: (jobId: string, offset: number, limit: number) => ipcRenderer.invoke('host:import-results', jobId, offset, limit)
+  },
+  getMissingSongReviews: () => ipcRenderer.invoke('host:get-missing-song-reviews'),
+  setMissingSongStatus: (id: string, expected: unknown, next: unknown) => ipcRenderer.invoke('host:set-missing-song-status', id, expected, next),
+  onMissingSongReviews: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('host:missing-song-reviews', listener);
+    return () => ipcRenderer.removeListener('host:missing-song-reviews', listener);
   },
   getMissingSongRequests: () => ipcRenderer.invoke('host:get-missing-song-requests'),
   onMissingSongRequests: (callback: (value: unknown) => void) => {

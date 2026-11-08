@@ -1,4 +1,4 @@
-/** Unconnected snapshot primitives; callers must keep the source connection open until the promise settles. */
+/** Snapshot primitives; callers must keep the source connection open until the promise settles. */
 import { backup, DatabaseSync } from 'node:sqlite';
 import { link, lstat, mkdtemp, open, realpath, rmdir, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join } from 'node:path';

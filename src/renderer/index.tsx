@@ -6,8 +6,9 @@ import { createRoot } from 'react-dom/client';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
 import { DEFAULT_SETTINGS, type Settings } from '../domain/settings';
+import { libraryView, type LibraryFilter, type LibrarySort } from '../domain/library-view';
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
-import type { MissingSongRequest } from '../domain/missing-request';
+import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
 import type { CollectionsAction, CollectionsSnapshot } from '../domain/collections';
 import { Icon } from './Icon';
 import { CollectionsPanel } from './CollectionsPanel';
@@ -19,7 +20,9 @@ import { EditMetadataDialog } from './EditMetadataDialog';
 import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';
 import { ImportPanel, type ImportBridge } from './ImportPanel';
+import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import type { ImportProgress } from '../domain/import-job';
+import type { BackupResult } from '../main/show-backup';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
@@ -31,6 +34,9 @@ declare global {
   interface Window {
     tpv: {
       getState: () => Promise<ShowState>;
+      getLibraryFilenames: () => Promise<Record<string, string>>;
+      backupShow: () => Promise<BackupResult>;
+      retryBackupCleanup: () => Promise<BackupResult>;
       getCollections: () => Promise<CollectionsSnapshot>;
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
@@ -42,6 +48,9 @@ declare global {
       imports: ImportBridge;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
       onMissingSongRequests: (callback: (requests: MissingSongRequest[]) => void) => () => void;
+      getMissingSongReviews: () => Promise<MissingSongReview[]>;
+      onMissingSongReviews: (callback: (requests: MissingSongReview[]) => void) => () => void;
+      setMissingSongStatus: (id: string, expected: MissingSongStatus, next: MissingSongStatus) => Promise<boolean>;
       addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
       command: (payload: Command) => Promise<Result>;
       openDisplay: () => Promise<void>;
@@ -66,6 +75,10 @@ function App() {
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [screen, setScreen] = useState<Screen>('library');
   const [search, setSearch] = useState('');
+  const [librarySort, setLibrarySort] = useState<LibrarySort>('import-oldest');
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
+  const [libraryFilenames, setLibraryFilenames] = useState<Record<string, string>>({});
+  const [filenameRefresh, setFilenameRefresh] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const focusSearch = () => { setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
@@ -78,13 +91,14 @@ function App() {
   const [selectedSingerId, setSelectedSingerId] = useState('');
   const [singerName, setSingerName] = useState('');
   const [newRequestSingerName, setNewRequestSingerName] = useState('');
-  const [missingRequests, setMissingRequests] = useState<MissingSongRequest[]>([]);
   const [missingSinger, setMissingSinger] = useState('');
   const [missingTitle, setMissingTitle] = useState('');
   const [missingArtist, setMissingArtist] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [importActive, setImportActive] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupCleanup, setBackupCleanup] = useState(false);
   const [importPickerBusy, setImportPickerBusy] = useState(false);
   const [relinkBusy, setRelinkBusy] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -122,12 +136,11 @@ function App() {
   }, [state?.revision]);
 
   useEffect(() => {
-    let alive = true, received = false;
-    const unsubscribe = window.tpv.onMissingSongRequests(value => { received = true; if (alive) setMissingRequests(value); });
-    void window.tpv.getMissingSongRequests().then(value => { if (alive && !received) setMissingRequests(value); })
-      .catch(error => { if (alive) setNotice(`Could not load missing-song requests: ${String(error)}`); });
-    return () => { alive = false; unsubscribe(); };
-  }, []);
+    let alive = true;
+    void window.tpv.getLibraryFilenames().then(value => { if (alive) setLibraryFilenames(value); })
+      .catch(() => { if (alive) setNotice('Filename search is unavailable.'); });
+    return () => { alive = false; };
+  }, [state?.revision, filenameRefresh]);
 
   useEffect(() => {
     let alive = true;
@@ -167,11 +180,8 @@ function App() {
   }, [contextMenu]);
 
   const versions = useMemo(() => state ? visibleVersions(state) : [], [state]);
-  const filtered = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    return versions.filter(v => `${v.title} ${v.artist}`.toLocaleLowerCase().includes(query));
-  }, [versions, search]);
-  const selectedVersion = versions.find(v => v.id === selectedVersionId);
+  const filtered = useMemo(() => libraryView(versions, search, libraryFilenames, librarySort, libraryFilter), [versions, search, libraryFilenames, librarySort, libraryFilter]);
+  const selectedVersion = filtered.find(v => v.id === selectedVersionId);
   const selectedSinger = state?.singers.find(s => s.id === selectedSingerId);
   const pending = state?.requests.filter(r => r.status === 'pending') ?? [];
   const future = state ? orderedFuture(state, settings.rotationMode) : [];
@@ -195,6 +205,18 @@ function App() {
     finally { setBusy(false); }
   };
   const command = (payload: Command, success?: string) => run(() => window.tpv.command(payload), success);
+  const backupShow = async (retry = false) => {
+    if (backupBusy) return;
+    setBackupBusy(true); setNotice('');
+    try {
+      const result = await (retry ? window.tpv.retryBackupCleanup() : window.tpv.backupShow());
+      setBackupCleanup(result.status === 'cleanup-needed');
+      if (result.status === 'saved') setNotice('Show backup saved. Video files and preferences are not included. Protect the backup using your destination folder permissions.');
+      else if (result.status === 'failed') setNotice('Backup could not be completed. Choose a new filename on a supported local drive and try again; existing files are never overwritten.');
+      else if (result.status === 'cleanup-needed') setNotice(`${result.published ? 'The backup was saved' : 'The backup was not saved'}, but temporary backup cleanup needs attention. Retry cleanup before creating another backup.`);
+    } catch { setNotice('Backup could not be completed. Please try again.'); }
+    finally { setBackupBusy(false); }
+  };
   const beginImport = async (kind: 'files' | 'folder') => {
     if (importPickerBusy || importActive) return;
     setImportPickerBusy(true); setNotice('');
@@ -205,7 +227,7 @@ function App() {
   const relinkSong = async (id: string) => {
     if (relinkBusy) return;
     setRelinkBusy(true); setNotice('Checking the selected file…');
-    try { const result = await window.tpv.relinkMedia(id); setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.'); }
+    try { const result = await window.tpv.relinkMedia(id); if (result.ok && !result.cancelled) setFilenameRefresh(value => value + 1); setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.'); }
     catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setRelinkBusy(false); }
   };
@@ -278,7 +300,6 @@ function App() {
       const result = await window.tpv.addMissingSongRequest({ singer: missingSinger, title: missingTitle, artist: missingArtist });
       if (result.ok) {
         setMissingSinger(''); setMissingTitle(''); setMissingArtist('');
-        setMissingRequests(await window.tpv.getMissingSongRequests());
       }
       return result;
     }, 'Missing-song request saved.');
@@ -300,6 +321,7 @@ function App() {
     </header>
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
+      <button className="nav-item" disabled={backupBusy} onClick={() => void backupShow(backupCleanup)}>{backupBusy ? 'Backing up…' : backupCleanup ? 'Retry backup cleanup' : 'Back up show…'}</button>
       {([['library', 'Library'], ['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['playlists', 'Playlists']] as const).map(([id, label]) =>
         <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}
     </nav>
@@ -309,7 +331,13 @@ function App() {
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
           <div className="section-heading"><h2>Song Library</h2><div><Tooltip text="Import Video File"><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text="Import Custom Directory"><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip></div></div>
-          <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search title or artist" value={search} onChange={e => setSearch(e.target.value)} /></div>
+          <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search title, artist, filename or code" value={search} onChange={e => setSearch(e.target.value)} />
+            <label>Sort<select aria-label="Sort songs" value={librarySort} onChange={event => setLibrarySort(event.target.value as LibrarySort)}>
+              <option value="import-oldest">Import order</option><option value="import-newest">Newest imported</option><option value="title-asc">Title A–Z</option><option value="title-desc">Title Z–A</option><option value="artist-asc">Artist A–Z</option><option value="artist-desc">Artist Z–A</option>
+            </select></label>
+            <label>Filter<select aria-label="Filter songs" value={libraryFilter} onChange={event => setLibraryFilter(event.target.value as LibraryFilter)}>
+              <option value="all">All songs</option><option value="review">Needs metadata review</option><option value="missing-artist">Missing artist</option><option value="clean">Clean</option><option value="explicit">Explicit</option><option value="unrated">Unrated</option><option value="uncertain">Uncertain rating</option>
+            </select></label></div>
           <div className="eyebrow">Title / artist <span className="muted"> · Local MP4</span></div>
           <div role="listbox" aria-label="Songs" className="song-list">
             {filtered.map((version, index) => <div className={`track-row song-option ${version.id === selectedVersionId ? 'selected' : ''}`} key={version.id} role="option" aria-selected={version.id === selectedVersionId} tabIndex={0}
@@ -318,7 +346,7 @@ function App() {
               onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setSelectedVersionId(version.id); setQueueVersion(version); } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]'); const i = Math.max(0, Math.min(filtered.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))); next?.[i]?.focus(); setSelectedVersionId(filtered[i]?.id ?? ''); } }}>
               <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
             </div>)}
-            {!filtered.length && <p className="empty">{versions.length ? 'No songs match this search.' : 'Import a local MP4 to begin. Your original file stays in place.'}</p>}
+            {!filtered.length && <p className="empty">{versions.length ? 'No songs match this search or filter.' : 'Import a local MP4 to begin. Your original file stays in place.'}</p>}
           </div>
           <form className="request-form" onSubmit={makeRequest}>
             <label>Singer for {selectedVersion ? `“${selectedVersion.title}”` : 'selected song'}<select value={selectedSingerId} onChange={e => setSelectedSingerId(e.target.value)}><option value="">Choose a singer</option>{state.singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}<option value="__new__">Add a new singer…</option></select></label>
@@ -338,9 +366,7 @@ function App() {
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button></div>; })}
           {!pending.length && <p className="empty">No requests waiting for review.</p>}
-          <h3>Missing-Song Requests</h3>
-          {missingRequests.map(request => <div className="track-row" key={request.id}><div><strong>{request.title}</strong><small>{request.artist ? `${request.artist} · ` : ''}{request.singer}</small></div></div>)}
-          {!missingRequests.length && <p className="empty">No missing-song requests yet.</p>}
+          <MissingSongReviewPanel bridge={window.tpv} />
         </>}
         {screen === 'singers' && <>
           <h2>Singers</h2><form className="inline-form" onSubmit={addSinger}><label>Singer name<input autoComplete="off" value={singerName} onChange={e => setSingerName(e.target.value)} placeholder="Enter a name" maxLength={100} /></label><button className="primary" disabled={busy || !singerName.trim()} type="submit">Add singer</button></form>

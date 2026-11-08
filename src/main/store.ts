@@ -1,11 +1,12 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { MissingSongRequest } from '../domain/missing-request';
+import { isMissingSongStatus, type MissingSongRequest, type MissingSongReview, type MissingSongStatus } from '../domain/missing-request';
 import type { HistoryEntry } from '../domain/collections';
 import type { ShowState } from '../domain';
 import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
 import { RemoteQueue } from './remote-queue';
 import { migrateShowSchema } from './schema-migrations';
+import { createShowSnapshot } from './show-snapshots';
 
 /** The private path never leaves the main process. */
 export interface StoredMedia {
@@ -34,6 +35,12 @@ export class Store<T> {
   load(): T | undefined {
     const row = this.db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: string } | undefined;
     return row ? JSON.parse(row.value) as T : undefined;
+  }
+
+  /** Caller must keep this Store open until the returned promise settles. */
+  backup(destination: string): Promise<void> {
+    this.assertAuthority();
+    return createShowSnapshot(this.db, destination);
   }
 
   save(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
@@ -95,6 +102,12 @@ export class Store<T> {
     return queue;
   }
 
+  /** Host library search receives filenames only, never private directories. */
+  mediaFilenames(): Record<string, string> {
+    const rows = this.db.prepare('SELECT id, path FROM media').all() as { id: string; path: string }[];
+    return Object.fromEntries(rows.map(row => [row.id, row.path.split(/[\\/]/).pop() ?? '']));
+  }
+
   media(id: string): StoredMedia | undefined {
     return this.db.prepare('SELECT id, path, fingerprint FROM media WHERE id = ?').get(id) as StoredMedia | undefined;
   }
@@ -130,6 +143,29 @@ export class Store<T> {
   missingSongRequests(): MissingSongRequest[] {
     const rows = this.db.prepare('SELECT id, singer, title, artist, created_at AS createdAt FROM missing_song_requests ORDER BY created_at DESC, rowid DESC').all() as unknown as MissingSongRequest[];
     return rows.map(row => ({ ...row }));
+  }
+
+  /** Host-only review data; existing local and guest requests start pending without rewriting them. */
+  missingSongReviews(): MissingSongReview[] {
+    return this.db.prepare(`SELECT request.id, request.singer, request.title, request.artist, request.created_at AS createdAt,
+      COALESCE(review.status, 'pending') AS status, review.updated_at AS updatedAt
+      FROM missing_song_requests request LEFT JOIN missing_song_request_reviews review ON review.request_id = request.id
+      ORDER BY request.created_at DESC, request.rowid DESC`).all() as unknown as MissingSongReview[];
+  }
+
+  /** Reject stale reviews and unknown requests without modifying request/guest identity rows. */
+  setMissingSongStatus(id: string, expected: MissingSongStatus, next: MissingSongStatus): boolean {
+    this.assertAuthority();
+    if (typeof id !== 'string' || !id || id.length > 200 || !isMissingSongStatus(expected) || !isMissingSongStatus(next)) throw new Error('Invalid missing-song review.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const row = this.db.prepare(`SELECT COALESCE(review.status, 'pending') AS status FROM missing_song_requests request
+        LEFT JOIN missing_song_request_reviews review ON review.request_id = request.id WHERE request.id = ?`).get(id) as { status: string } | undefined;
+      if (!row || row.status !== expected) { this.db.exec('COMMIT'); return false; }
+      if (expected !== next) this.db.prepare(`INSERT INTO missing_song_request_reviews (request_id, status, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(request_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`).run(id, next, new Date().toISOString());
+      this.db.exec('COMMIT'); return true;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
   close(): void { this.db.close(); }

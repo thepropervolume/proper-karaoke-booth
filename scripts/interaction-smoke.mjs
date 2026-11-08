@@ -104,6 +104,16 @@ try {
   const singer = (await untilState(state => state.singers.some(s => s.name === 'QA Singer'), 'singer creation')).singers.find(s => s.name === 'QA Singer');
   await host.getByRole('button', { name: 'Library', exact: true }).click();
   const songs = host.getByRole('listbox', { name: 'Songs' });
+  // Search the actual filename extension, which is not part of the song metadata.
+  const librarySearch = host.getByRole('searchbox', { name: 'Search library' });
+  await host.waitForFunction(async () => Object.values(await window.tpv.getLibraryFilenames()).some(name => name.endsWith('.mp4')));
+  await librarySearch.fill('.mp4');
+  await songs.getByRole('option').filter({ hasText: 'Popular' }).waitFor();
+  await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('missing-artist');
+  await host.getByText('No songs match this search or filter.').waitFor();
+  await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('all');
+  await host.getByRole('combobox', { name: 'Sort songs' }).selectOption('title-asc');
+  await librarySearch.clear();
   const songRow = songs.getByRole('option').filter({ hasText: 'Popular' });
   await songRow.click();
   await host.waitForFunction(() => [...document.querySelectorAll('[role="listbox"][aria-label="Songs"] [role="option"][aria-selected="true"]')].some(row => row.textContent?.includes('Popular')));
