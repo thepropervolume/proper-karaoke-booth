@@ -4,6 +4,7 @@ import { createServer, type Server, type ServerOptions } from 'node:https';
 import { isIP } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { JoinRevisionConflict, type RemoteQueue } from './remote-queue';
+import type { SingerStaticHandler } from './remote-static';
 
 type GuestAuthority = Pick<RemoteQueue, 'admissionInfo' | 'join' | 'resume' | 'snapshot' | 'catalog' | 'outcome' | 'submit' | 'submitMissing'>;
 export type LanTransportOptions = {
@@ -15,6 +16,8 @@ export type LanTransportOptions = {
   cert: string | Buffer;
   key: string | Buffer;
   authority: GuestAuthority;
+  /** Optional prebuilt allowlisted singer page; caller explicitly creates it. */
+  staticHandler?: SingerStaticHandler;
   /** Surface unexpected listener failures to its owner. Must not log request credentials. */
   onError: (error: Error) => void;
   /** Test/installation-specific bounds. */
@@ -97,7 +100,21 @@ export async function startLanTransport(options: LanTransportOptions, createServ
       rate = { start: now, count: 0 }; limits.set(addressKey, rate);
     }
     if (++rate.count > maxRate) { fail(response, 429); return; }
-    if (request.headers.host !== hostHeader || request.headers.origin !== origin) { fail(response, 403); return; }
+    if (request.headers.host !== hostHeader) { fail(response, 403); return; }
+    if (request.method === 'GET' && options.staticHandler) {
+      // Browser top-level navigation commonly omits Origin. If supplied, it
+      // must still match; API calls below always require it.
+      if (request.headers.origin !== undefined && request.headers.origin !== origin) { fail(response, 403); return; }
+      if (request.headers['transfer-encoding'] !== undefined || (request.headers['content-length'] !== undefined && request.headers['content-length'] !== '0')) {
+        response.setHeader('Connection', 'close');
+        response.once('finish', () => request.socket.destroy());
+        fail(response, 400); request.resume(); return;
+      }
+      try { if (await options.staticHandler(request, response)) return; }
+      catch { fail(response, 500); return; }
+      fail(response, 404); return;
+    }
+    if (request.headers.origin !== origin) { fail(response, 403); return; }
     if (request.method !== 'POST' || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '') ||
         !request.url || request.url.includes('?') || request.url.includes('#')) { fail(response, 400); return; }
     const length = request.headers['content-length'];

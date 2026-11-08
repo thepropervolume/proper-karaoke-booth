@@ -11,6 +11,7 @@ const TYPES: Record<string, string> = { js: 'text/javascript; charset=utf-8', cs
 const POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 type Asset = { bytes: Buffer; type: string };
 type Entry = { file: string; imports?: string[]; dynamicImports?: string[]; css?: string[]; assets?: string[] };
+export type SingerStaticHandler = (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 
 /**
@@ -18,7 +19,7 @@ function record(value: unknown): value is Record<string, unknown> { return !!val
  * The owning HTTPS server must validate Host before calling this handler; top-level
  * browser navigations need not carry Origin. Unknown paths and non-GETs return false.
  */
-export function createSingerStaticHandler(buildRoot: string): (request: IncomingMessage, response: ServerResponse) => Promise<boolean> {
+export function createSingerStaticHandler(buildRoot: string): SingerStaticHandler {
   const root = realpathSync(buildRoot);
   let total = 0;
   function load(path: string): Buffer {

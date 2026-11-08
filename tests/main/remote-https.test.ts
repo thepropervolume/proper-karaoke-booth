@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -13,6 +13,7 @@ import { JoinRevisionConflict } from '../../src/main/remote-queue';
 import { Store } from '../../src/main/store';
 import { createInitialState, type ShowState } from '../../src/domain';
 import { DEFAULT_SETTINGS } from '../../src/domain/settings';
+import { createSingerStaticHandler } from '../../src/main/remote-static';
 
 // Deliberately public test-only key. Never use this self-signed certificate in an app deployment.
 const cert = readFileSync('tests/fixtures/tls/test-only.crt');
@@ -172,5 +173,56 @@ test('HTTPS guest admission and missing-song retries use the real SQLite authori
     assert.equal(requests.length, 1);
     assert.equal(requests[0].singer, 'Alice');
     assert.equal(requests[0].title, 'Popular');
+  } finally { await server.close(); store.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('allowlisted singer page and authenticated guest API share one strictly checked HTTPS origin', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-https-static-'));
+  mkdirSync(join(dir, '.vite')); mkdirSync(join(dir, 'src', 'remote'), { recursive: true }); mkdirSync(join(dir, 'assets'));
+  writeFileSync(join(dir, '.vite', 'manifest.json'), JSON.stringify({
+    'src/remote/index.html': { file: 'assets/singer.js', css: ['assets/singer.css'] },
+    'src/renderer/index.html': { file: 'assets/host.js', isEntry: true },
+  }));
+  writeFileSync(join(dir, 'src', 'remote', 'index.html'), '<!doctype html><script src="/assets/singer.js"></script>');
+  writeFileSync(join(dir, 'assets', 'singer.js'), 'document.body.textContent = "Singer";');
+  writeFileSync(join(dir, 'assets', 'singer.css'), 'body { color: white }');
+  writeFileSync(join(dir, 'assets', 'host.js'), 'private host asset');
+  const store = new Store<ShowState>(join(dir, 'show.sqlite'));
+  let state = createInitialState('show-00001', 'epoch-0001');
+  state.versions.push({ id: 'version-clean', artist: 'Artist', title: 'Song', rating: 'clean' });
+  store.save(state);
+  const service = store.openRemoteQueue(() => DEFAULT_SETTINGS, committed => { state = committed; });
+  const invitation = service.createInvitation(60000);
+  const server = await startLanTransport({ ...base, authority: service, staticHandler: createSingerStaticHandler(dir) });
+  const get = (path: string, headers: Record<string, string> = {}, body = '') => new Promise<{ status: number; text: string; headers: import('node:http').IncomingHttpHeaders }>((resolve, reject) => {
+    const endpoint = new URL(server.origin);
+    const req = request({ hostname: '127.0.0.1', port: Number(endpoint.port), servername: 'localhost', method: 'GET', path,
+      ca: cert, agent: false, headers: { host: endpoint.host, ...headers } }, response => {
+      const chunks: Buffer[] = []; response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8'), headers: response.headers }));
+    });
+    req.on('error', reject); req.end(body);
+  });
+  try {
+    const page = await get('/singer/');
+    assert.equal(page.status, 200); assert.match(page.text, /singer\.js/);
+    assert.match(String(page.headers['content-security-policy']), /connect-src 'self'/);
+    assert.equal(page.headers['cache-control'], 'no-store');
+    assert.equal((await get('/assets/singer.js')).status, 200);
+    assert.equal((await get('/assets/singer.css', { origin: server.origin })).status, 200);
+    assert.equal((await get('/singer/', { host: 'other.example' })).status, 403);
+    assert.equal((await get('/singer/', { origin: 'https://other.example' })).status, 403);
+    assert.equal((await get('/singer/?invite=secret')).status, 400);
+    assert.equal((await get('/assets/host.js')).status, 404);
+    assert.equal((await get('/assets/../show.sqlite')).status, 404);
+    assert.equal((await get('/singer/', { 'content-length': '1' }, 'x')).status, 400);
+    assert.equal((await post(server.origin, '/api/v1/admission', { invitation }, { origin: '' })).status, 403);
+    const joined = await post(server.origin, '/api/v1/join', { invitation, joinId: 'join-123456', resumeSecret: randomBytes(32).toString('base64url'), name: 'Alice', expectedRevision: 0 });
+    assert.equal(joined.status, 200);
+    const session = (joined.json as { session: string }).session;
+    const snapshot = await post(server.origin, '/api/v1/snapshot', {}, { authorization: `Bearer ${session}` });
+    assert.equal(snapshot.status, 200);
+    assert.equal((snapshot.json as { singerName: string }).singerName, 'Alice');
+    assert.equal(state.singers[0].name, 'Alice');
   } finally { await server.close(); store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
