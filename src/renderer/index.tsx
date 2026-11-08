@@ -18,8 +18,11 @@ import { SettingsDialog } from './SettingsDialog';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';
+import { ImportPanel, type ImportBridge } from './ImportPanel';
+import type { ImportProgress } from '../domain/import-job';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
+import '../styles/import-panel.scss';
 
 type Screen = 'library' | 'requests' | 'singers' | 'playlists';
 type Result = { ok: boolean; error?: string; cancelled?: boolean };
@@ -35,7 +38,8 @@ declare global {
       saveSettings: (settings: Settings) => Promise<Settings>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
       onFocusSearch: (callback: () => void) => () => void;
-      importFiles: (kind?: 'files' | 'folder') => Promise<void>;
+      importFiles: (kind?: 'files' | 'folder') => Promise<ImportProgress | null>;
+      imports: ImportBridge;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
       onMissingSongRequests: (callback: (requests: MissingSongRequest[]) => void) => () => void;
       addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
@@ -80,6 +84,8 @@ function App() {
   const [missingArtist, setMissingArtist] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [importActive, setImportActive] = useState(false);
+  const [importPickerBusy, setImportPickerBusy] = useState(false);
   const [relinkBusy, setRelinkBusy] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsPath, setSettingsPath] = useState('');
@@ -189,6 +195,13 @@ function App() {
     finally { setBusy(false); }
   };
   const command = (payload: Command, success?: string) => run(() => window.tpv.command(payload), success);
+  const beginImport = async (kind: 'files' | 'folder') => {
+    if (importPickerBusy || importActive) return;
+    setImportPickerBusy(true); setNotice('');
+    try { await window.tpv.importFiles(kind); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    finally { setImportPickerBusy(false); }
+  };
   const relinkSong = async (id: string) => {
     if (relinkBusy) return;
     setRelinkBusy(true); setNotice('Checking the selected file…');
@@ -292,9 +305,10 @@ function App() {
     </nav>
     <main className="main-panel">
       {notice && <p className="notice" role="status">{notice}</p>}
+      <ImportPanel bridge={window.tpv.imports} onActiveChange={setImportActive} />
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
-          <div className="section-heading"><h2>Song Library</h2><div><Tooltip text="Import Video File"><button className="icon-button" aria-label="Import Video File" disabled={busy} onClick={() => void run(() => window.tpv.importFiles('files'))}><Icon name="file" /></button></Tooltip> <Tooltip text="Import Custom Directory"><button className="icon-button" aria-label="Import Custom Directory" disabled={busy} onClick={() => void run(() => window.tpv.importFiles('folder'))}><Icon name="folder" /></button></Tooltip></div></div>
+          <div className="section-heading"><h2>Song Library</h2><div><Tooltip text="Import Video File"><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text="Import Custom Directory"><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip></div></div>
           <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search title or artist" value={search} onChange={e => setSearch(e.target.value)} /></div>
           <div className="eyebrow">Title / artist <span className="muted"> · Local MP4</span></div>
           <div role="listbox" aria-label="Songs" className="song-list">

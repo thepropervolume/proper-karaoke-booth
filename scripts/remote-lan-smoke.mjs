@@ -81,7 +81,12 @@ try {
   const status = await host.evaluate(() => window.tpv.remote.status());
   assert.equal(status.available, true); assert.equal(status.room, 'closed'); assert.equal(await listening(), false, 'No listener may exist before explicit open.');
   await host.evaluate(() => window.tpv.importFiles('files'));
-  const initial = await host.evaluate(() => window.tpv.getState());
+  let initial;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    initial = await host.evaluate(() => window.tpv.getState());
+    if (initial.versions.length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
   assert.equal(initial.versions.length, 1);
   const certificate = await host.evaluate(() => window.tpv.remote.chooseCertificate());
   const key = await host.evaluate(() => window.tpv.remote.choosePrivateKey());

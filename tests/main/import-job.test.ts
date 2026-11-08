@@ -25,6 +25,17 @@ test('worker hashing returns the full-file fingerprint and leaves the host event
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('empty media cannot be imported as a playable file', async () => {
+  const dir = fixture();
+  try {
+    const path = join(dir, 'empty.mp4'); writeFileSync(path, '');
+    let commits = 0;
+    const job = new ImportJob(() => { commits++; return { outcome: 'imported' }; });
+    const started = job.start('files', [path]); const final = await job.wait(); assert.ok(final);
+    assert.equal(final.failed, 1); assert.equal(commits, 0); assert.equal(job.page(started.jobId).items[0].outcome, 'failed');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('per-file results distinguish imports, duplicates, invalid input and failures with pagination', async () => {
   const dir = fixture();
   try {
@@ -75,6 +86,22 @@ test('cancellation after an atomic commit retains that result and does not start
     const final = await job.wait(); assert.ok(final);
     assert.equal(final.phase, 'cancelled'); assert.equal(final.imported, 1); assert.equal(commits, 1);
     assert.equal(job.page(started.jobId).items[0].name, basename(first));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a terminal progress subscriber can start a new job without changing the first job result', async () => {
+  const dir = fixture();
+  try {
+    const first = join(dir, 'a.mp4'), second = join(dir, 'b.mp4'); writeFileSync(first, 'a'); writeFileSync(second, 'b');
+    let nextId = '', job!: ImportJob;
+    job = new ImportJob(() => ({ outcome: 'imported' }), progress => {
+      if (progress.phase === 'completed' && !nextId) nextId = job.start('files', [second]).jobId;
+    });
+    const started = job.start('files', [first]); const firstCompletion = job.wait();
+    const completed = await firstCompletion; assert.ok(completed);
+    assert.equal(completed.jobId, started.jobId); assert.equal(completed.phase, 'completed');
+    const next = await job.wait(); assert.ok(next);
+    assert.equal(next.jobId, nextId); assert.notEqual(next.jobId, started.jobId);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

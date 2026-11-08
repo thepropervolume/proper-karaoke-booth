@@ -12,6 +12,7 @@ Your invitation can be used by anyone who has it until it expires or the host re
 
 1. Tell the host your name and the song or artist you would like to sing.
 2. The host searches the local library and double-clicks a song. They can choose your name or enter a new name in the request dialog.
+   If the host is importing a library, newly imported songs appear as they finish; ask them to check again if your song has not appeared yet.
 3. Requests are approved automatically by default. If the host has switched to manual approval, the request waits for their review before joining the queue.
 4. The host starts the performance when it is your turn. Queue order depends on whether the host selected singer rotation or first requested, first played. If enabled, the singer display shows upcoming singers; the host may also set a gap between songs. The host starts the next song after the gap; it does not start automatically. The app checks the song file before starting; if it has moved or changed, the host may need to locate the original before your performance.
 

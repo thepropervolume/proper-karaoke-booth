@@ -16,7 +16,7 @@ Electron may download its runtime on first use. The app keeps its SQLite databas
 
 ## Rehearse
 
-1. Use **Import Video File** or **Import Custom Directory** to add MP4 files. A directory scan includes subfolders; duplicate contents are skipped and originals stay in place.
+1. Use **Import Video File** or **Import Custom Directory** to add MP4 files. A directory scan includes subfolders; duplicate contents are skipped and originals stay in place. The import panel shows current-file progress and paged results. You can cancel while continuing to use playback controls; songs already imported stay in the library. The current file is reported as cancelled and files not yet discovered are not processed. Results remain visible until the next import or app exit; folder totals grow during the scan.
 2. Double-click a song, choose an existing singer or enter a new name, and select **Add to Queue**. A single click only selects the song. Requests are auto-approved by default; with moderation enabled, accept them in **Requests**.
 3. Open **Singer Display** and choose the monitor. **Play/Pause** stages the next eligible song if necessary and starts it, or pauses/resumes an active performance. Stop and confirmed skip are available. Select a waiting queue item and press **Delete** to remove it; the active performance is not removed.
 4. On restart the interrupted show is restored paused; open the singer display and deliberately resume. Stopping returns the current request to the queue; skipping consumes its turn.
@@ -57,8 +57,8 @@ The fixture script needs FFmpeg with H.264/AAC encoders and refuses to overwrite
 
 ## Current boundaries
 
-- Local MP4 karaoke video only. Paired MP3/CDG, ZIP, background import progress, seek UI and key/tempo are not implemented. Experimental bumper playback has no fade or automatic intermission scheduling. Audio output selection has automated coverage but requires physical device-loss verification. Import hashes files without copying; larger libraries need a dedicated background job and progress/cancellation UX.
-- Library metadata comes from configurable filename parsing and local host edits; embedded tags, write-back, alias indexing and detailed version information remain planned. Ratings and policy are domain foundations, not a finished host policy interface; no guest catalog is exposed.
+- Local MP4 karaoke video only. Paired MP3/CDG, ZIP, seek UI and key/tempo are not implemented. Import hashes files in a worker without copying them; actual large-library, network-drive and Dropbox behavior still needs testing. Experimental bumper playback has no fade or automatic intermission scheduling. Audio output selection has automated coverage but requires physical device-loss verification.
+- Library metadata comes from configurable filename parsing and local host edits; embedded tags, write-back, alias indexing and detailed version information remain planned. Ratings and policy are domain foundations, not a finished host policy interface. The experimental local singer page exposes a policy-filtered guest catalog.
 - Queue moderation, simple rounds, staged lock, generation checks and SQLite recovery are in place. Holds, attendance, manual reorder and richer rotation rules remain unimplemented.
 - The general local API, companion apps, internet relay, profiles, providers and billing are not implemented. The experimental singer-only HTTPS service is off by default and opens only when the host explicitly starts a local room.
 - Night, Day and system theme work in the host; the singer display keeps source video colors unchanged. A full accessibility and multi-platform audit is still needed.

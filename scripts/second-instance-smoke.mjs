@@ -48,7 +48,11 @@ try {
   app = await launch();
   const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv);
   await host.evaluate(() => window.tpv.importFiles('files'));
-  await host.waitForFunction(async () => (await window.tpv.getState()).versions.length === 1);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if ((await host.evaluate(() => window.tpv.getState())).versions.length === 1) break;
+    if (attempt === 199) throw new Error('Timed out waiting for import.');
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
   await host.evaluate(async () => {
     const current = await window.tpv.getState(), singerId = crypto.randomUUID();
     for (const command of [ { type: 'addSinger', singer: { id: singerId, name: 'QA Singer' } },

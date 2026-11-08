@@ -14,7 +14,7 @@ const same = (a,b) => a.dev === b.dev && a.ino === b.ino && a.size === b.size &&
   try {
     const path = workerData.path;
     const startPath = await lstat(path);
-    if (!startPath.isFile() || startPath.isSymbolicLink() || !Number.isSafeInteger(startPath.size)) throw new Error('The source is not a regular file.');
+    if (!startPath.isFile() || startPath.isSymbolicLink() || !Number.isSafeInteger(startPath.size) || startPath.size < 1) throw new Error('The source is not a nonempty regular file.');
     file = await open(path, 'r');
     const before = await file.stat();
     if (!before.isFile() || !same(startPath,before)) throw new Error('The source changed while opening.');

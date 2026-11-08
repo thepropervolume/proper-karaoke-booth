@@ -49,6 +49,16 @@ contextBridge.exposeInMainWorld('tpv', {
     return () => ipcRenderer.removeListener('host:focus-search', listener);
   },
   importFiles: (kind?: 'files' | 'folder') => ipcRenderer.invoke('host:import', kind),
+  imports: {
+    status: () => ipcRenderer.invoke('host:import-status'),
+    subscribe: (callback: (value: unknown) => void) => {
+      const listener = (_event: unknown, value: unknown) => callback(value);
+      ipcRenderer.on('host:import-progress', listener);
+      return () => ipcRenderer.removeListener('host:import-progress', listener);
+    },
+    cancel: (jobId: string) => ipcRenderer.invoke('host:import-cancel', jobId),
+    results: (jobId: string, offset: number, limit: number) => ipcRenderer.invoke('host:import-results', jobId, offset, limit)
+  },
   getMissingSongRequests: () => ipcRenderer.invoke('host:get-missing-song-requests'),
   onMissingSongRequests: (callback: (value: unknown) => void) => {
     const listener = (_event: unknown, value: unknown) => callback(value);

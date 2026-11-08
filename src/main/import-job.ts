@@ -88,7 +88,7 @@ export class ImportJob {
       state.phase = controller.signal.aborted ? 'cancelled' : 'completed';
     } catch (error) { state.phase = controller.signal.aborted || error instanceof ImportCancelled ? 'cancelled' : 'failed'; }
     finally { state.current = null; this.controller = null; this.changed(); }
-    return this.snapshot()!;
+    return { ...state, current: null };
   }
 }
 

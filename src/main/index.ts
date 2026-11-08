@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { readdir, stat, unlink } from 'node:fs/promises';
+import { stat, unlink } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
@@ -25,6 +25,7 @@ import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { createSingerStaticHandler } from './remote-static';
 import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
 import { mediaErrorDetail } from './media-error-message';
+import { ImportJob } from './import-job';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -45,14 +46,15 @@ let shortcutError = '';
 let displayReady = false;
 let choosingDisplay = false;
 let shuttingDown = false;
-let importing = false;
+let importPickerOpen = false;
 let bumperCatalog: BumperCatalog | null = null;
 let bumperOutput: BumperDisplayOutput | null = null;
 let bumper: BumperController | null = null;
 let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
-let importAbort: AbortController | null = null;
+let importJob: ImportJob | null = null;
+let importParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
 let relinking = false;
 const mediaChecks = new Set<AbortController>();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
@@ -263,55 +265,19 @@ async function executeHostCommand(command: Command): Promise<{ ok: boolean; erro
   const result = perform(command);
   return result.ok ? { ok: true } : { ok: false, error: result.message };
 }
-async function importFiles(kind: 'files' | 'folder'): Promise<void> {
-  if (!host) return;
-  const selection = await dialog.showOpenDialog(host, kind === 'folder'
-    ? { title: 'Import MP4 folder', properties: ['openDirectory'] }
-    : { title: 'Import local MP4 files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
-  if (selection.canceled || shuttingDown) return;
-  // A folder import can take time; use one parsing rule for the entire batch.
-  const metadataFormat = settings.metadataFormat;
-  const metadataTemplates = [...settings.metadataTemplates];
-  let duplicates = 0, failed = 0, ambiguous = 0;
-  // Do not follow symbolic links when traversing: they can form cycles or escape the chosen folder.
-  async function* candidates(paths: string[]): AsyncGenerator<string> {
-    for (const path of paths) {
-      if (shuttingDown) return;
-      if (kind === 'files') { yield path; continue; }
-      let entries;
-      try { entries = await readdir(path, { withFileTypes: true }); }
-      catch { failed++; continue; }
-      for (const entry of entries) {
-        const child = join(path, entry.name);
-        if (entry.isDirectory()) yield* candidates([child]);
-        else if (entry.isFile() && extname(entry.name).toLowerCase() === '.mp4') yield child;
-      }
-    }
-  }
-  let imported = 0;
-  for await (const path of candidates(selection.filePaths)) {
-    if (shuttingDown) return;
-    try {
-      if (extname(path).toLowerCase() !== '.mp4' || !(await stat(path)).isFile()) { failed++; continue; }
-      const hash = (await fingerprintMedia(path, importAbort!.signal)).fingerprint;
-      if (shuttingDown) return;
-      if (store.byFingerprint(hash)) { duplicates++; continue; }
-      const id = randomUUID();
-      const parsed = metadataFromPath(path, metadataTemplates, metadataFormat);
-      const { artist, title, djCode, trackNumber, matchedTemplate } = parsed;
-      const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision,
-        actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: { id, title, artist, rating: 'unrated',
-          ...(djCode ? { djCode } : {}), ...(trackNumber ? { trackNumber } : {}),
-          ...(matchedTemplate ? { metadataTemplate: matchedTemplate } : {}), metadataAmbiguous: parsed.ambiguous } } });
-      if (!result.outcome.ok) { failed++; continue; }
-      store.save(result.state, [{ id, path, fingerprint: hash }]);
-      state = result.state;
-      imported++;
-      if (parsed.ambiguous) ambiguous++;
-      broadcast();
-    } catch { failed++; }
-  }
-  if (host && (kind === 'folder' || duplicates || failed || ambiguous)) await dialog.showMessageBox(host, { type: failed || ambiguous ? 'warning' : 'info', message: 'Import finished', detail: `${imported} file(s) imported; ${duplicates} duplicate file(s) skipped; ${failed} file(s) or folder(s) could not be read or imported.${ambiguous ? ` ${ambiguous} song(s) matched multiple patterns or possible splits; review their metadata in the library.` : ''}` });
+async function importFiles(kind: 'files' | 'folder') {
+  if (!host || host.isDestroyed() || shuttingDown || !importJob) throw new Error('Import is unavailable.');
+  const current = importJob.snapshot();
+  if (importPickerOpen || (current && ['scanning', 'hashing', 'cancelling'].includes(current.phase))) throw new Error('An import is already in progress.');
+  importPickerOpen = true;
+  try {
+    const selection = await dialog.showOpenDialog(host, kind === 'folder'
+      ? { title: 'Import MP4 folder', properties: ['openDirectory'] }
+      : { title: 'Import local MP4 files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
+    if (selection.canceled || shuttingDown || !selection.filePaths.length) return null;
+    importParsing = { metadataFormat: settings.metadataFormat, metadataTemplates: [...settings.metadataTemplates] };
+    return importJob.start(kind, selection.filePaths);
+  } finally { importPickerOpen = false; }
 }
 async function serveMedia(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -363,6 +329,22 @@ else {
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
+  importJob = new ImportJob((path, fingerprint) => {
+    if (shuttingDown || !importParsing) throw new Error('Import is unavailable.');
+    if (store.byFingerprint(fingerprint)) return { outcome: 'duplicate' };
+    const id = randomUUID(), parsed = metadataFromPath(path, importParsing.metadataTemplates, importParsing.metadataFormat);
+    const { artist, title, djCode, trackNumber, matchedTemplate } = parsed;
+    const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision,
+      actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: { id, title, artist, rating: 'unrated',
+        ...(djCode ? { djCode } : {}), ...(trackNumber ? { trackNumber } : {}),
+        ...(matchedTemplate ? { metadataTemplate: matchedTemplate } : {}), metadataAmbiguous: parsed.ambiguous } } }, settings, Date.now());
+    if (!result.outcome.ok) throw new Error('The song metadata could not be added.');
+    store.save(result.state, [{ id, path, fingerprint }]);
+    state = result.state;
+    // A UI notification must not make a successful durable import look failed.
+    try { broadcast(); } catch { /* The host can reload the persisted show. */ }
+    return { outcome: 'imported', needsReview: parsed.ambiguous };
+  }, progress => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:import-progress', progress); });
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; broadcast(); };
@@ -524,11 +506,18 @@ else {
   ipcMain.handle('host:import', async (event, kind: unknown) => {
     guardHost(event.sender.id);
     if (kind !== undefined && kind !== 'files' && kind !== 'folder') throw new Error('Invalid import type.');
-    if (importing) throw new Error('An import is already in progress.');
-    importing = true;
-    importAbort = new AbortController();
-    try { await importFiles(kind === 'folder' ? 'folder' : 'files'); }
-    finally { importing = false; importAbort = null; }
+    return importFiles(kind === 'folder' ? 'folder' : 'files');
+  });
+  ipcMain.handle('host:import-status', event => { guardHost(event.sender.id); return importJob?.snapshot() ?? null; });
+  ipcMain.handle('host:import-cancel', (event, id: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof id !== 'string' || id.length > 128) throw new Error('Invalid import.');
+    return importJob?.cancel(id) ?? false;
+  });
+  ipcMain.handle('host:import-results', (event, id: unknown, offset: unknown, limit: unknown) => {
+    guardHost(event.sender.id);
+    if (!importJob || typeof id !== 'string' || id.length > 128 || typeof offset !== 'number' || typeof limit !== 'number') throw new Error('Invalid import results request.');
+    return importJob.page(id, offset, limit);
   });
   ipcMain.handle('host:command', async (event, input: unknown) => {
     guardHost(event.sender.id);
@@ -592,19 +581,29 @@ else {
 }
 let quitStarted = false, quitReady = false, storeClosed = false;
 function closeStore(): void { if (!storeClosed && store) { storeClosed = true; store.close(); } }
+function waitForImport(job: ImportJob): Promise<boolean> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    void job.wait().then(() => { clearTimeout(timer); resolve(true); }, () => { clearTimeout(timer); resolve(false); });
+  });
+}
 app.on('before-quit', event => {
-  shuttingDown = true; importAbort?.abort(); for (const check of mediaChecks) check.abort();
+  shuttingDown = true; for (const check of mediaChecks) check.abort();
+  const pendingImport = importJob?.snapshot();
+  const importing = !!pendingImport && ['scanning', 'hashing', 'cancelling'].includes(pendingImport.phase);
+  if (importing) importJob?.cancel(pendingImport!.jobId);
   store?.disableRemoteQueue();
   if (quitReady) { closeStore(); return; }
+  if (quitStarted) { event.preventDefault(); return; }
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
-  const wait = remoteHost.needsShutdownWait();
+  const wait = remoteHost.needsShutdownWait() || importing;
   const shutdown = remoteHost.shutdown();
   if (!wait) { quitReady = true; closeStore(); return; }
   event.preventDefault();
-  if (quitStarted) return;
   quitStarted = true;
-  void shutdown.then(clean => {
-    if (!clean) {
+  const importShutdown = importing && importJob ? waitForImport(importJob) : Promise.resolve(true);
+  void Promise.all([shutdown, importShutdown]).then(([remoteClean, importClean]) => {
+    if (!remoteClean || !importClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;

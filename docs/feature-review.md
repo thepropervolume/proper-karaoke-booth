@@ -25,7 +25,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [x] Allow moved media to be relinked to an exact original and check for changes before playback. Large-file latency, concurrent modification during playback and real-drive behavior still need show testing.
 - [ ] Make display disconnect/reconnect and moving between monitors predictable; pause safely and offer explicit recovery.
 - [ ] Add backup, restore and versioned SQLite migrations, including interrupted-write and upgrade tests.
-- [ ] Offer import progress, cancellation, per-file results and nonblocking background hashing for large libraries.
+- [x] Offer import progress, cancellation, per-file results and worker-thread hashing. Synthetic Windows rehearsal covers pause during import and cancellation; actual large libraries and slow/network drives still need testing.
 - [ ] Confirm that a crash, restart or second app instance cannot corrupt the show or cause unexpected playback.
 
 ## Priority 1 — host workflow requested
@@ -34,7 +34,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Store and validate all application settings in a documented, editable JSON or YAML file, with defaults, migration and useful error messages.
 - [x] Offer auto-approval of song requests, enabled by default, with a manual moderation option.
 - [x] Offer FIFO and fair singer rotation modes with a locked staged song and tested round behavior.
-- [ ] Add a file-or-folder MP4 import choice, including recursive scan, duplicate reporting and inaccessible-file handling.
+- [x] Offer file or recursive-folder MP4 import with duplicate and inaccessible-file results; physical large-library and network-drive checks remain open.
 - [x] Allow a new singer's name to be entered while selecting a song, with a way to select an existing singer.
 - [x] Add a search icon available throughout the host UI and focus search from the singer display.
 - [ ] Add host-selectable metadata sources and precedence: embedded tags, configurable filename pattern, and manual overrides; preview and rescan safely.
