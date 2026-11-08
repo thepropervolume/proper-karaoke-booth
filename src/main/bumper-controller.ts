@@ -27,12 +27,13 @@ export class BumperController {
   getState(): BumperSnapshot { return { ...this.snapshot }; }
 
   /** Explicit host action. Never begins after output loss or while karaoke is active. */
-  start(): Promise<boolean> {
+  start(trackId?: string): Promise<boolean> {
     if (this.disposed || this.karaokeActive || !this.outputAvailable) return Promise.resolve(false);
+    if (trackId && !this.tracks().some(track => track.id === trackId)) return Promise.resolve(false);
     this.wanted = true;
     return this.enqueue(async () => {
       if (this.snapshot.status !== 'stopped') return true;
-      return this.playNext(null);
+      return this.playNext(null, trackId);
     });
   }
   stop(): Promise<void> { this.wanted = false; return this.enqueue(() => this.stopNow()); }
@@ -76,12 +77,14 @@ export class BumperController {
       this.update({ status: 'stopped', trackId: null, generation: null });
     }
   }
-  private async playNext(previousId: string | null): Promise<boolean> {
+  private async playNext(previousId: string | null, firstId?: string): Promise<boolean> {
     if (!this.wanted || !this.outputAvailable || this.karaokeActive || this.disposed) return false;
     const tracks = this.tracks();
     if (!tracks.length) { this.wanted = false; return false; }
     const previous = tracks.findIndex(track => track.id === previousId);
-    const track = tracks[previous < 0 ? 0 : (previous + 1) % tracks.length];
+    const first = firstId ? tracks.findIndex(track => track.id === firstId) : -1;
+    if (firstId && first < 0) { this.wanted = false; return false; }
+    const track = tracks[first >= 0 ? first : previous < 0 ? 0 : (previous + 1) % tracks.length];
     const generation = randomUUID();
     this.update({ status: 'starting', trackId: track.id, generation });
     try { await this.output.start(track, generation); }
