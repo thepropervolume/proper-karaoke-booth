@@ -1,0 +1,9 @@
+# Native singer preview
+
+This is an **offline React Native/Expo UI preview**, not a connected singer app. It uses only synthetic songs and requests, keeps them in memory, and sends no data to a host. There are no accounts, saved credentials, deep links, permissions, background jobs, analytics, or network calls in the app code. The Expo development tool itself can use a network connection during setup and development.
+
+The project targets Expo SDK 58, React Native 0.88 and React 19.3. Install dependencies within this directory with `npm ci`, then use `npm run typecheck` and `npm start`. From the repository root, run the preview model test with `node --import tsx --test mobile/tests/preview.test.ts` after installing the desktop dependencies. SDK 58 requires Node 22.13 or later and a compatible native development build. See [Expo's SDK compatibility table](https://docs.expo.dev/versions/latest/) and [project setup guidance](https://docs.expo.dev/more/create-expo/); the current Expo Go transition may require SDK 57 instead of SDK 58.
+
+The connected desktop singer API supports admission, a guest-scoped session, catalog pages, song requests, missing-song requests, withdrawal and durable receipt lookup. A future native client must use HTTPS with normal platform certificate verification, correctly set the LAN service's exact Origin, protect invitation/session/resume secrets, and handle uncertain outcomes without replaying requests. Native fetch redirect behavior, credential exposure, app background/restart, secure randomness, guest revocation and real Android/iOS TLS must be independently tested before connecting this preview. Internet queueing and user accounts are not yet available in the desktop app.
+
+This preview does not ask for a real invitation and cannot join a real show. It is a starting point for a native singer interface, not a substitute for the existing experimental browser-based LAN singer page.
