@@ -3,13 +3,14 @@ import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import { readFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
-import { request } from 'node:https';
+import { createServer, request, type Server, type ServerOptions } from 'node:https';
+import type { RequestListener } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { connect as tlsConnect, rootCertificates } from 'node:tls';
 import { test } from 'node:test';
-import { startQuickTunnelDev } from '../../src/main/quick-tunnel-dev';
+import { QuickTunnelOpenError, startQuickTunnelDev } from '../../src/main/quick-tunnel-dev';
 import { isQuickTunnelOrigin, startQuickTunnelLoopback } from '../../src/main/quick-tunnel-loopback';
 
 const certPath = resolve('tests/fixtures/tls/test-only.crt');
@@ -98,6 +99,28 @@ test('an untrusted local certificate prevents starting the connector', async () 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('failed post-bind TLS validation preserves a retry handle if closing the loopback listener fails', async () => {
+  let bound: Server | undefined, closes = 0, spawned = false;
+  const factory = ((options: ServerOptions, listener: RequestListener) => {
+    const server = createServer(options, listener); bound = server;
+    const actualClose = server.close.bind(server);
+    server.close = ((callback?: (error?: Error) => void) => {
+      if (++closes === 1) { queueMicrotask(() => callback?.(new Error('close fault'))); return server; }
+      return actualClose(callback);
+    }) as typeof server.close;
+    return server;
+  }) as typeof createServer;
+  const runtime = { makeTemp: mkdtemp, openGate: ((options: Parameters<typeof startQuickTunnelLoopback>[0]) =>
+    startQuickTunnelLoopback({ ...options, ca: Buffer.from(rootCertificates[0]) }, factory)) as typeof startQuickTunnelLoopback };
+  let recovery: QuickTunnelOpenError | undefined;
+  try {
+    await startQuickTunnelDev(settings(), () => { spawned = true; return new FakeProcess() as unknown as ChildProcess; }, runtime);
+    assert.fail('Expected TLS and cleanup failure');
+  } catch (error) { assert.ok(error instanceof QuickTunnelOpenError); recovery = error; }
+  assert.equal(spawned, false); assert.ok(bound?.listening);
+  await recovery!.retryCleanup(); assert.equal(closes, 2); assert.equal(bound?.listening, false);
+});
+
 test('a spoofed public hostname never becomes active and startup times out safely', async () => {
   const child = new FakeProcess(); let port = 0, spawned!: () => void;
   const ready = new Promise<void>(resolve => { spawned = resolve; });
@@ -181,6 +204,20 @@ test('failed process termination is retryable and the loopback gate remains clos
   await assert.rejects(fetchLocal(port, '/singer/', { host: new URL(origin).host }));
   await session.stop();
   assert.equal(attempts, 2); assert.equal(child.killed, true);
+});
+
+test('failed startup cleanup returns a retry handle without reopening the gate', async () => {
+  const child = new FakeProcess(); let port = 0, spawned!: () => void, attempts = 0;
+  const originalKill = child.kill.bind(child);
+  child.kill = () => ++attempts === 1 ? false : originalKill();
+  const ready = new Promise<void>(resolve => { spawned = resolve; });
+  const fakeSpawn = ((_file: string, args: string[]) => { port = Number(new URL(args[args.indexOf('--url') + 1]).port); spawned(); return child as unknown as ChildProcess; });
+  const pending = startQuickTunnelDev({ ...settings(), startupTimeoutMs: 100 }, fakeSpawn);
+  await ready;
+  let recovery: QuickTunnelOpenError | undefined;
+  try { await pending; assert.fail('Expected failed startup'); } catch (error) { assert.ok(error instanceof QuickTunnelOpenError); recovery = error; }
+  await assert.rejects(fetchLocal(port, '/singer/', { host: new URL(origin).host }));
+  await recovery!.retryCleanup(); assert.equal(attempts, 2); assert.equal(child.killed, true);
 });
 
 test('failure while the temporary directory is being created removes the late directory', async () => {

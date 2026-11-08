@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { isQuickTunnelOrigin, startQuickTunnelLoopback, type RelayHandler } from './quick-tunnel-loopback';
+import { isQuickTunnelOrigin, LoopbackOpenError, startQuickTunnelLoopback, type RelayHandler } from './quick-tunnel-loopback';
 
 export type QuickTunnelDevOptions = {
   enabled: boolean;
@@ -18,6 +18,10 @@ export type QuickTunnelDevOptions = {
   startupTimeoutMs?: number;
 };
 export type QuickTunnelDevSession = { origin: string; stop(): Promise<void> };
+/** Main-process-only handle when startup cleanup needs another attempt. */
+export class QuickTunnelOpenError extends Error {
+  constructor(readonly retryCleanup: () => Promise<void>) { super('Development tunnel startup cleanup is incomplete.'); }
+}
 type Spawn = (path: string, args: string[], options: Parameters<typeof spawn>[2]) => ChildProcess;
 type Runtime = { makeTemp: typeof mkdtemp; openGate: typeof startQuickTunnelLoopback };
 
@@ -37,7 +41,9 @@ export async function startQuickTunnelDev(options: QuickTunnelDevOptions, spawnP
   let temporary: string | undefined;
   let unexpected: (() => void) | undefined;
   const abortAfterStart = () => unexpected?.();
-  const gate = await runtime.openGate({ cert: options.cert, key: options.key, ca, handler: options.handler, onError: () => unexpected?.() });
+  let gate;
+  try { gate = await runtime.openGate({ cert: options.cert, key: options.key, ca, handler: options.handler, onError: () => unexpected?.() }); }
+  catch (error) { if (error instanceof LoopbackOpenError) throw new QuickTunnelOpenError(error.retryCleanup); throw error; }
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> => {
     if (stopping) return stopping;
@@ -118,7 +124,8 @@ export async function startQuickTunnelDev(options: QuickTunnelDevOptions, spawnP
     if (options.signal?.aborted) { unexpected(); throw new Error('Development tunnel startup was cancelled.'); }
     return { origin, stop };
   } catch (error) {
-    try { await stop(); } finally { if (temporary) { await rm(temporary, { recursive: true, force: true }); temporary = undefined; } }
+    const cleanup = async () => { await stop(); if (temporary) { await rm(temporary, { recursive: true, force: true }); temporary = undefined; } };
+    try { await cleanup(); } catch { throw new QuickTunnelOpenError(cleanup); }
     throw error;
   }
 }

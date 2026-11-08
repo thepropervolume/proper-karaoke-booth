@@ -7,6 +7,10 @@ import { connect } from 'node:tls';
 
 export type RelayHandler = (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
 export type LoopbackGate = { readonly port: number; bindOrigin(origin: string): void; close(): Promise<void> };
+/** Main-process-only recovery handle for a partially opened local listener. */
+export class LoopbackOpenError extends Error {
+  constructor(readonly retryCleanup: () => Promise<void>) { super('Loopback listener cleanup is incomplete.'); }
+}
 export function isQuickTunnelOrigin(value: string): boolean {
   try {
     const url = new URL(value);
@@ -16,7 +20,7 @@ export function isQuickTunnelOrigin(value: string): boolean {
 }
 
 /** Handler must itself enforce guest authentication, request limits and route schemas. */
-export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buffer; ca: Buffer; handler: RelayHandler; onError: () => void; timeoutMs?: number }): Promise<LoopbackGate> {
+export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buffer; ca: Buffer; handler: RelayHandler; onError: () => void; timeoutMs?: number }, createServerFn: typeof createServer = createServer): Promise<LoopbackGate> {
   const timeout = options.timeoutMs ?? 10000;
   if (!Buffer.isBuffer(options.cert) || !Buffer.isBuffer(options.key) || !Buffer.isBuffer(options.ca) ||
       typeof options.handler !== 'function' || typeof options.onError !== 'function' || !Number.isInteger(timeout) || timeout < 100 || timeout > 30000) throw new Error('Invalid loopback HTTPS configuration.');
@@ -28,7 +32,7 @@ export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buf
   const sockets = new Set<Duplex>();
   const limits = new Map<string, { start: number; count: number }>();
   let globalStart = Date.now(), globalCount = 0;
-  const server = createServer({ cert: options.cert, key: options.key, minVersion: 'TLSv1.2', handshakeTimeout: timeout,
+  const server = createServerFn({ cert: options.cert, key: options.key, minVersion: 'TLSv1.2', handshakeTimeout: timeout,
     connectionsCheckingInterval: Math.max(100, Math.min(1000, timeout)) }, async (req, res) => {
     const reject = (code: number) => { if (!res.headersSent && !res.destroyed) { res.writeHead(code, { 'Cache-Control': 'no-store', 'Content-Length': '0', 'Referrer-Policy': 'no-referrer' }); res.end(); } };
     if (!origin || req.headers.host !== new URL(origin).host) { reject(403); return; }
@@ -74,7 +78,10 @@ export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buf
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => { server.removeListener('error', reject); resolve(); }); });
   server.on('error', () => { void close().catch(() => {}); try { options.onError(); } catch {} });
   const address = server.address();
-  if (!address || typeof address === 'string' || address.address !== '127.0.0.1') { await close(); throw new Error('Loopback binding failed.'); }
+  if (!address || typeof address === 'string' || address.address !== '127.0.0.1') {
+    try { await close(); } catch { throw new LoopbackOpenError(close); }
+    throw new Error('Loopback binding failed.');
+  }
   try {
     // Validate the private CA and IP SAN without disabling TLS verification.
     await new Promise<void>((resolve, reject) => {
@@ -83,6 +90,9 @@ export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buf
       socket.once('secureConnect', () => { clearTimeout(timer); socket.destroy(); resolve(); });
       socket.once('error', () => { clearTimeout(timer); socket.destroy(); reject(new Error('Loopback certificate is not trusted by its supplied CA.')); });
     });
-  } catch (error) { await close(); throw error; }
+  } catch (error) {
+    try { await close(); } catch { throw new LoopbackOpenError(close); }
+    throw error;
+  }
   return { port: address.port, bindOrigin(value) { if (origin !== null || serverClosing || !isQuickTunnelOrigin(value)) throw new Error('Invalid tunnel origin.'); origin = value; }, close };
 }
