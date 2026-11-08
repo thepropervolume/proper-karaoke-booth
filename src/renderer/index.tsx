@@ -37,6 +37,7 @@ declare global {
       onFocusSearch: (callback: () => void) => () => void;
       importFiles: (kind?: 'files' | 'folder') => Promise<void>;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
+      onMissingSongRequests: (callback: (requests: MissingSongRequest[]) => void) => () => void;
       addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
       command: (payload: Command) => Promise<Result>;
       openDisplay: () => Promise<void>;
@@ -113,10 +114,11 @@ function App() {
   }, [state?.revision]);
 
   useEffect(() => {
-    let alive = true;
-    void window.tpv.getMissingSongRequests().then(value => { if (alive) setMissingRequests(value); })
+    let alive = true, received = false;
+    const unsubscribe = window.tpv.onMissingSongRequests(value => { received = true; if (alive) setMissingRequests(value); });
+    void window.tpv.getMissingSongRequests().then(value => { if (alive && !received) setMissingRequests(value); })
       .catch(error => { if (alive) setNotice(`Could not load missing-song requests: ${String(error)}`); });
-    return () => { alive = false; };
+    return () => { alive = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {

@@ -49,6 +49,11 @@ contextBridge.exposeInMainWorld('tpv', {
   },
   importFiles: (kind?: 'files' | 'folder') => ipcRenderer.invoke('host:import', kind),
   getMissingSongRequests: () => ipcRenderer.invoke('host:get-missing-song-requests'),
+  onMissingSongRequests: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('host:missing-song-requests', listener);
+    return () => ipcRenderer.removeListener('host:missing-song-requests', listener);
+  },
   addMissingSongRequest: (request: unknown) => ipcRenderer.invoke('host:add-missing-song-request', request),
   command: (command: unknown) => ipcRenderer.invoke('host:command', command),
   openDisplay: () => ipcRenderer.invoke('host:open-display')

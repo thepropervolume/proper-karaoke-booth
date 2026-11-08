@@ -17,7 +17,7 @@ export type HostRoomProvider = {
   interfaces(): RemoteInterface[];
   select(kind: 'certificate' | 'privateKey'): Promise<{ label: string; handle: unknown } | null>;
   open(input: Omit<OpenLanInput, 'certificateToken' | 'privateKeyToken'> & { certificate: unknown; privateKey: unknown;
-    onGuestsChanged: () => void; onFailure: () => void }): Promise<RemoteRoom>;
+    signal: AbortSignal; onGuestsChanged: () => void; onMissingRequest: () => void; onFailure: () => void }): Promise<RemoteRoom>;
 };
 
 /** One room at a time. A null provider is a hard gate: no listener or authority is created. */
@@ -27,24 +27,31 @@ export class HostRemoteLifecycle {
   private phase: HostRemoteStatus['room'] = 'closed';
   private selections = new Map<string, { kind: 'certificate' | 'privateKey'; handle: unknown }>();
   private pending = false;
-  constructor(private readonly provider: HostRoomProvider | null, private readonly publish: (value: HostRemoteStatus) => void = () => {}) {}
+  private disposing = false;
+  private openController: AbortController | null = null;
+  private opening: Promise<void> | null = null;
+  private cleaning: Promise<void> | null = null;
+  private shutdownTask: Promise<boolean> | null = null;
+  constructor(private readonly provider: HostRoomProvider | null, private readonly publish: (value: HostRemoteStatus) => void = () => {},
+    private readonly onMissingRequest: () => void = () => {}) {}
   status(): HostRemoteStatus {
     let interfaces: RemoteInterface[] = [], guests: RemoteGuest[] = [];
     if (this.provider) interfaces = this.provider.interfaces().map(({ id, label }) => ({ id, label }));
     if (this.room && this.phase === 'open') guests = this.room.guests().map(({ singerId, name }) => ({ singerId, name }));
-    return { available: !!this.provider, room: this.phase, roomId: this.phase === 'open' ? this.roomId : null,
+    return { available: !!this.provider && !this.disposing, room: this.phase, roomId: this.phase === 'open' ? this.roomId : null,
       lanOrigin: this.phase === 'open' ? this.room?.origin ?? null : null, interfaces, guests,
-      message: !this.provider ? 'Remote queueing is not available yet.' : this.phase === 'failed' ? 'The room needs recovery before it can be reopened.' : '' };
+      message: this.disposing ? 'Remote queueing is shutting down.' : !this.provider ? 'Remote queueing is not available yet.' : this.phase === 'failed' ? 'The room needs recovery before it can be reopened.' : '' };
   }
   private changed(): void { try { this.publish(this.status()); } catch { /* UI notification must not interrupt cleanup. */ } }
-  private requireProvider(): HostRoomProvider { if (!this.provider) throw new Error('Remote queueing is not available yet.'); return this.provider; }
-  private requireRoom(): RemoteRoom { if (!this.room || this.phase !== 'open' || this.pending) throw new Error('Remote room is unavailable.'); return this.room; }
+  private requireProvider(): HostRoomProvider { if (!this.provider || this.disposing) throw new Error('Remote queueing is not available yet.'); return this.provider; }
+  private requireRoom(): RemoteRoom { if (this.disposing || !this.room || this.phase !== 'open' || this.pending) throw new Error('Remote room is unavailable.'); return this.room; }
   async select(kind: 'certificate' | 'privateKey'): Promise<SelectedFile | null> {
     const provider = this.requireProvider();
     if (this.phase !== 'closed' || this.pending) throw new Error('Close the room first.');
     this.pending = true;
     try {
       const selected = await provider.select(kind);
+      if (this.disposing) return null;
       if (!selected) return null;
       // Labels are filenames, never paths or private-key contents.
       if (typeof selected.label !== 'string' || !selected.label || selected.label.length > 255 || /[\\/\x00-\x1f]/.test(selected.label)) throw new Error('Invalid file selection.');
@@ -65,12 +72,17 @@ export class HostRemoteLifecycle {
     const certificate = this.selections.get(value.certificateToken), key = this.selections.get(value.privateKeyToken);
     if (validateOpenLan(value, provider.interfaces()) || certificate?.kind !== 'certificate' || key?.kind !== 'privateKey') throw new Error('Invalid room settings.');
     this.pending = true; this.phase = 'opening'; this.roomId = randomUUID(); const roomId = this.roomId;
+    const controller = new AbortController(); this.openController = controller;
+    let finishOpening!: () => void;
+    const opening = new Promise<void>(resolve => { finishOpening = resolve; }); this.opening = opening;
     let failedDuringOpen = false;
     this.changed();
     try {
-      this.room = await provider.open({ interfaceId: value.interfaceId, hostname: value.hostname, port: value.port, certificate: certificate.handle, privateKey: key.handle,
+      this.room = await provider.open({ interfaceId: value.interfaceId, hostname: value.hostname, port: value.port, certificate: certificate.handle, privateKey: key.handle, signal: controller.signal,
         onGuestsChanged: () => { if (this.roomId === roomId && this.phase === 'open') this.changed(); },
+        onMissingRequest: () => { if (this.roomId === roomId && this.phase === 'open' && !this.disposing) { try { this.onMissingRequest(); } catch { /* Host can reload the list. */ } } },
         onFailure: () => { if (this.roomId !== roomId) return; if (this.phase === 'opening') failedDuringOpen = true; else void this.failRoom(roomId); } });
+      if (this.disposing || controller.signal.aborted) throw new Error('Remote room startup was cancelled.');
       if (failedDuringOpen) throw new Error('Remote listener failed during startup.');
       const expected = new URL(`https://${value.hostname.includes(':') ? `[${value.hostname}]` : value.hostname}:${value.port}`).origin;
       if (this.room.origin !== expected) throw new Error('Invalid room origin.');
@@ -81,7 +93,7 @@ export class HostRemoteLifecycle {
         try { await this.cleanup(); } catch { this.phase = 'failed'; this.changed(); throw new Error('Remote room needs recovery.'); }
       }
       this.roomId = null; this.phase = 'closed'; this.changed(); throw error;
-    } finally { this.pending = false; }
+    } finally { this.pending = false; finishOpening(); if (this.opening === opening) this.opening = null; }
     this.changed();
   }
   createInvitation(ttlSeconds: unknown): string {
@@ -111,13 +123,39 @@ export class HostRemoteLifecycle {
     try { await this.cleanup(); } catch { /* Keep the room and block reopening for recovery. */ }
     finally { this.pending = false; this.changed(); }
   }
+  /** Starts shutdown synchronously; returns false at the deadline rather than blocking app exit. */
+  shutdown(timeoutMs = 5000): Promise<boolean> {
+    if (this.shutdownTask) return this.shutdownTask;
+    this.disposing = true;
+    // Providers must immediately stop guest calls and prevent later authority creation on abort.
+    this.openController?.abort();
+    if (this.phase === 'open') this.phase = 'closing';
+    this.changed();
+    const deadline = Math.max(0, Math.min(10000, Number.isFinite(timeoutMs) ? timeoutMs : 5000));
+    const work = (async () => {
+      if (this.opening) await this.opening;
+      if (this.room) await this.cleanup();
+      return true;
+    })().catch(() => false);
+    this.shutdownTask = new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), deadline);
+      void work.then(result => { clearTimeout(timer); resolve(result); });
+    });
+    return this.shutdownTask;
+  }
+  needsShutdownWait(): boolean { return !!this.opening || !!this.room || !!this.cleaning; }
   private async cleanup(): Promise<void> {
+    if (this.cleaning) return this.cleaning;
     const room = this.room!;
-    // Start both actions without waiting for either; a slow drain must not delay revocation.
-    const [stopped, revoked] = await Promise.allSettled([
-      Promise.resolve().then(() => room.stop()), Promise.resolve().then(() => room.revokeAll())
-    ]);
-    if (stopped.status === 'rejected' || revoked.status === 'rejected') throw new Error('Remote room cleanup failed.');
-    this.room = null; this.roomId = null;
+    const cleaning = (async () => {
+      // Start both actions without waiting for either; a slow drain must not delay revocation.
+      const [stopped, revoked] = await Promise.allSettled([
+        Promise.resolve().then(() => room.stop()), Promise.resolve().then(() => room.revokeAll())
+      ]);
+      if (stopped.status === 'rejected' || revoked.status === 'rejected') throw new Error('Remote room cleanup failed.');
+      this.room = null; this.roomId = null;
+    })();
+    this.cleaning = cleaning;
+    try { await cleaning; } finally { if (this.cleaning === cleaning) this.cleaning = null; }
   }
 }

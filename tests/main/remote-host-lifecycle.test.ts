@@ -94,3 +94,59 @@ test('failure while a listener opens never publishes an open room', async () => 
   await assert.rejects(host.open(await settings(host)), /listener failed/);
   assert.deepEqual(counts(), { revoked: 1, stopped: 1 }); assert.equal(phases.includes('open'), false);
 });
+
+test('shutdown aborts guest access immediately and coalesces an in-progress close', async () => {
+  const { provider, room, counts } = fixture(); const original = provider.open;
+  let signal!: AbortSignal, release!: () => void;
+  const drained = new Promise<void>(resolve => { release = resolve; });
+  room.stop = () => drained;
+  provider.open = async input => { signal = input.signal; return original(input); };
+  const host = new HostRemoteLifecycle(provider);
+  await host.open(await settings(host));
+  const closing = host.close(), shutdown = host.shutdown(1000);
+  assert.equal(signal.aborted, true); assert.throws(() => host.createInvitation(900), /unavailable/);
+  await new Promise(resolve => setTimeout(resolve, 0)); assert.equal(counts().revoked, 1);
+  release(); await closing; assert.equal(await shutdown, true); assert.equal(counts().revoked, 1);
+});
+
+test('shutdown during opening aborts immediately and cleans up a late room without publishing it open', async () => {
+  const { provider, room, counts } = fixture(); let signal!: AbortSignal, release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  provider.open = async input => { signal = input.signal; await gate; return room; };
+  const phases: string[] = [], host = new HostRemoteLifecycle(provider, status => phases.push(status.room));
+  const opening = host.open(await settings(host));
+  const shutdown = host.shutdown(1000); assert.equal(signal.aborted, true);
+  release(); await assert.rejects(opening, /cancelled/); assert.equal(await shutdown, true);
+  assert.deepEqual(counts(), { revoked: 1, stopped: 1 }); assert.equal(phases.includes('open'), false);
+});
+
+test('shutdown deadline does not wait forever for a misbehaving opener and still cleans up if it returns late', async () => {
+  const { provider, room, counts } = fixture(); let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  provider.open = async () => { await gate; return room; };
+  const host = new HostRemoteLifecycle(provider);
+  const opening = host.open(await settings(host));
+  assert.equal(await host.shutdown(5), false);
+  release(); await assert.rejects(opening, /cancelled/);
+  assert.deepEqual(counts(), { revoked: 1, stopped: 1 });
+});
+
+test('remote missing-song notifications only reach the host while the current room is open', async () => {
+  const { provider } = fixture(); const original = provider.open;
+  let notify!: () => void, notifications = 0;
+  provider.open = async input => { notify = input.onMissingRequest; return original(input); };
+  const host = new HostRemoteLifecycle(provider, () => {}, () => { notifications++; });
+  await host.open(await settings(host)); notify(); assert.equal(notifications, 1);
+  await host.shutdown(1000); notify(); assert.equal(notifications, 1);
+});
+
+test('a file picker returning after shutdown cannot create a usable capability', async () => {
+  const { provider } = fixture(); let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  provider.select = async () => { await gate; return { label: 'server.crt', handle: 'PRIVATE' }; };
+  const host = new HostRemoteLifecycle(provider);
+  const choosing = host.select('certificate');
+  assert.equal(await host.shutdown(100), true);
+  release(); assert.equal(await choosing, null);
+  await assert.rejects(host.select('privateKey'), /not available/);
+});

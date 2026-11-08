@@ -51,6 +51,8 @@ let importAbort: AbortController | null = null;
 // A provider must not be supplied until singer-page hosting and its security review are complete.
 const remoteHost = new HostRemoteLifecycle(null, value => {
   if (host && !host.isDestroyed()) host.webContents.send('host:remote-status', value);
+}, () => {
+  if (!shuttingDown && host && !host.isDestroyed()) host.webContents.send('host:missing-song-requests', store.missingSongRequests());
 });
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
@@ -499,4 +501,24 @@ else {
     app.quit();
   });
 }
-app.on('before-quit', () => { shuttingDown = true; importAbort?.abort(); store?.close(); });
+let quitStarted = false, quitReady = false, storeClosed = false;
+function closeStore(): void { if (!storeClosed && store) { storeClosed = true; store.close(); } }
+app.on('before-quit', event => {
+  shuttingDown = true; importAbort?.abort();
+  if (quitReady) { closeStore(); return; }
+  // Abort first, synchronously preventing guest calls even if startup is still in progress.
+  const wait = remoteHost.needsShutdownWait();
+  const shutdown = remoteHost.shutdown();
+  if (!wait) { quitReady = true; closeStore(); return; }
+  event.preventDefault();
+  if (quitStarted) return;
+  quitStarted = true;
+  void shutdown.then(clean => {
+    if (!clean) {
+      // Pending asynchronous room work may still hold the Store. Exit the process
+      // without closing it underneath that work; the OS releases it on exit.
+      app.exit(1); return;
+    }
+    quitReady = true; closeStore(); app.quit();
+  });
+});
