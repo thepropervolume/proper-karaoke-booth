@@ -27,10 +27,12 @@ import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './me
 import { mediaErrorDetail } from './media-error-message';
 import { ImportJob } from './import-job';
 import { ShowBackup } from './show-backup';
+import { DisplayFullscreen } from './display-fullscreen';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
 let display: BrowserWindow | null = null;
+let displayFullscreen: DisplayFullscreen | null = null;
 let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
@@ -177,6 +179,16 @@ async function createDisplay(): Promise<void> {
     width: Math.min(1280, target.workArea.width), height: Math.min(800, target.workArea.height), title: 'Singer Display',
     backgroundColor: '#000000', webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   restrictWindow(display);
+  const window = display;
+  const fullscreen = new DisplayFullscreen(
+    value => { if (window.isDestroyed()) throw new Error('Singer display closed.'); window.setFullScreen(value); },
+    () => { if (window.isDestroyed()) throw new Error('Singer display closed.'); return window.isFullScreen(); },
+    () => { if (!shuttingDown && host && !host.isDestroyed() && !window.isDestroyed())
+      void dialog.showMessageBox(host, { type: 'warning', message: 'Could not change singer display fullscreen',
+        detail: 'The singer display is still open. Try the fullscreen button again or use the window controls.' }); });
+  displayFullscreen = fullscreen;
+  window.on('enter-full-screen', () => { try { fullscreen.changed(true); } catch { /* Window manager rejected the transition. */ } });
+  window.on('leave-full-screen', () => { try { fullscreen.changed(false); } catch { /* Window manager rejected the transition. */ } });
   const loseDisplay = () => {
     displayReady = false;
     if (pauseForOutputLoss()) warnDisplayLoss();
@@ -191,11 +203,13 @@ async function createDisplay(): Promise<void> {
     displayOutputIds.add(displayId);
   });
   display.on('closed', () => {
+    fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
     bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
     if (pauseForOutputLoss()) warnDisplayLoss(); publishBumper();
   });
   void display.loadFile(join(uiRoot, 'display/index.html'));
+  if (settings.singerDisplayFullscreen) fullscreen.set(true);
 }
 function isRecord(x: unknown): x is Record<string, unknown> { return !!x && typeof x === 'object' && !Array.isArray(x); }
 function shortString(x: unknown): x is string { return typeof x === 'string' && x.trim().length > 0 && x.length <= 500; }
@@ -210,6 +224,7 @@ function validateCommand(value: unknown): Command | null {
       return shortString(value.requestId) && shortString(value.singerId) && shortString(value.versionId) ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
     case 'accept': return shortString(value.requestId) ? { type: 'accept', requestId: value.requestId } : null;
     case 'removeRequest': return shortString(value.requestId) ? { type: 'removeRequest', requestId: value.requestId } : null;
+    case 'rejectRequest': return shortString(value.requestId) ? { type: 'rejectRequest', requestId: value.requestId } : null;
     case 'start': return { type: 'start', generationId: randomUUID() };
     case 'skip': return shortString(value.generationId) && value.confirmed === true ? { type: 'skip', generationId: value.generationId, confirmed: true } : null;
     case 'stage': case 'release': case 'pause': case 'resume': case 'stop': return { type: value.type };
@@ -494,6 +509,11 @@ else {
     try { await unlink(logoPath); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     logoData = null;
     publishDisplay();
+  });
+  ipcMain.handle('host:toggle-display-fullscreen', event => {
+    guardHost(event.sender.id);
+    if (!display || display.isDestroyed() || !displayFullscreen) throw new Error('Open the singer display first.');
+    displayFullscreen.toggle();
   });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
   ipcMain.handle('host:get-bumpers', event => { guardHost(event.sender.id); return bumperInfo(); });

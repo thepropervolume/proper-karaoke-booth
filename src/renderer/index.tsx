@@ -54,6 +54,7 @@ declare global {
       addMissingSongRequest: (request: { singer: string; title: string; artist: string }) => Promise<Result>;
       command: (payload: Command) => Promise<Result>;
       openDisplay: () => Promise<void>;
+      toggleDisplayFullscreen: () => Promise<void>;
       revealConfigFile: (kind: 'settings' | 'shortcuts') => Promise<void>;
       chooseDisplayLogo: () => Promise<boolean>;
       clearDisplayLogo: () => Promise<void>;
@@ -317,6 +318,7 @@ function App() {
       <h1>Local rehearsal</h1>
       <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>
       <Tooltip text="Singer Display"><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
+      <Tooltip text="Toggle singer display fullscreen"><button className="icon-button" aria-label="Toggle singer display fullscreen" onClick={() => void run(() => window.tpv.toggleDisplayFullscreen())}><Icon name="fullscreen" /></button></Tooltip>
       <Tooltip text="Preferences"><button className="icon-button" aria-label="Preferences" onClick={() => setSettingsOpen(true)} disabled={!settingsPath}><Icon name="settings" /></button></Tooltip>
     </header>
     <nav className="sidebar" aria-label="Workspace">
@@ -364,8 +366,15 @@ function App() {
         </>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
-          {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button></div>; })}
+          {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
           {!pending.length && <p className="empty">No requests waiting for review.</p>}
+          <details><summary>Request history</summary>
+            {state.requests.filter(request => ['rejected', 'withdrawn', 'removed', 'completed', 'skipped'].includes(request.status)).slice(-50).reverse().map(request => {
+              const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''} · {request.status}</small></div></div>;
+            })}
+            {!state.requests.some(request => ['rejected', 'withdrawn', 'removed', 'completed', 'skipped'].includes(request.status)) && <p>No past requests yet.</p>}
+            <p className="muted">Showing the 50 most recent past requests.</p>
+          </details>
           <MissingSongReviewPanel bridge={window.tpv} />
         </>}
         {screen === 'singers' && <>

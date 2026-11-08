@@ -48,11 +48,11 @@ The working copy now includes singer-display Space and cross-window search short
 
 ## Priority 1 — queue and library depth
 
-- [ ] Reject, withdraw and remove requests with clear status and history.
+- [x] Reject pending requests, allow singers to withdraw their own pending or accepted requests, and remove requests with visible status and recent history. Staged and playing requests remain locked to singers.
 - [ ] Reorder accepted requests, promote a request, and move requests between singers without silently changing the staged track.
 - [ ] Add singer hold, absence, return and skip-turn controls, with an explicit fairness policy for returning singers.
 - [ ] Show current singer, next singers, queue position and a clearly approximate wait time.
-- [ ] Make per-singer future-request limits configurable and explain why a request is rejected.
+- [x] Make per-singer future-request limits configurable and explain why a request is rejected. Limits apply to singer identities; duplicate or new identities are counted separately.
 - [ ] Support duets/groups and multiple performers on a request.
 - [ ] Start, save, restore and end shows; retain searchable singer and song history and export it to CSV.
 - [ ] Search filenames as well as artist/title; add sort, filtering and responsive large-library navigation. Filename search and host-side sorting and filtering are available; large-library responsiveness still needs verification and improvement.

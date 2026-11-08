@@ -1,12 +1,13 @@
 import React from 'react';
 
-export type IconName = 'search' | 'display' | 'play' | 'pause' | 'stop' | 'skip' | 'settings' | 'file' | 'folder';
+export type IconName = 'search' | 'display' | 'fullscreen' | 'play' | 'pause' | 'stop' | 'skip' | 'settings' | 'file' | 'folder';
 
 /** Decorative icons: the containing control supplies an accessible name. */
 export function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></>,
     display: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
+    fullscreen: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
     play: <path d="M8 4.5v15l12-7.5z" />,
     pause: <><path d="M8 5v14M16 5v14" /></>,
     stop: <rect x="6" y="6" width="12" height="12" rx="1" />,

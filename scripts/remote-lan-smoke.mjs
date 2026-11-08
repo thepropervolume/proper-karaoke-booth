@@ -117,8 +117,13 @@ try {
   assert.equal(new URL(singer.url()).hash, '', 'The admission fragment must be removed from browser history.');
   await singer.getByRole('button', { name: 'Request', exact: true }).click();
   await singer.getByText('accepted', { exact: true }).waitFor();
+  await singer.getByRole('button', { name: 'Withdraw', exact: true }).click();
+  await singer.getByText('withdrawn', { exact: true }).waitFor();
+  assert.ok((await host.evaluate(() => window.tpv.getState())).requests.some(item => item.status === 'withdrawn'));
   await host.getByRole('button', { name: 'Requests', exact: true }).click();
   await host.getByRole('region', { name: 'Unavailable song requests' }).waitFor();
+  await host.getByText('Request history', { exact: true }).click();
+  await host.getByText(/withdrawn/).waitFor();
   await singer.getByLabel('Song title').fill('Browser Missing');
   await singer.getByRole('button', { name: 'Send to host' }).click();
   await host.getByText('Browser Missing', { exact: true }).waitFor();

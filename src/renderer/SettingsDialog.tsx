@@ -58,6 +58,8 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
             <p className="muted">When enabled, singers get a turn before their next song. Otherwise songs play in request order. A staged song stays locked when changing modes.</p>
             <label className="settings-check"><input type="checkbox" checked={draft.autoApprove} onChange={event => setDraft({ ...draft, autoApprove: event.target.checked })} /> Automatically approve new requests</label>
             <p className="muted">Changing this affects new requests; requests already awaiting review remain pending.</p>
+            <label>Future requests per singer<input type="number" min="0" max="50" step="1" required value={draft.maxFutureRequestsPerSinger} onChange={event => setDraft({ ...draft, maxFutureRequestsPerSinger: event.target.valueAsNumber })} /></label>
+            <p className="muted">Includes pending, accepted and staged songs. The current song does not count. Set 0 for no limit; existing requests are kept when you lower the limit.</p>
           </div>
         </details>
         <details className="settings-group">
@@ -79,6 +81,8 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
           <summary>Singer Display</summary>
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.showNextSingers} onChange={event => setDraft({ ...draft, showNextSingers: event.target.checked })} /> Show the next singers</label>
+            <label className="settings-check"><input type="checkbox" checked={draft.singerDisplayFullscreen} onChange={event => setDraft({ ...draft, singerDisplayFullscreen: event.target.checked })} /> Open singer display fullscreen</label>
+            <p className="muted">Applies the next time you open the singer display. The fullscreen button changes the current display without changing this preference.</p>
             <label className="settings-check"><input type="checkbox" checked={draft.showDisplayLogo} onChange={event => setDraft({ ...draft, showDisplayLogo: event.target.checked })} /> Show custom logo when available</label>
             <div className="settings-logo-actions"><button type="button" onClick={() => void window.tpv.chooseDisplayLogo().catch(reason => setError(String(reason)))}>Choose logo…</button><button type="button" onClick={() => void window.tpv.clearDisplayLogo().catch(reason => setError(String(reason)))}>Remove logo</button></div>
             <p className="muted">Choose a PNG or JPEG up to 2 MB. Choosing or removing a logo takes effect immediately; the visibility options apply when you save.</p>

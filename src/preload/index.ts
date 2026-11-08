@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('tpv', {
   },
   addMissingSongRequest: (request: unknown) => ipcRenderer.invoke('host:add-missing-song-request', request),
   command: (command: unknown) => ipcRenderer.invoke('host:command', command),
+  toggleDisplayFullscreen: () => ipcRenderer.invoke('host:toggle-display-fullscreen'),
   openDisplay: () => ipcRenderer.invoke('host:open-display')
 });
 
