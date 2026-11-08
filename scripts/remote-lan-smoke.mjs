@@ -112,9 +112,11 @@ try {
   assert.equal(new URL(singer.url()).hash, '', 'The admission fragment must be removed from browser history.');
   await singer.getByRole('button', { name: 'Request', exact: true }).click();
   await singer.getByText('accepted', { exact: true }).waitFor();
+  await host.getByRole('button', { name: 'Requests', exact: true }).click();
+  await host.getByText('Missing-Song Requests', { exact: true }).waitFor();
   await singer.getByLabel('Song title').fill('Browser Missing');
   await singer.getByRole('button', { name: 'Send to host' }).click();
-  await host.waitForFunction(async () => (await window.tpv.getMissingSongRequests()).some(item => item.singer === 'Browser Singer' && item.title === 'Browser Missing'));
+  await host.getByText('Browser Missing', { exact: true }).waitFor();
   await browser.close(); browser = undefined;
   await host.evaluate(id => window.tpv.remote.revokeGuest(id), joined.body.singerId);
   assert.equal((await api('/api/v1/snapshot', {}, session)).status, 400);
