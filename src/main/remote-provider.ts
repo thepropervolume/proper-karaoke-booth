@@ -14,6 +14,7 @@ import { startLanTransport, type LanTransport, type LanTransportOptions } from '
 import type { RemoteQueue } from './remote-queue';
 import type { SingerStaticHandler } from './remote-static';
 import type { Store } from './store';
+import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 
 type NetInfo = Record<string, NetworkInterfaceInfo[] | undefined>;
 type PickKind = 'certificate' | 'privateKey';
@@ -22,6 +23,8 @@ export type LanProviderOptions = {
   settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>;
   /** Must synchronously install the committed state and publish to host renderers. */
   installCommitted: (state: ShowState) => void;
+  /** Shared with other transports; omitted for a standalone LAN-only provider. */
+  coordinator?: RemoteAuthorityCoordinator;
   /** Main-process native picker. Never return this path to a renderer. */
   pickFile: (kind: PickKind) => Promise<string | null>;
   staticHandler: SingerStaticHandler;
@@ -64,10 +67,12 @@ async function verifyTrust(hostname: string, address: string, port: number): Pro
 }
 
 export function createLanHostProvider(options: LanProviderOptions): HostRoomProvider {
+  const coordinator = options.coordinator ?? new RemoteAuthorityCoordinator(options.store, options.settings, options.installCommitted);
+  if (!coordinator.usesStore(options.store)) throw new Error('Remote authority must use the host show store.');
   const handles = new WeakMap<object, { kind: PickKind; path: string }>();
   const ids = new Map<string, string>();
-  let authority: RemoteQueue | undefined;
   let currentFailure: (() => void) | undefined;
+  coordinator.onFailure(() => currentFailure?.());
   let reserved = false;
   const currentInterfaces = (): { id: string; label: string; address: string }[] => {
     const values: { id: string; label: string; address: string }[] = [];
@@ -130,10 +135,7 @@ export function createLanHostProvider(options: LanProviderOptions): HostRoomProv
         certificate = await readSelected(certItem.path); checkAbort();
         key = await readSelected(keyItem.path); checkAbort();
         if (!currentInterfaces().some(value => value.id === item.id && value.address === item.address)) throw new Error('The selected interface is no longer available.');
-        authority ??= options.store.openRemoteQueue(options.settings, state => {
-          try { options.installCommitted(state); } catch (error) { currentFailure?.(); throw error; }
-        });
-        queue = authority;
+        queue = coordinator.getAuthority();
         queue.closeRoom(); // close stale credentials from a previous host run before exposing a new room
         currentFailure = fail;
         const requireActive = () => { if (!active || failure) throw new Error('Remote room is closed.'); };

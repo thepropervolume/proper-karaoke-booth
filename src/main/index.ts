@@ -21,6 +21,7 @@ import { builtInBumperTracks } from './bumper-builtins';
 import { serveBumper } from './bumper-media';
 import { HostRemoteLifecycle } from './remote-host-lifecycle';
 import { createLanHostProvider } from './remote-provider';
+import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { createSingerStaticHandler } from './remote-static';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
@@ -57,6 +58,7 @@ const publishMissingRequests = () => {
   if (!shuttingDown && host && !host.isDestroyed()) host.webContents.send('host:missing-song-requests', store.missingSongRequests());
 };
 let remoteHost = new HostRemoteLifecycle(null, publishRemoteStatus, publishMissingRequests);
+let remoteAuthority: RemoteAuthorityCoordinator | null = null;
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
 
@@ -331,8 +333,10 @@ else {
   store.save(state);
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
+    const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; broadcast(); };
+    remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted);
     const provider = createLanHostProvider({ store, settings: () => settings, staticHandler,
-      installCommitted: committed => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; broadcast(); },
+      installCommitted, coordinator: remoteAuthority,
       pickFile: async kind => {
         if (!host || host.isDestroyed() || shuttingDown) return null;
         const certificate = kind === 'certificate';
@@ -343,6 +347,7 @@ else {
     remoteHost = new HostRemoteLifecycle(provider, publishRemoteStatus, publishMissingRequests);
   } catch {
     // A missing or invalid singer build disables remote access without affecting hosting.
+    remoteAuthority = null;
     remoteHost = new HostRemoteLifecycle(null, publishRemoteStatus, publishMissingRequests);
   }
   try {

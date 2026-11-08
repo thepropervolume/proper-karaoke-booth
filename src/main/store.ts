@@ -61,10 +61,12 @@ export class Store<T> {
     this.assertAuthority();
     if (this.remoteQueueDisabled) throw new Error('Remote queueing is shutting down.');
   }
+  /** Host-only gate used before acquiring a cached remote authority. */
+  assertRemoteQueueAvailable(): void { this.assertRemoteAuthority(); }
 
   /** Same SQLite connection as host writes; creates no network listener. */
   openRemoteQueue(this: Store<ShowState>, settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>,
-    installCommitted: (state: ShowState) => void, now: () => number = Date.now): RemoteQueue {
+    installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {}): RemoteQueue {
     this.assertRemoteAuthority();
     if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
     const queue = new RemoteQueue(this.db, settings, state => {
@@ -81,6 +83,11 @@ export class Store<T> {
         // The database has already committed. Never let an older in-memory host
         // state overwrite it; a fresh Store must reload the committed state.
         this.authorityFault = true;
+        // Notify only after the write gate is latched; observers can reenter.
+        try {
+          const result: unknown = onAuthorityFailure();
+          if (result && typeof result === 'object' && 'then' in result) void Promise.resolve(result).catch(() => {});
+        } catch {}
         throw new Error('Show authority needs recovery. Restart the application before making further changes.');
       }
     }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); });
