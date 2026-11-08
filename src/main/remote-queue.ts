@@ -12,6 +12,12 @@ const digest = (value: string) => createHash('sha256').update(value, 'utf8').dig
 const validSecret = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
 const denied = () => new Error('Guest access denied.');
+const MAX_SNAPSHOT_REQUESTS = 50;
+
+/** Registration definitely did not commit; admission can be refreshed and retried. */
+export class JoinRevisionConflict extends Error {
+  constructor() { super('The show changed before registration.'); this.name = 'JoinRevisionConflict'; }
+}
 
 /** The client must generate its resume secret with a cryptographic RNG and keep it private. */
 export class RemoteQueue {
@@ -78,7 +84,10 @@ export class RemoteQueue {
       // The invite authorizes only this tightly scoped internal registration operation.
       const applied = applyCommand(state, { commandId: `remote-join-${guestId}`, showId: state.showId, hostEpoch: state.hostEpoch,
         expectedRevision: expectedRevision as number, actor: { role: 'host', id: 'remote-registration' }, command: { type: 'addSinger', singer: { id: singerId, name: name.trim() } } }, this.settings(), this.now());
-      if (!applied.outcome.ok) throw new Error(applied.outcome.code);
+      if (!applied.outcome.ok) {
+        if (applied.outcome.code === 'REVISION_CONFLICT') throw new JoinRevisionConflict();
+        throw new Error(applied.outcome.code);
+      }
       this.save(applied.state);
       this.db.prepare('INSERT INTO remote_guests (id, singer_id, show_id, resume_hash, resume_expires, join_id, join_name, join_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(guestId, singerId, state.showId, hash, this.now() + 24 * 3600000, joinId, name.trim(), expectedRevision as number);
       const session = this.issueSession(guestId);
@@ -123,10 +132,24 @@ export class RemoteQueue {
     const guest = this.authenticate(token), state = this.state();
     const catalog = this.catalog(token);
     const singerName = state.singers.find(singer => singer.id === guest.singerId)?.name ?? '';
+    // Preserve active requests even when they are older than recent completed or
+    // removed requests. The bound also applies to malformed/legacy state with
+    // more active requests than the domain currently permits.
+    const active: { index: number; request: ShowState['requests'][number] }[] = [];
+    const recent: typeof active = [];
+    let visibleCount = 0;
+    for (let index = state.requests.length - 1; index >= 0; index--) {
+      const request = state.requests[index];
+      if (request.singerId !== guest.singerId || !isVersionAllowed(state, request.versionId)) continue;
+      visibleCount++;
+      const target = ['pending', 'accepted', 'staged', 'playing'].includes(request.status) ? active : recent;
+      if (target.length < MAX_SNAPSHOT_REQUESTS) target.push({ index, request });
+    }
+    const selected = [...active, ...recent.slice(0, MAX_SNAPSHOT_REQUESTS - active.length)].sort((a, b) => a.index - b.index);
     return { showId: state.showId, hostEpoch: state.hostEpoch, revision: state.revision, singerId: guest.singerId, singerName,
       catalog: catalog.items, catalogNextOffset: catalog.nextOffset,
-      requests: state.requests.filter(r => r.singerId === guest.singerId && isVersionAllowed(state, r.versionId))
-        .map(r => ({ id: r.id, versionId: r.versionId, status: r.status })) };
+      requests: selected.map(({ request }) => ({ id: request.id, versionId: request.versionId, status: request.status })),
+      requestsTruncated: visibleCount > selected.length };
   }
   catalog(token: unknown, offset = 0, limit = 50) {
     this.authenticate(token);

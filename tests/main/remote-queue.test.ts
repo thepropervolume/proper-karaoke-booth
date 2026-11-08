@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createInitialState, type ShowState } from '../../src/domain';
 import { DEFAULT_SETTINGS } from '../../src/domain/settings';
-import { RemoteQueue } from '../../src/main/remote-queue';
+import { JoinRevisionConflict, RemoteQueue } from '../../src/main/remote-queue';
 
 const secret = () => randomBytes(32).toString('base64url');
 function setup() {
@@ -64,6 +64,42 @@ test('guest projections enforce policy and do not expose another singer or priva
     assert.throws(() => service.submit(a.session, { ...cmd, actor: { role: 'host' } }));
     assert.throws(() => service.submit(a.session, { ...cmd, singerId: b.singerId }));
     assert.throws(() => service.submit(a.session, { ...cmd, type: 'pause' }));
+  } finally { s.db.close(); }
+});
+
+test('guest snapshot bounds history while retaining an older active request', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invite = service.createInvitation(5000);
+    const guest = service.join(invite, 'join-id-0001', secret(), 'Alice', 0);
+    const state = s.read();
+    state.requests.push({ id: 'old-active', singerId: guest.singerId, versionId: 'version-clean', status: 'accepted', round: 1, order: 1 });
+    for (let n = 0; n < 60; n++) state.requests.push({ id: `done-${n}`, singerId: guest.singerId, versionId: 'version-clean', status: 'completed', round: 1, order: n + 2 });
+    state.requests.push({ id: 'other-guest', singerId: 'someone-else', versionId: 'version-clean', status: 'completed', round: 1, order: 100 });
+    state.requests.push({ id: 'hidden-track', singerId: guest.singerId, versionId: 'version-hidden', status: 'accepted', round: 1, order: 101 });
+    s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
+    const snapshot = service.snapshot(guest.session);
+    assert.equal(snapshot.requests.length, 50);
+    assert.equal(snapshot.requestsTruncated, true);
+    assert.equal(snapshot.requests[0].id, 'old-active');
+    assert.equal(snapshot.requests[1].id, 'done-11');
+    assert.equal(snapshot.requests.at(-1)?.id, 'done-59');
+    assert.ok(snapshot.requests.every(request => request.id !== 'other-guest' && request.id !== 'hidden-track'));
+  } finally { s.db.close(); }
+});
+
+test('join revision conflict proves registration rolled back and can be retried with a refreshed revision', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invite = service.createInvitation(5000), resume = secret();
+    const state = s.read(); state.revision = 1;
+    s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
+    assert.throws(() => service.join(invite, 'join-id-0001', resume, 'Alice', 0), JoinRevisionConflict);
+    assert.equal(s.read().singers.length, 0);
+    assert.equal((s.db.prepare('SELECT COUNT(*) AS count FROM remote_guests').get() as { count: number }).count, 0);
+    const admission = service.admissionInfo(invite);
+    const guest = service.join(invite, 'join-id-0001', resume, 'Alice', admission.revision);
+    assert.equal(service.snapshot(guest.session).singerName, 'Alice');
   } finally { s.db.close(); }
 });
 
