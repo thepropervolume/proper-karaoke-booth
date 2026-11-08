@@ -1,7 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { MissingSongRequest } from '../domain/missing-request';
 import type { HistoryEntry } from '../domain/collections';
+import type { ShowState } from '../domain';
+import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
+import { RemoteQueue } from './remote-queue';
 
 /** The private path never leaves the main process. */
 export interface StoredMedia {
@@ -13,6 +16,8 @@ export interface StoredMedia {
 /** One synchronous SQLite transaction commits state and any imported media together. */
 export class Store<T> {
   private db: DatabaseSync;
+  private authorityFault = false;
+  private remoteQueueOpened = false;
   readonly collections: Collections;
 
   constructor(filename: string) {
@@ -22,7 +27,7 @@ export class Store<T> {
       CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL, position REAL NOT NULL);
       CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);`);
-    this.collections = new Collections(this.db);
+    this.collections = new Collections(this.db, () => this.assertAuthority());
   }
 
   load(): T | undefined {
@@ -31,6 +36,7 @@ export class Store<T> {
   }
 
   save(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
+    this.assertAuthority();
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
@@ -44,6 +50,36 @@ export class Store<T> {
     }
   }
 
+  private assertAuthority(): void {
+    if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
+  }
+
+  /** Same SQLite connection as host writes; creates no network listener. */
+  openRemoteQueue(this: Store<ShowState>, settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>,
+    installCommitted: (state: ShowState) => void, now: () => number = Date.now): RemoteQueue {
+    this.assertAuthority();
+    if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
+    const queue = new RemoteQueue(this.db, settings, state => {
+      try {
+        const result: unknown = installCommitted(state);
+        if (result !== undefined) {
+          // An accidentally async callback cannot be awaited after the commit.
+          // Consume a later rejection while the authority remains locked down.
+          if (result && typeof result === 'object' && 'then' in result) void Promise.resolve(result).catch(() => {});
+          throw new Error('Installation must be synchronous.');
+        }
+      }
+      catch {
+        // The database has already committed. Never let an older in-memory host
+        // state overwrite it; a fresh Store must reload the committed state.
+        this.authorityFault = true;
+        throw new Error('Show authority needs recovery. Restart the application before making further changes.');
+      }
+    }, now, () => this.assertAuthority());
+    this.remoteQueueOpened = true;
+    return queue;
+  }
+
   media(id: string): StoredMedia | undefined {
     return this.db.prepare('SELECT id, path, fingerprint FROM media WHERE id = ?').get(id) as StoredMedia | undefined;
   }
@@ -53,6 +89,7 @@ export class Store<T> {
   }
 
   checkpoint(generation: string, position: number): void {
+    this.assertAuthority();
     this.db.prepare('INSERT INTO checkpoint (id, generation, position) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation, position=excluded.position').run(generation, position);
   }
 
@@ -62,6 +99,7 @@ export class Store<T> {
   }
 
   addMissingSongRequest(request: MissingSongRequest): void {
+    this.assertAuthority();
     this.db.prepare('INSERT INTO missing_song_requests (id, singer, title, artist, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(request.id, request.singer, request.title, request.artist, request.createdAt);
   }

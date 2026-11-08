@@ -8,7 +8,7 @@ function validString(value: unknown, maximum = 500): value is string {
 
 /** Uses the same SQLite connection as the authoritative show store. */
 export class Collections {
-  constructor(private readonly db: DatabaseSync) {
+  constructor(private readonly db: DatabaseSync, private readonly assertWritable: () => void = () => {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL, singer_id TEXT);
       CREATE TABLE IF NOT EXISTS playlist_items (playlist_id TEXT NOT NULL, version_id TEXT NOT NULL, PRIMARY KEY (playlist_id, version_id));
       CREATE TABLE IF NOT EXISTS performance_history (generation_id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, singer TEXT NOT NULL, version_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, outcome TEXT NOT NULL, performed_at TEXT NOT NULL);`);
@@ -17,6 +17,7 @@ export class Collections {
 
   /** Call only within the same transaction that persists successful show completion. */
   record(entry: HistoryEntry): void {
+    this.assertWritable();
     if (!validString(entry.generationId) || !validString(entry.singerId) || !validString(entry.singer) || !validString(entry.versionId) || !validString(entry.title) || typeof entry.artist !== 'string' || !validString(entry.at) || !['completed', 'skipped'].includes(entry.outcome)) throw new Error('Invalid performance history.');
     this.db.prepare('INSERT OR IGNORE INTO performance_history (generation_id, singer_id, singer, version_id, title, artist, outcome, performed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(entry.generationId, entry.singerId, entry.singer, entry.versionId, entry.title, entry.artist, entry.outcome, entry.at);
@@ -31,6 +32,7 @@ export class Collections {
 
   /** IDs must resolve in the current show; no arbitrary paths or personal data cross this boundary. */
   mutate(input: unknown, singers: readonly { id: string }[], versions: readonly { id: string }[]): void {
+    this.assertWritable();
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid playlist action.');
     const value = input as Record<string, unknown>;
     if (value.type === 'create') {

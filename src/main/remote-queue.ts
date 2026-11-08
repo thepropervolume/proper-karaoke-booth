@@ -17,13 +17,15 @@ const denied = () => new Error('Guest access denied.');
 export class RemoteQueue {
   private readonly runId = randomUUID();
   constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>,
-    private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now) {
+    private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
+    private readonly assertAuthority: () => void = () => {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_sessions (token_hash TEXT PRIMARY KEY, guest_id TEXT NOT NULL, run_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_receipts (guest_id TEXT NOT NULL, command_id TEXT NOT NULL, fingerprint TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY (guest_id, command_id));`);
   }
   private state(): ShowState {
+    this.assertAuthority();
     const row = this.db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: string } | undefined;
     if (!row) throw new Error('Show is unavailable.');
     return JSON.parse(row.value) as ShowState;
@@ -103,6 +105,7 @@ export class RemoteQueue {
   }
   /** Host-only, revokes both active and future resumed sessions. */
   revokeGuest(singerId: string): void {
+    this.assertAuthority();
     if (!validId(singerId)) throw new Error('Invalid singer ID.');
     this.db.prepare('UPDATE remote_guests SET revoked = 1 WHERE singer_id = ?').run(singerId);
   }
