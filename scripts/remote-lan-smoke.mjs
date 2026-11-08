@@ -118,7 +118,7 @@ try {
   await singer.getByRole('button', { name: 'Request', exact: true }).click();
   await singer.getByText('accepted', { exact: true }).waitFor();
   await host.getByRole('button', { name: 'Requests', exact: true }).click();
-  await host.getByText('Missing-Song Requests', { exact: true }).waitFor();
+  await host.getByRole('region', { name: 'Unavailable song requests' }).waitFor();
   await singer.getByLabel('Song title').fill('Browser Missing');
   await singer.getByRole('button', { name: 'Send to host' }).click();
   await host.getByText('Browser Missing', { exact: true }).waitFor();
