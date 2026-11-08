@@ -34,6 +34,8 @@ export type ShowState = {
   singers: Singer[]; versions: Version[]; requests: SongRequest[];
   policy: Policy; currentRound: number; finalTurnBegun: boolean; nextOrder: number;
   stagedRequestId: string | null; playback: Playback | null; usedGenerationIds: string[];
+  /** Absolute deadline, persisted across host restart. */
+  nextStartAtMs?: number;
   receipts: Receipt[];
 };
 export type CommandResult = { state: ShowState; outcome: Outcome };
@@ -54,6 +56,11 @@ export function isVersionAllowed(state: ShowState, versionId: string): boolean {
 }
 export function visibleVersions(state: ShowState): Version[] {
   return state.versions.filter(v => isVersionAllowed(state, v.id));
+}
+
+/** The clock comes from the caller; the gap never starts playback itself. */
+export function remainingPauseSeconds(state: ShowState, nowMs: number): number {
+  return Number.isFinite(state.nextStartAtMs) ? Math.ceil(Math.max(0, state.nextStartAtMs! - nowMs) / 1000) : 0;
 }
 
 /** The staged request remains locked when the scheduling mode changes. */
@@ -89,7 +96,7 @@ function permitted(actor: Actor, command: Command): boolean {
   return actor.role === 'singer' && command.type === 'request' && command.singerId === actor.id;
 }
 
-export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> = DEFAULT_SETTINGS): CommandResult {
+export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
   const fail = (code: string, message: string): Outcome => ({ ok: false, code, message, revision: original.revision });
   // These checks are deliberately before receipt lookup: untrusted callers must not
   // learn stored outcomes or occupy command IDs. The service still authenticates actors.
@@ -175,6 +182,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       const staged = state.requests.find(r => r.id === state.stagedRequestId && r.status === 'staged');
       if (state.playback) reject('INVALID_STATE', 'A track is already active');
       else if (!staged) reject('INVALID_STATE', 'No staged track');
+      else if (remainingPauseSeconds(state, nowMs)) reject('PAUSE_INTERVAL', `Wait ${remainingPauseSeconds(state, nowMs)} seconds before starting the next song.`);
       else if (!isVersionAllowed(state, staged.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (!nonempty(cmd.generationId) || state.usedGenerationIds.includes(cmd.generationId)) reject('INVALID', 'Playback generation must be new');
       else {
@@ -210,7 +218,10 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       const active = state.requests.find(r => r.id === state.playback?.requestId && r.status === 'playing');
       if (!active || state.playback?.generationId !== cmd.generationId) reject('STALE_GENERATION', 'Playback generation is no longer active');
       else if (cmd.type === 'skip' && cmd.confirmed !== true) reject('CONFIRMATION_REQUIRED', 'Skip must be confirmed');
-      else { active.status = cmd.type === 'complete' ? 'completed' : 'skipped'; state.playback = null; }
+      else {
+        active.status = cmd.type === 'complete' ? 'completed' : 'skipped'; state.playback = null;
+        state.nextStartAtMs = nowMs + (settings.pauseIntervalSeconds ?? 0) * 1000;
+      }
       break;
     }
     case 'setPolicy': {

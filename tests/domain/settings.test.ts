@@ -18,6 +18,10 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.throws(() => parseSettings({ layout: 'unknown' }));
   assert.throws(() => parseSettings({ autoApprove: 'false' }));
   assert.throws(() => parseSettings({ autoAprove: false }));
+  assert.equal(parseSettings({}).audioOutputId, '');
+  assert.equal(parseSettings({ audioOutputId: 'speaker-123' }).audioOutputId, 'speaker-123');
+  assert.throws(() => parseSettings({ audioOutputId: 42 }));
+  assert.throws(() => parseSettings({ audioOutputId: 'x'.repeat(1025) }));
 });
 
 test('auto approval and queue modes determine staging while preserving the locked song', () => {
