@@ -1,0 +1,16 @@
+.singer-page { box-sizing: border-box; max-width: 48rem; margin: 0 auto; padding: 1.25rem; font: 1rem/1.5 system-ui, sans-serif; color: #f7f5ff; background: #171326; min-height: 100vh; }
+.singer-page *, .singer-page *::before, .singer-page *::after { box-sizing: inherit; }
+.singer-page h1 { font-size: 1.6rem; margin-bottom: 0; }
+.singer-page h2 { font-size: 1.25rem; }
+.singer-page section { margin-top: 1.5rem; }
+.singer-page label { display: grid; gap: .35rem; font-weight: 700; }
+.singer-page input, .singer-page button { font: inherit; border-radius: .45rem; padding: .6rem .75rem; }
+.singer-page input { width: 100%; border: 1px solid #968dab; background: #fff; color: #181525; }
+.singer-page button { cursor: pointer; border: 1px solid #bcb0dd; background: #554488; color: white; }
+.singer-page button:disabled { cursor: default; opacity: .55; }
+.singer-page :focus-visible { outline: 3px solid #ffdb69; outline-offset: 2px; }
+.singer-page ul { padding: 0; list-style: none; }
+.singer-songs li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .65rem 0; border-bottom: 1px solid #554c68; }
+.singer-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.singer-toolbar strong { margin-right: auto; }
+.singer-message, .singer-warning { border-left: .25rem solid #ffdb69; padding: .6rem .8rem; background: #332b45; }
