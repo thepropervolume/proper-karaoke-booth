@@ -2,6 +2,7 @@
 import { X509Certificate } from 'node:crypto';
 import { createServer, type Server, type ServerOptions } from 'node:https';
 import { isIP } from 'node:net';
+import type { Duplex } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { JoinRevisionConflict, type RemoteQueue } from './remote-queue';
 import type { SingerStaticHandler } from './remote-static';
@@ -159,6 +160,22 @@ export async function startLanTransport(options: LanTransportOptions, createServ
       else fail(response, 400);
     }
   });
+  const sockets = new Set<Duplex>();
+  server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    if (closing) return closing;
+    closing = new Promise<void>((resolve, reject) => {
+      if (!server.listening) { for (const socket of sockets) socket.destroy(); resolve(); return; }
+      server.close(error => error ? reject(error) : resolve());
+      // closeAllConnections covers HTTP requests; the raw set also includes
+      // sockets that have not completed TLS or HTTP header parsing.
+      server.closeAllConnections();
+      for (const socket of sockets) socket.destroy();
+    });
+    void closing.catch(() => { closing = undefined; });
+    return closing;
+  };
   server.maxConnections = maxConnections;
   server.timeout = timeoutMs;
   server.on('secureConnection', socket => { socket.setTimeout(timeoutMs, () => socket.destroy()); });
@@ -171,7 +188,7 @@ export async function startLanTransport(options: LanTransportOptions, createServ
     server.once('error', error);
     server.listen({ host: address, port, exclusive: true }, () => {
       server.on('error', cause => {
-        server.close(); server.closeAllConnections();
+        void close().catch(() => {});
         try { options.onError(cause); } catch { /* owner callbacks must not crash the host */ }
       });
       server.off('error', error); resolve();
@@ -182,8 +199,5 @@ export async function startLanTransport(options: LanTransportOptions, createServ
   const endpoint = new URL(`https://${hostForUrl(hostname)}:${listening.port}`);
   hostHeader = endpoint.host;
   origin = endpoint.origin;
-  return { origin, close: () => new Promise((resolve, reject) => {
-    if (!server.listening) { resolve(); return; }
-    server.close(error => error ? reject(error) : resolve());
-  }) };
+  return { origin, close };
 }

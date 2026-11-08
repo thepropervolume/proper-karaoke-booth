@@ -148,6 +148,27 @@ test('a later server error is reported to the owner and stops accepting traffic'
   await server.close();
 });
 
+test('closing a room promptly terminates incomplete TLS and HTTP requests', async () => {
+  const server = await startLanTransport({ ...base, timeoutMs: 30000 });
+  const port = Number(new URL(server.origin).port);
+  const raw = tcpConnect(port, '127.0.0.1');
+  raw.once('error', () => {});
+  const secure = tlsConnect({ host: '127.0.0.1', port, servername: 'localhost', ca: cert });
+  secure.once('error', () => {});
+  const closed = (socket: Socket) => new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => { socket.destroy(); reject(new Error('Socket did not close promptly')); }, 3000);
+    socket.once('close', () => { clearTimeout(timer); resolve(); }); socket.resume();
+  });
+  const rawClosed = closed(raw), secureClosed = closed(secure);
+  try {
+    await new Promise<void>((resolve, reject) => { raw.once('connect', resolve); raw.once('error', reject); });
+    await new Promise<void>((resolve, reject) => { secure.once('secureConnect', resolve); secure.once('error', reject); });
+    secure.write(`POST /api/v1/admission HTTP/1.1\r\nHost: ${new URL(server.origin).host}\r\nOrigin: ${server.origin}\r\nContent-Type: application/json\r\nContent-Length: 8000\r\n\r\n{`);
+    await Promise.all([server.close(), server.close(), rawClosed, secureClosed]);
+    await assert.rejects(post(server.origin, '/api/v1/admission', { invitation: token }));
+  } finally { raw.destroy(); secure.destroy(); await server.close(); }
+});
+
 test('HTTPS guest admission and missing-song retries use the real SQLite authority', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpv-https-test-'));
   const store = new Store<ShowState>(join(dir, 'show.sqlite'));
