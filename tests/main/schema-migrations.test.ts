@@ -51,11 +51,11 @@ test('future, unrelated and incompatible databases are rejected before modificat
   const dir = mkdtempSync(join(tmpdir(), 'tpv-future-schema-'));
   try {
     const future = join(dir, 'future.sqlite'), db = new DatabaseSync(future);
-    db.exec('CREATE TABLE sentinel (id INTEGER); INSERT INTO sentinel VALUES (42); PRAGMA user_version = 2;');
+    db.exec('CREATE TABLE sentinel (id INTEGER); INSERT INTO sentinel VALUES (42); PRAGMA user_version = 999;');
     const journal = (db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode; db.close();
     assert.throws(() => new Store(future), /newer or unsupported/);
     const inspect = new DatabaseSync(future, { readOnly: true });
-    assert.equal(version(inspect), 2); assert.deepEqual(names(inspect), ['sentinel']);
+    assert.equal(version(inspect), 999); assert.deepEqual(names(inspect), ['sentinel']);
     assert.equal((inspect.prepare('SELECT id FROM sentinel').get() as { id: number }).id, 42);
     assert.equal((inspect.prepare('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode, journal); inspect.close();
     const unrelated = new DatabaseSync(':memory:'); unrelated.exec('CREATE TABLE other (id INTEGER)');
