@@ -121,6 +121,19 @@ test('failed post-bind TLS validation preserves a retry handle if closing the lo
   await recovery!.retryCleanup(); assert.equal(closes, 2); assert.equal(bound?.listening, false);
 });
 
+test('a listen error after binding closes the partially opened loopback listener', async () => {
+  let bound: Server | undefined;
+  const factory = ((options: ServerOptions, listener: RequestListener) => {
+    const server = createServer(options, listener); bound = server;
+    const actualListen = server.listen.bind(server);
+    server.listen = ((listenOptions: Parameters<Server['listen']>[0]) =>
+      actualListen(listenOptions, () => { server.emit('error', new Error('simulated listen failure')); })) as Server['listen'];
+    return server;
+  }) as typeof createServer;
+  await assert.rejects(startQuickTunnelLoopback({ cert, key, ca: cert, handler: async () => false, onError: () => {} }, factory), /simulated listen failure/);
+  assert.equal(bound?.listening, false);
+});
+
 test('a spoofed public hostname never becomes active and startup times out safely', async () => {
   const child = new FakeProcess(); let port = 0, spawned!: () => void;
   const ready = new Promise<void>(resolve => { spawned = resolve; });

@@ -75,7 +75,12 @@ export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buf
     void closing.catch(() => { if (serverClosing === closing) serverClosing = undefined; });
     return closing;
   };
-  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => { server.removeListener('error', reject); resolve(); }); });
+  try {
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => { server.removeListener('error', reject); resolve(); }); });
+  } catch (error) {
+    try { await close(); } catch { throw new LoopbackOpenError(close); }
+    throw error;
+  }
   server.on('error', () => { void close().catch(() => {}); try { options.onError(); } catch {} });
   const address = server.address();
   if (!address || typeof address === 'string' || address.address !== '127.0.0.1') {
