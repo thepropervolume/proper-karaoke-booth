@@ -36,7 +36,7 @@ export class RemoteQueue {
   private save(state: ShowState): void {
     this.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
   }
-  /** Host-only API: display the returned one-time admission secret only to intended attendees. */
+  /** Host-only API: this reusable secret admits guests until it expires or is revoked. */
   createInvitation(ttlMs: number): string {
     if (!Number.isSafeInteger(ttlMs) || ttlMs < 1000 || ttlMs > 3600000) throw new Error('Invalid invitation lifetime.');
     const token = secret(), state = this.state();
