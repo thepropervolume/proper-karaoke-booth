@@ -43,6 +43,27 @@ test('admission and resume credentials are scoped, revocable and time limited', 
   } finally { s.db.close(); }
 });
 
+test('host guest enumeration is bounded, show-scoped and releases capacity when revoked', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invite = service.createInvitation(5000);
+    const insert = s.db.prepare('INSERT INTO remote_guests (id, singer_id, show_id, resume_hash, resume_expires, join_id, join_name, join_revision, revoked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    for (let n = 0; n < 200; n++) insert.run(`guest-${n}`, `singer-${n}`, 'show-00001', `hash-${n}`, 2000, `join-${n}`, `Guest ${n}`, 0, 0);
+    insert.run('foreign-guest', 'singer-0', 'another-show', 'foreign-hash', 2000, 'foreign-join', 'Other show', 0, 0);
+    assert.equal(service.listGuests().length, 200);
+    assert.ok(service.listGuests().every(item => item.name !== 'Other show'));
+    assert.throws(() => service.join(invite, 'join-id-0999', secret(), 'Late guest', 0), /limit/);
+    service.revokeGuest('singer-0');
+    assert.equal(service.listGuests().length, 199);
+    const foreign = s.db.prepare('SELECT revoked FROM remote_guests WHERE id = ?').get('foreign-guest') as { revoked: number };
+    assert.equal(foreign.revoked, 0);
+    service.join(invite, 'join-id-0999', secret(), 'Late guest', 0);
+    assert.equal(service.listGuests().length, 200);
+    insert.run('legacy-overflow', 'overflow-guest', 'show-00001', 'overflow-hash', 2000, 'overflow-join', 'Overflow', 0, 0);
+    assert.throws(() => service.listGuests(), /recovery/);
+  } finally { s.db.close(); }
+});
+
 test('guest projections enforce policy and do not expose another singer or private state', () => {
   const s = setup();
   try {

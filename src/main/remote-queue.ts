@@ -13,6 +13,7 @@ const digest = (value: string) => createHash('sha256').update(value, 'utf8').dig
 const validSecret = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
 const denied = () => new Error('Guest access denied.');
+const MAX_ROOM_GUESTS = 200;
 const MAX_SNAPSHOT_REQUESTS = 50;
 
 /** Registration definitely did not commit; admission can be refreshed and retried. */
@@ -83,6 +84,8 @@ export class RemoteQueue {
       }
       const invite = this.db.prepare('SELECT show_id AS showId, expires, revoked FROM remote_invitations WHERE token_hash = ?').get(digest(invitation)) as { showId: string; expires: number; revoked: number } | undefined;
       if (!invite || invite.revoked || invite.expires <= this.now() || invite.showId !== state.showId) throw denied();
+      const count = this.db.prepare('SELECT COUNT(*) AS count FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ?').get(state.showId, this.now()) as { count: number };
+      if (count.count >= MAX_ROOM_GUESTS) throw new Error('Guest limit reached.');
       const guestId = randomUUID(), singerId = randomUUID();
       // The invite authorizes only this tightly scoped internal registration operation.
       const applied = applyCommand(state, { commandId: `remote-join-${guestId}`, showId: state.showId, hostEpoch: state.hostEpoch,
@@ -115,11 +118,19 @@ export class RemoteQueue {
     if (!row || row.showId !== this.state().showId) throw denied();
     return row;
   }
+  /** Host-only bounded list. Guest access expires with the private resume credential. */
+  listGuests(): { singerId: string; name: string }[] {
+    this.assertAuthority();
+    const rows = this.db.prepare('SELECT singer_id AS singerId, join_name AS name FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ? ORDER BY rowid LIMIT ?')
+      .all(this.state().showId, this.now(), MAX_ROOM_GUESTS + 1) as { singerId: string; name: string }[];
+    if (rows.length > MAX_ROOM_GUESTS) throw new Error('Remote guest list needs recovery.');
+    return rows.map(({ singerId, name }) => ({ singerId, name }));
+  }
   /** Host-only, revokes both active and future resumed sessions. */
   revokeGuest(singerId: string): void {
     this.assertAuthority();
     if (!validId(singerId)) throw new Error('Invalid singer ID.');
-    this.db.prepare('UPDATE remote_guests SET revoked = 1 WHERE singer_id = ?').run(singerId);
+    this.db.prepare('UPDATE remote_guests SET revoked = 1 WHERE singer_id = ? AND show_id = ?').run(singerId, this.state().showId);
   }
   revokeInvitations(): void { this.db.prepare('UPDATE remote_invitations SET revoked = 1 WHERE show_id = ?').run(this.state().showId); }
   /** Host-only: permanently close this room and all guest/resume credentials. */
