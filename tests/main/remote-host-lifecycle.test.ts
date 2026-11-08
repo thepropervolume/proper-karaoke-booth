@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { HostRemoteLifecycle, type HostRoomProvider, type RemoteRoom } from '../../src/main/remote-host-lifecycle';
+import { HostRemoteLifecycle, RemoteRoomOpenError, type HostRoomProvider, type RemoteRoom } from '../../src/main/remote-host-lifecycle';
 
 function fixture() {
   let revoked = 0, stopped = 0, revokeFailures = 0, stopFailures = 0;
@@ -93,6 +93,19 @@ test('failure while a listener opens never publishes an open room', async () => 
   const host = new HostRemoteLifecycle(provider, status => phases.push(status.room));
   await assert.rejects(host.open(await settings(host)), /listener failed/);
   assert.deepEqual(counts(), { revoked: 1, stopped: 1 }); assert.equal(phases.includes('open'), false);
+});
+
+test('failed startup cleanup retains its room and blocks reopen until recovery', async () => {
+  const { provider, room, counts, fail } = fixture(); fail(2, 0);
+  provider.open = async () => { throw new RemoteRoomOpenError(room); };
+  const host = new HostRemoteLifecycle(provider);
+  await assert.rejects(host.open(await settings(host)), /recovery/);
+  assert.equal(host.status().room, 'failed'); assert.equal(host.needsShutdownWait(), true);
+  await assert.rejects(host.open({}), /recovery/);
+  await assert.rejects(host.close(), /recovery/);
+  assert.equal(host.status().room, 'failed');
+  await host.close(); assert.equal(host.status().room, 'closed');
+  assert.deepEqual(counts(), { revoked: 3, stopped: 3 });
 });
 
 test('shutdown aborts guest access immediately and coalesces an in-progress close', async () => {

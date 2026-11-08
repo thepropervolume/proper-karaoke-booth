@@ -20,6 +20,8 @@ import { BumperDisplayOutput } from './bumper-display-output';
 import { builtInBumperTracks } from './bumper-builtins';
 import { serveBumper } from './bumper-media';
 import { HostRemoteLifecycle } from './remote-host-lifecycle';
+import { createLanHostProvider } from './remote-provider';
+import { createSingerStaticHandler } from './remote-static';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -48,12 +50,13 @@ let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
 let importAbort: AbortController | null = null;
-// A provider must not be supplied until singer-page hosting and its security review are complete.
-const remoteHost = new HostRemoteLifecycle(null, value => {
+const publishRemoteStatus = (value: ReturnType<HostRemoteLifecycle['status']>) => {
   if (host && !host.isDestroyed()) host.webContents.send('host:remote-status', value);
-}, () => {
+};
+const publishMissingRequests = () => {
   if (!shuttingDown && host && !host.isDestroyed()) host.webContents.send('host:missing-song-requests', store.missingSongRequests());
-});
+};
+let remoteHost = new HostRemoteLifecycle(null, publishRemoteStatus, publishMissingRequests);
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
 
@@ -327,6 +330,22 @@ else {
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
   try {
+    const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
+    const provider = createLanHostProvider({ store, settings: () => settings, staticHandler,
+      installCommitted: committed => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; broadcast(); },
+      pickFile: async kind => {
+        if (!host || host.isDestroyed() || shuttingDown) return null;
+        const certificate = kind === 'certificate';
+        const result = await dialog.showOpenDialog(host, { title: certificate ? 'Choose TLS certificate' : 'Choose TLS private key',
+          properties: ['openFile'], filters: [{ name: certificate ? 'TLS certificate' : 'TLS private key', extensions: certificate ? ['pem', 'crt', 'cer'] : ['pem', 'key'] }] });
+        return !result.canceled && !shuttingDown ? result.filePaths[0] ?? null : null;
+      } });
+    remoteHost = new HostRemoteLifecycle(provider, publishRemoteStatus, publishMissingRequests);
+  } catch {
+    // A missing or invalid singer build disables remote access without affecting hosting.
+    remoteHost = new HostRemoteLifecycle(null, publishRemoteStatus, publishMissingRequests);
+  }
+  try {
     bumperCatalog = new BumperCatalog(join(app.getPath('userData'), 'bumper-tracks.json'));
     builtInBumpers = builtInBumperTracks(join(app.getPath('userData'), 'bumper-builtins'));
     bumperOutput = new BumperDisplayOutput(request => {
@@ -505,6 +524,7 @@ let quitStarted = false, quitReady = false, storeClosed = false;
 function closeStore(): void { if (!storeClosed && store) { storeClosed = true; store.close(); } }
 app.on('before-quit', event => {
   shuttingDown = true; importAbort?.abort();
+  store?.disableRemoteQueue();
   if (quitReady) { closeStore(); return; }
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
   const wait = remoteHost.needsShutdownWait();

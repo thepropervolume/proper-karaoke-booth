@@ -1,6 +1,12 @@
 # Singer guide for the rehearsal build
 
-The current app is operated by the host on a computer. There is not yet a singer website, phone app, account sign-in or remote request link. Ask the host to find and request a song for you.
+The host operates the app on a computer. They can enter a request for you, or may invite you to try the experimental local-network singer page. Internet access and account sign-in are not available.
+
+## Join from the venue network
+
+If the host has opened a local room, connect to the venue network and open the private invitation link they share with you. Enter your name and choose **Join the show**. The page lets you search loaded songs, request a song and check your request status. Use **Load more songs** to browse additional pages of the library. If you cannot find a song, enter its title and optional artist under **Can't find your song?** and send it to the host; this does not add a recording or a rotation entry.
+
+Your invitation can be used by anyone who has it until it expires or the host revokes it, so do not share it without the host's permission. Your access is tied to the open page; if you close or reload it, ask the host for a new link. Closing the room revokes guest access. The local page requires the host's network name and certificate to be trusted by your device. This experimental flow has not yet been verified on physical iOS or Android devices; ask the host to enter your request if it does not work. Do not bypass a browser certificate warning.
 
 ## Request an available song
 

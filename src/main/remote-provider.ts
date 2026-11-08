@@ -9,7 +9,7 @@ import { checkServerIdentity, connect } from 'node:tls';
 import type { ShowState } from '../domain';
 import type { Settings } from '../domain/settings';
 import type { RemoteInterface } from '../remote/host-control';
-import type { HostRoomProvider, RemoteRoom } from './remote-host-lifecycle';
+import { RemoteRoomOpenError, type HostRoomProvider, type RemoteRoom } from './remote-host-lifecycle';
 import { startLanTransport, type LanTransport, type LanTransportOptions } from './remote-https';
 import type { RemoteQueue } from './remote-queue';
 import type { SingerStaticHandler } from './remote-static';
@@ -172,7 +172,12 @@ export function createLanHostProvider(options: LanProviderOptions): HostRoomProv
       } catch (error) {
         opening = false;
         const cleaned = await Promise.allSettled([revoke(), stop()]);
-        if (cleaned.some(result => result.status === 'rejected')) throw new Error('Remote room cleanup failed; restart before retrying.');
+        if (cleaned.some(result => result.status === 'rejected')) {
+          const unavailable = () => { throw new Error('Remote room is unavailable.'); };
+          // The lifecycle retains this inert handle and can retry both cleanup steps.
+          throw new RemoteRoomOpenError({ origin: transport?.origin ?? '', guests: () => [], createInvitation: unavailable,
+            revokeInvitations: unavailable, revokeGuest: unavailable, revokeAll: revoke, stop });
+        }
         release();
         throw new Error('Remote room could not open. Check the TLS files, trust, hostname and selected interface.');
       } finally { certificate?.fill(0); key?.fill(0); }

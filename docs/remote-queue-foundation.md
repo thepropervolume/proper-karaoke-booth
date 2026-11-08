@@ -1,6 +1,6 @@
 # Remote queue boundary prototype
 
-`src/main/remote-queue.ts` is an unconnected, transport-independent authority prototype. The intended product supports singers joining from both the venue's local network and the internet. The prototype does not open a port, provide a guest website, validate HTTPS, or implement an internet relay. Neither LAN nor internet remote queueing is usable until those pieces are built and independently tested. Do not expose this class directly as a generic RPC object.
+`src/main/remote-queue.ts` is the transport-independent guest authority used by the experimental opt-in LAN room. The class itself does not open a port, provide a guest website, validate HTTPS, or implement an internet relay. The app's separately guarded HTTPS transport and singer page are connected for local use; physical network and device validation remains open. The intended product also supports internet access, which is not implemented. Do not expose this class directly as a generic RPC object.
 
 ## Integration
 

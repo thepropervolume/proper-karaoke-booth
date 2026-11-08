@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { validInvitation, validateOpenLan, type HostRemoteBridge, type HostRemoteStatus, type SelectedFile } from './host-control';
 import './host-control.css';
 
-/** Unmounted preview: this component cannot start networking without a trusted host bridge. */
+/** Host-only room controls. The main process owns the listener and credentials. */
 export function HostRemotePanel({ bridge }: { bridge: HostRemoteBridge }) {
   const [status, setStatus] = useState<HostRemoteStatus | null>(null);
   const statusRef = useRef<HostRemoteStatus | null>(null);
@@ -35,11 +35,11 @@ export function HostRemotePanel({ bridge }: { bridge: HostRemoteBridge }) {
     const timer = window.setTimeout(() => { setLink(''); setExpiresAt(0); }, Math.max(0, expiresAt - Date.now()));
     return () => window.clearTimeout(timer);
   }, [expiresAt]);
-  const run = async (action: () => Promise<void>) => {
+  const run = async (action: () => Promise<void>, failure = 'Could not complete the remote queue action. Check the show and try again.') => {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setMessage('');
     try { await action(); }
-    catch { setMessage('Could not complete the remote queue action. Check the show and try again.'); }
+    catch { setMessage(failure); }
     finally { busyRef.current = false; setBusy(false); }
   };
   const open = () => void run(async () => {
@@ -47,7 +47,7 @@ export function HostRemotePanel({ bridge }: { bridge: HostRemoteBridge }) {
     const error = validateOpenLan(input, statusRef.current?.interfaces ?? []);
     if (error) { setMessage(error); return; }
     await bridge.openLan(input);
-  });
+  }, 'Could not open the room. Check the certificate and key, device trust, hostname, network interface, and port.');
   const makeInvitation = () => void run(async () => {
     const seconds = Number(ttl);
     if (!Number.isInteger(seconds) || seconds < 60 || seconds > 3600) { setMessage('Choose an invitation duration from 1 to 60 minutes.'); return; }
@@ -60,7 +60,7 @@ export function HostRemotePanel({ bridge }: { bridge: HostRemoteBridge }) {
   const roomClosed = status?.room === 'closed';
   return <section className="remote-host-panel" aria-label="Remote queueing">
     <h2>Remote Queueing</h2>
-    <p>Invite singers to browse songs and send requests. Remote access is off until you open a room.</p>
+    <p>Experimental local-network queueing: invite singers to browse songs and send requests. Remote access is off until you open a room.</p>
     <p>Internet access requires a separate relay and is not available yet.</p>
     <p role="status">{message || status?.message || (status ? `Room: ${status.room}` : 'Loading remote queue status…')}</p>
     {status?.room === 'failed' && <button type="button" disabled={busy} onClick={() => void run(() => bridge.closeRoom())}>Retry closing room</button>}

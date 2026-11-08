@@ -65,9 +65,11 @@ try {
 
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
   await host.locator('summary').filter({ hasText: 'Remote Queueing' }).click();
-  await host.getByText('Remote queueing is not available yet.', { exact: true }).waitFor();
-  assert.equal((await host.evaluate(() => window.tpv.remote.status())).available, false);
-  assert.equal(await host.evaluate(async () => { try { await window.tpv.remote.openLan({}); return false; } catch { return true; } }), true, 'Disabled remote access must reject startup.');
+  await host.getByText('Room: closed', { exact: true }).waitFor();
+  const remoteStatus = await host.evaluate(() => window.tpv.remote.status());
+  assert.equal(remoteStatus.available, true);
+  assert.equal(remoteStatus.room, 'closed', 'Remote access must remain closed until explicitly opened.');
+  assert.equal(await host.evaluate(async () => { try { await window.tpv.remote.openLan({}); return false; } catch { return true; } }), true, 'Malformed remote room settings must be rejected.');
   await host.getByText('Library Settings', { exact: true }).click();
   const templates = host.getByLabel('Filename and folder templates, one per line');
   await templates.fill('${DJ Code} - ${Artist} - ${Track Name}');

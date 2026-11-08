@@ -1,12 +1,15 @@
 import { strict as assert } from 'node:assert';
 import { randomBytes } from 'node:crypto';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { createInitialState, type ShowState } from '../../src/domain';
 import { DEFAULT_SETTINGS } from '../../src/domain/settings';
 import { createLanHostProvider } from '../../src/main/remote-provider';
 import { Store } from '../../src/main/store';
 import type { LanTransportOptions } from '../../src/main/remote-https';
+import { HostRemoteLifecycle } from '../../src/main/remote-host-lifecycle';
 
 const secret = () => randomBytes(32).toString('base64url');
 const devices = () => ({ wifi: [{ address: '192.168.20.3', family: 'IPv4' as const, internal: false, netmask: '255.255.255.0', cidr: '192.168.20.3/24', mac: '00:00:00:00:00:00' }] });
@@ -157,4 +160,42 @@ test('aborting an open room blocks guest calls synchronously and closes its list
     await Promise.all([room.stop(), room.revokeAll()]);
     assert.equal(s.closes, 1);
   } finally { s.store.close(); }
+});
+
+test('failed startup cleanup retains a room handle so shutdown cannot falsely report success', async () => {
+  const s = setup({ verifyTrust: async () => { throw new Error('trust failure'); }, startTransport: async options => ({
+    origin: `https://${options.hostname}:${options.port}`, close: async () => { throw new Error('listener did not stop'); }
+  }) });
+  try {
+    const lifecycle = new HostRemoteLifecycle(s.provider), id = lifecycle.status().interfaces[0].id;
+    const cert = await lifecycle.select('certificate'), key = await lifecycle.select('privateKey'); assert.ok(cert && key);
+    await assert.rejects(lifecycle.open({ interfaceId: id, hostname: 'karaoke.example', port: 4433, certificateToken: cert.token, privateKeyToken: key.token }));
+    assert.equal(lifecycle.status().room, 'failed');
+    assert.equal(lifecycle.needsShutdownWait(), true);
+    assert.equal(await lifecycle.shutdown(100), false);
+  } finally { s.store.close(); }
+});
+
+test('shutdown gate blocks guests immediately but still persists credential revocation', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-provider-shutdown-'));
+  const dbPath = join(directory, 'show.sqlite');
+  let store = new Store<ShowState>(dbPath);
+  let options: LanTransportOptions | undefined;
+  try {
+    store.save(createInitialState('show-00001', 'epoch-0001'));
+    const provider = createLanHostProvider({ store, settings: () => DEFAULT_SETTINGS, installCommitted: () => {}, interfaces: devices,
+      pickFile: async kind => resolve(`tests/fixtures/tls/test-only.${kind === 'certificate' ? 'crt' : 'key'}`), staticHandler,
+      verifyHost: async () => {}, verifyTrust: async () => {}, startTransport: async value => { options = value; return { origin: `https://${value.hostname}:${value.port}`, close: async () => {} }; } });
+    const files = await selected(provider), controller = new AbortController();
+    const room = await provider.open({ interfaceId: provider.interfaces()[0].id, hostname: 'karaoke.example', port: 4433, ...files, ...callbacks, signal: controller.signal });
+    const invitation = room.createInvitation(60000), resume = secret();
+    const guest = options!.authority.join(invitation, 'join-id-0001', resume, 'Alice', 0);
+    store.disableRemoteQueue(); controller.abort();
+    assert.throws(() => options!.authority.snapshot(guest.session));
+    await Promise.all([room.stop(), room.revokeAll()]);
+    store.close(); store = new Store<ShowState>(dbPath);
+    const fresh = store.openRemoteQueue(() => DEFAULT_SETTINGS, () => {});
+    assert.throws(() => fresh.resume(resume));
+    assert.throws(() => fresh.admissionInfo(invitation));
+  } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
 });

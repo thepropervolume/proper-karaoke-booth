@@ -13,6 +13,10 @@ export type RemoteRoom = {
   /** Stop accepting and drain or terminate existing connections. */
   stop(): Promise<void>;
 };
+/** Main-process-only recovery handle for a provider whose startup cleanup failed. */
+export class RemoteRoomOpenError extends Error {
+  constructor(readonly room: RemoteRoom) { super('Remote room startup cleanup is incomplete.'); }
+}
 export type HostRoomProvider = {
   interfaces(): RemoteInterface[];
   select(kind: 'certificate' | 'privateKey'): Promise<{ label: string; handle: unknown } | null>;
@@ -89,6 +93,7 @@ export class HostRemoteLifecycle {
       this.phase = 'open';
       this.selections.clear();
     } catch (error) {
+      if (!this.room && error instanceof RemoteRoomOpenError) this.room = error.room;
       if (this.room) {
         try { await this.cleanup(); } catch { this.phase = 'failed'; this.changed(); throw new Error('Remote room needs recovery.'); }
       }
