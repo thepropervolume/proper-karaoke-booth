@@ -16,9 +16,10 @@ export function isQuickTunnelOrigin(value: string): boolean {
 }
 
 /** Handler must itself enforce guest authentication, request limits and route schemas. */
-export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buffer; ca: Buffer; handler: RelayHandler; onError: () => void }): Promise<LoopbackGate> {
+export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buffer; ca: Buffer; handler: RelayHandler; onError: () => void; timeoutMs?: number }): Promise<LoopbackGate> {
+  const timeout = options.timeoutMs ?? 10000;
   if (!Buffer.isBuffer(options.cert) || !Buffer.isBuffer(options.key) || !Buffer.isBuffer(options.ca) ||
-      typeof options.handler !== 'function' || typeof options.onError !== 'function') throw new Error('Invalid loopback HTTPS configuration.');
+      typeof options.handler !== 'function' || typeof options.onError !== 'function' || !Number.isInteger(timeout) || timeout < 100 || timeout > 30000) throw new Error('Invalid loopback HTTPS configuration.');
   const cert = new X509Certificate(options.cert);
   const now = Date.now();
   if (!cert.checkIP('127.0.0.1') || now < Date.parse(cert.validFrom) || now > Date.parse(cert.validTo)) throw new Error('Loopback certificate is invalid.');
@@ -27,7 +28,8 @@ export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buf
   const sockets = new Set<Duplex>();
   const limits = new Map<string, { start: number; count: number }>();
   let globalStart = Date.now(), globalCount = 0;
-  const server = createServer({ cert: options.cert, key: options.key, minVersion: 'TLSv1.2', handshakeTimeout: 10000 }, async (req, res) => {
+  const server = createServer({ cert: options.cert, key: options.key, minVersion: 'TLSv1.2', handshakeTimeout: timeout,
+    connectionsCheckingInterval: Math.max(100, Math.min(1000, timeout)) }, async (req, res) => {
     const reject = (code: number) => { if (!res.headersSent && !res.destroyed) { res.writeHead(code, { 'Cache-Control': 'no-store', 'Content-Length': '0', 'Referrer-Policy': 'no-referrer' }); res.end(); } };
     if (!origin || req.headers.host !== new URL(origin).host) { reject(403); return; }
     if (!req.url || req.url.includes('?') || req.url.includes('#')) { reject(400); return; }
@@ -54,7 +56,8 @@ export async function startQuickTunnelLoopback(options: { cert: Buffer; key: Buf
     } else { reject(405); return; }
     try { if (!await options.handler(req, res)) reject(404); } catch { reject(500); }
   });
-  server.maxConnections = 64; server.timeout = 10000; server.requestTimeout = 10000; server.headersTimeout = 10000;
+  server.maxConnections = 64; server.timeout = timeout; server.requestTimeout = timeout; server.headersTimeout = timeout;
+  server.on('secureConnection', socket => { socket.setTimeout(timeout, () => socket.destroy()); });
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
   const close = (): Promise<void> => {
     origin = null;

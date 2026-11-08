@@ -46,10 +46,23 @@ test('real relay guest router enforces scope, origin, authorization and durable 
   try {
     assert.equal((await call('/singer/')).status, 200);
     assert.equal((await call('/assets/singer.js')).status, 200);
+    const before = state.revision;
+    assert.equal((await call('/api/v1/admission', { invitation: invite }, { host: 'evil.example' })).status, 403);
     assert.equal((await call('/api/v1/admission', { invitation: invite }, { origin: 'https://evil.example' })).status, 403);
+    assert.equal((await call('/api/v1/admission', { invitation: invite }, { 'content-type': 'text/plain' })).status, 400);
     assert.equal((await call('/api/v1/admission', { invitation: lanInvite })).status, 400);
     assert.equal((await call('/api/v1/snapshot', {})).status, 400);
     assert.equal((await call('/api/v1/snapshot', {}, { authorization: `Bearer ${lan.session}` })).status, 400);
+    const conflict = await call('/api/v1/join', { invitation: invite, joinId: 'relay-join-0001', resumeSecret: resume, name: 'Relay Singer', expectedRevision: 0 });
+    assert.equal(conflict.status, 409); assert.deepEqual(JSON.parse(conflict.text), { error: 'REVISION_CONFLICT' });
+    const oversized = await new Promise<number>(resolve => {
+      const req = request({ host: '127.0.0.1', port: gate.port, servername: 'localhost', ca: cert, agent: false, method: 'POST', path: '/api/v1/admission',
+        headers: { host, origin, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode ?? 0)); });
+      req.on('error', () => resolve(0)); req.write('x'.repeat(8193)); req.end();
+    });
+    assert.ok(oversized === 413 || oversized === 0, 'oversized chunked bodies must be rejected or disconnected');
+    assert.equal(state.revision, before); assert.equal(guestUpdates, 0); assert.equal(store.missingSongRequests().length, 0);
+    assert.equal((await call('/api/v1/admission', { invitation: invite })).status, 200);
     const joined = await call('/api/v1/join', { invitation: invite, joinId: 'relay-join-0001', resumeSecret: resume, name: 'Relay Singer', expectedRevision: state.revision });
     assert.equal(joined.status, 200); assert.equal(guestUpdates, 1);
     const session = (JSON.parse(joined.text) as { session: string }).session, auth = { authorization: `Bearer ${session}` };

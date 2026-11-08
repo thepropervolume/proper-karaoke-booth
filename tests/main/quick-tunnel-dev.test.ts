@@ -7,10 +7,10 @@ import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { rootCertificates } from 'node:tls';
+import { connect as tlsConnect, rootCertificates } from 'node:tls';
 import { test } from 'node:test';
 import { startQuickTunnelDev } from '../../src/main/quick-tunnel-dev';
-import { isQuickTunnelOrigin } from '../../src/main/quick-tunnel-loopback';
+import { isQuickTunnelOrigin, startQuickTunnelLoopback } from '../../src/main/quick-tunnel-loopback';
 
 const certPath = resolve('tests/fixtures/tls/test-only.crt');
 const cert = readFileSync(certPath), key = readFileSync('tests/fixtures/tls/test-only.key');
@@ -120,6 +120,28 @@ test('anonymous requests are rate limited without trusting forwarded addresses',
     for (let n = 0; n < 120; n++) assert.equal((await fetchLocal(port, '/singer/', { host: new URL(origin).host, 'x-forwarded-for': `192.0.2.${n % 255}` })).status, 200);
     assert.equal((await fetchLocal(port, '/singer/', { host: new URL(origin).host, 'x-forwarded-for': '192.0.2.254' })).status, 429);
   } finally { await session.stop(); }
+});
+
+test('slow headers and request bodies are terminated despite continued drips', async () => {
+  const gate = await startQuickTunnelLoopback({ cert, key, ca: cert, timeoutMs: 250, onError: () => {},
+    handler: async req => { await new Promise<void>(resolve => { req.once('end', resolve); req.once('aborted', resolve); }); return true; } });
+  gate.bindOrigin(origin);
+  const slow = async (prefix: string) => {
+    const socket = tlsConnect({ host: '127.0.0.1', port: gate.port, servername: 'localhost', ca: cert });
+    socket.once('error', () => {});
+    const closed = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { socket.destroy(); reject(new Error('Slow request did not time out')); }, 5000);
+      socket.once('close', () => { clearTimeout(timer); resolve(); }); socket.resume();
+    });
+    await new Promise<void>((resolve, reject) => { socket.once('secureConnect', resolve); socket.once('error', reject); });
+    socket.write(prefix);
+    const drip = setInterval(() => socket.write('x'), 50);
+    try { await closed; } finally { clearInterval(drip); socket.destroy(); }
+  };
+  try {
+    await slow('GET /singer/ HTTP/1.1\r\nX-Slow: ');
+    await slow(`POST /api/v1/admission HTTP/1.1\r\nHost: ${new URL(origin).host}\r\nOrigin: ${origin}\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{`);
+  } finally { await gate.close(); }
 });
 
 test('abort during startup stops the connector and loopback service', async () => {
