@@ -40,6 +40,19 @@ test('only exact random HTTPS quick-tunnel origins are accepted', () => {
     assert.equal(isQuickTunnelOrigin(bad), false, bad);
 });
 
+test('the official Windows amd64 release filename is accepted by the supervisor without starting a real connector', async () => {
+  const child = new FakeProcess(); let selected = '', announce!: () => void;
+  const spawned = new Promise<void>(resolve => { announce = resolve; });
+  const fakeSpawn = (file: string) => { selected = file; announce(); return child as unknown as ChildProcess; };
+  const executable = join(tmpdir(), 'cloudflared-windows-amd64.exe');
+  const pending = startQuickTunnelDev({ ...settings(), executable }, fakeSpawn);
+  await spawned; child.stderr.write(`Your quick Tunnel has been created!\n${origin}\n`);
+  const session = await pending;
+  assert.equal(selected, executable);
+  await session.stop();
+  await assert.rejects(startQuickTunnelDev({ ...settings(), executable: join(tmpdir(), 'cloudflared-windows-amd64.exe.bat') }, fakeSpawn), /Invalid/);
+});
+
 test('explicit opt-in supervises the connector and binds only its exact public origin', async () => {
   const child = new FakeProcess(); let childArgs: string[] = [], spawnOptions: any;
   let announce!: () => void;

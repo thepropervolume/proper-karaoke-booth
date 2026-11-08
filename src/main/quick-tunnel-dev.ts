@@ -25,7 +25,7 @@ type Runtime = { makeTemp: typeof mkdtemp; openGate: typeof startQuickTunnelLoop
 export async function startQuickTunnelDev(options: QuickTunnelDevOptions, spawnProcess: Spawn = spawn,
   runtime: Runtime = { makeTemp: mkdtemp, openGate: startQuickTunnelLoopback }): Promise<QuickTunnelDevSession> {
   if (options.enabled !== true) throw new Error('Development tunnel is disabled.');
-  if (!isAbsolute(options.executable) || !/^cloudflared(?:\.exe)?$/i.test(basename(options.executable)) || !isAbsolute(options.caFile) ||
+  if (!isAbsolute(options.executable) || !/^(?:cloudflared(?:\.exe)?|cloudflared-windows-amd64\.exe)$/i.test(basename(options.executable)) || !isAbsolute(options.caFile) ||
       typeof options.handler !== 'function' || typeof options.onFailure !== 'function' || options.signal?.aborted) throw new Error('Invalid development tunnel configuration.');
   const timeout = options.startupTimeoutMs ?? 30000;
   if (!Number.isInteger(timeout) || timeout < 100 || timeout > 60000) throw new Error('Invalid tunnel startup timeout.');
