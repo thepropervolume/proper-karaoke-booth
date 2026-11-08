@@ -26,6 +26,10 @@ const canonicalProfile = await realpath(profile);
 const bootstrap = join(temp, 'isolated-bootstrap.cjs');
 const copiedFixture = join(temp, 'DJID-002 - Nada Surf - Popular.mp4');
 await copyFile(fixture, copiedFixture);
+const matchingFixture = join(temp, 'moved-original.mp4');
+const wrongFixture = join(temp, 'wrong-recording.mp4');
+await copyFile(fixture, matchingFixture);
+await writeFile(wrongFixture, 'a different synthetic file');
 const logoFixture = join(temp, 'logo.png');
 await writeFile(logoFixture, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aWQAAAAASUVORK5CYII=', 'base64'));
 // Set and check userData before the real main bundle can open its database.
@@ -43,9 +47,11 @@ try {
   const effectiveProfile = await app.evaluate(({ app }) => app.getPath('userData'));
   assert.equal(await realpath(effectiveProfile), canonicalProfile, 'Refusing to interact: Electron userData is not the disposable profile.');
   await app.evaluate(({ dialog }, paths) => {
-    dialog.showOpenDialog = async (_window, options) => ({ canceled: false, filePaths: [options?.title === 'Choose singer display logo' ? paths.logo : options?.title === 'Choose bumper music' ? paths.bumper : paths.video] });
-    dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
-  }, { video: copiedFixture, logo: logoFixture, bumper: join(canonicalProfile, 'bumper-builtins', 'builtin-ambient-v1.wav') });
+    globalThis.tpvRelinkChoice = paths.wrong;
+    globalThis.tpvWarnings = [];
+    dialog.showOpenDialog = async (_window, options) => ({ canceled: false, filePaths: [options?.title === 'Choose singer display logo' ? paths.logo : options?.title === 'Choose bumper music' ? paths.bumper : options?.title === 'Relink original video file' ? globalThis.tpvRelinkChoice : paths.video] });
+    dialog.showMessageBox = async (_window, options) => { globalThis.tpvWarnings.push(options); return { response: 0, checkboxChecked: false }; };
+  }, { video: copiedFixture, logo: logoFixture, bumper: join(canonicalProfile, 'bumper-builtins', 'builtin-ambient-v1.wav'), wrong: wrongFixture });
   const host = await app.firstWindow();
   const untilState = async (predicate, description) => {
     for (let attempt = 0; attempt < 200; attempt++) {
@@ -164,9 +170,42 @@ try {
     await host.waitForFunction(async () => (await window.tpv.getBumpers()).status.status === 'playing');
   }
   await host.getByRole('button', { name: 'Cancel', exact: true }).click();
+  // Change only the disposable imported file; the exact original remains in matchingFixture.
+  await writeFile(copiedFixture, 'changed synthetic file');
+  await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
+  await host.getByText('The song file has changed since import. Relink the original file before playing.', { exact: true }).waitFor();
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'Changed source must not start.');
+  await rm(copiedFixture);
+  await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
+  await host.getByText('The source file is unavailable. Right-click the song in Song Library and choose Relink File.', { exact: true }).waitFor();
+  await songRow.click({ button: 'right' });
+  await host.getByRole('menuitem', { name: 'Relink File…' }).click();
+  await host.getByText(/does not match the original recording/).waitFor();
+  await app.evaluate((_electron, path) => { globalThis.tpvRelinkChoice = path; }, matchingFixture);
+  await songRow.click({ button: 'right' });
+  await host.getByRole('menuitem', { name: 'Relink File…' }).click();
+  await host.getByText('Song file relinked.', { exact: true }).waitFor();
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await untilState(state => state.playback?.status === 'playing', 'playback');
   if (availableOutputs.length) assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped', 'Bumper audio must stop before karaoke starts.');
+  await display.waitForFunction(() => { const v = document.querySelector('video'); return v && v.videoWidth > 0 && !v.paused; }, null, { timeout: 15000 });
+  const generation = (await host.evaluate(() => window.tpv.getState())).playback.generationId;
+  await display.evaluate(id => window.tpvDisplay.event({ type: 'error', generation: id, code: 'MEDIA_ERR_DECODE' }), generation);
+  await untilState(state => state.playback?.status === 'paused', 'media error pause');
+  assert.ok((await app.evaluate(() => globalThis.tpvWarnings)).some(w => w.message === 'Song playback paused' && /codec/i.test(w.detail)), 'Host must receive an actionable playback warning.');
+  await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
+  await untilState(state => state.playback?.status === 'playing', 'resume after playback warning');
+  await display.close();
+  await untilState(state => state.playback?.status === 'paused', 'singer display close pause');
+  assert.ok((await app.evaluate(() => globalThis.tpvWarnings)).some(w => w.message === 'Singer display closed'), 'Host must be told how to recover from display loss.');
+  await host.getByRole('button', { name: 'Singer display' }).click();
+  display = undefined;
+  for (let n = 0; n < 100 && !display; n++) { display = app.windows().find(w => w !== host); if (!display) await new Promise(r => setTimeout(r, 100)); }
+  assert.ok(display, 'Singer display did not reopen.');
+  await display.locator('video').waitFor({ state: 'attached' });
+  await display.getByText('QA Singer · Popular', { exact: true }).waitFor();
+  await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
+  await untilState(state => state.playback?.status === 'playing', 'resume after display reopened');
   await display.waitForFunction(() => { const v = document.querySelector('video'); return v && v.videoWidth > 0 && !v.paused; }, null, { timeout: 15000 });
   if (availableOutputs.length) await display.waitForFunction(id => document.querySelector('video')?.sinkId === id, availableOutputs[0]);
   await host.getByLabel('Global Volume').fill('45');
@@ -206,7 +245,7 @@ try {
   await restored.waitForFunction(() => !!window.tpv);
   const restoredHistory = (await restored.evaluate(() => window.tpv.getCollections())).history;
   assert.ok(restoredHistory.some(h => h.singerId === singer.id && h.versionId === song.id && h.outcome === 'skipped'), 'History did not persist across restart.');
-  console.log(`PASS: isolated preferences/template import, song selection/double-click request, queue Delete, output routing/device-change pause, inter-song gap, bumper file selection${availableOutputs.length ? ' and bumper-to-karaoke transition' : ' (bumper playback skipped: no explicit output)'}, singer-display pause/resume and history. Audio was muted.`);
+  console.log(`PASS: isolated preferences/template import, source-change refusal and exact-file relinking, song selection/double-click request, queue Delete, output routing/device-change pause, inter-song gap, bumper file selection${availableOutputs.length ? ' and bumper-to-karaoke transition' : ' (bumper playback skipped: no explicit output)'}, singer-display pause/resume and history. Audio was muted.`);
 } finally {
   if (app) await app.close().catch(() => {});
   // Only the exact directory created by mkdtemp for this run is removed.

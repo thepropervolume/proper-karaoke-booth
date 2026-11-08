@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('tpv', {
   getCollections: () => ipcRenderer.invoke('host:get-collections'),
   mutateCollections: (action: unknown) => ipcRenderer.invoke('host:mutate-collections', action),
   revealMedia: (versionId: string) => ipcRenderer.invoke('host:reveal-media', versionId),
+  relinkMedia: (versionId: string) => ipcRenderer.invoke('host:relink-media', versionId),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),

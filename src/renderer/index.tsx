@@ -22,7 +22,7 @@ import '../styles/main.scss';
 import '../styles/tooltip.scss';
 
 type Screen = 'library' | 'requests' | 'singers' | 'playlists';
-type Result = { ok: boolean; error?: string };
+type Result = { ok: boolean; error?: string; cancelled?: boolean };
 function formatShortcut(binding: string): string { return binding.split('+').map(part => part === 'Space' ? 'Spacebar' : part === 'Control' ? 'Ctrl' : part.replace(/^Key/, '').replace(/^Digit/, '')).join('+'); }
 declare global {
   interface Window {
@@ -51,6 +51,7 @@ declare global {
       stopBumper: () => Promise<BumperInfo>;
       onBumperState: (callback: (state: BumperInfo) => void) => () => void;
       revealMedia: (versionId: string) => Promise<void>;
+      relinkMedia: (versionId: string) => Promise<Result>;
       remote: HostRemoteBridge;
     };
   }
@@ -79,6 +80,7 @@ function App() {
   const [missingArtist, setMissingArtist] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [relinkBusy, setRelinkBusy] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsPath, setSettingsPath] = useState('');
   const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
@@ -180,12 +182,20 @@ function App() {
     setBusy(true);
     try {
       const result = await operation();
+      if (result?.cancelled) return;
       if (result && !result.ok) setNotice(result.error || 'The action could not be completed.');
       else setNotice(success ?? '');
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };
   const command = (payload: Command, success?: string) => run(() => window.tpv.command(payload), success);
+  const relinkSong = async (id: string) => {
+    if (relinkBusy) return;
+    setRelinkBusy(true); setNotice('Checking the selected file…');
+    try { const result = await window.tpv.relinkMedia(id); setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.'); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    finally { setRelinkBusy(false); }
+  };
   const playPause = () => run(async () => {
     if (state?.playback) return window.tpv.command({ type: state.playback.status === 'paused' ? 'resume' : 'pause' });
     const remaining = state ? remainingPauseSeconds(state, Date.now()) : 0;
@@ -290,7 +300,7 @@ function App() {
           <div role="listbox" aria-label="Songs" className="song-list">
             {filtered.map((version, index) => <div className={`track-row song-option ${version.id === selectedVersionId ? 'selected' : ''}`} key={version.id} role="option" aria-selected={version.id === selectedVersionId} tabIndex={0}
               onClick={() => setSelectedVersionId(version.id)} onDoubleClick={() => { setSelectedVersionId(version.id); setQueueVersion(version); }}
-              onContextMenu={event => { event.preventDefault(); setSelectedVersionId(version.id); setContextMenu({ version, x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 210) }); }}
+              onContextMenu={event => { event.preventDefault(); setSelectedVersionId(version.id); setContextMenu({ version, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 250)) }); }}
               onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setSelectedVersionId(version.id); setQueueVersion(version); } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]'); const i = Math.max(0, Math.min(filtered.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))); next?.[i]?.focus(); setSelectedVersionId(filtered[i]?.id ?? ''); } }}>
               <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
             </div>)}
@@ -354,6 +364,7 @@ function App() {
       <button role="menuitem" onClick={() => { setQueueVersion(contextMenu.version); setContextMenu(null); }}>Add to Queue</button>
       <button role="menuitem" onClick={() => { setPlaylistVersion(contextMenu.version); setContextMenu(null); }}>Add to Playlist</button>
       <button role="menuitem" onClick={() => { setEditingVersion(contextMenu.version); setContextMenu(null); }}>Edit Metadata</button>
+      <button role="menuitem" disabled={relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
       <button role="menuitem" onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files...</button>
     </div>}
     {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async choice => {

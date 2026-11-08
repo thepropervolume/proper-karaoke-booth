@@ -12,7 +12,7 @@ npm run build
 npm start
 ```
 
-Electron may download its runtime on first use. The app keeps its SQLite database in Electron's user-data directory, outside this checkout; imported media remains at its original location. Back up the SQLite database and its WAL/SHM files together while the application is closed. Do not move a source file yet: relinking is not implemented.
+Electron may download its runtime on first use. The app keeps its SQLite database in Electron's user-data directory, outside this checkout; imported media remains at its original location. Back up the SQLite database and its WAL/SHM files together while the application is closed.
 
 ## Rehearse
 
@@ -25,9 +25,11 @@ Use the search icon or **Ctrl+F** to open library search, including from the sin
 
 Right-click a library song to add it to a playlist or the queue, edit its local metadata, or show the source file in the file manager. **Playlists** contains host-managed singer lists, KJ Picks, artist browsing and completed/skipped performance history recorded from this version onward; earlier performances are not backfilled. Genre browsing is not available until genre metadata exists. If a song is missing, use **Can't Find a Song?**; the request is saved for review and does not enter the rotation. See the [singer guide](docs/singer-guide.md).
 
+If a source video moves, right-click the song and choose **Relink File…**, then select the original MP4. The replacement must match the complete imported file fingerprint; a different or edited file is refused, and neither file is changed. Reimport a different recording as a new song. Before a song starts, the app checks its full fingerprint and refuses a missing or changed source; large videos or slow drives can take longer to start. A normal pause/resume uses a quick identity check and rechecks the full file if it changed or the app restarted. The app cannot guarantee detection of a file modified after the check or during playback.
+
 Experimental **Remote Queueing** is off until a host explicitly opens a local room. It requires a private IPv4 interface, a hostname resolving only to that interface, and a certificate and private key already trusted by Node and singers' devices. In Preferences, select the interface and TLS files, open the room, create an invitation and share its link privately. Singers can join, browse loaded songs, request one or ask for a missing song. Close the room to revoke invitations and guest access. The room is not restarted automatically. Internet access, certificate provisioning and IPv6 hosting are not implemented; browser/phone trust, real venue DNS, firewall and device behavior still require physical testing. See [remote host controls](docs/remote-host-controls.md).
 
-Choose an audio output in **Preferences → Audio Controls**, or use the system default. Changing the output pauses an active song. The player mutes and pauses on a reported device change, then requires deliberate resume; real device unplugging and OS-level rerouting still need physical verification. Disconnecting a display previously used by the singer window may conservatively pause playback even after the window has moved elsewhere. Other MP4 codecs may not be playable even though the container is `.mp4`.
+Choose an audio output in **Preferences → Audio Controls**, or use the system default. Changing the output pauses an active song. The player mutes and pauses on a reported device change, then requires deliberate resume; real device unplugging and OS-level rerouting still need physical verification. If the singer display closes or disconnects during playback, the host is warned and can reopen it before resuming. Disconnecting a display previously used by the singer window may conservatively pause playback even after the window has moved elsewhere. Playback errors are reported to the host, including a suggestion to check the file or codec. Other MP4 codecs may not be playable even though the container is `.mp4`.
 
 ## Preferences
 
@@ -55,7 +57,7 @@ The fixture script needs FFmpeg with H.264/AAC encoders and refuses to overwrite
 
 ## Current boundaries
 
-- Local MP4 karaoke video only. Paired MP3/CDG, ZIP, background import progress, relinking, seek UI and key/tempo are not implemented. Experimental bumper playback has no fade or automatic intermission scheduling. Audio output selection has automated coverage but requires physical device-loss verification. Import hashes files without copying; larger libraries need a dedicated background job and progress/cancellation UX.
+- Local MP4 karaoke video only. Paired MP3/CDG, ZIP, background import progress, seek UI and key/tempo are not implemented. Experimental bumper playback has no fade or automatic intermission scheduling. Audio output selection has automated coverage but requires physical device-loss verification. Import hashes files without copying; larger libraries need a dedicated background job and progress/cancellation UX.
 - Library metadata comes from configurable filename parsing and local host edits; embedded tags, write-back, alias indexing and detailed version information remain planned. Ratings and policy are domain foundations, not a finished host policy interface; no guest catalog is exposed.
 - Queue moderation, simple rounds, staged lock, generation checks and SQLite recovery are in place. Holds, attendance, manual reorder and richer rotation rules remain unimplemented.
 - The general local API, companion apps, internet relay, profiles, providers and billing are not implemented. The experimental singer-only HTTPS service is off by default and opens only when the host explicitly starts a local room.

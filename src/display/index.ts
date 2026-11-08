@@ -1,6 +1,7 @@
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
+import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
 declare global { interface Window { tpvDisplay: { ready(): void; shortcut(action: 'search' | 'playPause'): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
@@ -42,12 +43,12 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   player.playsInline = true;
   const generation = state.generation;
   let lastCheckpoint = 0;
-  const report = (type: string) => {
+  const report = (type: string, code?: MediaFailure) => {
     if (video !== player || current?.generation !== generation) return;
-    window.tpvDisplay.event({ type, generation, position: player.currentTime || 0 });
+    window.tpvDisplay.event({ type, generation, position: player.currentTime || 0, ...(code ? { code } : {}) });
   };
   player.addEventListener('ended', () => report('ended'));
-  player.addEventListener('error', () => report('error'));
+  player.addEventListener('error', () => report('error', mediaFailure(player.error?.code)));
   player.addEventListener('pause', () => report('checkpoint'));
   player.addEventListener('timeupdate', () => {
     if (Date.now() - lastCheckpoint > 5000) { lastCheckpoint = Date.now(); report('checkpoint'); }
@@ -98,7 +99,7 @@ window.tpvDisplay.subscribe(async (view) => {
     }
     if (ready) {
       try { await player.play(); }
-      catch { if (sequence === updateSequence && video === player && current?.generation === state.generation) window.tpvDisplay.event({ type: 'error', generation: state.generation, position: player.currentTime || 0 }); }
+      catch (reason) { if (sequence === updateSequence && video === player && current?.generation === state.generation) window.tpvDisplay.event({ type: 'error', code: playFailure(reason), generation: state.generation, position: player.currentTime || 0 }); }
     }
   } else output.invalidate(player);
 });

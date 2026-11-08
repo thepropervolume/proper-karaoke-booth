@@ -103,6 +103,14 @@ export class Store<T> {
     return this.db.prepare('SELECT id, path, fingerprint FROM media WHERE fingerprint = ? LIMIT 1').get(fingerprint) as StoredMedia | undefined;
   }
 
+  /** Replace only the path of the exact media row the host verified. Never writes the source file. */
+  relinkMedia(expected: StoredMedia, replacementPath: string): boolean {
+    this.assertAuthority();
+    const result = this.db.prepare('UPDATE media SET path = ? WHERE id = ? AND path = ? AND fingerprint = ?')
+      .run(replacementPath, expected.id, expected.path, expected.fingerprint);
+    return result.changes === 1;
+  }
+
   checkpoint(generation: string, position: number): void {
     this.assertAuthority();
     this.db.prepare('INSERT INTO checkpoint (id, generation, position) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation, position=excluded.position').run(generation, position);

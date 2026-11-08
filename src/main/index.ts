@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } from 'electron';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -23,6 +23,8 @@ import { HostRemoteLifecycle } from './remote-host-lifecycle';
 import { createLanHostProvider } from './remote-provider';
 import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { createSingerStaticHandler } from './remote-static';
+import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
+import { mediaErrorDetail } from './media-error-message';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -51,6 +53,10 @@ let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
 let importAbort: AbortController | null = null;
+let relinking = false;
+const mediaChecks = new Set<AbortController>();
+let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
+let reportedMediaError = '';
 const publishRemoteStatus = (value: ReturnType<HostRemoteLifecycle['status']>) => {
   if (host && !host.isDestroyed()) host.webContents.send('host:remote-status', value);
 };
@@ -107,12 +113,17 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   }
   store.save(result.state, [], history);
   state = result.state;
+  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) verifiedPlayback = null;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
   broadcast();
   return result.outcome;
 }
-function pauseForOutputLoss(): void {
-  if (!shuttingDown && state.playback?.status === 'playing') perform({ type: 'pause' });
+function pauseForOutputLoss(): boolean {
+  if (!shuttingDown && state.playback?.status === 'playing') return perform({ type: 'pause' }).ok;
+  return false;
+}
+function warnDisplayLoss(): void {
+  if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Singer display closed', detail: 'Playback was paused. Reopen the Singer display and resume when you are ready.' });
 }
 function restrictWindow(window: BrowserWindow): void {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -156,7 +167,7 @@ async function createDisplay(): Promise<void> {
   restrictWindow(display);
   const loseDisplay = () => {
     displayReady = false;
-    pauseForOutputLoss();
+    if (pauseForOutputLoss()) warnDisplayLoss();
     if (display && !display.isDestroyed()) display.destroy();
   };
   display.webContents.on('render-process-gone', loseDisplay);
@@ -170,7 +181,7 @@ async function createDisplay(): Promise<void> {
   display.on('closed', () => {
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
     bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
-    pauseForOutputLoss(); publishBumper();
+    if (pauseForOutputLoss()) warnDisplayLoss(); publishBumper();
   });
   void display.loadFile(join(uiRoot, 'display/index.html'));
 }
@@ -201,7 +212,7 @@ function playable(command: Command): string | null {
   const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
   const request = state.requests.find(r => r.id === requestId);
   const media = request && store.media(request.versionId);
-  if (!media || !existsSync(media.path)) return 'The source file is unavailable. Relinking is not yet supported.';
+  if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
 }
 async function executeHostCommand(command: Command): Promise<{ ok: boolean; error?: string }> {
@@ -212,10 +223,36 @@ async function executeHostCommand(command: Command): Promise<{ ok: boolean; erro
   if (command.type === 'start' || command.type === 'resume') {
     playbackTransition = true; publishBumper();
     try {
+      const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
+      const versionId = state.requests.find(item => item.id === requestId)?.versionId;
+      const media = versionId && store.media(versionId);
+      if (!media) return { ok: false, error: 'The source file is unavailable. Relink the song in Song Library.' };
+      const check = new AbortController(); mediaChecks.add(check);
+      let sourceIdentity: MediaIdentity;
+      try {
+        if (command.type === 'resume' && state.playback && verifiedPlayback?.generation === state.playback.generationId &&
+            verifiedPlayback.id === media.id && verifiedPlayback.path === media.path && verifiedPlayback.fingerprint === media.fingerprint &&
+            await mediaIdentityMatches(media.path, verifiedPlayback.identity)) sourceIdentity = verifiedPlayback.identity;
+        else {
+          const checked = await fingerprintMedia(media.path, check.signal);
+          if (checked.fingerprint !== media.fingerprint) return { ok: false, error: 'The song file has changed since import. Relink the original file before playing.' };
+          sourceIdentity = checked.identity;
+        }
+      } catch { return { ok: false, error: 'The song file could not be verified. Check its location or relink the original file.' }; }
+      finally { mediaChecks.delete(check); }
+      if (shuttingDown || !await mediaIdentityMatches(media.path, sourceIdentity)) return { ok: false, error: 'The song file changed during verification. Check or relink the original file.' };
       await bumper?.karaokeStarting();
+      if (shuttingDown) return { ok: false, error: 'The application is closing.' };
+      const stillMatches = await mediaIdentityMatches(media.path, sourceIdentity);
+      if (shuttingDown) return { ok: false, error: 'The application is closing.' };
       const reason = playable(command);
-      if (reason) { if (!state.playback) bumper?.karaokeEnded(); return { ok: false, error: reason }; }
+      const currentMedia = versionId && store.media(versionId);
+      if (reason || !currentMedia || currentMedia.path !== media.path || currentMedia.fingerprint !== media.fingerprint || !stillMatches) {
+        if (!state.playback) bumper?.karaokeEnded();
+        return { ok: false, error: reason || 'The song file changed during verification. Check or relink the original file.' };
+      }
       const result = perform(command);
+      if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; }
       if (!result.ok && !state.playback) bumper?.karaokeEnded();
       return result.ok ? { ok: true } : { ok: false, error: result.message };
     } catch (error) {
@@ -225,11 +262,6 @@ async function executeHostCommand(command: Command): Promise<{ ok: boolean; erro
   }
   const result = perform(command);
   return result.ok ? { ok: true } : { ok: false, error: result.message };
-}
-async function fingerprint(path: string, signal: AbortSignal): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path, { signal })) hash.update(chunk as Buffer);
-  return hash.digest('hex');
 }
 async function importFiles(kind: 'files' | 'folder'): Promise<void> {
   if (!host) return;
@@ -261,7 +293,7 @@ async function importFiles(kind: 'files' | 'folder'): Promise<void> {
     if (shuttingDown) return;
     try {
       if (extname(path).toLowerCase() !== '.mp4' || !(await stat(path)).isFile()) { failed++; continue; }
-      const hash = await fingerprint(path, importAbort!.signal);
+      const hash = (await fingerprintMedia(path, importAbort!.signal)).fingerprint;
       if (shuttingDown) return;
       if (store.byFingerprint(hash)) { duplicates++; continue; }
       const id = randomUUID();
@@ -369,6 +401,33 @@ else {
     const media = store.media(versionId);
     if (!media || !existsSync(media.path)) throw new Error('The source file is unavailable.');
     shell.showItemInFolder(media.path);
+  });
+  ipcMain.handle('host:relink-media', async (event, versionId: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId)) throw new Error('Song unavailable.');
+    if (!host || host.isDestroyed() || relinking || playbackTransition) throw new Error('Finish the current playback or file operation first.');
+    const activeVersion = () => state.requests.find(item => item.id === state.playback?.requestId)?.versionId;
+    if (activeVersion() === versionId) throw new Error('Stop the active performance before relinking this song.');
+    const original = store.media(versionId);
+    if (!original) throw new Error('This song has no source file to relink.');
+    relinking = true;
+    try {
+      const selection = await dialog.showOpenDialog(host, { title: 'Relink original video file', properties: ['openFile'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
+      if (selection.canceled || !selection.filePaths[0]) return { ok: true, cancelled: true };
+      const path = selection.filePaths[0];
+      if (extname(path).toLowerCase() !== '.mp4') throw new Error('Choose the original MP4 video file.');
+      const check = new AbortController(); mediaChecks.add(check);
+      let checked: Awaited<ReturnType<typeof fingerprintMedia>>;
+      try { checked = await fingerprintMedia(path, check.signal); }
+      catch { throw new Error('The selected file could not be verified. Choose a readable original MP4.'); }
+      finally { mediaChecks.delete(check); }
+      if (checked.fingerprint !== original.fingerprint) throw new Error('The selected file does not match the original recording. No link was changed.');
+      const stillMatches = await mediaIdentityMatches(path, checked.identity);
+      if (shuttingDown || playbackTransition || activeVersion() === versionId || !isVersionAllowed(state, versionId) || !stillMatches)
+        throw new Error('The song or selected file changed while relinking. Try again after playback stops.');
+      if (!store.relinkMedia(original, path)) throw new Error('The source link changed while relinking. Try again.');
+      return { ok: true };
+    } finally { relinking = false; }
   });
   ipcMain.handle('host:mutate-collections', (event, action: unknown) => {
     guardHost(event.sender.id);
@@ -509,12 +568,18 @@ else {
     else if (value.type === 'output-error') {
       pauseForOutputLoss();
       if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Audio output needs attention', detail: typeof value.message === 'string' ? value.message.slice(0, 500) : 'Choose the output in Preferences and resume when ready.' });
-    } else if (value.type === 'error') pauseForOutputLoss();
+    } else if (value.type === 'error') {
+      pauseForOutputLoss();
+      if (reportedMediaError !== value.generation && host && !host.isDestroyed()) {
+        reportedMediaError = value.generation as string;
+        void dialog.showMessageBox(host, { type: 'warning', message: 'Song playback paused', detail: mediaErrorDetail(value.code) });
+      }
+    }
   });
   screen.on('display-removed', (_event, removed) => {
     if (displayOutputIds.has(removed.id) && display && !display.isDestroyed()) {
       displayReady = false;
-      pauseForOutputLoss();
+      if (pauseForOutputLoss()) warnDisplayLoss();
       display.destroy();
     }
   });
@@ -528,7 +593,7 @@ else {
 let quitStarted = false, quitReady = false, storeClosed = false;
 function closeStore(): void { if (!storeClosed && store) { storeClosed = true; store.close(); } }
 app.on('before-quit', event => {
-  shuttingDown = true; importAbort?.abort();
+  shuttingDown = true; importAbort?.abort(); for (const check of mediaChecks) check.abort();
   store?.disableRemoteQueue();
   if (quitReady) { closeStore(); return; }
   // Abort first, synchronously preventing guest calls even if startup is still in progress.

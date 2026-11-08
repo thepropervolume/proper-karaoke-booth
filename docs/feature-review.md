@@ -22,7 +22,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [x] Make Ctrl+F focus library search from the host and singer display and preserve normal text editing shortcuts.
 - [x] Give the transport and singer-display buttons accessible names, disabled states and helpful tooltips; combine Play/Pause and use icons.
 - [ ] Show decoding, missing-file, permission and unsupported-codec errors with a clear recovery path.
-- [ ] Allow missing or moved media to be relinked and check whether a file has changed since import.
+- [x] Allow moved media to be relinked to an exact original and check for changes before playback. Large-file latency, concurrent modification during playback and real-drive behavior still need show testing.
 - [ ] Make display disconnect/reconnect and moving between monitors predictable; pause safely and offer explicit recovery.
 - [ ] Add backup, restore and versioned SQLite migrations, including interrupted-write and upgrade tests.
 - [ ] Offer import progress, cancellation, per-file results and nonblocking background hashing for large libraries.
