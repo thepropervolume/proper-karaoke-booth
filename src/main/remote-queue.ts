@@ -2,6 +2,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { applyCommand, isVersionAllowed, visibleVersions, type Outcome, type ShowState } from '../domain';
+import { normalizeMissingRequest } from '../domain/missing-request';
 import type { Settings } from '../domain/settings';
 
 type Guest = { id: string; singerId: string; showId: string };
@@ -28,7 +29,9 @@ export class RemoteQueue {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_sessions (token_hash TEXT PRIMARY KEY, guest_id TEXT NOT NULL, run_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS remote_receipts (guest_id TEXT NOT NULL, command_id TEXT NOT NULL, fingerprint TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY (guest_id, command_id));`);
+      CREATE TABLE IF NOT EXISTS remote_receipts (guest_id TEXT NOT NULL, command_id TEXT NOT NULL, fingerprint TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY (guest_id, command_id));
+      CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS remote_missing_song_owners (request_id TEXT PRIMARY KEY, guest_id TEXT NOT NULL, singer_id TEXT NOT NULL, show_id TEXT NOT NULL);`);
   }
   private state(): ShowState {
     this.assertAuthority();
@@ -170,6 +173,32 @@ export class RemoteQueue {
     if (!validId(commandId)) throw denied();
     const row = this.db.prepare('SELECT outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, commandId) as { outcome: string } | undefined;
     return row ? JSON.parse(row.outcome) as Outcome : null;
+  }
+  /** A guest can ask for a missing song only under their authenticated singer name. */
+  submitMissing(token: unknown, input: unknown): Outcome {
+    const guest = this.authenticate(token);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw denied();
+    const value = input as Record<string, unknown>;
+    if (Object.keys(value).some(k => !['commandId', 'title', 'artist'].includes(k)) || !validId(value.commandId) || typeof value.title !== 'string' || typeof value.artist !== 'string') throw denied();
+    const { commandId, title, artist } = value as { commandId: string; title: string; artist: string };
+    const fingerprint = digest(JSON.stringify(['missing-song', title, artist]));
+    return this.transaction(() => {
+      const state = this.state();
+      const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, commandId) as Receipt | undefined;
+      if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: state.revision };
+      const singer = state.singers.find(item => item.id === guest.singerId);
+      const request = normalizeMissingRequest({ singer: singer?.name, title, artist });
+      if (!request) throw denied();
+      const outcome: Outcome = { ok: true, revision: state.revision };
+      const requestId = randomUUID();
+      this.db.prepare('INSERT INTO missing_song_requests (id, singer, title, artist, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(requestId, request.singer, request.title, request.artist, new Date(this.now()).toISOString());
+      this.db.prepare('INSERT INTO remote_missing_song_owners (request_id, guest_id, singer_id, show_id) VALUES (?, ?, ?, ?)')
+        .run(requestId, guest.id, guest.singerId, guest.showId);
+      this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)')
+        .run(guest.id, commandId, fingerprint, JSON.stringify(outcome));
+      return outcome;
+    });
   }
   submit(token: unknown, input: unknown): Outcome {
     const guest = this.authenticate(token);

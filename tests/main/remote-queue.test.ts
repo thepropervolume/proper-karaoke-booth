@@ -103,6 +103,55 @@ test('join revision conflict proves registration rolled back and can be retried 
   } finally { s.db.close(); }
 });
 
+test('missing-song requests derive singer identity and replay a durable guest-scoped receipt', () => {
+  const s = setup();
+  try {
+    let service = s.service();
+    const invite = service.createInvitation(5000), resume = secret();
+    const alice = service.join(invite, 'join-id-0001', resume, 'Alice', 0);
+    const bob = service.join(invite, 'join-id-0002', secret(), 'Bob', 1);
+    const input = { commandId: 'missing-0001', title: '  Lost Song  ', artist: '  Artist  ' };
+    assert.throws(() => service.submitMissing(alice.session, { ...input, singer: 'Bob' }));
+    assert.throws(() => service.submitMissing(alice.session, { ...input, title: ' ' }));
+    assert.throws(() => service.submitMissing(alice.session, { ...input, title: 'x'.repeat(201) }));
+    assert.throws(() => service.submitMissing(alice.session, { ...input, artist: 'x'.repeat(201) }));
+    const first = service.submitMissing(alice.session, input);
+    assert.equal(first.ok, true);
+    assert.deepEqual(service.submitMissing(alice.session, input), first);
+    assert.deepEqual(service.outcome(alice.session, input.commandId), first);
+    assert.equal(service.outcome(bob.session, input.commandId), null);
+    const conflict = service.submitMissing(alice.session, { ...input, title: 'Another Song' });
+    assert.equal(conflict.ok, false); if (!conflict.ok) assert.equal(conflict.code, 'COMMAND_ID_REUSED');
+    const snap = service.snapshot(alice.session);
+    const crossed = service.submit(alice.session, { commandId: input.commandId, showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, versionId: 'version-clean' });
+    assert.equal(crossed.ok, false); if (!crossed.ok) assert.equal(crossed.code, 'COMMAND_ID_REUSED');
+    const rows = s.db.prepare('SELECT singer, title, artist FROM missing_song_requests').all();
+    assert.deepEqual(rows.map(row => ({ ...row })), [{ singer: 'Alice', title: 'Lost Song', artist: 'Artist' }]);
+    const owner = s.db.prepare('SELECT singer_id AS singerId, show_id AS showId FROM remote_missing_song_owners').get() as { singerId: string; showId: string };
+    assert.equal(owner.singerId, alice.singerId); assert.equal(owner.showId, snap.showId);
+    service = s.service();
+    const resumed = service.resume(resume);
+    assert.deepEqual(service.submitMissing(resumed.session, input), first);
+    assert.equal((s.db.prepare('SELECT COUNT(*) AS count FROM missing_song_requests').get() as { count: number }).count, 1);
+  } finally { s.db.close(); }
+});
+
+test('missing-song entry and receipt roll back together on persistence failure', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invite = service.createInvitation(5000);
+    const guest = service.join(invite, 'join-id-0001', secret(), 'Alice', 0);
+    const input = { commandId: 'missing-0001', title: 'Song', artist: '' };
+    s.db.exec("CREATE TRIGGER deny_missing_receipt BEFORE INSERT ON remote_receipts BEGIN SELECT RAISE(ABORT, 'fault'); END");
+    assert.throws(() => service.submitMissing(guest.session, input));
+    assert.equal((s.db.prepare('SELECT COUNT(*) AS count FROM missing_song_requests').get() as { count: number }).count, 0);
+    assert.equal((s.db.prepare('SELECT COUNT(*) AS count FROM remote_missing_song_owners').get() as { count: number }).count, 0);
+    assert.equal(service.outcome(guest.session, input.commandId), null);
+    s.db.exec('DROP TRIGGER deny_missing_receipt');
+    assert.equal(service.submitMissing(guest.session, input).ok, true);
+  } finally { s.db.close(); }
+});
+
 test('sessions expire independently and the private resume secret has a bounded lifetime', () => {
   const s = setup();
   try {
