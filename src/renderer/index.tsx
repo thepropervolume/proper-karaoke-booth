@@ -17,6 +17,7 @@ import { Tooltip } from './Tooltip';
 import { SettingsDialog } from './SettingsDialog';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import type { BumperInfo } from './BumperPanel';
+import type { HostRemoteBridge } from '../remote/host-control';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
 
@@ -49,6 +50,7 @@ declare global {
       stopBumper: () => Promise<BumperInfo>;
       onBumperState: (callback: (state: BumperInfo) => void) => () => void;
       revealMedia: (versionId: string) => Promise<void>;
+      remote: HostRemoteBridge;
     };
   }
 }

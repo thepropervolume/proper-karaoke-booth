@@ -12,6 +12,21 @@ contextBridge.exposeInMainWorld('tpv', {
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),
   clearDisplayLogo: () => ipcRenderer.invoke('host:clear-display-logo'),
+  remote: {
+    status: () => ipcRenderer.invoke('host:remote-status'),
+    subscribe: (callback: (value: unknown) => void) => {
+      const listener = (_event: unknown, value: unknown) => callback(value);
+      ipcRenderer.on('host:remote-status', listener);
+      return () => ipcRenderer.removeListener('host:remote-status', listener);
+    },
+    chooseCertificate: () => ipcRenderer.invoke('host:remote-choose-certificate'),
+    choosePrivateKey: () => ipcRenderer.invoke('host:remote-choose-key'),
+    openLan: (input: unknown) => ipcRenderer.invoke('host:remote-open-lan', input),
+    closeRoom: () => ipcRenderer.invoke('host:remote-close'),
+    createInvitation: (ttl: number) => ipcRenderer.invoke('host:remote-invite', ttl),
+    revokeInvitations: () => ipcRenderer.invoke('host:remote-revoke-invites'),
+    revokeGuest: (singerId: string) => ipcRenderer.invoke('host:remote-revoke-guest', singerId)
+  },
   getBumpers: () => ipcRenderer.invoke('host:get-bumpers'),
   addBumpers: () => ipcRenderer.invoke('host:add-bumpers'),
   removeBumper: (id: string) => ipcRenderer.invoke('host:remove-bumper', id),

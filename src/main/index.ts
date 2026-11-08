@@ -19,6 +19,7 @@ import { BumperController, type BumperTrack } from './bumper-controller';
 import { BumperDisplayOutput } from './bumper-display-output';
 import { builtInBumperTracks } from './bumper-builtins';
 import { serveBumper } from './bumper-media';
+import { HostRemoteLifecycle } from './remote-host-lifecycle';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -47,6 +48,10 @@ let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
 let importAbort: AbortController | null = null;
+// A provider must not be supplied until singer-page hosting and its security review are complete.
+const remoteHost = new HostRemoteLifecycle(null, value => {
+  if (host && !host.isDestroyed()) host.webContents.send('host:remote-status', value);
+});
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
 
@@ -354,6 +359,14 @@ else {
     return { ok: true };
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
+  ipcMain.handle('host:remote-status', event => { guardHost(event.sender.id); return remoteHost.status(); });
+  ipcMain.handle('host:remote-choose-certificate', event => { guardHost(event.sender.id); return remoteHost.select('certificate'); });
+  ipcMain.handle('host:remote-choose-key', event => { guardHost(event.sender.id); return remoteHost.select('privateKey'); });
+  ipcMain.handle('host:remote-open-lan', (event, input: unknown) => { guardHost(event.sender.id); return remoteHost.open(input); });
+  ipcMain.handle('host:remote-close', event => { guardHost(event.sender.id); return remoteHost.close(); });
+  ipcMain.handle('host:remote-invite', (event, ttl: unknown) => { guardHost(event.sender.id); return remoteHost.createInvitation(ttl); });
+  ipcMain.handle('host:remote-revoke-invites', event => { guardHost(event.sender.id); return remoteHost.revokeInvitations(); });
+  ipcMain.handle('host:remote-revoke-guest', (event, singerId: unknown) => { guardHost(event.sender.id); return remoteHost.revokeGuest(singerId); });
   ipcMain.handle('host:save-settings', async (event, value: unknown) => {
     guardHost(event.sender.id);
     const proposed = parseSettings(value);

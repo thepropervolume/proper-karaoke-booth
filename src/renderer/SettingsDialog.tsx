@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Settings } from '../domain/settings';
 import { AudioOutputPicker } from './AudioOutputPicker';
 import { BumperControls } from './BumperPanel';
+import { HostRemotePanel } from '../remote/HostRemotePanel';
 import '../styles/settings.scss';
 
 export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: {
@@ -58,6 +59,10 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
             <label className="settings-check"><input type="checkbox" checked={draft.autoApprove} onChange={event => setDraft({ ...draft, autoApprove: event.target.checked })} /> Automatically approve new requests</label>
             <p className="muted">Changing this affects new requests; requests already awaiting review remain pending.</p>
           </div>
+        </details>
+        <details className="settings-group">
+          <summary>Remote Queueing</summary>
+          <div className="settings-group__content"><HostRemotePanel bridge={window.tpv.remote} /></div>
         </details>
         <details className="settings-group">
           <summary>Audio Controls</summary>

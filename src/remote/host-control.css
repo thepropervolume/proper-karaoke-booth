@@ -1,0 +1,6 @@
+.remote-host-panel { display: grid; gap: .65rem; }
+.remote-host-panel h2, .remote-host-panel h3, .remote-host-panel p { margin: .25rem 0; }
+.remote-host-panel label { display: grid; gap: .25rem; }
+.remote-host-panel input, .remote-host-panel select { min-width: 0; max-width: 100%; }
+.remote-host-panel ul { list-style: none; margin: 0; padding: 0; }
+.remote-host-panel li { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .35rem 0; }

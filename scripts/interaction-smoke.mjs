@@ -64,6 +64,10 @@ try {
   assert.equal(initial.requests.length, 0, 'Temporary profile unexpectedly has requests.');
 
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
+  await host.locator('summary').filter({ hasText: 'Remote Queueing' }).click();
+  await host.getByText('Remote queueing is not available yet.', { exact: true }).waitFor();
+  assert.equal((await host.evaluate(() => window.tpv.remote.status())).available, false);
+  assert.equal(await host.evaluate(async () => { try { await window.tpv.remote.openLan({}); return false; } catch { return true; } }), true, 'Disabled remote access must reject startup.');
   await host.getByText('Library Settings', { exact: true }).click();
   const templates = host.getByLabel('Filename and folder templates, one per line');
   await templates.fill('${DJ Code} - ${Artist} - ${Track Name}');
@@ -144,6 +148,7 @@ try {
     if (!display) await new Promise(r => setTimeout(r, 100));
   }
   assert.ok(display, 'Singer display did not open.');
+  assert.equal(await display.evaluate(async () => { try { await window.tpv.remote.status(); return false; } catch { return true; } }), true, 'The singer window must not access host remote controls.');
   await display.locator('video').waitFor({ state: 'attached' });
   await display.getByText('Coming up: QA Singer').waitFor();
   await display.waitForFunction(() => { const logo = document.querySelector('#idle-logo'); return logo && !logo.hidden && logo.complete && logo.naturalWidth > 0; });
