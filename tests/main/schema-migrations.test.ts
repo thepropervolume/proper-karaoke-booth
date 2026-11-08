@@ -103,3 +103,23 @@ test('missing show state with orphaned application data is rejected rather than 
     assert.equal((db.prepare('SELECT path FROM media').get() as { path: string }).path, '/private/song.mp4');
   } finally { db.close(); }
 });
+
+test('legacy guest uniqueness and extra required columns are checked before stamping', () => {
+  const guests = new DatabaseSync(':memory:');
+  try {
+    guests.exec(`CREATE TABLE show_state (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL,
+        resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);`);
+    assert.throws(() => migrateShowSchema(guests), /uniqueness/); assert.equal(version(guests), 0);
+  } finally { guests.close(); }
+  const extra = new DatabaseSync(':memory:');
+  try {
+    extra.exec('CREATE TABLE show_state (id INTEGER PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE media (id TEXT PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL, required_extra TEXT NOT NULL);');
+    assert.throws(() => migrateShowSchema(extra), /incompatible/); assert.equal(version(extra), 0);
+  } finally { extra.close(); }
+  const customUnique = new DatabaseSync(':memory:');
+  try {
+    customUnique.exec('CREATE TABLE show_state (id INTEGER PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE media (id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL);');
+    assert.throws(() => migrateShowSchema(customUnique), /unique constraint/); assert.equal(version(customUnique), 0);
+  } finally { customUnique.close(); }
+});

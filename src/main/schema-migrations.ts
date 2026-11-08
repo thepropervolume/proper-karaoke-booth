@@ -32,12 +32,23 @@ function validateExisting(db: DatabaseSync, complete: boolean): void {
   if (tables.size && !tables.has('show_state')) throw new Error('This is not a recognizable show database.');
   for (const [name, columns] of Object.entries(required)) {
     if (!tables.has(name)) { if (complete) throw new Error(`Show database table ${name} is missing.`); continue; }
-    const info = db.prepare(`PRAGMA table_info("${name}")`).all() as { name: string; notnull: number; pk: number }[];
+    const info = db.prepare(`PRAGMA table_info("${name}")`).all() as { name: string; notnull: number; pk: number; dflt_value: unknown }[];
     const actual = new Map(info.map(column => [column.name, column]));
     const key = info.filter(column => column.pk > 0).sort((a, b) => a.pk - b.pk).map(column => column.name);
     if (columns.some(column => !actual.has(column)) || notNull[name].some(column => actual.get(column)?.notnull !== 1) ||
+        info.some(column => !columns.includes(column.name) && column.notnull === 1 && column.dflt_value === null) ||
         key.length !== primaryKeys[name].length || key.some((column, index) => column !== primaryKeys[name][index]))
       throw new Error(`Show database table ${name} is incompatible.`);
+    const unique = db.prepare(`PRAGMA index_list("${name}")`).all() as { name: string; unique: number; partial: number }[];
+    const allowed = [primaryKeys[name], ...(name === 'remote_guests' ? [['resume_hash'], ['join_id']] : [])];
+    const seen = new Set<string>();
+    for (const index of unique.filter(item => item.unique === 1)) {
+      const fields = (db.prepare('SELECT name FROM pragma_index_info(?) ORDER BY seqno').all(index.name) as { name: string | null }[]).map(item => item.name);
+      if (index.partial || !allowed.some(expected => expected.length === fields.length && expected.every((field, position) => field === fields[position])))
+        throw new Error(`Show database table ${name} has an incompatible unique constraint.`);
+      seen.add(fields.join('\0'));
+    }
+    if (name === 'remote_guests' && (!seen.has('resume_hash') || !seen.has('join_id'))) throw new Error('Show database guest credentials lack required uniqueness.');
   }
   if (tables.has('show_state')) {
     const row = db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: unknown } | undefined;
