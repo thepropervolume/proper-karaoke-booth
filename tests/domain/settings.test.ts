@@ -19,6 +19,13 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.throws(() => parseSettings({ autoApprove: 'false' }));
   assert.throws(() => parseSettings({ autoAprove: false }));
   assert.equal(parseSettings({}).audioOutputId, '');
+  assert.equal(parseSettings({}).maxFutureRequestsPerSinger, 3);
+  assert.equal(parseSettings({ maxFutureRequestsPerSinger: 0 }).maxFutureRequestsPerSinger, 0);
+  assert.equal(parseSettings({ maxFutureRequestsPerSinger: 50 }).maxFutureRequestsPerSinger, 50);
+  for (const value of [-1, 51, 1.5, null, '3']) assert.throws(() => parseSettings({ maxFutureRequestsPerSinger: value }));
+  assert.equal(parseSettings({}).singerDisplayFullscreen, false);
+  assert.equal(parseSettings({ singerDisplayFullscreen: true }).singerDisplayFullscreen, true);
+  assert.throws(() => parseSettings({ singerDisplayFullscreen: 'yes' }));
   assert.equal(parseSettings({ audioOutputId: 'speaker-123' }).audioOutputId, 'speaker-123');
   assert.throws(() => parseSettings({ audioOutputId: 42 }));
   assert.throws(() => parseSettings({ audioOutputId: 'x'.repeat(1025) }));

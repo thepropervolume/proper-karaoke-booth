@@ -10,7 +10,7 @@ function fake(): GuestTransport {
   return { admission: async () => ({ showId: 'show-123', hostEpoch: 'epoch-123', revision: 4 }),
     join: async () => ({ session: 'private-session', singerId: 'singer-123' }), resume: async () => ({ session: 'fresh-session', singerId: 'singer-123' }),
     snapshot: async () => show(), catalog: async () => ({ revision: 4, items: [], nextOffset: null }),
-    submit: async () => ({ ok: true, revision: 5 }), submitMissing: async () => ({ ok: true, revision: 4 }), outcome: async () => null };
+    submit: async () => ({ ok: true, revision: 5 }), withdraw: async () => ({ ok: true, revision: 5 }), submitMissing: async () => ({ ok: true, revision: 4 }), outcome: async () => null };
 }
 const listen = () => {};
 
@@ -95,4 +95,16 @@ test('invitation fragment is erased and HTTPS transport keeps bearer credentials
   await assert.rejects(conflict.join('invite', 'join', 'resume', 'Sam', 1), JoinRevisionConflict);
   const unknown = httpsGuestTransport('https://example.test', async () => new Response(JSON.stringify({ error: 'other' }), { status: 409 }));
   await assert.rejects(unknown.join('invite', 'join', 'resume', 'Sam', 1), error => !(error instanceof JoinRevisionConflict));
+});
+
+test('uncertain withdrawal recovers its receipt without resending or a singer identity', async () => {
+  const transport = fake(); let sent: unknown, calls = 0, outcomeId = '';
+  transport.snapshot = async () => ({ ...show(), requests: [{ id: 'request-123', versionId: 'song-123', status: 'accepted' }] });
+  transport.withdraw = async (_session, command) => { sent = command; calls++; throw new Error('lost response'); };
+  transport.outcome = async (_session, id) => { outcomeId = id; return { ok: true, revision: 5 }; };
+  const client = new SingerClient(transport, 'invite', secrets());
+  await client.join('Sam', listen); await client.withdraw('request-123', listen);
+  assert.deepEqual(sent, { commandId: 'secret-3', showId: 'show-123', hostEpoch: 'epoch-123', expectedRevision: 4, requestId: 'request-123' });
+  await client.withdraw('request-123', listen); assert.equal(calls, 1);
+  await client.checkOutcome(listen); assert.equal(outcomeId, 'secret-3'); assert.equal(client.state().message, 'Request withdrawn.');
 });

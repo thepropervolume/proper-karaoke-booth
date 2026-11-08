@@ -28,6 +28,7 @@ const authority = {
   catalog(value: unknown, offset: number, limit: number) { calls.push(['catalog', value, offset, limit]); return { items: [], revision: 2, nextOffset: null }; },
   outcome(value: unknown, id: unknown) { calls.push(['outcome', value, id]); return null; },
   submit(value: unknown, command: unknown) { calls.push(['request', value, command]); return { ok: true, revision: 3 }; },
+  withdraw(value: unknown, command: unknown) { calls.push(['withdraw', value, command]); return { ok: true, revision: 3 }; },
   submitMissing(value: unknown, command: unknown) { calls.push(['missing-request', value, command]); return { ok: true, revision: 3 }; }
 } as unknown as LanTransportOptions['authority'];
 const base = { address: '127.0.0.1', hostname: 'localhost', port: 0, cert, key, authority, onError: (_error: Error) => {} };
@@ -173,6 +174,7 @@ test('HTTPS guest admission and missing-song retries use the real SQLite authori
   const dir = mkdtempSync(join(tmpdir(), 'tpv-https-test-'));
   const store = new Store<ShowState>(join(dir, 'show.sqlite'));
   const state = createInitialState('show-00001', 'epoch-0001');
+  state.versions.push({ id: 'version-0001', title: 'Track', artist: 'Artist', rating: 'clean' });
   store.save(state);
   const service = store.openRemoteQueue(() => DEFAULT_SETTINGS, () => {});
   const invitation = service.createInvitation(60000);
@@ -190,6 +192,16 @@ test('HTTPS guest admission and missing-song retries use the real SQLite authori
     assert.deepEqual((await post(server.origin, '/api/v1/outcome', { commandId: command.commandId }, auth)).json, submitted.json);
     const spoof = await post(server.origin, '/api/v1/missing-request', { command: { ...command, commandId: 'missing-5678', singer: 'Bob' } }, auth);
     assert.equal(spoof.status, 400);
+    const snap = service.snapshot(session);
+    const requested = await post(server.origin, '/api/v1/request', { command: { commandId: 'request-1234', showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, versionId: 'version-0001' } }, auth);
+    assert.equal((requested.json as { ok: boolean }).ok, true);
+    const current = service.snapshot(session);
+    const withdraw = { commandId: 'withdraw-1234', showId: current.showId, hostEpoch: current.hostEpoch, expectedRevision: current.revision, requestId: current.requests[0].id };
+    assert.equal((await post(server.origin, '/api/v1/withdraw', { command: withdraw })).status, 400);
+    const withdrawn = await post(server.origin, '/api/v1/withdraw', { command: withdraw }, auth);
+    assert.equal((withdrawn.json as { ok: boolean }).ok, true);
+    assert.deepEqual((await post(server.origin, '/api/v1/withdraw', { command: withdraw }, auth)).json, withdrawn.json);
+    assert.equal(service.snapshot(session).requests[0].status, 'withdrawn');
     const requests = store.missingSongRequests();
     assert.equal(requests.length, 1);
     assert.equal(requests[0].singer, 'Alice');
@@ -247,3 +259,4 @@ test('allowlisted singer page and authenticated guest API share one strictly che
     assert.equal(state.singers[0].name, 'Alice');
   } finally { await server.close(); store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+

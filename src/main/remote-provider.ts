@@ -20,7 +20,7 @@ type NetInfo = Record<string, NetworkInterfaceInfo[] | undefined>;
 type PickKind = 'certificate' | 'privateKey';
 export type LanProviderOptions = {
   store: Store<ShowState>;
-  settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>;
+  settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger'>>;
   /** Must synchronously install the committed state and publish to host renderers. */
   installCommitted: (state: ShowState) => void;
   /** Shared with other transports; omitted for a standalone LAN-only provider. */
@@ -147,6 +147,7 @@ export function createLanHostProvider(options: LanProviderOptions): HostRoomProv
           catalog: (token, offset, limit) => { requireActive(); return queue!.catalog(token, offset, limit); },
           outcome: (token, id) => { requireActive(); return queue!.outcome(token, id); },
           submit: (token, command) => { requireActive(); return queue!.submit(token, command); },
+          withdraw: (token, command) => { requireActive(); return queue!.withdraw(token, command); },
           submitMissing: (token, command) => { requireActive(); const outcome = queue!.submitMissing(token, command); if (outcome.ok) safeNotify(input.onMissingRequest); return outcome; },
         };
         transport = await (options.startTransport ?? startLanTransport)({ address: item.address, hostname: input.hostname, port: input.port,

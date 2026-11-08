@@ -154,3 +154,26 @@ test('only engine completion and confirmed host skips consume active turns', () 
   s.ok({ type: 'skip', generationId: 'g1', confirmed: true });
   assert.equal(s.get().requests[0].status, 'skipped');
 });
+
+test('rejection and singer withdrawal preserve history, ownership and staged playback', () => {
+  const s = setup(); library(s);
+  const alice: Actor = { role: 'singer', id: 'a' }, bob: Actor = { role: 'singer', id: 'b' };
+  s.ok({ type: 'request', requestId: 'reject-1', singerId: 'a', versionId: 'v1' }, alice);
+  assert.equal(s.send({ type: 'rejectRequest', requestId: 'reject-1' }, alice).outcome.ok, false);
+  s.ok({ type: 'rejectRequest', requestId: 'reject-1' });
+  assert.equal(s.get().requests[0].status, 'rejected');
+  s.ok({ type: 'request', requestId: 'withdraw-1', singerId: 'a', versionId: 'v1' }, alice);
+  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'withdraw-1' }, bob).outcome.ok, false);
+  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'withdraw-1' }).outcome.ok, false);
+  s.ok({ type: 'accept', requestId: 'withdraw-1' });
+  s.ok({ type: 'withdrawRequest', requestId: 'withdraw-1' }, alice);
+  assert.equal(s.get().requests[1].status, 'withdrawn');
+  accept(s, 'staged-1', 'a');
+  assert.equal(s.get().requests[2].round, 1, 'withdrawal returns the turn');
+  s.ok({ type: 'stage' });
+  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'staged-1' }, alice).outcome.ok, false);
+  assert.equal(s.get().stagedRequestId, 'staged-1');
+  s.ok({ type: 'start', generationId: 'generation-1' });
+  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'staged-1' }, alice).outcome.ok, false);
+  assert.equal(s.get().playback?.requestId, 'staged-1');
+});

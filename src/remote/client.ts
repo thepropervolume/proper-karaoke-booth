@@ -10,6 +10,7 @@ export type GuestTransport = {
   snapshot(session: string): Promise<GuestSnapshot>;
   catalog(session: string, offset: number, limit: number): Promise<{ revision: number; items: Song[]; nextOffset: number | null }>;
   submit(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; versionId: string }): Promise<Outcome>;
+  withdraw(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; requestId: string }): Promise<Outcome>;
   submitMissing(session: string, request: { commandId: string; title: string; artist: string }): Promise<Outcome>;
   outcome(session: string, commandId: string): Promise<Outcome | null>;
 };
@@ -27,7 +28,7 @@ export class SingerClient {
   private resumeSecret = '';
   private pendingJoin: PendingJoin | null = null;
   private pendingRequest: string | null = null;
-  private pendingKind: 'song' | 'missing' | null = null;
+  private pendingKind: 'song' | 'missing' | 'withdraw' | null = null;
   private view: GuestView = { joined: false, snapshot: null, songs: [], nextOffset: null, busy: false, message: '', uncertain: false, joinUncertain: false };
   constructor(private transport: GuestTransport, invitation: string, private random: () => string = randomSecret) { this.invitation = invitation; }
   private emit(listener: (view: GuestView) => void, changes: Partial<GuestView>): void {
@@ -99,6 +100,18 @@ export class SingerClient {
     } catch { this.emit(listener, { uncertain: true, message: 'The request may have been received. Check its outcome before requesting another song.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
+  async withdraw(requestId: string, listener: (view: GuestView) => void): Promise<void> {
+    const snapshot = this.view.snapshot;
+    if (!this.session || !snapshot || this.view.busy || this.pendingRequest || !snapshot.requests.some(item => item.id === requestId && ['pending', 'accepted'].includes(item.status))) return;
+    const commandId = this.random(); this.pendingRequest = commandId; this.pendingKind = 'withdraw';
+    this.emit(listener, { busy: true, message: '' });
+    try {
+      const result = await this.transport.withdraw(this.session, { commandId, showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, requestId });
+      this.pendingRequest = null; this.pendingKind = null;
+      await this.afterOutcome(result, listener, 'withdraw');
+    } catch { this.emit(listener, { uncertain: true, message: 'Withdrawal may have been received. Check its outcome before making another request.' }); }
+    finally { this.emit(listener, { busy: false }); }
+  }
   /** Missing songs go to the host's request list, not the performance rotation. */
   async requestMissing(title: string, artist: string, listener: (view: GuestView) => void): Promise<void> {
     if (!this.session || !this.view.snapshot || this.view.busy || this.pendingRequest) return;
@@ -123,9 +136,9 @@ export class SingerClient {
     } catch { this.emit(listener, { message: 'Could not check the request. Reconnect and try again.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
-  private async afterOutcome(result: Outcome, listener: (view: GuestView) => void, kind: 'song' | 'missing'): Promise<void> {
+  private async afterOutcome(result: Outcome, listener: (view: GuestView) => void, kind: 'song' | 'missing' | 'withdraw'): Promise<void> {
     this.emit(listener, { uncertain: false });
-    const success = kind === 'missing' ? 'Missing-song request sent to the host.' : 'Request received.';
+    const success = kind === 'missing' ? 'Missing-song request sent to the host.' : kind === 'withdraw' ? 'Request withdrawn.' : 'Request received.';
     try { await this.loadSnapshot(listener); }
     catch { this.emit(listener, { message: result.ok ? `${success} Refresh when connected for status.` : `${result.message} Refresh when connected.` }); return; }
     this.emit(listener, { message: result.ok ? success : `${result.message} Review the refreshed list before trying again.` });

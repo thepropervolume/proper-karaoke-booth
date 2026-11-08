@@ -18,6 +18,8 @@ test('a live WAL-backed show can be backed up and restored to a separate databas
     state.singers.push({ id: 's1', name: 'Alice' });
     state.versions.push({ id: 'v1', title: 'Song', artist: 'Artist', rating: 'clean' });
     state.requests.push({ id: 'r1', singerId: 's1', versionId: 'v1', status: 'playing', round: 1, order: 1 });
+    state.requests.push({ id: 'r2', singerId: 's1', versionId: 'v1', status: 'rejected', round: null, order: null },
+      { id: 'r3', singerId: 's1', versionId: 'v1', status: 'withdrawn', round: 2, order: 2 });
     state.playback = { requestId: 'r1', generationId: 'g1', status: 'playing' }; state.usedGenerationIds.push('g1');
     db.prepare('INSERT INTO show_state VALUES (1, ?)').run(JSON.stringify(state));
     db.exec(`INSERT INTO media VALUES ('v1', '/private/song.mp4', 'hash');
@@ -30,6 +32,7 @@ test('a live WAL-backed show can be backed up and restored to a separate databas
     try {
       assert.equal(copy.load()?.revision, 4); assert.equal(copy.media('v1')?.path, '/private/song.mp4');
       assert.equal(copy.load()?.playback?.generationId, 'g1'); assert.equal(copy.load()?.requests[0].status, 'playing');
+      assert.deepEqual(copy.load()?.requests.map(request => request.status), ['playing', 'rejected', 'withdrawn']);
       assert.equal(copy.missingSongRequests()[0].singer, 'Alice');
     } finally { copy.close(); }
     assert.equal(JSON.parse((db.prepare('SELECT value FROM show_state').get() as { value: string }).value).revision, 5);

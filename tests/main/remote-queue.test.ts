@@ -244,3 +244,56 @@ test('state and receipt roll back together when persistence fails', () => {
   } finally { s.db.close(); }
 });
 
+
+test('withdrawal is guest-owned, idempotent and cannot disturb staged songs', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invite = service.createInvitation(5000);
+    const alice = service.join(invite, 'join-id-0001', secret(), 'Alice', 0);
+    const bob = service.join(invite, 'join-id-0002', secret(), 'Bob', 1);
+    let snapshot = service.snapshot(alice.session);
+    assert.equal(service.submit(alice.session, { commandId: 'request-0001', showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, versionId: 'version-clean' }).ok, true);
+    snapshot = service.snapshot(alice.session); const requestId = snapshot.requests[0].id;
+    const input = { commandId: 'withdraw-0001', showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, requestId };
+    assert.throws(() => service.withdraw(alice.session, { ...input, singerId: bob.singerId }));
+    const foreign = service.withdraw(bob.session, input);
+    assert.equal(foreign.ok, false); assert.equal(s.read().requests[0].status, 'accepted');
+    const result = service.withdraw(alice.session, input);
+    assert.equal(result.ok, true); assert.deepEqual(service.withdraw(alice.session, input), result);
+    assert.deepEqual(service.outcome(alice.session, input.commandId), result);
+    assert.equal(s.read().requests[0].status, 'withdrawn');
+    const reused = service.withdraw(alice.session, { ...input, requestId: 'different-request' });
+    assert.equal(reused.ok, false); if (!reused.ok) assert.equal(reused.code, 'COMMAND_ID_REUSED');
+    snapshot = service.snapshot(alice.session);
+    assert.equal(service.submit(alice.session, { commandId: 'request-0002', showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, versionId: 'version-clean' }).ok, true);
+    const state = s.read(); state.requests[1].status = 'staged'; state.stagedRequestId = state.requests[1].id;
+    s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
+    const denied = service.withdraw(alice.session, { ...input, commandId: 'withdraw-0002', expectedRevision: state.revision, requestId: state.requests[1].id });
+    assert.equal(denied.ok, false); assert.equal(s.read().stagedRequestId, state.requests[1].id);
+  } finally { s.db.close(); }
+});
+
+
+test('withdrawal accepts maximum-length generated and host request IDs while enforcing ownership and bounds', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invitation = service.createInvitation(5000);
+    const alice = service.join(invitation, 'join-id-0001', secret(), 'Alice', 0);
+    const bob = service.join(invitation, 'join-id-0002', secret(), 'Bob', 1);
+    let snap = service.snapshot(alice.session);
+    assert.equal(service.submit(alice.session, { commandId: 'x'.repeat(128), showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, versionId: 'version-clean' }).ok, true);
+    snap = service.snapshot(alice.session);
+    const id = snap.requests[0].id;
+    assert.equal(id.length, 172);
+    const input = { commandId: 'withdraw-max-01', showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, requestId: id };
+    assert.equal(service.withdraw(bob.session, input).ok, false);
+    assert.equal(service.withdraw(alice.session, input).ok, true);
+    const state = s.read();
+    state.requests.push({ id: 'a'.repeat(500), singerId: alice.singerId, versionId: 'version-clean', status: 'pending', round: null, order: null });
+    s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
+    const hostRequest = { ...input, commandId: 'withdraw-max-02', expectedRevision: state.revision, requestId: 'a'.repeat(500) };
+    assert.throws(() => service.withdraw(alice.session, { ...hostRequest, requestId: 'a'.repeat(501) }));
+    assert.throws(() => service.withdraw(alice.session, { ...hostRequest, requestId: '   ' }));
+    assert.equal(service.withdraw(alice.session, hostRequest).ok, true);
+  } finally { s.db.close(); }
+});

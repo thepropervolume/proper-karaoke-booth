@@ -35,7 +35,7 @@ export function SingerPage({ client }: { client: SingerClient }) {
       {view.snapshot && <>
         <section><h2>Your requests</h2>{view.snapshot.requests.length ? <ul>{view.snapshot.requests.map(request => {
           const song = view.songs.find(item => item.id === request.versionId);
-          return <li key={request.id}>{song ? `${song.artist} — ${song.title}` : 'Song'} <strong>{request.status}</strong></li>;
+          return <li key={request.id}>{song ? `${song.artist} — ${song.title}` : 'Song'} <strong>{request.status}</strong>{['pending', 'accepted'].includes(request.status) && <button disabled={view.busy || view.uncertain} onClick={() => void client.withdraw(request.id, setView)}>Withdraw</button>}</li>;
         })}</ul> : <p>You have no current requests.</p>}{view.snapshot.requestsTruncated && <p>Showing up to 50 requests, prioritizing active requests.</p>}</section>
         <section><h2>Song library</h2><label>Search loaded songs<input type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
           {!songs.length && <p>No loaded songs match your search.</p>}

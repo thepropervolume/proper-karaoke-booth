@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, type Settings } from './settings';
+import { futureRequestLimitMessage } from './future-request-limit';
 
 /** Pure show rules. Callers authenticate actors and must persist the returned state,
  * including receipt-only updates, before acknowledging a command. */
@@ -9,7 +10,7 @@ export type Version = { id: string; title: string; artist: string; rating: Ratin
   djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string };
 export type Singer = { id: string; name: string };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
-export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed';
+export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
 export type SongRequest = { id: string; singerId: string; versionId: string; status: RequestStatus; round: number | null; order: number | null };
 export type Playback = { requestId: string; generationId: string; status: 'playing' | 'paused' };
 export type Command =
@@ -19,6 +20,8 @@ export type Command =
   | { type: 'request'; requestId: string; singerId: string; versionId: string }
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
+  | { type: 'rejectRequest'; requestId: string }
+  | { type: 'withdrawRequest'; requestId: string }
   | { type: 'stage' }
   | { type: 'release' }
   | { type: 'start'; generationId: string }
@@ -66,7 +69,7 @@ export function remainingPauseSeconds(state: ShowState, nowMs: number): number {
 /** The staged request remains locked when the scheduling mode changes. */
 export function orderedFuture(state: ShowState, mode: Settings['rotationMode']): SongRequest[] {
   const position = (singerId: string) => Math.min(...state.requests
-    .filter(r => r.singerId === singerId && r.order !== null && r.status !== 'removed').map(r => r.order!));
+    .filter(r => r.singerId === singerId && r.order !== null && !['removed', 'withdrawn', 'rejected'].includes(r.status)).map(r => r.order!));
   return state.requests.filter(r => r.status === 'accepted' || r.status === 'staged')
     .sort((a, b) => (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
       // Request arrays are append-only, so this also preserves FIFO for older
@@ -76,7 +79,7 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode']):
 
 function acceptRequest(state: ShowState, request: SongRequest): void {
   let round = state.currentRound + (state.finalTurnBegun ? 1 : 0);
-  while (state.requests.some(r => r.singerId === request.singerId && r.round === round && r.status !== 'removed')) round++;
+  while (state.requests.some(r => r.singerId === request.singerId && r.round === round && !['removed', 'withdrawn', 'rejected'].includes(r.status))) round++;
   request.status = 'accepted'; request.round = round; request.order = state.nextOrder++;
 }
 
@@ -90,13 +93,13 @@ function canonical(value: unknown): string {
 }
 function nonempty(s: unknown): s is string { return typeof s === 'string' && s.trim().length > 0; }
 function permitted(actor: Actor, command: Command): boolean {
-  if (actor.role === 'host') return command.type !== 'complete';
+  if (actor.role === 'host') return command.type !== 'complete' && command.type !== 'withdrawRequest';
   if (actor.role === 'engine') return command.type === 'complete';
   if (actor.role === 'staff') return command.type === 'addSinger' || command.type === 'request' || command.type === 'accept';
-  return actor.role === 'singer' && command.type === 'request' && command.singerId === actor.id;
+  return actor.role === 'singer' && ((command.type === 'request' && command.singerId === actor.id) || command.type === 'withdrawRequest');
 }
 
-export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
+export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
   const fail = (code: string, message: string): Outcome => ({ ok: false, code, message, revision: original.revision });
   // These checks are deliberately before receipt lookup: untrusted callers must not
   // learn stored outcomes or occupy command IDs. The service still authenticates actors.
@@ -134,17 +137,19 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else if (state.singers.some(s => s.id === cmd.singer.id)) reject('DUPLICATE', 'Singer already exists');
       else state.singers.push({ ...cmd.singer });
       break;
-    case 'request':
+    case 'request': {
+      const limitMessage = futureRequestLimitMessage(state.requests, cmd.singerId, settings.maxFutureRequestsPerSinger);
       if (!nonempty(cmd.requestId) || !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
       else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
-      else if (state.requests.filter(r => r.singerId === cmd.singerId && ['pending', 'accepted', 'staged'].includes(r.status)).length >= 3) reject('LIMIT', 'Singer has three future requests');
+      else if (limitMessage) reject('LIMIT', limitMessage);
       else {
         const request: SongRequest = { id: cmd.requestId, singerId: cmd.singerId, versionId: cmd.versionId, status: 'pending', round: null, order: null };
         state.requests.push(request);
         if (settings.autoApprove) acceptRequest(state, request);
       }
       break;
+    }
     case 'accept': {
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || request.status !== 'pending') reject('INVALID_STATE', 'Request is not pending');
@@ -152,6 +157,19 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else {
         acceptRequest(state, request);
       }
+      break;
+    }
+    case 'rejectRequest': {
+      const request = state.requests.find(r => r.id === cmd.requestId);
+      if (!request || request.status !== 'pending') reject('INVALID_STATE', 'Only a pending request can be rejected');
+      else request.status = 'rejected';
+      break;
+    }
+    case 'withdrawRequest': {
+      const request = state.requests.find(r => r.id === cmd.requestId && r.singerId === envelope.actor.id);
+      if (!request) reject('FORBIDDEN', 'Request is not available');
+      else if (!['pending', 'accepted'].includes(request.status)) reject('INVALID_STATE', 'Only a pending or queued request can be withdrawn');
+      else request.status = 'withdrawn';
       break;
     }
     case 'removeRequest': {

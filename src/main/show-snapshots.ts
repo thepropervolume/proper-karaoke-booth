@@ -31,7 +31,7 @@ function validState(value: unknown): boolean {
   const versions = new Set(value.versions.map(version => (version as Record<string, unknown>).id));
   if (singers.size !== value.singers.length || versions.size !== value.versions.length) return false;
   if (!value.requests.every(request => record(request) && id(request.id) && singers.has(request.singerId) && versions.has(request.versionId) &&
-      ['pending', 'accepted', 'staged', 'playing', 'completed', 'skipped', 'removed'].includes(String(request.status)) &&
+      ['pending', 'accepted', 'staged', 'playing', 'completed', 'skipped', 'removed', 'rejected', 'withdrawn'].includes(String(request.status)) &&
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
   if (new Set(requests.map(request => request.id)).size !== requests.length) return false;

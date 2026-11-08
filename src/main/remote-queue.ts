@@ -12,6 +12,8 @@ const secret = () => randomBytes(32).toString('base64url');
 const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 const validSecret = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
+// Host request IDs allow up to 500 characters; remote IDs include a guest UUID and command ID.
+const validRequestId = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= 500;
 const denied = () => new Error('Guest access denied.');
 const MAX_ROOM_GUESTS = 200;
 const MAX_SNAPSHOT_REQUESTS = 50;
@@ -25,7 +27,7 @@ export class JoinRevisionConflict extends Error {
 export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
-  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'>,
+  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger'>>,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
@@ -173,7 +175,7 @@ export class RemoteQueue {
     const singerName = state.singers.find(singer => singer.id === guest.singerId)?.name ?? '';
     // Preserve active requests even when they are older than recent completed or
     // removed requests. The bound also applies to malformed/legacy state with
-    // more active requests than the domain currently permits.
+    // more active requests than fit in one bounded snapshot (including unlimited mode).
     const active: { index: number; request: ShowState['requests'][number] }[] = [];
     const recent: typeof active = [];
     let visibleCount = 0;
@@ -235,6 +237,30 @@ export class RemoteQueue {
         .run(guest.id, commandId, fingerprint, JSON.stringify(outcome));
       return outcome;
     });
+  }
+  /** Withdraw only an authenticated singer's pending or accepted request. */
+  withdraw(token: unknown, input: unknown, scope = ''): Outcome {
+    const guest = this.authenticate(token, scope);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw denied();
+    const value = input as Record<string, unknown>;
+    if (Object.keys(value).some(k => !['commandId', 'showId', 'hostEpoch', 'expectedRevision', 'requestId'].includes(k)) ||
+        !validId(value.commandId) || !validId(value.showId) || !validId(value.hostEpoch) || !validRequestId(value.requestId) ||
+        !Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0) throw denied();
+    const command = value as { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; requestId: string };
+    const fingerprint = digest(JSON.stringify(['withdraw', command.showId, command.hostEpoch, command.expectedRevision, command.requestId]));
+    let committed: ShowState | undefined;
+    const outcome = this.transaction(() => {
+      const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, command.commandId) as Receipt | undefined;
+      if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false as const, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
+      const applied = applyCommand(this.state(), { commandId: `remote-${guest.id}-${command.commandId}`, showId: command.showId, hostEpoch: command.hostEpoch,
+        expectedRevision: command.expectedRevision, actor: { role: 'singer', id: guest.singerId }, command: { type: 'withdrawRequest', requestId: command.requestId } }, this.settings(), this.now());
+      this.save(applied.state);
+      this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, command.commandId, fingerprint, JSON.stringify(applied.outcome));
+      committed = applied.state;
+      return applied.outcome;
+    });
+    if (committed) this.onCommitted(committed);
+    return outcome;
   }
   submit(token: unknown, input: unknown, scope = ''): Outcome {
     const guest = this.authenticate(token, scope);
