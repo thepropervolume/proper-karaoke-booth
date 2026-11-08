@@ -175,3 +175,14 @@ test('a failed relay revocation blocks access immediately and can be retried wit
     assert.equal(f.queue.snapshot(lan.session).singerName, 'Lan');
   } finally { f.store.close(); }
 });
+
+test('relay credentials can still be durably revoked after the global guest shutdown gate', () => {
+  const f = fixture();
+  try {
+    const relay = new RemoteRelayScope(f.queue), invite = relay.createInvitation(60000);
+    const guest = relay.authority.join(invite, 'relay-join-0001', secret(), 'Relay', 0);
+    f.store.disableRemoteQueue();
+    assert.throws(() => relay.authority.snapshot(guest.session), /shutting down/);
+    assert.doesNotThrow(() => relay.close());
+  } finally { f.store.close(); }
+});
