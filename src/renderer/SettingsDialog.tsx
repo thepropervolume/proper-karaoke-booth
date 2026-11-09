@@ -11,12 +11,16 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(value);
   const [templates, setTemplates] = useState(value.metadataTemplates.join('\n'));
+  const [cacheBrands, setCacheBrands] = useState(value.karaokeNerdsBrands.join('\n'));
+  const [cacheArtists, setCacheArtists] = useState(value.karaokeNerdsArtists.join('\n'));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true); setError('');
-    try { await onSave({ ...draft, metadataTemplates: templates.split(/\r?\n/).map(line => line.trim()).filter(Boolean) }); onClose(); }
+    try { await onSave({ ...draft, metadataTemplates: templates.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+      karaokeNerdsBrands: cacheBrands.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+      karaokeNerdsArtists: cacheArtists.split(/\r?\n/).map(line => line.trim()).filter(Boolean) }); onClose(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
@@ -49,6 +53,18 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
               <option value="artist-title">Artist - Title</option><option value="title-artist">Title - Artist</option><option value="filename">Full filename as title</option>
             </select></label>
             <p className="muted">Used when importing new songs. Existing songs keep their current metadata.</p>
+          </div>
+        </details>
+        <details className="settings-group">
+          <summary>Karaoke Nerds Video Cache</summary>
+          <div className="settings-group__content">
+            <p className="muted">These preferences are saved for the planned video-cache feature. Automatic video downloads are not available yet.</p>
+            <label>Base directory for cached videos<input type="text" value={draft.karaokeNerdsCacheDirectory} onChange={event => setDraft({ ...draft, karaokeNerdsCacheDirectory: event.target.value })} placeholder="Choose an absolute directory path" /></label>
+            <p className="muted">Enter an absolute path on this computer. The provider, brand and artist folders will be beneath it.</p>
+            <label className="settings-check"><input type="checkbox" checked={draft.karaokeNerdsAutoCache} onChange={event => setDraft({ ...draft, karaokeNerdsAutoCache: event.target.checked })} /> Plan automatic caching when available</label>
+            <label>Brands to cache, one per line<textarea rows={3} value={cacheBrands} onChange={event => setCacheBrands(event.target.value)} /></label>
+            <label>Artists to cache, one per line<textarea rows={3} value={cacheArtists} onChange={event => setCacheArtists(event.target.value)} /></label>
+            <p className="muted">For selected artists, the planned behavior is the most recently published video for each artist and song.</p>
           </div>
         </details>
         <details className="settings-group">
