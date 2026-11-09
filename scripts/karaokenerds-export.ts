@@ -10,6 +10,6 @@ try {
   console.log(JSON.stringify({ status: 'exported', integrity: bundle.integrity }));
 } catch (error) {
   if (error instanceof CatalogExportCleanupError) console.error(JSON.stringify({ status: 'cleanup-needed', published: error.published }));
-  else console.error('Catalog export failed. Check the private paths, destination and catalog integrity.');
+  else console.error('Catalog export failed. Confirm SQLite refresh is retired with no outstanding attempt; check the private paths, destination and catalog integrity.');
   process.exitCode = 1;
 }

@@ -12,6 +12,7 @@ test('export command preserves a private migration bundle and never overwrites i
   const store = new CommunityCatalogStore(database);
   try {
     store.seed({ Items: [{ Id: 0, Artist: 'Example', Title: 'Song', Brand: 'EX', Watch: 'https://youtu.be/abcdefghij1', Created: null }] }, 0);
+    store.retireSQLiteRefresh(true, 0);
     store.close();
     const env = { ...process.env, TPV_KARAOKENNERDS_DATABASE: database, TPV_KARAOKENNERDS_EXPORT: destination };
     const output = execFileSync(process.execPath, ['--import', 'tsx', 'scripts/karaokenerds-export.ts'], { encoding: 'utf8', env });

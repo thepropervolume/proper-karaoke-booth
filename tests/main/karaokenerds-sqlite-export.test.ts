@@ -17,6 +17,7 @@ function fixture(filename: string) {
   store.saveBrandMapping({ slug: 'ExampleBrand', name: 'Example Brand', upstreamBrand: 'EX' }, 2000, ['abcdefghij1', 'abcdefghij2']);
   store.saveProducerTrackCode('abcdefghij1', 'EX-003', 'host-confirmed');
   store.saveVideoDates('abcdefghij1', { uploadDate: '2024-06-01', releaseDate: null, provenance: 'yt-dlp' }, 3000);
+  store.retireSQLiteRefresh(true, 1000);
   store.close();
 }
 
@@ -26,6 +27,7 @@ test('exports every catalog table and cooldown with digest, without changing the
     fixture(database); const before = readFileSync(database);
     const result = exportSQLiteCatalog(database);
     assert.equal(result.lastAttempt, 1000); assert.equal(result.lastSuccess, 1000);
+    assert.deepEqual(result.sqliteRetirement, { state: 'retired', retiredAt: 1000, attemptOutstanding: false });
     assert.deepEqual(result.integrity, { sha256: result.integrity.sha256, snapshotItems: 2, brands: 1, videos: 2, videoDates: 1 });
     assert.equal(result.videoMetadata[0].producerTrackCode, 'EX-003');
     assert.equal(result.videoDates[0].uploadDate, '2024-06-01');
@@ -42,6 +44,13 @@ test('rejects tampering, inconsistent references, invalid cooldown and counts', 
     assert.throws(() => validateSQLiteExport(tampered), /Invalid catalog migration export/);
     const badCount = structuredClone(original); badCount.integrity.videos++;
     assert.throws(() => validateSQLiteExport(badCount), /Invalid catalog migration export/);
+    const tamperedRetirement = structuredClone(original); tamperedRetirement.sqliteRetirement.retiredAt = 999;
+    assert.throws(() => validateSQLiteExport(tamperedRetirement), /Invalid catalog migration export/);
+    const { integrity: _bad, ...outstandingProof } = structuredClone(original);
+    (outstandingProof.sqliteRetirement as { attemptOutstanding: boolean }).attemptOutstanding = true;
+    assert.throws(() => validateSQLiteExport({ ...outstandingProof, integrity: catalogMigrationIntegrity(outstandingProof) }), /Invalid catalog migration export/);
+    const noProof = structuredClone(original) as unknown as Record<string, unknown>; delete noProof.sqliteRetirement;
+    assert.throws(() => validateSQLiteExport(noProof), /Invalid catalog migration export/);
     const { integrity: _, ...badReference } = structuredClone(original);
     badReference.videoMetadata[0].brandSlug = 'Missing';
     assert.throws(() => validateSQLiteExport({ ...badReference, integrity: catalogMigrationIntegrity(badReference) }), /Invalid catalog migration export/);
@@ -49,6 +58,18 @@ test('rejects tampering, inconsistent references, invalid cooldown and counts', 
     assert.throws(() => validateSQLiteExport({ ...badReference, integrity: catalogMigrationIntegrity(badReference) }), /Invalid catalog migration export/);
     const db = new DatabaseSync(database); db.prepare('UPDATE community_catalog SET last_success = 2000 WHERE id = 1').run(); db.close();
     assert.throws(() => exportSQLiteCatalog(database), /Invalid catalog migration export/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('requires an actual retired marker and no outstanding SQLite attempt', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'tpv-kn-retire-')), database = path.join(dir, 'catalog.sqlite');
+  try {
+    const store = new CommunityCatalogStore(database);
+    store.seed({ Items: [{ Id: 0, Artist: 'Example', Title: 'Song', Brand: 'EX', Watch: 'https://youtu.be/abcdefghij1', Created: null }] }, 0);
+    assert.throws(() => exportSQLiteCatalog(database), /retired/);
+    store.retireSQLiteRefresh(true, 0); store.close();
+    const db = new DatabaseSync(database); db.prepare("UPDATE community_catalog SET attempt_id = 'pending' WHERE id = 1").run(); db.close();
+    assert.throws(() => exportSQLiteCatalog(database), /outstanding/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

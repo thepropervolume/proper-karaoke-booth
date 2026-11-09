@@ -10,7 +10,7 @@ import { previewCatalogBatch } from '../src/main/karaokenerds-batch-catalog';
 async function main(): Promise<void> {
   const database = process.env.TPV_KARAOKENNERDS_DATABASE;
   const operation = process.argv[2];
-  if (!database || !isAbsolute(database) || !['seed', 'refresh', 'status', 'map-brand', 'brands', 'tracks', 'set-track-code', 'inspect-video', 'download', 'preview-batch'].includes(operation) || process.argv.length !== 3)
+  if (!database || !isAbsolute(database) || !['seed', 'refresh', 'status', 'map-brand', 'brands', 'tracks', 'set-track-code', 'inspect-video', 'download', 'preview-batch', 'sqlite-refresh-status', 'sqlite-refresh-retire', 'sqlite-refresh-recover-stale', 'sqlite-refresh-resume'].includes(operation) || process.argv.length !== 3)
     throw new Error('Invalid configuration.');
   if (operation !== 'seed' && !existsSync(database)) throw new Error('Catalog database is missing.');
   const store = new CommunityCatalogStore(database);
@@ -21,13 +21,28 @@ async function main(): Promise<void> {
       store.seed(JSON.parse(readFileSync(snapshot, 'utf8')), Date.now());
       console.log(JSON.stringify({ status: 'seeded', records: store.read()?.Items.length }));
     } else if (operation === 'refresh') {
+      if (store.sqliteRefreshStatus().state === 'retired') {
+        console.error('SQLite refresh is retired. Use the central catalog updater.'); process.exitCode = 1; return;
+      }
       const file = process.env.TPV_KARAOKENNERDS_CREDENTIAL_FILE;
       if (!file || !isAbsolute(file)) throw new Error('Invalid configuration.');
       const url = readFileSync(file, 'utf8').trim();
       validateCommunityUrl(url);
       const result = await store.refresh(() => fetchCommunity(url));
       console.log(JSON.stringify(result));
-      if (result.status === 'failed' || result.status === 'not-initialized') process.exitCode = 1;
+      if (result.status === 'retired') console.error('SQLite refresh is retired. Use the central catalog updater.');
+      if (result.status === 'in-progress') console.error('An earlier SQLite refresh is still outstanding; stop the updater before explicit recovery.');
+      if (result.status === 'failed' || result.status === 'not-initialized' || result.status === 'in-progress' || result.status === 'retired') process.exitCode = 1;
+    } else if (operation === 'sqlite-refresh-status') {
+      console.log(JSON.stringify(store.sqliteRefreshStatus()));
+    } else if (operation === 'sqlite-refresh-retire') {
+      console.log(JSON.stringify(store.retireSQLiteRefresh(process.env.TPV_KARAOKENNERDS_CONFIRMED_STOPPED === 'true')));
+    } else if (operation === 'sqlite-refresh-recover-stale') {
+      console.log(JSON.stringify(store.recoverStaleSQLiteAttempt(process.env.TPV_KARAOKENNERDS_CONFIRMED_STOPPED === 'true')));
+    } else if (operation === 'sqlite-refresh-resume') {
+      const value = process.env.TPV_KARAOKENNERDS_CENTRAL_LAST_ATTEMPT;
+      if (!value || !/^\d{1,16}$/.test(value)) throw new Error('Stop the central updater and provide its last attempt time.');
+      console.log(JSON.stringify(store.resumeSQLiteRefresh(process.env.TPV_KARAOKENNERDS_CONFIRMED_STOPPED === 'true', Number(value))));
     } else if (operation === 'map-brand') {
       const slug = process.env.TPV_KARAOKENNERDS_BRAND_SLUG, catalog = store.read();
       if (!slug || !catalog) throw new Error('Missing brand or catalog.');
@@ -93,4 +108,11 @@ async function main(): Promise<void> {
   } finally { store.close(); }
 }
 
-main().catch(() => { console.error('Catalog operation failed; check the private configuration and database.'); process.exitCode = 1; });
+main().catch((error: unknown) => {
+  const safe = new Set(['Stop all old updaters and confirm the cutover.', 'Stop all old updaters and confirm recovery.',
+    'Stop the central updater and provide its last attempt time.', 'SQLite catalog is not initialized.',
+    'An earlier SQLite attempt needs explicit recovery.', 'No recoverable SQLite attempt exists.',
+    'SQLite refresh is not in a recoverable retired state.', 'Invalid SQLite refresh retirement marker.']);
+  console.error(error instanceof Error && safe.has(error.message) ? error.message : 'Catalog operation failed; check the private configuration and database.');
+  process.exitCode = 1;
+});

@@ -4,10 +4,13 @@ import { DatabaseSync } from 'node:sqlite';
 
 const DAY = 24 * 60 * 60 * 1000;
 const MAX_BYTES = 64 * 1024 * 1024;
+const MAX_TIMESTAMP = 253_402_300_799_999;
+const validTimestamp = (value: number): boolean => Number.isSafeInteger(value) && value >= 0 && value <= MAX_TIMESTAMP;
 
 export type CommunityItem = { Id: number; Artist: string; Title: string; Brand: string; Watch: string; Created: string | null };
 export type CommunityCatalog = { Items: CommunityItem[] };
-export type RefreshResult = { status: 'updated' | 'not-due' | 'not-initialized' | 'failed'; lastAttempt: number | null; lastSuccess: number | null; nextAttempt: number | null };
+export type RefreshResult = { status: 'updated' | 'not-due' | 'not-initialized' | 'in-progress' | 'retired' | 'failed'; lastAttempt: number | null; lastSuccess: number | null; nextAttempt: number | null };
+export type SQLiteRefreshStatus = { state: 'available' | 'retired'; retiredAt: number | null; lastAttempt: number | null; nextAttempt: number | null; attemptOutstanding: boolean };
 
 /** Fail closed on unexpected shapes instead of replacing a good snapshot. */
 export function parseCommunityCatalog(value: unknown): CommunityCatalog {
@@ -61,7 +64,7 @@ export class CommunityCatalogStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA busy_timeout = 5000');
     const existing = this.db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[];
-    if (existing.some(row => !['community_catalog', 'community_brand_mappings', 'community_video_metadata', 'community_video_dates'].includes(row.name)) ||
+    if (existing.some(row => !['community_catalog', 'community_brand_mappings', 'community_video_metadata', 'community_video_dates', 'community_refresh_control'].includes(row.name)) ||
         existing.some(row => row.name !== 'community_catalog') && !existing.some(row => row.name === 'community_catalog')) {
       this.db.close(); throw new Error('Not a community catalog database.');
     }
@@ -99,6 +102,74 @@ export class CommunityCatalogStore {
   status(): { lastAttempt: number | null; lastSuccess: number | null; nextAttempt: number | null } {
     const { lastAttempt, lastSuccess, nextAttempt } = this.result('not-due');
     return { lastAttempt, lastSuccess, nextAttempt };
+  }
+  /** A missing marker is the legacy state; a malformed marker always fails closed. */
+  private retirement(): number | null {
+    const table = this.db.prepare("SELECT type FROM sqlite_schema WHERE name = 'community_refresh_control'").get() as { type: string } | undefined;
+    if (!table) return null;
+    if (table.type !== 'table') throw new Error('Invalid SQLite refresh retirement marker.');
+    const columns = this.db.prepare('PRAGMA table_info(community_refresh_control)').all() as { name: string; type: string; pk: number }[];
+    if (columns.length !== 3 || columns[0].name !== 'id' || columns[0].type.toUpperCase() !== 'INTEGER' || columns[0].pk !== 1 ||
+        columns[1].name !== 'state' || columns[1].type.toUpperCase() !== 'TEXT' || columns[2].name !== 'retired_at' || columns[2].type.toUpperCase() !== 'INTEGER')
+      throw new Error('Invalid SQLite refresh retirement marker.');
+    const rows = this.db.prepare('SELECT id, state, retired_at FROM community_refresh_control').all() as { id: number; state: string; retired_at: number }[];
+    if (rows.length !== 1 || rows[0].id !== 1 || rows[0].state !== 'retired' || !validTimestamp(rows[0].retired_at))
+      throw new Error('Invalid SQLite refresh retirement marker.');
+    return rows[0].retired_at;
+  }
+  sqliteRefreshStatus(): SQLiteRefreshStatus {
+    const retiredAt = this.retirement();
+    const row = this.db.prepare('SELECT last_attempt, attempt_id FROM community_catalog WHERE id = 1').get() as { last_attempt: number | null; attempt_id: string | null };
+    if (!row || !(row.last_attempt === null || validTimestamp(row.last_attempt)) || !(row.attempt_id === null || typeof row.attempt_id === 'string' && row.attempt_id.length > 0)) throw new Error('Invalid SQLite refresh state.');
+    return { state: retiredAt === null ? 'available' : 'retired', retiredAt, lastAttempt: row.last_attempt,
+      nextAttempt: row.last_attempt === null ? null : row.last_attempt + DAY, attemptOutstanding: row.attempt_id !== null };
+  }
+  /** Call only after independently stopping every old SQLite updater. */
+  retireSQLiteRefresh(confirmedStopped: boolean, now = Date.now()): SQLiteRefreshStatus {
+    if (confirmedStopped !== true || !validTimestamp(now)) throw new Error('Stop all old updaters and confirm the cutover.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const state = this.sqliteRefreshStatus();
+      if (state.state === 'retired') { this.db.exec('COMMIT'); return state; }
+      if (state.lastAttempt === null) throw new Error('SQLite catalog is not initialized.');
+      if (state.attemptOutstanding) throw new Error('An earlier SQLite attempt needs explicit recovery.');
+      // Quiescence is verified by the operator outside the database. Resetting
+      // the gate conservatively gives every new authority a full-day embargo.
+      this.db.prepare('UPDATE community_catalog SET last_attempt = ?, attempt_id = NULL WHERE id = 1').run(Math.max(now, state.lastAttempt));
+      this.db.exec("CREATE TABLE community_refresh_control (id INTEGER PRIMARY KEY CHECK (id = 1), state TEXT NOT NULL, retired_at INTEGER NOT NULL)");
+      this.db.prepare("INSERT INTO community_refresh_control (id, state, retired_at) VALUES (1, 'retired', ?)").run(now);
+      const retired = this.sqliteRefreshStatus();
+      this.db.exec('COMMIT');
+      return retired;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  /** A stale token requires confirmed shutdown and a fresh 24-hour embargo. */
+  recoverStaleSQLiteAttempt(confirmedStopped: boolean, now = Date.now()): SQLiteRefreshStatus {
+    if (confirmedStopped !== true || !validTimestamp(now)) throw new Error('Stop all old updaters and confirm recovery.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const state = this.sqliteRefreshStatus();
+      if (state.state !== 'available' || state.lastAttempt === null || !state.attemptOutstanding) throw new Error('No recoverable SQLite attempt exists.');
+      this.db.prepare('UPDATE community_catalog SET last_attempt = ?, attempt_id = NULL WHERE id = 1').run(Math.max(now, state.lastAttempt));
+      const recovered = this.sqliteRefreshStatus();
+      this.db.exec('COMMIT');
+      return recovered;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  /** Rollback requires an independently stopped central updater and its last attempt. */
+  resumeSQLiteRefresh(confirmedStopped: boolean, centralLastAttempt: number, now = Date.now()): SQLiteRefreshStatus {
+    if (confirmedStopped !== true || !validTimestamp(now) || !validTimestamp(centralLastAttempt)) throw new Error('Stop the central updater and provide its last attempt time.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const state = this.sqliteRefreshStatus();
+      if (state.state !== 'retired' || state.lastAttempt === null || state.attemptOutstanding) throw new Error('SQLite refresh is not in a recoverable retired state.');
+      const safeAttempt = Math.max(now, centralLastAttempt, state.lastAttempt);
+      this.db.prepare('UPDATE community_catalog SET last_attempt = ?, attempt_id = NULL WHERE id = 1').run(safeAttempt);
+      this.db.exec('DROP TABLE community_refresh_control');
+      const resumed = this.sqliteRefreshStatus();
+      this.db.exec('COMMIT');
+      return resumed;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   /** Store a verified site-to-feed join; do not overwrite another brand's mapping. */
   saveBrandMapping(mapping: { slug: string; name: string; upstreamBrand: string }, observedAt = Date.now(), videoIds: readonly string[] = []): void {
@@ -149,15 +220,26 @@ export class CommunityCatalogStore {
     const row = this.db.prepare('SELECT upload_date AS uploadDate, release_date AS releaseDate, source, observed_at AS observedAt FROM community_video_dates WHERE youtube_id = ?').get(youtubeId) as { uploadDate: string | null; releaseDate: string | null; source: string; observedAt: number } | undefined;
     return row ? { ...row } : null;
   }
-  async refresh(fetcher: () => Promise<unknown>, now = Date.now()): Promise<RefreshResult> {
-    if (!Number.isSafeInteger(now) || now < 0) throw new Error('Invalid clock.');
+  async refresh(fetcher: () => Promise<unknown>, now?: number, completionClock?: () => number): Promise<RefreshResult> {
+    const startedAt = now ?? Date.now();
+    if (!validTimestamp(startedAt)) throw new Error('Invalid clock.');
+    const completedAt = () => {
+      // Explicit start times keep existing synthetic callers deterministic;
+      // production uses the actual clock again after the network operation.
+      const value = completionClock ? completionClock() : now === undefined ? Date.now() : startedAt;
+      if (!validTimestamp(value)) throw new Error('Invalid clock.');
+      return Math.max(startedAt, value);
+    };
     const id = randomUUID();
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const row = this.db.prepare('SELECT last_attempt, snapshot FROM community_catalog WHERE id = 1').get() as { last_attempt: number | null; snapshot: string | null };
-      if (row.last_attempt === null || row.snapshot === null) { this.db.exec('ROLLBACK'); return this.result('not-initialized'); }
-      if (row.last_attempt !== null && now - row.last_attempt < DAY) { this.db.exec('ROLLBACK'); return this.result('not-due'); }
-      this.db.prepare('UPDATE community_catalog SET last_attempt = ?, attempt_id = ? WHERE id = 1').run(now, id);
+      if (this.retirement() !== null) { const result = this.result('retired'); this.db.exec('ROLLBACK'); return result; }
+      const row = this.db.prepare('SELECT last_attempt, snapshot, attempt_id FROM community_catalog WHERE id = 1').get() as { last_attempt: number | null; snapshot: string | null; attempt_id: string | null };
+      if (row.last_attempt === null || row.snapshot === null) { const result = this.result('not-initialized'); this.db.exec('ROLLBACK'); return result; }
+      if (!validTimestamp(row.last_attempt) || !(row.attempt_id === null || typeof row.attempt_id === 'string' && row.attempt_id.length > 0)) throw new Error('Invalid SQLite refresh state.');
+      if (startedAt - row.last_attempt < DAY) { const result = this.result('not-due'); this.db.exec('ROLLBACK'); return result; }
+      if (row.attempt_id !== null) { const result = this.result('in-progress'); this.db.exec('ROLLBACK'); return result; }
+      this.db.prepare('UPDATE community_catalog SET last_attempt = ?, attempt_id = ? WHERE id = 1').run(startedAt, id);
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     try {
@@ -166,10 +248,12 @@ export class CommunityCatalogStore {
       // A structurally valid but unexpectedly small dump may be truncated.
       if (previous && next.Items.length < Math.ceil(previous.Items.length / 2)) throw new Error('Catalog shrank unexpectedly.');
       const snapshot = JSON.stringify(next);
-      const result = this.db.prepare('UPDATE community_catalog SET snapshot = ?, last_success = ? WHERE id = 1 AND attempt_id = ?').run(snapshot, now, id);
+      const finished = completedAt();
+      const result = this.db.prepare('UPDATE community_catalog SET snapshot = ?, last_success = ?, last_attempt = MAX(last_attempt, ?), attempt_id = NULL WHERE id = 1 AND attempt_id = ?').run(snapshot, finished, finished, id);
       return this.result(Number(result.changes) === 1 ? 'updated' : 'failed');
     } catch {
       // Preserve the last good snapshot and consume the daily attempt even on failure.
+      this.db.prepare('UPDATE community_catalog SET last_attempt = MAX(last_attempt, ?), attempt_id = NULL WHERE id = 1 AND attempt_id = ?').run(completedAt(), id);
       return this.result('failed');
     }
   }

@@ -6,6 +6,7 @@ export type CatalogMigrationPayload = {
   snapshot: CommunityCatalog;
   lastAttempt: number;
   lastSuccess: number | null;
+  sqliteRetirement: { state: 'retired'; retiredAt: number; attemptOutstanding: false };
   brandMappings: { slug: string; name: string; upstreamBrand: string; observedAt: number }[];
   videoMetadata: { youtubeId: string; brandSlug: string; producerTrackCode: string | null; codeSource: string | null }[];
   videoDates: { youtubeId: string; uploadDate: string | null; releaseDate: string | null; source: 'yt-dlp'; observedAt: number }[];
@@ -25,16 +26,19 @@ function validDate(v: unknown): v is string | null {
   return Number.isFinite(date) && new Date(date).toISOString().slice(0, 10) === v;
 }
 function hash(payload: CatalogMigrationPayload): string {
-  const ordered = { snapshot: payload.snapshot, lastAttempt: payload.lastAttempt, lastSuccess: payload.lastSuccess,
+  const ordered = { snapshot: payload.snapshot, lastAttempt: payload.lastAttempt, lastSuccess: payload.lastSuccess, sqliteRetirement: payload.sqliteRetirement,
     brandMappings: payload.brandMappings, videoMetadata: payload.videoMetadata, videoDates: payload.videoDates };
   return createHash('sha256').update(JSON.stringify(ordered), 'utf8').digest('hex');
 }
 function invalid(): never { throw new Error('Invalid catalog migration export.'); }
 
-/** The digest covers JSON.stringify of the six payload fields in declared order. */
+/** The digest covers JSON.stringify of the payload fields in declared order. */
 export function validateSQLiteExport(value: unknown): CatalogMigrationExport {
   if (!object(value) || !object(value.snapshot) || !Array.isArray(value.snapshot.Items) || value.snapshot.Items.length === 0 || value.snapshot.Items.length > 1_000_000 ||
       !validTime(value.lastAttempt) || !(value.lastSuccess === null || validTime(value.lastSuccess) && value.lastSuccess <= value.lastAttempt) ||
+      !object(value.sqliteRetirement) || Object.keys(value.sqliteRetirement).sort().join(',') !== 'attemptOutstanding,retiredAt,state' ||
+      value.sqliteRetirement.state !== 'retired' || !validTime(value.sqliteRetirement.retiredAt) ||
+      value.sqliteRetirement.retiredAt > value.lastAttempt || value.sqliteRetirement.attemptOutstanding !== false ||
       !Array.isArray(value.brandMappings) || value.brandMappings.length > 100_000 || !Array.isArray(value.videoMetadata) || value.videoMetadata.length > 1_000_000 ||
       !Array.isArray(value.videoDates) || value.videoDates.length > 1_000_000 || !object(value.integrity)) return invalid();
   for (const item of value.snapshot.Items) {
@@ -60,7 +64,7 @@ export function validateSQLiteExport(value: unknown): CatalogMigrationExport {
         !validDate(item.uploadDate) || !validDate(item.releaseDate) || item.source !== 'yt-dlp' || !validTime(item.observedAt)) return invalid();
     dated.add(item.youtubeId);
   }
-  const payload = { snapshot: value.snapshot, lastAttempt: value.lastAttempt, lastSuccess: value.lastSuccess,
+  const payload = { snapshot: value.snapshot, lastAttempt: value.lastAttempt, lastSuccess: value.lastSuccess, sqliteRetirement: value.sqliteRetirement,
     brandMappings: value.brandMappings, videoMetadata: value.videoMetadata, videoDates: value.videoDates } as CatalogMigrationPayload;
   const check = value.integrity;
   if (typeof check.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(check.sha256) || check.sha256 !== hash(payload) ||
