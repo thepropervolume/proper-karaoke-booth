@@ -111,3 +111,40 @@ test('a reserved attempt gates a second store while the request is still running
     assert.deepEqual(two.read(), example);
   } finally { one.close(); two.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a suspiciously truncated valid response does not replace the prior catalog', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-community-truncated-')); const path = join(dir, 'catalog.sqlite');
+  const store = new CommunityCatalogStore(path);
+  const prior = { Items: [example.Items[0], example.Items[0], example.Items[0], example.Items[0]] };
+  try {
+    store.seed(prior, 0);
+    assert.equal((await store.refresh(async () => example, DAY)).status, 'failed');
+    assert.deepEqual(store.read(), prior);
+    assert.equal((await store.refresh(async () => prior, DAY + 1)).status, 'not-due');
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('verified brand mappings persist and reject conflicting identities', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-community-brands-')); const path = join(dir, 'catalog.sqlite');
+  let store = new CommunityCatalogStore(path);
+  try {
+    store.seed(example, 0);
+    store.saveBrandMapping({ slug: 'TheProperVolume', name: 'The Proper Volume', upstreamBrand: 'PVOL' }, 10, ['abcDEF_123-']);
+    store.close(); store = new CommunityCatalogStore(path);
+    assert.deepEqual(store.brandMappings(), [{ slug: 'TheProperVolume', name: 'The Proper Volume', upstreamBrand: 'PVOL', observedAt: 10 }]);
+    assert.throws(() => store.saveBrandMapping({ slug: 'AnotherBrand', name: 'Other', upstreamBrand: 'pvol' }, 11), /conflicts/);
+    assert.throws(() => store.saveBrandMapping({ slug: 'TheProperVolume', name: 'Other', upstreamBrand: 'OTHER' }, 11), /conflicts/);
+    assert.throws(() => store.saveBrandMapping({ slug: '../Bad', name: 'Bad', upstreamBrand: 'BAD' }, 11), /Invalid/);
+    assert.throws(() => store.saveBrandMapping({ slug: 'Other', name: 'Other', upstreamBrand: 'OTHER' }, 11, ['abcDEF_123-']), /Video mapping conflicts/);
+    assert.equal(store.brandMappings().length, 1);
+    assert.deepEqual(store.videoMetadata(), [{ youtubeId: 'abcDEF_123-', brandSlug: 'TheProperVolume', producerTrackCode: null, codeSource: null }]);
+    store.saveProducerTrackCode('abcDEF_123-', 'PVOL-003', 'host-confirmed');
+    assert.equal(store.videoMetadata()[0].producerTrackCode, 'PVOL-003');
+    assert.throws(() => store.saveProducerTrackCode('abcDEF_123-', 'PVOL-004', 'host-confirmed'), /conflicting/);
+    assert.throws(() => store.saveProducerTrackCode('unknown0000', 'PVOL-004', 'host-confirmed'), /Unknown/);
+    store.saveVideoDates('abcDEF_123-', { uploadDate: '2026-05-21', releaseDate: null, provenance: 'yt-dlp' }, 12);
+    assert.deepEqual(store.videoDates('abcDEF_123-'), { uploadDate: '2026-05-21', releaseDate: null, source: 'yt-dlp', observedAt: 12 });
+    assert.throws(() => store.saveVideoDates('unknown0000', { uploadDate: null, releaseDate: null, provenance: 'yt-dlp' }, 12), /Unknown/);
+    assert.throws(() => store.saveVideoDates('abcDEF_123-', { uploadDate: '2026-02-31', releaseDate: null, provenance: 'yt-dlp' }, 12), /Invalid/);
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});

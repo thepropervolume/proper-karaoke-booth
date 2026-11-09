@@ -2,11 +2,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { CommunityCatalogStore, fetchCommunity, validateCommunityUrl } from '../src/catalog/karaokenerds';
+import { resolveSelectedBrand } from '../src/catalog/karaokenerds-public-client';
+import { youtubeVideoId } from '../src/catalog/karaokenerds-brand-map';
+import { downloadYtDlpVideo, inspectYtDlpVideo } from '../src/main/karaokenerds-ytdlp';
 
 async function main(): Promise<void> {
   const database = process.env.TPV_KARAOKENNERDS_DATABASE;
   const operation = process.argv[2];
-  if (!database || !isAbsolute(database) || !['seed', 'refresh', 'status'].includes(operation) || process.argv.length !== 3)
+  if (!database || !isAbsolute(database) || !['seed', 'refresh', 'status', 'map-brand', 'brands', 'tracks', 'set-track-code', 'inspect-video', 'download'].includes(operation) || process.argv.length !== 3)
     throw new Error('Invalid configuration.');
   if (operation !== 'seed' && !existsSync(database)) throw new Error('Catalog database is missing.');
   const store = new CommunityCatalogStore(database);
@@ -24,6 +27,56 @@ async function main(): Promise<void> {
       const result = await store.refresh(() => fetchCommunity(url));
       console.log(JSON.stringify(result));
       if (result.status === 'failed' || result.status === 'not-initialized') process.exitCode = 1;
+    } else if (operation === 'map-brand') {
+      const slug = process.env.TPV_KARAOKENNERDS_BRAND_SLUG, catalog = store.read();
+      if (!slug || !catalog) throw new Error('Missing brand or catalog.');
+      const { mapping: result, matchedVideoIds } = await resolveSelectedBrand(slug, catalog);
+      if (result.status === 'resolved') {
+        store.saveBrandMapping(result, Date.now(), matchedVideoIds);
+        console.log(JSON.stringify({ status: result.status, slug: result.slug, name: result.name, matchedVideos: result.matchedVideos, unmatchedVideos: result.unmatchedVideos }));
+      } else {
+        console.log(JSON.stringify(result)); process.exitCode = 1;
+      }
+    } else if (operation === 'set-track-code') {
+      const video = process.env.TPV_KARAOKENNERDS_VIDEO_ID, code = process.env.TPV_KARAOKENNERDS_TRACK_CODE, source = process.env.TPV_KARAOKENNERDS_CODE_SOURCE;
+      if (!video || !code || (source !== 'host-confirmed' && source !== 'creator-catalog')) throw new Error('Missing track metadata.');
+      store.saveProducerTrackCode(video, code, source);
+      console.log(JSON.stringify({ status: 'saved' }));
+    } else if (operation === 'inspect-video') {
+      const video = process.env.TPV_KARAOKENNERDS_VIDEO_ID, executable = process.env.TPV_YTDLP_EXECUTABLE;
+      if (!video || !executable || !store.videoMetadata().some(item => item.youtubeId === video)) throw new Error('Unknown video.');
+      const dates = await inspectYtDlpVideo(executable, `https://youtu.be/${video}`);
+      store.saveVideoDates(video, dates);
+      console.log(JSON.stringify(dates));
+    } else if (operation === 'download') {
+      const slug = process.env.TPV_KARAOKENNERDS_BRAND_SLUG, video = process.env.TPV_KARAOKENNERDS_VIDEO_ID;
+      const executable = process.env.TPV_YTDLP_EXECUTABLE, baseDirectory = process.env.TPV_CACHED_VIDEOS_DIR;
+      const catalog = store.read(), brand = store.brandMappings().find(item => item.slug === slug);
+      if (!catalog || !brand || !video || !executable || !baseDirectory || !store.videoMetadata().some(item => item.youtubeId === video && item.brandSlug === slug)) throw new Error('Unknown video.');
+      const matches = catalog.Items.filter(item => item.Brand === brand.upstreamBrand && youtubeVideoId(item.Watch) === video);
+      if (matches.length !== 1) throw new Error('Video metadata is ambiguous.');
+      const song = matches[0];
+      try {
+        const result = await downloadYtDlpVideo({ executable, watchUrl: song.Watch, baseDirectory,
+          video: { id: video, provider: 'karaokenerds', brandSlug: brand.slug, artist: song.Artist, title: song.Title, extension: 'mp4' } });
+        console.log(JSON.stringify(result));
+      } catch {
+        console.error('Video download failed. Check for an active ffmpeg process and any .tpv-yt- staging directory before retrying.');
+        process.exitCode = 1;
+      }
+    } else if (operation === 'brands') {
+      console.log(JSON.stringify({ brands: store.brandMappings().map(({ slug, name, upstreamBrand: brandCode, observedAt }) => ({ slug, name, brandCode, observedAt })) }));
+    } else if (operation === 'tracks') {
+      const slug = process.env.TPV_KARAOKENNERDS_BRAND_SLUG, catalog = store.read();
+      const brand = store.brandMappings().find(item => item.slug === slug);
+      if (!brand || !catalog) throw new Error('Brand is not mapped.');
+      const metadata = new Map(store.videoMetadata().filter(item => item.brandSlug === slug).map(item => [item.youtubeId, item]));
+      const tracks = catalog.Items.flatMap(item => {
+        const id = youtubeVideoId(item.Watch), known = id ? metadata.get(id) : undefined;
+        return item.Brand === brand.upstreamBrand && known ? [{ artist: item.Artist, title: item.Title, youtubeId: id,
+          producerTrackCode: known.producerTrackCode, codeSource: known.codeSource, catalogCreated: item.Created, videoDates: store.videoDates(known.youtubeId) }] : [];
+      });
+      console.log(JSON.stringify({ slug: brand.slug, tracks }));
     } else {
       const catalog = store.read();
       console.log(JSON.stringify({ status: catalog ? 'available' : 'not-initialized', records: catalog?.Items.length ?? 0, ...store.status() }));

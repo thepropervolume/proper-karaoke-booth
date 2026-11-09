@@ -61,11 +61,24 @@ export class CommunityCatalogStore {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA busy_timeout = 5000');
     const existing = this.db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[];
-    if (existing.some(row => row.name !== 'community_catalog')) { this.db.close(); throw new Error('Not a community catalog database.'); }
+    if (existing.some(row => !['community_catalog', 'community_brand_mappings', 'community_video_metadata', 'community_video_dates'].includes(row.name)) ||
+        existing.some(row => row.name !== 'community_catalog') && !existing.some(row => row.name === 'community_catalog')) {
+      this.db.close(); throw new Error('Not a community catalog database.');
+    }
     this.db.exec(`CREATE TABLE IF NOT EXISTS community_catalog (
       id INTEGER PRIMARY KEY CHECK (id = 1), last_attempt INTEGER, last_success INTEGER,
       attempt_id TEXT, snapshot TEXT
-    ); INSERT OR IGNORE INTO community_catalog (id) VALUES (1);`);
+    ); INSERT OR IGNORE INTO community_catalog (id) VALUES (1);
+    CREATE TABLE IF NOT EXISTS community_brand_mappings (
+      slug TEXT PRIMARY KEY, display_name TEXT NOT NULL, upstream_brand TEXT NOT NULL UNIQUE, observed_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS community_video_metadata (
+      youtube_id TEXT PRIMARY KEY, brand_slug TEXT NOT NULL, producer_track_code TEXT, code_source TEXT,
+      CHECK ((producer_track_code IS NULL AND code_source IS NULL) OR (producer_track_code IS NOT NULL AND code_source IS NOT NULL))
+    );
+    CREATE TABLE IF NOT EXISTS community_video_dates (
+      youtube_id TEXT PRIMARY KEY, upload_date TEXT, release_date TEXT, source TEXT NOT NULL, observed_at INTEGER NOT NULL
+    );`);
   }
   close(): void { this.db.close(); }
   read(): CommunityCatalog | null {
@@ -87,6 +100,55 @@ export class CommunityCatalogStore {
     const { lastAttempt, lastSuccess, nextAttempt } = this.result('not-due');
     return { lastAttempt, lastSuccess, nextAttempt };
   }
+  /** Store a verified site-to-feed join; do not overwrite another brand's mapping. */
+  saveBrandMapping(mapping: { slug: string; name: string; upstreamBrand: string }, observedAt = Date.now(), videoIds: readonly string[] = []): void {
+    if (!mapping.slug.trim() || mapping.slug.length > 200 || mapping.slug === '.' || mapping.slug === '..' || /[\/\\\x00-\x1f\x7f?#]/.test(mapping.slug) || !mapping.name.trim() || mapping.name.length > 200 || /[\x00-\x1f\x7f]/.test(mapping.name) ||
+        !mapping.upstreamBrand.trim() || mapping.upstreamBrand.length > 200 || /[\x00-\x1f\x7f]/.test(mapping.upstreamBrand) || !Number.isSafeInteger(observedAt) || observedAt < 0 ||
+        videoIds.length > 100_000 || videoIds.some(id => !/^[A-Za-z0-9_-]{11}$/.test(id)))
+      throw new Error('Invalid brand mapping.');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const previous = this.db.prepare('SELECT slug, upstream_brand FROM community_brand_mappings WHERE slug = ? COLLATE NOCASE').get(mapping.slug) as { slug: string; upstream_brand: string } | undefined;
+      const owner = this.db.prepare('SELECT slug FROM community_brand_mappings WHERE upstream_brand = ? COLLATE NOCASE').get(mapping.upstreamBrand) as { slug: string } | undefined;
+      if (previous && (previous.upstream_brand !== mapping.upstreamBrand || previous.slug !== mapping.slug) || owner && owner.slug !== mapping.slug) throw new Error('Brand mapping conflicts with a saved mapping.');
+      this.db.prepare('INSERT INTO community_brand_mappings (slug, display_name, upstream_brand, observed_at) VALUES (?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET display_name = excluded.display_name, observed_at = excluded.observed_at').run(mapping.slug, mapping.name, mapping.upstreamBrand, observedAt);
+      const lookup = this.db.prepare('SELECT brand_slug FROM community_video_metadata WHERE youtube_id = ?');
+      const insert = this.db.prepare('INSERT OR IGNORE INTO community_video_metadata (youtube_id, brand_slug) VALUES (?, ?)');
+      for (const id of new Set(videoIds)) {
+        const prior = lookup.get(id) as { brand_slug: string } | undefined;
+        if (prior && prior.brand_slug !== mapping.slug) throw new Error('Video mapping conflicts with a saved mapping.');
+        insert.run(id, mapping.slug);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  brandMappings(): { slug: string; name: string; upstreamBrand: string; observedAt: number }[] {
+    const rows = this.db.prepare('SELECT slug, display_name AS name, upstream_brand AS upstreamBrand, observed_at AS observedAt FROM community_brand_mappings ORDER BY display_name COLLATE NOCASE').all() as { slug: string; name: string; upstreamBrand: string; observedAt: number }[];
+    return rows.map(row => ({ ...row }));
+  }
+  videoMetadata(): { youtubeId: string; brandSlug: string; producerTrackCode: string | null; codeSource: string | null }[] {
+    const rows = this.db.prepare('SELECT youtube_id AS youtubeId, brand_slug AS brandSlug, producer_track_code AS producerTrackCode, code_source AS codeSource FROM community_video_metadata ORDER BY youtube_id').all() as { youtubeId: string; brandSlug: string; producerTrackCode: string | null; codeSource: string | null }[];
+    return rows.map(row => ({ ...row }));
+  }
+  /** Only attach a producer code supported by an operator-verified source. */
+  saveProducerTrackCode(youtubeId: string, code: string, source: 'host-confirmed' | 'creator-catalog'): void {
+    if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeId) || !code.trim() || code.length > 128 || /[\x00-\x1f\x7f]/.test(code) || !['host-confirmed', 'creator-catalog'].includes(source)) throw new Error('Invalid producer track code.');
+    const result = this.db.prepare('UPDATE community_video_metadata SET producer_track_code = ?, code_source = ? WHERE youtube_id = ? AND (producer_track_code IS NULL OR (producer_track_code = ? AND code_source = ?))').run(code, source, youtubeId, code, source);
+    if (Number(result.changes) !== 1) throw new Error('Unknown video or conflicting producer track code.');
+  }
+  /** Store yt-dlp date fields separately from the catalog's Created timestamp. */
+  saveVideoDates(youtubeId: string, dates: { uploadDate: string | null; releaseDate: string | null; provenance: 'yt-dlp' }, observedAt = Date.now()): void {
+    const validDate = (value: string | null) => value === null || /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+    if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeId) || !validDate(dates.uploadDate) || !validDate(dates.releaseDate) || dates.provenance !== 'yt-dlp' || !Number.isSafeInteger(observedAt) || observedAt < 0) throw new Error('Invalid video dates.');
+    const result = this.db.prepare(`INSERT INTO community_video_dates (youtube_id, upload_date, release_date, source, observed_at)
+      SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM community_video_metadata WHERE youtube_id = ?)
+      ON CONFLICT(youtube_id) DO UPDATE SET upload_date = excluded.upload_date, release_date = excluded.release_date, source = excluded.source, observed_at = excluded.observed_at`).run(youtubeId, dates.uploadDate, dates.releaseDate, dates.provenance, observedAt, youtubeId);
+    if (Number(result.changes) !== 1) throw new Error('Unknown video.');
+  }
+  videoDates(youtubeId: string): { uploadDate: string | null; releaseDate: string | null; source: string; observedAt: number } | null {
+    const row = this.db.prepare('SELECT upload_date AS uploadDate, release_date AS releaseDate, source, observed_at AS observedAt FROM community_video_dates WHERE youtube_id = ?').get(youtubeId) as { uploadDate: string | null; releaseDate: string | null; source: string; observedAt: number } | undefined;
+    return row ? { ...row } : null;
+  }
   async refresh(fetcher: () => Promise<unknown>, now = Date.now()): Promise<RefreshResult> {
     if (!Number.isSafeInteger(now) || now < 0) throw new Error('Invalid clock.');
     const id = randomUUID();
@@ -99,7 +161,11 @@ export class CommunityCatalogStore {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     try {
-      const snapshot = JSON.stringify(parseCommunityCatalog(await fetcher()));
+      const next = parseCommunityCatalog(await fetcher());
+      const previous = this.read();
+      // A structurally valid but unexpectedly small dump may be truncated.
+      if (previous && next.Items.length < Math.ceil(previous.Items.length / 2)) throw new Error('Catalog shrank unexpectedly.');
+      const snapshot = JSON.stringify(next);
       const result = this.db.prepare('UPDATE community_catalog SET snapshot = ?, last_success = ? WHERE id = 1 AND attempt_id = ?').run(snapshot, now, id);
       return this.result(Number(result.changes) === 1 ? 'updated' : 'failed');
     } catch {
