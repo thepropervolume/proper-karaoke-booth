@@ -1,0 +1,11 @@
+# REVIEW TEMPLATE ONLY. UTC; neither this timer nor its service has been installed or enabled.
+[Unit]
+Description=Daily production karaoke catalog backup
+
+[Timer]
+OnCalendar=*-*-* 09:15:00 UTC
+Persistent=true
+Unit=tpv-catalog-backup@production.service
+
+[Install]
+WantedBy=timers.target
