@@ -30,6 +30,53 @@ test('unknown publication dates remain unresolved, even if a raw publishedAt val
   assert.deepEqual(result.unresolvedArtists[0].videoIds, [three.video.id, four.video.id]);
 });
 
+test('yt-dlp upload date can choose the newest version and is labeled approximate', () => {
+  const upload = { ...two, verifiedPublicationDate: null,
+    ytDlpMetadata: { youtubeId: two.video.id, uploadDate: '2025-03-05', provenance: 'yt-dlp' as const } };
+  const result = planKaraokeNerdsBatch(base, [one, upload], { brandSlugs: [], artists: ['Artist One'], completeArtists: ['Artist One'] });
+  assert.equal(result.ready[0].candidate.video.id, two.video.id);
+  assert.deepEqual(result.ready[0].artistDecision, { dateSource: 'yt-dlp-upload', approximate: true });
+});
+
+test('verified publication wins over its own upload fallback and mixed-source results remain approximate', () => {
+  const mixed = { ...one, ytDlpMetadata: { youtubeId: one.video.id, uploadDate: '2030-01-01', provenance: 'yt-dlp' as const } };
+  const upload = { ...two, verifiedPublicationDate: null,
+    ytDlpMetadata: { youtubeId: two.video.id, uploadDate: '2022-01-01', provenance: 'yt-dlp' as const } };
+  const result = planKaraokeNerdsBatch(base, [mixed, upload], { brandSlugs: [], artists: ['Artist One'], completeArtists: ['Artist One'] });
+  assert.equal(result.ready[0].candidate.video.id, one.video.id);
+  assert.deepEqual(result.ready[0].artistDecision, { dateSource: 'verified-publication', approximate: true });
+});
+
+test('invalid or mismatched upload evidence is unresolved; valid upload replaces malformed publication', () => {
+  for (const metadata of [
+    { youtubeId: 'wrong000000', uploadDate: '2025-01-01', provenance: 'yt-dlp' },
+    { youtubeId: two.video.id, uploadDate: '2026-02-31', provenance: 'yt-dlp' },
+    { youtubeId: two.video.id, uploadDate: '2025-01-01', provenance: 'other' },
+  ]) {
+    const invalid = { ...two, verifiedPublicationDate: null, ytDlpMetadata: metadata as BatchCandidate['ytDlpMetadata'] };
+    const result = planKaraokeNerdsBatch(base, [one, invalid], { brandSlugs: [], artists: ['Artist One'], completeArtists: ['Artist One'] });
+    assert.equal(result.ready.length, 0); assert.equal(result.unresolvedArtists[0].reason, 'missing-publication-date');
+  }
+  const fallback = { ...two, verifiedPublicationDate: '2026-02-31',
+    ytDlpMetadata: { youtubeId: two.video.id, uploadDate: '2025-01-01', provenance: 'yt-dlp' as const } };
+  const result = planKaraokeNerdsBatch(base, [one, fallback], { brandSlugs: [], artists: ['Artist One'], completeArtists: ['Artist One'] });
+  assert.equal(result.ready[0].candidate.video.id, two.video.id);
+  assert.equal(result.ready[0].artistDecision?.dateSource, 'yt-dlp-upload');
+});
+
+test('equal dates use deterministic video IDs and unambiguous single tracks need no dates', () => {
+  const equal = { ...two, verifiedPublicationDate: null,
+    ytDlpMetadata: { youtubeId: two.video.id, uploadDate: '2023-01-01', provenance: 'yt-dlp' as const } };
+  const selection = { brandSlugs: [], artists: ['Artist One'], completeArtists: ['Artist One'] };
+  for (const input of [[one, equal], [equal, one]]) {
+    const result = planKaraokeNerdsBatch(base, input, selection);
+    assert.equal(result.ready[0].candidate.video.id, one.video.id);
+    assert.deepEqual(result.ready[0].artistDecision, { dateSource: 'verified-publication', approximate: true });
+  }
+  const single = planKaraokeNerdsBatch(base, [five], { brandSlugs: [], artists: ['Artist Three'], completeArtists: ['Artist Three'] });
+  assert.deepEqual(single.ready[0].artistDecision, { dateSource: 'sole-candidate', approximate: false });
+});
+
 test('artist selections cannot infer the newest video from an incomplete catalog', () => {
   const result = planKaraokeNerdsBatch(base, [one], { brandSlugs: [], artists: ['Artist One'] });
   assert.deepEqual(result.ready, []);

@@ -8,9 +8,12 @@ export type BatchCandidate = {
   watchUrl: string;
   /** Only an independently verified video publication date belongs here. */
   verifiedPublicationDate?: string | null;
+  /** A video-matched yt-dlp result; the upload date is an approximation. */
+  ytDlpMetadata?: { youtubeId: string; uploadDate: string | null; provenance: 'yt-dlp' } | null;
 };
+export type ArtistDecision = { dateSource: 'verified-publication' | 'yt-dlp-upload' | 'sole-candidate'; approximate: boolean };
 export type BatchPlan = {
-  ready: { candidate: BatchCandidate; path: string }[];
+  ready: { candidate: BatchCandidate; path: string; artistDecision?: ArtistDecision }[];
   collisions: { path: string; videoIds: string[] }[];
   unresolvedArtists: { artist: string; title: string; videoIds: string[]; reason: 'missing-publication-date' | 'incomplete-catalog' }[];
   invalidVideoIds: string[];
@@ -19,6 +22,21 @@ export type BatchPlan = {
 };
 
 function key(value: string): string { return value.normalize('NFC').trim().replace(/\s+/gu, ' ').toLowerCase(); }
+function validCalendarDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+}
+function dateEvidence(candidate: BatchCandidate): { date: string; source: 'verified-publication' | 'yt-dlp-upload' } | null {
+  const publication = candidate.verifiedPublicationDate;
+  if (typeof publication === 'string' && /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/.test(publication) &&
+      validCalendarDay(publication.slice(0, 10)) && Number.isFinite(Date.parse(publication)))
+    return { date: publication, source: 'verified-publication' };
+  const metadata = candidate.ytDlpMetadata;
+  if (!metadata || metadata.provenance !== 'yt-dlp' || metadata.youtubeId !== candidate.video.id ||
+      typeof metadata.uploadDate !== 'string' || !validCalendarDay(metadata.uploadDate)) return null;
+  return { date: metadata.uploadDate, source: 'yt-dlp-upload' };
+}
 function selections(values: readonly string[]): string[] {
   if (!Array.isArray(values) || values.length > 500 || values.some(value => typeof value !== 'string' || !key(value))) throw new Error('Invalid batch selection.');
   const unique = new Map<string, string>();
@@ -28,15 +46,16 @@ function selections(values: readonly string[]): string[] {
 
 /**
  * Brand selections take all eligible videos; artist selections add only the
- * latest verified publication for each artist/title. The two selections are a
+ * latest publication for each artist/title, using yt-dlp upload dates as a
+ * labeled fallback. The two selections are a
  * union. An unknown date in a multi-version artist group requires review, but
  * does not suppress an explicitly selected brand's videos.
  *
  * The caller must supply only independently resolved brand mappings and must
  * explicitly identify artists whose eligible catalog coverage is complete;
  * no subset may be presented as the catalog-wide newest version. The caller
- * must not pass the feed's Created, yt-dlp upload_date or release_date as
- * verified publication dates. No network or filesystem writes occur here.
+ * must not pass the feed's Created or yt-dlp release_date as publication
+ * dates. No network or filesystem writes occur here.
  */
 export function planKaraokeNerdsBatch(baseDirectory: string, candidates: readonly BatchCandidate[], input: {
   brandSlugs: readonly string[]; artists: readonly string[]; completeArtists?: readonly string[];
@@ -70,7 +89,20 @@ export function planKaraokeNerdsBatch(baseDirectory: string, candidates: readonl
     group.push(candidate); incompleteGroups.set(groupKey, group);
   }
   const artistCandidates = candidates.filter(candidate => artistKeys.has(key(candidate.video.artist)) && completeKeys.has(key(candidate.video.artist)));
-  const latest = selectLatestByArtistTrack(artistCandidates.map(candidate => ({ ...candidate.video, publishedAt: candidate.verifiedPublicationDate ?? null })));
+  const groups = new Map<string, BatchCandidate[]>();
+  for (const candidate of artistCandidates) {
+    const groupKey = JSON.stringify([key(candidate.video.artist), key(candidate.video.title)]);
+    const group = groups.get(groupKey) ?? []; group.push(candidate); groups.set(groupKey, group);
+  }
+  const latest = selectLatestByArtistTrack(artistCandidates.map(candidate => ({ ...candidate.video, publishedAt: dateEvidence(candidate)?.date ?? null })));
+  const artistDecisions = new Map<string, ArtistDecision>();
+  for (const video of latest.selected) {
+    const candidate = byId.get(video.id)!;
+    const group = groups.get(JSON.stringify([key(video.artist), key(video.title)]))!;
+    const evidence = dateEvidence(candidate);
+    artistDecisions.set(video.id, { dateSource: evidence?.source ?? 'sole-candidate',
+      approximate: group.some(item => dateEvidence(item)?.source === 'yt-dlp-upload') });
+  }
   for (const video of latest.selected) selected.set(video.id, byId.get(video.id)!);
   const invalidVideoIds: string[] = [], valid: BatchCandidate[] = [];
   for (const candidate of selected.values()) {
@@ -79,7 +111,8 @@ export function planKaraokeNerdsBatch(baseDirectory: string, candidates: readonl
   }
   const paths = planCachePaths(baseDirectory, valid.map(candidate => candidate.video));
   return {
-    ready: paths.ready.map(item => ({ candidate: byId.get(item.video.id)!, path: item.path })), collisions: paths.collisions,
+    ready: paths.ready.map(item => ({ candidate: byId.get(item.video.id)!, path: item.path,
+      ...(artistDecisions.has(item.video.id) ? { artistDecision: artistDecisions.get(item.video.id)! } : {}) })), collisions: paths.collisions,
     unresolvedArtists: [...latest.unresolved, ...[...incompleteGroups].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, group]) => {
       const ordered = [...group].sort((a, b) => a.video.id < b.video.id ? -1 : a.video.id > b.video.id ? 1 : 0);
       return { artist: ordered[0].video.artist, title: ordered[0].video.title, videoIds: ordered.map(item => item.video.id), reason: 'incomplete-catalog' as const };

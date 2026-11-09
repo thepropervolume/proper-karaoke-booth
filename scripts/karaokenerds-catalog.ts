@@ -5,11 +5,12 @@ import { CommunityCatalogStore, fetchCommunity, validateCommunityUrl } from '../
 import { resolveSelectedBrand } from '../src/catalog/karaokenerds-public-client';
 import { youtubeVideoId } from '../src/catalog/karaokenerds-brand-map';
 import { downloadYtDlpVideo, inspectYtDlpVideo } from '../src/main/karaokenerds-ytdlp';
+import { previewCatalogBatch } from '../src/main/karaokenerds-batch-catalog';
 
 async function main(): Promise<void> {
   const database = process.env.TPV_KARAOKENNERDS_DATABASE;
   const operation = process.argv[2];
-  if (!database || !isAbsolute(database) || !['seed', 'refresh', 'status', 'map-brand', 'brands', 'tracks', 'set-track-code', 'inspect-video', 'download'].includes(operation) || process.argv.length !== 3)
+  if (!database || !isAbsolute(database) || !['seed', 'refresh', 'status', 'map-brand', 'brands', 'tracks', 'set-track-code', 'inspect-video', 'download', 'preview-batch'].includes(operation) || process.argv.length !== 3)
     throw new Error('Invalid configuration.');
   if (operation !== 'seed' && !existsSync(database)) throw new Error('Catalog database is missing.');
   const store = new CommunityCatalogStore(database);
@@ -64,6 +65,14 @@ async function main(): Promise<void> {
         console.error('Video download failed. Check for an active ffmpeg process and any .tpv-yt- staging directory before retrying.');
         process.exitCode = 1;
       }
+    } else if (operation === 'preview-batch') {
+      const baseDirectory = process.env.TPV_CACHED_VIDEOS_DIR;
+      if (!baseDirectory || !isAbsolute(baseDirectory)) throw new Error('Invalid cache directory.');
+      const lines = (value: string | undefined) => (value ?? '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+      const preview = previewCatalogBatch(store, baseDirectory, {
+        brandSlugs: lines(process.env.TPV_KARAOKENNERDS_BATCH_BRANDS), artists: lines(process.env.TPV_KARAOKENNERDS_BATCH_ARTISTS),
+      });
+      console.log(JSON.stringify(preview));
     } else if (operation === 'brands') {
       console.log(JSON.stringify({ brands: store.brandMappings().map(({ slug, name, upstreamBrand: brandCode, observedAt }) => ({ slug, name, brandCode, observedAt })) }));
     } else if (operation === 'tracks') {
