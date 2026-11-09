@@ -4,8 +4,7 @@ import path from 'node:path';
 export interface CacheVideo {
   id: string;
   provider: string;
-  brandPrefix: string;
-  trackCode: string;
+  brandSlug: string;
   artist: string;
   title: string;
   extension: string;
@@ -61,10 +60,13 @@ function safeComponent(raw: string, limit = 80): string {
   if (!value || value === '.' || value === '..') throw new Error('A path component is empty after sanitization.');
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(value)) value = `_${value}`;
   let result = '';
-  // Windows counts UTF-16 code units, so avoid splitting surrogate pairs or exceeding the limit.
+  // Keep within both Windows UTF-16 and common Unix UTF-8 component limits.
+  let bytes = 0;
   for (const character of value) {
-    if (result.length + character.length > limit) break;
+    const size = Buffer.byteLength(character, 'utf8');
+    if (result.length + character.length > limit || bytes + size > limit) break;
     result += character;
+    bytes += size;
   }
   result = result.replace(/[. ]+$/u, '');
   if (!result) throw new Error('A path component is empty after sanitization.');
@@ -74,17 +76,14 @@ function safeComponent(raw: string, limit = 80): string {
 export function cachedVideoPath(baseDirectory: string, video: CacheVideo, paths: typeof path = path): string {
   if (!paths.isAbsolute(baseDirectory)) throw new Error('The cache base directory must be absolute.');
   const provider = safeComponent(video.provider);
-  const prefix = safeComponent(video.brandPrefix);
+  const slug = safeComponent(video.brandSlug);
   const artist = safeComponent(video.artist);
-  let code = safeComponent(video.trackCode);
   const title = safeComponent(video.title);
   const extension = video.extension.replace(/^\./u, '').toLowerCase();
   if (!/^[a-z0-9]{1,10}$/u.test(extension)) throw new Error('Invalid video file extension.');
-  if (code.toLowerCase().startsWith(`${prefix.toLowerCase()}-`)) code = code.slice(prefix.length + 1);
-  if (!code) throw new Error('Track code is required.');
-  const file = safeComponent(`${prefix}-${code} - ${artist} - ${title}`, 235) + `.${extension}`;
+  const file = safeComponent(`${artist} - ${title}`, 235) + `.${extension}`;
   const root = paths.resolve(baseDirectory);
-  const result = paths.resolve(root, provider, 'Brands', prefix, artist, file);
+  const result = paths.resolve(root, provider, 'Brands', slug, artist, file);
   const relative = paths.relative(root, result);
   if (!relative || paths.isAbsolute(relative) || relative === '..' || relative.startsWith(`..${paths.sep}`)) throw new Error('Cache path escapes its base directory.');
   return result;
