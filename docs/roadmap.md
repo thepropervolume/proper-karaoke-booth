@@ -11,13 +11,18 @@ The desktop host is the authority for a show. Singer participation is free; host
 - Enforce version-based inclusion, exclusion and age policy through every future catalog, request, staging and playback path. Exclusions win. For age-restricted shows, unrated, uncertain and conflicting ratings are hidden and ineligible. Separate owner maintenance review from guest discovery. Policy changes invalidate future readiness but do not silently stop active playback.
 - Establish a shared validated command boundary, roles, show IDs, host epochs, revisions and idempotency. Local API defaults off; add authenticated loopback with scoped, revocable tokens before exposing it, and document OpenAPI and event schemas. LAN mode requires authenticated TLS and explicit enablement. Do not expose private paths or credentials.
 
+## High priority — paid karaoke providers
+
+Investigate and pursue provider-approved integrations alongside show reliability, with the host's ability to connect an existing paid subscription as a key goal when the provider permits it. Research and access are not yet an integration: no playable service or existing-account linking is implemented. Compare KaraFun OEM, Party Tyme, Sunfly and Stingray, request their terms and test access when authorized, and verify Windows, macOS and Linux/Electron support, hosting rights, territory, pricing, subscription eligibility, offline behavior and reporting. See [provider research](provider-research.md) for sourced leads and discovery steps.
+
+Build provider adapters for search, exact version identity, availability, entitlement, protected playback and usage reporting. Do not substitute recordings silently or bypass protected playback. Keep local operation available during provider outages. Keep the app subscription separate from provider entitlements, and design failure and expiry handling so a show is not unexpectedly interrupted.
+
 ## Later milestones
 
 1. Harden local hosting: background imports, reconnect and relink, checkpointing, display and audio-device recovery, accessibility, keyboard and touch support, complete Day/Night/system themes, and cross-platform installation and tests.
 2. Singer browser app, authenticated KJ remote and separately scoped staff queue manager. Host remains authoritative. Guest links are not staff credentials. Implement disconnect/pending/outcome-unknown states, authoritative refresh, no automatic replay of stale actions, and a separately tested HTTPS/WebSocket relay. Secure LAN browser access needs its own design.
 3. Singer history, favorites, lists and per-version settings; uncertain wait estimates; pre-arrival planning and optional requests without reserved turns; opt-in notifications with in-app fallback and deduplication; accepted/declined group invitations. A duet consumes only its lead singer's turn. Guest choices can stay on-device; optional accounts provide cross-device controls and deletion.
-4. Provider adapters for search, version identity, availability, entitlement, playback capabilities and usage reporting. Do not substitute recordings silently or bypass protected playback. Preserve local operation when a provider is unavailable.
-5. Separate host subscription and provider entitlements. Server-verified subscriptions and signed device-bound offline grants are proposed. Define a bounded grant for a show already started before release. Development access must not be confused with production entitlement.
+4. Separate host subscription and provider entitlements. Server-verified subscriptions and signed device-bound offline grants are proposed. Define a bounded grant for a show already started before release. Development access must not be confused with production entitlement.
 
 ## Open decisions
 
