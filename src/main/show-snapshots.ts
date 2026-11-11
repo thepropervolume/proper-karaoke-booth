@@ -36,6 +36,9 @@ function validState(value: unknown): boolean {
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
   if (new Set(requests.map(request => request.id)).size !== requests.length) return false;
+  if (value.manualQueueOrder !== undefined && (!Array.isArray(value.manualQueueOrder) || !value.manualQueueOrder.every(id) ||
+      new Set(value.manualQueueOrder).size !== value.manualQueueOrder.length ||
+      !value.manualQueueOrder.every(entry => requests.some(request => request.id === entry && ['accepted', 'staged', 'playing'].includes(String(request.status)))))) return false;
   if (value.promotedRequestId !== undefined && value.promotedRequestId !== null) {
     const promoted = requests.find(request => request.id === value.promotedRequestId);
     const version = promoted && value.versions.find(item => (item as Record<string, unknown>).id === promoted.versionId) as Record<string, unknown> | undefined;

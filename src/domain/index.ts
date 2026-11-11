@@ -21,6 +21,9 @@ export type Command =
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
   | { type: 'promoteRequest'; requestId: string }
+  | { type: 'moveRequest'; requestId: string; beforeRequestId: string | null }
+  | { type: 'resetQueueOrder' }
+  | { type: 'editRequest'; requestId: string; singerId: string; versionId: string }
   | { type: 'rejectRequest'; requestId: string }
   | { type: 'withdrawRequest'; requestId: string }
   | { type: 'stage' }
@@ -40,6 +43,8 @@ export type ShowState = {
   stagedRequestId: string | null; playback: Playback | null; usedGenerationIds: string[];
   /** One explicit host override; optional for shows saved by older versions. */
   promotedRequestId?: string | null;
+  /** Explicit host order. Missing/new requests follow their normal scheduling order. */
+  manualQueueOrder?: string[];
   /** Absolute deadline, persisted across host restart. */
   nextStartAtMs?: number;
   receipts: Receipt[];
@@ -50,7 +55,7 @@ export function createInitialState(showId: string, hostEpoch: string): ShowState
   return { showId, hostEpoch, revision: 0, singers: [], versions: [], requests: [],
     policy: { ageRestricted: false, includeVersionIds: null, excludeVersionIds: [] },
     currentRound: 1, finalTurnBegun: false, nextOrder: 1, stagedRequestId: null,
-    playback: null, usedGenerationIds: [], promotedRequestId: null, receipts: [] };
+    playback: null, usedGenerationIds: [], promotedRequestId: null, manualQueueOrder: [], receipts: [] };
 }
 
 /** The same predicate must also guard catalog search and direct lookups. */
@@ -82,10 +87,12 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode']):
     }
     if (request.status === 'accepted' || request.status === 'staged') future.push({ request, index });
   });
+  const manual = new Map((state.manualQueueOrder ?? []).map((id, index) => [id, index]));
   return future.sort((left, right) => {
     const a = left.request, b = right.request;
     return (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
       (a.id === state.promotedRequestId ? -1 : 0) - (b.id === state.promotedRequestId ? -1 : 0) ||
+      (manual.get(a.id) ?? Infinity) - (manual.get(b.id) ?? Infinity) ||
       // Request arrays are append-only, so this also preserves FIFO for older
       // shows and for requests approved in a different order than they arrived.
       (mode === 'fifo' ? left.index - right.index : a.round! - b.round! ||
@@ -205,6 +212,46 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else state.promotedRequestId = request.id;
       break;
     }
+    case 'moveRequest': {
+      const request = state.requests.find(r => r.id === cmd.requestId);
+      const target = cmd.beforeRequestId === null ? null : state.requests.find(r => r.id === cmd.beforeRequestId);
+      if (!request || request.status !== 'accepted' || (cmd.beforeRequestId !== null && (!target || target.status !== 'accepted')))
+        reject('INVALID_STATE', 'Only accepted waiting requests may be reordered; staged and playing songs are locked');
+      else if (cmd.beforeRequestId === request.id) reject('INVALID', 'Choose a different position');
+      else {
+        const order = orderedFuture(state, settings.rotationMode).filter(r => r.status === 'accepted' && r.id !== request.id).map(r => r.id);
+        const position = target ? order.indexOf(target.id) : order.length;
+        order.splice(position, 0, request.id);
+        // Keep an interrupted/active turn's place for Stop, without changing playback.
+        const active = state.playback?.requestId;
+        state.manualQueueOrder = [...(active ? [active] : []), ...(state.stagedRequestId ? [state.stagedRequestId] : []), ...order];
+        state.promotedRequestId = null;
+      }
+      break;
+    }
+    case 'resetQueueOrder':
+      state.manualQueueOrder = []; state.promotedRequestId = null;
+      break;
+    case 'editRequest': {
+      const request = state.requests.find(r => r.id === cmd.requestId);
+      if (!request || !['pending', 'accepted'].includes(request.status)) reject('LOCKED', 'Release the staged song or stop the active performance before editing');
+      else if (!state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show');
+      else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else {
+        const changingSinger = request.singerId !== cmd.singerId;
+        const limit = changingSinger && futureRequestLimitMessage(state.requests, cmd.singerId, settings.maxFutureRequestsPerSinger);
+        if (limit) reject('LIMIT', limit);
+        else {
+          request.versionId = cmd.versionId;
+          if (changingSinger) {
+            request.singerId = cmd.singerId;
+            // Reassign to the recipient's next free round; retain an explicit host slot.
+            if (request.status === 'accepted') { request.round = null; request.order = null; acceptRequest(state, request); }
+          }
+        }
+      }
+      break;
+    }
     case 'stage': {
       if (state.stagedRequestId) { reject('LOCKED', 'Release the staged track first'); break; }
       const next = orderedFuture(state, settings.rotationMode).find(r => r.status === 'accepted' && isVersionAllowed(state, r.versionId));
@@ -283,6 +330,10 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     }
     default: reject('INVALID', 'Unknown command');
+  }
+  if (!error.value && state.manualQueueOrder?.length) {
+    const live = new Set(state.requests.filter(r => ['accepted', 'staged', 'playing'].includes(r.status)).map(r => r.id));
+    state.manualQueueOrder = state.manualQueueOrder.filter(id => live.has(id));
   }
   let outcome: Outcome;
   if (error.value) { state = JSON.parse(JSON.stringify(original)); outcome = fail(error.value.code, error.value.message); }
