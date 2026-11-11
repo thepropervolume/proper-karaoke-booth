@@ -53,7 +53,14 @@ export class Store<T> {
       if (history) this.collections.record(history);
       this.db.exec('COMMIT');
     } catch (error) {
-      this.db.exec('ROLLBACK');
+      try { this.db.exec('ROLLBACK'); }
+      catch {
+        // A failed rollback leaves the transaction outcome unknown. In
+        // particular, COMMIT may have succeeded before an I/O error surfaced.
+        // Never allow the older in-memory state to overwrite that result.
+        this.authorityFault = true;
+        throw new Error('Show authority needs recovery. Restart the application before making further changes.');
+      }
       throw error;
     }
   }
