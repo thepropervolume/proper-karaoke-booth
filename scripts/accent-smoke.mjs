@@ -30,7 +30,7 @@ try {
   app = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   const host = await app.firstWindow();
-  await host.waitForFunction(() => document.documentElement.dataset.accent === 'blue');
+  await host.waitForFunction(() => document.documentElement.dataset.accent === 'blue' && document.documentElement.dataset.theme === 'night');
   const accent = async () => host.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
   assert.equal(await accent(), '#0eb7ff');
   for (const [current, next, expected] of [['blue', 'pink', '#ff92bf'], ['pink', 'purple', '#c7adff'], ['purple', 'blue', '#0eb7ff']]) {
