@@ -1,0 +1,27 @@
+/** Unsigned development packages. Production signing/notarization is a release gate. */
+export default {
+  appId: 'com.thepropervolume.karaokebooth',
+  productName: 'The Proper Volume Karaoke Booth',
+  executableName: 'proper-karaoke-booth',
+  artifactName: 'Proper-Karaoke-Booth-${version}-${os}-${arch}.${ext}',
+  asar: true,
+  npmRebuild: false,
+  nodeGypRebuild: false,
+  files: ['dist/**/*', 'package.json', 'THIRD-PARTY-LICENSES.txt', '!node_modules/**/*', '!**/*.map'],
+  directories: { output: 'release' },
+  publish: null,
+  win: { target: ['nsis', 'zip'], signExecutable: false },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowElevation: false,
+    allowToChangeInstallationDirectory: true,
+    runAfterFinish: false,
+    createDesktopShortcut: false,
+    createStartMenuShortcut: true,
+    deleteAppDataOnUninstall: false,
+    artifactName: 'Proper-Karaoke-Booth-${version}-windows-${arch}-setup.${ext}',
+  },
+  linux: { target: ['AppImage', 'deb'], category: 'AudioVideo', maintainer: 'The Proper Volume' },
+  mac: { target: ['dmg', 'zip'], category: 'public.app-category.music', hardenedRuntime: true, identity: null },
+};

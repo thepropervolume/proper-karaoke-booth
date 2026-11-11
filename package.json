@@ -1,6 +1,6 @@
 {
   "name": "proper-karaoke-booth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Local-first karaoke host and singer display",
   "main": "dist/main/index.cjs",
@@ -10,7 +10,10 @@
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
-    "start": "electron ."
+    "start": "electron .",
+    "package:win": "npm run typecheck && node scripts/package-app.mjs win",
+    "package:linux": "npm run typecheck && node scripts/package-app.mjs linux",
+    "package:mac": "npm run typecheck && node scripts/package-app.mjs mac"
   },
   "dependencies": {
     "@fontsource/nunito-sans": "^5.3.0",
@@ -29,11 +32,16 @@
     "@types/react-dom": "^19.0.0",
     "@types/yauzl": "^3.4.0",
     "electron": "^45.2.3",
+    "electron-builder": "26.18.0",
     "esbuild": "^0.28.2",
     "playwright-core": "^1.65.0",
     "sass": "^1.108.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.3.6"
-  }
+  },
+  "author": {
+    "name": "The Proper Volume"
+  },
+  "homepage": "https://thepropervolume.com"
 }
