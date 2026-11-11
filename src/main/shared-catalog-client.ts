@@ -212,6 +212,9 @@ export class SharedCatalogClient {
     if (result.status === 'unauthorized' || result.status === 'forbidden') { this.accessDenied = result.status; ++this.authorizationEpoch; await this.cache.invalidate(); }
     if (!this.accessDenied && ['unavailable', 'timed-out', 'rate-limited'].includes(result.status)) {
       const cached = await this.cache.get(key, kind);
+      // Loading a cold cache may yield while another request revokes access.
+      // A copied entry must not escape after that authority has changed.
+      if (authorizationEpoch !== this.authorizationEpoch || this.accessDenied) return this.accessDenied ? { status: this.accessDenied } : result;
       if (cached) return { ...cached.value, status: 'ready', source: 'cache', fetchedAt: cached.fetchedAt, stale: true, cachePersisted: cached.persisted, offlineReason: result.status as 'unavailable' | 'timed-out' | 'rate-limited' };
     }
     return result;

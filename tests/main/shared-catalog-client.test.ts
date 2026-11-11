@@ -88,6 +88,34 @@ test('401/403 invalidate scoped cache and cannot be hidden by fallback or late r
   assert.equal((await old).status, 'forbidden');
 }));
 
+test('cold-cache fallback cannot return a copied entry after a concurrent access denial', { timeout: 5000 }, async () => fixture(async folder => {
+  for (const code of [401, 403]) for (const kind of ['search', 'status'] as const) {
+    const options = { baseUrl, token, cacheFile: join(folder, `cold-${code}-${kind}.json`), now: () => now };
+    const online = new SharedCatalogClient({ ...options, fetch: async input => String(input).includes('/status') ? json({ ...meta, recordCount: 1, searchableCount: 1 }) : json(body()) });
+    ready(await online.search({ query: 'nada' })); assert.equal((await online.status()).status, 'ready');
+    const client = new SharedCatalogClient({ ...options, fetch: async input => {
+      if (new URL(String(input)).searchParams.get('q') === 'denial') return new Response(null, { status: code });
+      throw new Error('offline');
+    } });
+    // Hold the genuine cold-file read after copying its entry. This deterministically
+    // exercises the await boundary without delays or a fabricated cache value.
+    const cache = (client as unknown as { cache: { get(key: string, kind: 'search' | 'status'): Promise<unknown> } }).cache;
+    const get = cache.get.bind(cache);
+    let copied!: () => void, release!: () => void;
+    const entryCopied = new Promise<void>(resolve => { copied = resolve; });
+    const readReleased = new Promise<void>(resolve => { release = resolve; });
+    cache.get = async (key, type) => { const entry = await get(key, type); assert.ok(entry); copied(); await readReleased; return entry; };
+    const fallback = kind === 'search' ? client.search({ query: 'nada' }) : client.status();
+    try {
+      await entryCopied;
+      assert.equal((await client.search({ query: 'denial' })).status, code === 401 ? 'unauthorized' : 'forbidden');
+    } finally { release(); }
+    assert.equal((await fallback).status, code === 401 ? 'unauthorized' : 'forbidden');
+    const restarted = new SharedCatalogClient({ ...options, fetch: async () => { throw new Error('offline'); } });
+    assert.equal((await restarted.search({ query: 'nada' })).status, 'unavailable');
+  }
+}));
+
 test('transient failures may use cache but malformed, redirected and bad-schema replies may not', async () => fixture(async folder => {
   let next = 200, malformed = false;
   const client = new SharedCatalogClient({ baseUrl, token, cacheFile: join(folder, 'cache.json'), now: () => now, fetch: async () => malformed ? new Response('{bad', { headers: { 'Content-Type': 'application/json' } }) : next === 200 ? json(body()) : new Response(null, { status: next }) });
