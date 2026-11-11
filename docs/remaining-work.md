@@ -70,7 +70,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Verify the existing standard, rotation and library layouts at small and large window sizes and keep critical controls visible.
 - [ ] Make all settings validated and editable with defaults, migrations, clear error messages and documentation.
 - [ ] Extend the keybindings text file to every actionable command, including conflict detection, reset and updated tooltip hints.
-- [ ] Implement the requested blue/pink/purple primary-color switch; persist the choice, support day/night themes and accessible contrast. **In progress.**
+- [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
 - [ ] Add a CLI for application actions through one authenticated local authority with structured output and stable exit codes; do not introduce another SQLite writer.
 
 ## Priority 1 — playback and display

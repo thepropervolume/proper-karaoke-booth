@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pypdf import PdfReader
 
@@ -42,6 +43,30 @@ class MockupGeneratorTest(unittest.TestCase):
             source.write_text('```mockup-theme\n{}\n```\n\n```mockup\n{}\n```\n', encoding='utf-8')
             with self.assertRaises(ValueError): generator.generate(source, output)
             self.assertFalse(output.exists())
+
+    def test_host_actions_use_markdown_order_and_reject_invalid_icons(self):
+        colors = {key: '#123456' for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')}
+        actions = ['palette', 'search', 'settings']
+        meta = {'product': 'Test Product', 'deck_title': 'Test Deck', 'deck_subtitle': 'Synthetic',
+                'themes': {'Night': colors, 'Day': colors}, 'host_actions': actions}
+        screen = {'id': 'TEST', 'title': 'Singer display', 'status': 'Planned', 'description': 'Synthetic display',
+                  'layout': 'display', 'detail': 'Not implemented', 'display_title': 'DEMO', 'display_subtitle': 'Example', 'display_next': 'Next: Sam'}
+        def source_text():
+            return '```mockup-theme\n' + json.dumps(meta) + '\n```\n```mockup\n' + json.dumps(screen) + '\n```\n'
+        with tempfile.TemporaryDirectory(prefix='tpv-mockup-actions-') as directory:
+            source = Path(directory) / 'spec.md'
+            source.write_text(source_text(), encoding='utf-8')
+            loaded, _, _ = generator.load(source)
+            self.assertEqual(loaded['host_actions'], actions)
+            with patch.object(generator, 'rect'), patch.object(generator, 'line'), patch.object(generator, 'icon') as draw:
+                generator.top_bar(None, 0, 0, 500, colors, 'HOST', 'Test', loaded['host_actions'])
+                self.assertEqual([call.args[1] for call in draw.call_args_list], actions)
+            meta['host_actions'] = ['palette', 'unsupported']
+            source.write_text(source_text(), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'host actions'): generator.load(source)
+            meta['host_actions'] = ['palette', 'palette']
+            source.write_text(source_text(), encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'host actions'): generator.load(source)
 
 
 if __name__ == '__main__':

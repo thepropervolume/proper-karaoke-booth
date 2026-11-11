@@ -24,7 +24,7 @@ The host computer is the single authority for show state, queue rules and playba
 
 ### Visual and interaction principles
 
-Use The Proper Volume branding, Nunito Sans and the Avenir Next, Avenir and Novecento Sans fallback stack. Night, Day and Follow system are appearance options. Current desktop tokens use night background `#090E18`, panel `#101724`, text `#F4F2E9`, cyan `#0EB7FF` and purple `#C7ADFF`; day uses background `#FDFEF8`, panel `#F3F2E9`, text `#1C1A18`, blue `#1765A6` and purple `#423F9F`. Themes retain the same controls and behavior. Source video and provider-protected lyrics are not recolored by the application theme.
+Use The Proper Volume branding, Nunito Sans and the Avenir Next, Avenir and Novecento Sans fallback stack. Night, Day and Follow system are appearance options. A toolbar palette button cycles the primary accent through blue, pink and purple independently of appearance; its current/next color is available to screen readers and in an immediate tooltip. The choice persists in `settings.json` and older settings default to blue. Night uses background `#090E18`, panel `#101724`, text `#F4F2E9`, and blue/pink/purple accents `#0EB7FF` / `#FF92BF` / `#C7ADFF`; Day uses background `#FDFEF8`, panel `#F3F2E9`, text `#1C1A18`, and accents `#1765A6` / `#A91E5C` / `#5B35AA`. Themes retain the same controls and behavior. Source video and provider-protected lyrics are not recolored by the application theme.
 
 Use clear status words alongside color, strong headings, visible keyboard focus and accessible names. Primary touch targets should be at least 44 by 44 CSS pixels; phone transport should target 48 pixels. Keep critical transport visible when browsing a long library. Icons reveal immediate, prominent tooltip labels; where an action has a configured shortcut, show that shortcut in the hint. Modal actions keep the user's work and return focus appropriately. Provide keyboard and touch alternatives to drag and drop. Full accessibility, contrast, reduced-motion and screen-reader verification remain planned.
 
@@ -173,6 +173,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "product": "THE PROPER VOLUME",
   "deck_title": "Karaoke interface mockups",
   "deck_subtitle": "Current screens and planned experiences | Night and Day",
+  "host_actions": ["palette", "search", "display", "fullscreen", "settings"],
   "themes": {
     "Night": { "background": "#090f1b", "panel": "#101b2b", "card": "#1a293d", "line": "#34455b", "text": "#f3f7fc", "muted": "#a8bad0", "accent": "#13bbef", "selected": "#153b54" },
     "Day": { "background": "#f4f7fb", "panel": "#ffffff", "card": "#e9f0f7", "line": "#c4d1df", "text": "#17283d", "muted": "#51657a", "accent": "#007fae", "selected": "#d7eef9" }
@@ -185,13 +186,13 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "D01", "title": "Desktop host", "status": "Current",
   "description": "Library, singer rotation and persistent transport remain visible in one workspace.",
   "layout": "desktop",
-  "navigation": ["Back up show", "Library", "Requests", "Singers", "Playlists"], "selected_navigation": "Library",
+  "navigation": ["Back up show", "Library", "Karaoke Nerds", "Requests", "Singers", "Playlists"], "selected_navigation": "Library",
   "heading": "Song Library", "toolbar": "Search title, artist, filename or code     Sort     Filter",
   "import_actions": [{"icon": "importVideo", "label": "Import Video File"}, {"icon": "importFolder", "label": "Import Custom Directory"}],
   "rows": ["Popular | Nada Surf", "Example Song | Sample Artist", "Another Example | Demo Band", "A Song for Tonight | Sample Artist"],
   "side_heading": "Singer Rotation", "side_rows": ["ON STAGE | Alex - Popular", "NEXT | Casey - Example Song", "THEN | Jordan - Another Example", "Queue items can be selected"],
   "footer_heading": "Now Playing", "footer_rows": ["Alex | Popular", "Volume  45%"], "transport_icons": ["playPause", "stop", "skip"],
-  "detail": "Search, Singer Display, Fullscreen and Preferences are icon actions. Double-click a song to choose or enter a singer and add it to the queue."
+  "detail": "Palette cycles blue, pink and purple. Search, Singer Display, Fullscreen and Preferences are icons. Double-click a song to choose a singer and add it to the queue."
 }
 ```
 
@@ -200,10 +201,10 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "Q01", "title": "Requests and rotation", "status": "Partial",
   "description": "Host moderation and the singer rotation, with advanced staff actions reserved for later work.",
   "layout": "desktop",
-  "navigation": ["Library", "Requests", "Singers", "Playlists", "Back up show"], "selected_navigation": "Requests",
+  "navigation": ["Back up show", "Library", "Karaoke Nerds", "Requests", "Singers", "Playlists"], "selected_navigation": "Requests",
   "heading": "Requests", "toolbar": "Pending requests       Request history",
   "rows": ["Casey | Example Song | Accept / Reject", "Jordan | Another Example | Accepted", "Alex | A Song for Tonight | Withdrawn", "Sam | Example Song | Removed"],
-  "side_heading": "Singer Rotation", "side_rows": ["ON STAGE | Alex", "1 | Casey", "2 | Jordan", "Delete removes selected waiting request"],
+  "side_heading": "Singer Rotation", "side_rows": ["ON STAGE | Alex", "1 | Casey", "2 | Jordan", "Delete removes focused waiting request"],
   "footer_heading": "Transport", "footer_rows": ["Singer limit: 3 future requests", "Rotation: fair singer turns"], "transport_icons": ["playPause", "stop", "skip"],
   "detail": "Current: approve, reject, remove and singer withdrawal. Planned: holds, attendance, promotion, reordering and group turns."
 }

@@ -42,6 +42,11 @@ def load(path: Path) -> tuple[dict, list[dict], str]:
         raise ValueError('The mockup theme must name the product and deck.')
     if not isinstance(meta.get('themes'), dict) or set(meta['themes']) != {'Night', 'Day'}:
         raise ValueError('Define exactly Night and Day themes.')
+    actions = meta.get('host_actions', ['search', 'display', 'fullscreen', 'settings'])
+    if (not isinstance(actions, list) or not actions or len(actions) > 8 or
+            not all(action in ('palette', 'search', 'display', 'fullscreen', 'settings') for action in actions) or
+            len(set(actions)) != len(actions)):
+        raise ValueError('Define a unique list of supported host actions.')
     for palette in meta['themes'].values():
         if not isinstance(palette, dict) or not all(isinstance(palette.get(key), str) and re.fullmatch(r'#[0-9a-fA-F]{6}', palette[key]) for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')):
             raise ValueError('Each theme must define valid six-digit color values.')
@@ -145,6 +150,10 @@ def icon(c, kind, x, y, p):
         shape = c.beginPath(); shape.moveTo(x + 5, y + 8); shape.lineTo(x + 5, y + 20); shape.lineTo(x + 13, y + 20); shape.lineTo(x + 15, y + 18); shape.lineTo(x + 28, y + 18); shape.lineTo(x + 28, y + 8); shape.close(); c.drawPath(shape, stroke=1, fill=0)
         c.line(x + 17, y + 17, x + 17, y + 10); c.line(x + 14, y + 13, x + 17, y + 10); c.line(x + 20, y + 13, x + 17, y + 10)
     elif kind == 'search': c.circle(x + 15, y + 16, 5, stroke=1, fill=0); c.line(x + 19, y + 12, x + 24, y + 7)
+    elif kind == 'palette':
+        c.circle(x + 17, y + 14, 8, stroke=1, fill=0)
+        for dx, dy in ((-4, 0), (-2, 4), (3, 4)):
+            c.circle(x + 17 + dx, y + 14 + dy, 1, stroke=0, fill=1)
     elif kind == 'display': c.roundRect(x + 8, y + 9, 18, 12, 2, stroke=1, fill=0); c.line(x + 17, y + 9, x + 17, y + 6); c.line(x + 13, y + 6, x + 21, y + 6)
     elif kind == 'fullscreen':
         for dx, dy, hx, hy in [(9, 8, 4, 4), (25, 8, -4, 4), (9, 20, 4, -4), (25, 20, -4, -4)]:
@@ -167,14 +176,14 @@ def page_heading(c, meta, item, theme, page):
     line(c, str(page), 1225, 29, size=10, fill='#6e7b89')
 
 
-def top_bar(c, x, y, w, p, title, product):
+def top_bar(c, x, y, w, p, title, product, actions):
     rect(c, x, y, w, 44, p['panel'])
     rect(c, x + 17, y + 11, 22, 22, p['accent'], 5)
     line(c, 'V', x + 23, y + 16, 'TPVBold', 10, p['background'])
     line(c, product.upper(), x + 49, y + 25, 'TPVBold', 10, p['text'])
     line(c, title, x + 49, y + 11, size=9, fill=p['muted'])
-    for index, name in enumerate(('search', 'display', 'fullscreen', 'settings')):
-        icon(c, name, x + w - 174 + index * 40, y + 8, p)
+    for index, name in enumerate(actions):
+        icon(c, name, x + w - (14 + len(actions) * 40) + index * 40, y + 8, p)
 
 
 def row(c, x, y, w, text, p, selected=False, height=51):
@@ -189,10 +198,10 @@ def row(c, x, y, w, text, p, selected=False, height=51):
     divider(c, x + 9, y, x + w - 9, y, p['line'])
 
 
-def desktop(c, item, p, product, settings=False):
+def desktop(c, item, p, product, actions, settings=False):
     x, y, w, h = 80, 124, 1136, 500
     rect(c, x, y, w, h, p['background'], 5)
-    top_bar(c, x, y + h - 44, w, p, 'KARAOKE HOST', product)
+    top_bar(c, x, y + h - 44, w, p, 'KARAOKE HOST', product, actions)
     nav_w = 190
     rect(c, x, y, nav_w, h - 44, p['panel'])
     line(c, 'WORKSPACE' if not settings else 'PREFERENCES', x + 18, y + h - 74, 'TPVBold', 10, p['muted'])
@@ -282,10 +291,10 @@ def settings_dialog(c, item, p):
     line(c, item['footer_rows'][1], x + w - 135, y + 21, 'TPVBold', 10, p['background'], 106)
 
 
-def panels(c, item, p, product):
+def panels(c, item, p, product, actions):
     x, y, w, h = 110, 130, 1076, 475
     rect(c, x, y, w, h, p['background'], 8)
-    top_bar(c, x, y + h - 44, w, p, 'PLANNED HOST WORKSPACE', product)
+    top_bar(c, x, y + h - 44, w, p, 'PLANNED HOST WORKSPACE', product, actions)
     line(c, item['heading'], x + 28, y + h - 83, 'TPVBold', 21, p['text'])
     line(c, item['toolbar'], x + 28, y + h - 106, size=12, fill=p['muted'])
     left_w = 660
@@ -335,15 +344,16 @@ def generate(source: Path, output: Path):
     c.setSubject(f'Generated from Markdown SHA-256 {digest}')
     cover(c, meta, screens, digest); contents(c, meta, screens)
     page = 3
+    host_actions = meta.get('host_actions', ['search', 'display', 'fullscreen', 'settings'])
     for item in screens:
         for theme in ('Night', 'Day'):
             palette = meta['themes'][theme]
             page_heading(c, meta, item, theme, page)
-            if item['layout'] == 'desktop': desktop(c, item, palette, meta['product'])
+            if item['layout'] == 'desktop': desktop(c, item, palette, meta['product'], host_actions)
             elif item['layout'] == 'settings': settings_dialog(c, item, palette)
             elif item['layout'] == 'phones': phones(c, item, palette)
             elif item['layout'] == 'display': display(c, item, palette, meta['product'])
-            else: panels(c, item, palette, meta['product'])
+            else: panels(c, item, palette, meta['product'], host_actions)
             c.showPage(); page += 1
     c.save()
     print(f'Generated {page - 1} pages from {len(screens)} Markdown screen blocks: {output}')
