@@ -14,7 +14,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Implement and test approved KaraFun account linking, secure credential storage, refresh/revocation and entitlement checks.
 - [ ] Add KaraFun catalog search and exact recording/version identity.
 - [ ] Integrate approved KaraFun playback with the singer display, queue, transport, reporting and permitted offline behavior; handle failures without losing a turn.
-- [ ] Obtain Stingray partner credentials, price, existing-subscription and public-use terms; its fixture-tested developer login/search tools are not a playable service.
+- [x] Send Stingray a catalog/playback partnership inquiry covering per-user access, private parties and commercial events (owner sent on 11 November 2026; reply pending).
+- [ ] Review Stingray's reply and obtain partner credentials, price, existing-subscription and public-use terms; its fixture-tested developer login/search tools are not a playable service.
 - [ ] Verify Stingray login and catalog search with an authorized real account and confirm the applicable API-key/OAuth flow.
 - [ ] Add Stingray permitted playback and play reporting; enforce its provider-specific asset-storage restrictions.
 - [ ] Obtain Sunfly trial/partner access, Electron playback SDK, quote, public-use and territory terms; its fixture-tested account/catalog tools do not play songs.
