@@ -1,6 +1,6 @@
 # Singer guide for the rehearsal build
 
-The host operates the app on a computer. They can enter a request for you, or may invite you to try the experimental local-network singer page. Internet access and account sign-in are not available. Karaoke Nerds metadata and planned video caching do not yet add songs to the singer catalog; only songs the host has imported can be requested for playback.
+The host operates the app on a computer. They can enter a request for you, or may invite you to try the experimental local-network singer page. Remote access over the internet and singer account sign-in are not available. The host can search a saved local Karaoke Nerds metadata snapshot and may open a separate experimental YouTube preview, but those results do not add songs to the singer catalog or rotation; only songs the host has imported can be requested for show playback.
 
 ## Join from the venue network
 

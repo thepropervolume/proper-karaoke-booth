@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('tpv', {
   revealMedia: (versionId: string) => ipcRenderer.invoke('host:reveal-media', versionId),
   relinkMedia: (versionId: string) => ipcRenderer.invoke('host:relink-media', versionId),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
+  searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
+  openCommunityVideo: (id: string) => ipcRenderer.invoke('host:karaokenerds-open-video', id),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),

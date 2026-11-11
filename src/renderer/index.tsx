@@ -21,13 +21,15 @@ import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';
 import { ImportPanel, type ImportBridge } from './ImportPanel';
 import { MissingSongReviewPanel } from './MissingSongReviewPanel';
+import { CommunityCatalogPanel } from './CommunityCatalogPanel';
+import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 import type { ImportProgress } from '../domain/import-job';
 import type { BackupResult } from '../main/show-backup';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
 
-type Screen = 'library' | 'requests' | 'singers' | 'playlists';
+type Screen = 'library' | 'catalog' | 'requests' | 'singers' | 'playlists';
 type Result = { ok: boolean; error?: string; cancelled?: boolean };
 function formatShortcut(binding: string): string { return binding.split('+').map(part => part === 'Space' ? 'Spacebar' : part === 'Control' ? 'Ctrl' : part.replace(/^Key/, '').replace(/^Digit/, '')).join('+'); }
 declare global {
@@ -40,6 +42,8 @@ declare global {
       getCollections: () => Promise<CollectionsSnapshot>;
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
+      searchCommunityCatalog: (query: string) => Promise<LocalCatalogResult>;
+      openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
       saveSettings: (settings: Settings) => Promise<Settings>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
@@ -324,7 +328,7 @@ function App() {
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
       <button className="nav-item" disabled={backupBusy} onClick={() => void backupShow(backupCleanup)}>{backupBusy ? 'Backing up…' : backupCleanup ? 'Retry backup cleanup' : 'Back up show…'}</button>
-      {([['library', 'Library'], ['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['playlists', 'Playlists']] as const).map(([id, label]) =>
+      {([['library', 'Library'], ['catalog', 'Karaoke Nerds'], ['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['playlists', 'Playlists']] as const).map(([id, label]) =>
         <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}
     </nav>
     <main className="main-panel">
@@ -364,6 +368,7 @@ function App() {
             <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
           </form>
         </>}
+        {screen === 'catalog' && <CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} />}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}

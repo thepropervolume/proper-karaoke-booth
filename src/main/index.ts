@@ -28,6 +28,9 @@ import { mediaErrorDetail } from './media-error-message';
 import { ImportJob } from './import-job';
 import { ShowBackup } from './show-backup';
 import { DisplayFullscreen } from './display-fullscreen';
+import { LocalCommunityBrowser } from './karaokenerds-local-browser';
+import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-window';
+import { YouTubeAudioGate } from './youtube-audio-gate';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -36,6 +39,7 @@ let displayFullscreen: DisplayFullscreen | null = null;
 let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
+let communityBrowser: LocalCommunityBrowser | null = null;
 let state: ShowState;
 let settings: Settings;
 let settingsPath: string;
@@ -56,6 +60,7 @@ let bumper: BumperController | null = null;
 let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
+const youtubeAudioGate = new YouTubeAudioGate(isYouTubePlayerActive);
 let importJob: ImportJob | null = null;
 let importParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
 let relinking = false;
@@ -233,6 +238,8 @@ function validateCommand(value: unknown): Command | null {
 }
 function playable(command: Command): string | null {
   if (command.type !== 'start' && command.type !== 'resume') return null;
+  if (youtubeAudioGate.playbackBlocked()) return 'Close the YouTube player before starting or resuming karaoke.';
+  if (youtubeAudioGate.bumperStartPending()) return 'Wait for bumper music to finish starting before starting karaoke.';
   const remaining = remainingPauseSeconds(state, Date.now());
   if (command.type === 'start' && remaining) return `Wait ${remaining} seconds before starting the next song.`;
   if (!display || display.isDestroyed() || !displayReady) return 'Open the singer display before starting or resuming.';
@@ -347,6 +354,8 @@ else {
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   settingsCreated = !existsSync(settingsPath);
   settings = readSettings(settingsPath);
+  const localData = process.platform === 'win32' ? process.env.LOCALAPPDATA : process.env.XDG_DATA_HOME || join(app.getPath('home'), '.local', 'share');
+  communityBrowser = new LocalCommunityBrowser(join(localData || app.getPath('userData'), 'ProperKaraokeBooth', 'karaokenerds', 'community.sqlite'));
   logoData = await loadLogo(logoPath);
   store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
   state = store.load() ?? createInitialState(randomUUID(), randomUUID());
@@ -461,6 +470,15 @@ else {
     return { ok: true };
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
+  ipcMain.handle('host:karaokenerds-search', (event, query: unknown) => { guardHost(event.sender.id); if (!communityBrowser) throw new Error('Catalog unavailable.'); return communityBrowser.search(query); });
+  ipcMain.handle('host:karaokenerds-open-video', async (event, id: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(id)) return { ok: false, error: 'Invalid YouTube video.' };
+    if (!youtubeAudioGate.canOpenPreview({ playbackActive: !!state.playback, playbackTransition, bumperActive: !!bumper && bumper.getState().status !== 'stopped' }))
+      return { ok: false, error: 'Stop karaoke and bumper music before opening the YouTube player.' };
+    try { await openYouTubePlayer(id); return { ok: true }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Could not open the YouTube player.' }; }
+  });
   ipcMain.handle('host:remote-status', event => { guardHost(event.sender.id); return remoteHost.status(); });
   ipcMain.handle('host:remote-choose-certificate', event => { guardHost(event.sender.id); return remoteHost.select('certificate'); });
   ipcMain.handle('host:remote-choose-key', event => { guardHost(event.sender.id); return remoteHost.select('privateKey'); });
@@ -535,12 +553,14 @@ else {
   });
   ipcMain.handle('host:start-bumper', async (event, id: unknown) => {
     guardHost(event.sender.id);
-    if (!bumper || typeof id !== 'string' || state.playback || playbackTransition) throw new Error('Bumper music is unavailable while a song is active.');
+    if (!bumper || typeof id !== 'string' || state.playback || playbackTransition) throw new Error('Bumper music is unavailable while a song or the YouTube player is active.');
     if (!displayReady || !settings.audioOutputId || settings.audioOutputId === 'default') throw new Error('Choose an explicit audio output and open the singer display first.');
-    bumperError = '';
-    await bumper.setOutputAvailable(true);
-    if (!await bumper.start(id)) throw new Error('Could not start bumper music.');
-    publishBumper(); return bumperInfo();
+    return youtubeAudioGate.startBumper(async () => {
+      bumperError = '';
+      await bumper!.setOutputAvailable(true);
+      if (!await bumper!.start(id)) throw new Error('Could not start bumper music.');
+      publishBumper(); return bumperInfo();
+    });
   });
   ipcMain.handle('host:stop-bumper', async event => { guardHost(event.sender.id); if (bumper) await bumper.stop(); publishBumper(); return bumperInfo(); });
   ipcMain.handle('host:import', async (event, kind: unknown) => {
@@ -620,7 +640,7 @@ else {
   });
 }
 let quitStarted = false, quitReady = false, storeClosed = false;
-function closeStore(): void { if (!storeClosed && store) { storeClosed = true; store.close(); } }
+function closeStore(): void { if (!storeClosed && store) { storeClosed = true; communityBrowser?.close(); store.close(); } }
 function waitForImport(job: ImportJob): Promise<boolean> {
   return new Promise(resolve => {
     const timer = setTimeout(() => resolve(false), 5000);

@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, copyFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const [repoArg, fixtureArg] = process.argv.slice(2);
 if (!repoArg || !fixtureArg) throw new Error('Usage: node scripts/interaction-smoke.mjs <repository> <synthetic-mp4>');
@@ -23,6 +24,15 @@ const temp = await mkdtemp(join(tmpdir(), 'tpv-ui-qa-'));
 const profile = join(temp, 'profile');
 await mkdir(profile);
 const canonicalProfile = await realpath(profile);
+const localCatalogBase = join(temp, process.platform === 'win32' ? 'localappdata' : 'xdg-data');
+const localCatalogDir = join(localCatalogBase, 'ProperKaraokeBooth', 'karaokenerds');
+await mkdir(localCatalogDir, { recursive: true });
+const syntheticCatalog = new DatabaseSync(join(localCatalogDir, 'community.sqlite'));
+syntheticCatalog.exec('CREATE TABLE community_catalog (id INTEGER PRIMARY KEY, snapshot TEXT, last_success INTEGER)');
+syntheticCatalog.prepare('INSERT INTO community_catalog VALUES (1, ?, 1)').run(JSON.stringify({ Items: [
+  { Id: 1, Artist: 'Synthetic Artist', Title: 'Synthetic Song', Brand: 'unmapped', Watch: 'https://www.youtube.com/watch?v=abcdefghijk', Created: null },
+] }));
+syntheticCatalog.close();
 const bootstrap = join(temp, 'isolated-bootstrap.cjs');
 const copiedFixture = join(temp, 'DJID-002 - Nada Surf - Popular.mp4');
 await copyFile(fixture, copiedFixture);
@@ -37,7 +47,7 @@ await writeFile(bootstrap, `const { app } = require('electron');\nconst fs = req
 
 let app;
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: entry,
-  XDG_CONFIG_HOME: join(temp, 'xdg-config'), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata') };
+  XDG_CONFIG_HOME: join(temp, 'xdg-config'), XDG_DATA_HOME: join(temp, 'xdg-data'), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata') };
 delete env.ELECTRON_RUN_AS_NODE;
 const args = [bootstrap, `--user-data-dir=${canonicalProfile}`, '--mute-audio'];
 if (process.env.TPV_TEST_NO_SANDBOX === '1') args.push('--no-sandbox');
@@ -68,6 +78,17 @@ try {
   const initial = await host.evaluate(() => window.tpv.getState());
   assert.equal(initial.versions.length, 0, 'Temporary profile unexpectedly has songs.');
   assert.equal(initial.requests.length, 0, 'Temporary profile unexpectedly has requests.');
+
+  await host.getByRole('button', { name: 'Karaoke Nerds', exact: true }).click();
+  const community = host.getByRole('region', { name: 'Karaoke Nerds catalog' });
+  await community.getByLabel('Artist or song title').fill('synthetic artist');
+  await community.getByRole('button', { name: 'Search catalog' }).click();
+  await community.getByText('Synthetic Song', { exact: true }).waitFor();
+  await community.getByText('YouTube ID: abcdefghijk', { exact: true }).waitFor();
+  await community.getByText('Synthetic Artist · Brand not identified', { exact: true }).waitFor();
+  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.length, 0, 'Catalog search must not enqueue a song.');
+  assert.equal((await host.evaluate(() => window.tpv.getState())).versions.length, 0, 'Catalog search must not import a song.');
+  await host.getByRole('button', { name: 'Library', exact: true }).click();
 
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
   await host.locator('summary').filter({ hasText: 'Remote Queueing' }).click();
@@ -168,7 +189,7 @@ try {
 
   await requestSong();
   await untilState(state => state.requests.filter(r => r.status === 'accepted').length === 1, 'second request');
-  await host.getByRole('button', { name: 'Singer display' }).click();
+  await host.getByRole('button', { name: 'Singer display', exact: true }).click();
   let display;
   for (let n = 0; n < 100 && !display; n++) {
     display = app.windows().find(w => w !== host);
@@ -217,7 +238,7 @@ try {
   await display.close();
   await untilState(state => state.playback?.status === 'paused', 'singer display close pause');
   assert.ok((await app.evaluate(() => globalThis.tpvWarnings)).some(w => w.message === 'Singer display closed'), 'Host must be told how to recover from display loss.');
-  await host.getByRole('button', { name: 'Singer display' }).click();
+  await host.getByRole('button', { name: 'Singer display', exact: true }).click();
   display = undefined;
   for (let n = 0; n < 100 && !display; n++) { display = app.windows().find(w => w !== host); if (!display) await new Promise(r => setTimeout(r, 100)); }
   assert.ok(display, 'Singer display did not reopen.');

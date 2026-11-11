@@ -56,6 +56,18 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
           </div>
         </details>
         <details className="settings-group">
+          <summary>Karaoke Services</summary>
+          <div className="settings-group__content">
+            <p>Account linking and streaming are not available yet.</p>
+            <p className="muted">We are investigating how to connect existing subscriptions, including KaraFun, subject to each provider's access and terms.</p>
+            <ul aria-label="Karaoke service availability">
+              <li>KaraFun — Not available yet</li>
+              <li>Party Tyme — Not available yet</li>
+              <li>Sunfly — Not available yet</li>
+            </ul>
+          </div>
+        </details>
+        <details className="settings-group">
           <summary>Karaoke Nerds Video Cache</summary>
           <div className="settings-group__content">
             <p className="muted">These preferences are saved for the planned video-cache feature. Automatic video downloads are not available yet.</p>
