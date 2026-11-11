@@ -23,6 +23,13 @@ contextBridge.exposeInMainWorld('tpv', {
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
   searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
   addYouTube: (input: unknown) => ipcRenderer.invoke('host:add-youtube', input),
+  youtubeDownloads: {
+    status: () => ipcRenderer.invoke('host:youtube-download-status'),
+    start: (versionId: string) => ipcRenderer.invoke('host:youtube-download', versionId),
+    cancel: (id: string) => ipcRenderer.invoke('host:youtube-download-cancel', id),
+  },
+  chooseVideoCacheDirectory: () => ipcRenderer.invoke('host:choose-video-cache'),
+  revealVideoCacheDirectory: () => ipcRenderer.invoke('host:reveal-video-cache'),
   openCommunityVideo: (id: string) => ipcRenderer.invoke('host:karaokenerds-open-video', id),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),

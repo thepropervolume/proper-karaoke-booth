@@ -25,6 +25,7 @@ import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';
 import { ImportPanel, type ImportBridge } from './ImportPanel';
 import { CdgImportPanel, type CdgBridge } from './CdgImportPanel';
+import { YouTubeDownloadsPanel, type YouTubeDownloadBridge } from './YouTubeDownloadsPanel';
 import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { requestWithSinger } from './request-singer';
@@ -56,7 +57,7 @@ declare global {
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
       searchCommunityCatalog: (query: string) => Promise<LocalCatalogResult>;
-      addYouTube: (input: {url:string;title:string;artist:string}) => Promise<Result & {versionId?:string}>;
+      addYouTube: (input: {url:string;title:string;artist:string;brandSlug?:string}) => Promise<Result & {versionId?:string;notice?:string}>;
       openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
       saveSettings: (settings: Settings) => Promise<Settings>;
@@ -66,6 +67,9 @@ declare global {
       importFiles: (kind?: 'files' | 'folder') => Promise<ImportProgress | null>;
       imports: ImportBridge;
       cdg: CdgBridge;
+      youtubeDownloads: YouTubeDownloadBridge;
+      chooseVideoCacheDirectory: () => Promise<string | null>;
+      revealVideoCacheDirectory: () => Promise<void>;
       getMissingSongRequests: () => Promise<MissingSongRequest[]>;
       onMissingSongRequests: (callback: (requests: MissingSongRequest[]) => void) => () => void;
       getMissingSongReviews: () => Promise<MissingSongReview[]>;
@@ -104,6 +108,7 @@ function App() {
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const focusSearch = () => { setEditingRequest(null); setQueueMenu(null); setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
   const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [cachedVideoIds, setCachedVideoIds] = useState<string[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState('');
   const [editingRequest, setEditingRequest] = useState<SongRequest | null>(null);
   const [queueMenu, setQueueMenu] = useState<{ request: SongRequest; x: number; y: number } | null>(null);
@@ -384,6 +389,7 @@ function App() {
     <main className="main-panel">
       {notice && <p className="notice" role="status">{notice}</p>}
       <ImportPanel bridge={window.tpv.imports} onActiveChange={setImportActive} />
+      <YouTubeDownloadsPanel bridge={window.tpv.youtubeDownloads} onCached={setCachedVideoIds} />
       {screen === 'library' && <CdgImportPanel bridge={window.tpv.cdg} />}
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
@@ -395,13 +401,13 @@ function App() {
             <label>Filter<select aria-label="Filter songs" value={libraryFilter} onChange={event => setLibraryFilter(event.target.value as LibraryFilter)}>
               <option value="all">All songs</option><option value="review">Needs metadata review</option><option value="missing-artist">Missing artist</option><option value="clean">Clean</option><option value="explicit">Explicit</option><option value="unrated">Unrated</option><option value="uncertain">Uncertain rating</option>
             </select></label></div>
-          <div className="eyebrow">Title / artist <span className="muted"> · Local media and streaming</span></div>
+          <div className="eyebrow">Title / artist <span className="muted"> · Local and downloaded media</span></div>
           <div role="listbox" aria-label="Songs" className="song-list">
             {filtered.map((version, index) => <div className={`track-row song-option ${version.id === selectedVersionId ? 'selected' : ''}`} key={version.id} role="option" aria-selected={version.id === selectedVersionId} tabIndex={0}
               onClick={() => setSelectedVersionId(version.id)} onDoubleClick={() => { setSelectedVersionId(version.id); setQueueVersion(version); }}
               onContextMenu={event => { event.preventDefault(); setSelectedVersionId(version.id); setContextMenu({ version, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 250)) }); }}
               onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setSelectedVersionId(version.id); setQueueVersion(version); } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]'); const i = Math.max(0, Math.min(filtered.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))); next?.[i]?.focus(); setSelectedVersionId(filtered[i]?.id ?? ''); } }}>
-              <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'} · {version.source?.provider === 'youtube' ? 'YouTube' : [version.djCode,version.trackNumber].filter(Boolean).join('-') || 'Local'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
+              <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'} · {version.source?.provider === 'youtube' ? `YouTube · ${cachedVideoIds.includes(version.id) ? 'Saved locally' : 'Download needed'}` : [version.djCode,version.trackNumber].filter(Boolean).join('-') || 'Local'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
             </div>)}
             {!filtered.length && <p className="empty">{versions.length ? 'No songs match this search or filter.' : 'Import a local MP4 to begin. Your original file stays in place.'}</p>}
           </div>
@@ -419,7 +425,7 @@ function App() {
             <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
           </form>
         </>}
-        {screen === 'catalog' && <CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={id => { setSelectedVersionId(id); setScreen('library'); setNotice('YouTube song is in Song Library. Select a singer to add it to the queue.'); }} />}
+        {screen === 'catalog' && <CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song added. Follow download progress; once saved, select a singer and press Play when ready.'); }} />}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -490,8 +496,9 @@ function App() {
       <button role="menuitem" onClick={() => { setQueueVersion(contextMenu.version); setContextMenu(null); }}>Add to Queue</button>
       <button role="menuitem" onClick={() => { setPlaylistVersion(contextMenu.version); setContextMenu(null); }}>Add to Playlist</button>
       <button role="menuitem" onClick={() => { setEditingVersion(contextMenu.version); setContextMenu(null); }}>Edit Metadata</button>
-      <button role="menuitem" disabled={relinkBusy || !!contextMenu.version.source} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
-      <button role="menuitem" disabled={!!contextMenu.version.source} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files...</button>
+      {contextMenu.version.source && <button role="menuitem" onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(async () => { await window.tpv.youtubeDownloads.start(id); }); }}>Download Video / Retry</button>}
+      <button role="menuitem" disabled={relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
+      <button role="menuitem" disabled={!!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files...</button>
     </div>}
     {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated) => {
       await requestWithSinger(choice, {

@@ -58,7 +58,7 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
         <details className="settings-group">
           <summary>Karaoke Services</summary>
           <div className="settings-group__content">
-            <p>Account linking and streaming are not available yet.</p>
+            <p>Paid-provider account linking is not available yet. YouTube videos can be downloaded and played from Song Library.</p>
             <p className="muted">We are investigating how to connect existing subscriptions, including KaraFun, subject to each provider's access and terms.</p>
             <ul aria-label="Karaoke service availability">
               <li>KaraFun — Not available yet</li>
@@ -68,11 +68,14 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
           </div>
         </details>
         <details className="settings-group">
-          <summary>Karaoke Nerds Video Cache</summary>
+          <summary>Video Downloads & Karaoke Nerds Cache</summary>
           <div className="settings-group__content">
-            <p className="muted">These preferences are saved for the planned video-cache feature. Automatic video downloads are not available yet.</p>
+            <p className="muted">YouTube songs are saved permanently by yt-dlp. Brand/artist bulk subscriptions remain planned.</p>
             <label>Base directory for cached videos<input type="text" value={draft.karaokeNerdsCacheDirectory} onChange={event => setDraft({ ...draft, karaokeNerdsCacheDirectory: event.target.value })} placeholder="Choose an absolute directory path" /></label>
-            <p className="muted">Enter an absolute path on this computer. The provider, brand and artist folders will be beneath it.</p>
+            <div><button type="button" onClick={() => { void window.tpv.chooseVideoCacheDirectory().then(directory => { if (directory) setDraft({ ...draft, karaokeNerdsCacheDirectory: directory }); }).catch(() => setError('Could not choose a download folder.')); }}>Choose download folder…</button> <button type="button" onClick={() => { void window.tpv.revealVideoCacheDirectory().catch(() => setError('The saved download folder is not available yet.')); }}>Open saved download folder</button></div>
+            <p className="muted">Leave blank to use “The Proper Volume Karaoke” in your Videos folder. New downloads use this location after saving; existing files stay where they are.</p>
+            <label>yt-dlp executable<input type="text" value={draft.ytDlpExecutable} onChange={event => setDraft({ ...draft, ytDlpExecutable: event.target.value })} placeholder="Leave blank to find yt-dlp on PATH" /></label>
+            <p className="muted">Install yt-dlp and FFmpeg before downloading. FFmpeg must also be on PATH; these tools are not bundled with the app.</p>
             <label className="settings-check"><input type="checkbox" checked={draft.karaokeNerdsAutoCache} onChange={event => setDraft({ ...draft, karaokeNerdsAutoCache: event.target.checked })} /> Plan automatic caching when available</label>
             <label>Brands to cache, one per line<textarea rows={3} value={cacheBrands} onChange={event => setCacheBrands(event.target.value)} /></label>
             <label>Artists to cache, one per line<textarea rows={3} value={cacheArtists} onChange={event => setCacheArtists(event.target.value)} /></label>

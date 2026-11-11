@@ -1,6 +1,6 @@
 # Singer guide for the rehearsal build
 
-The host operates the app on a computer and may promote a waiting request; an already staged song remains ahead of it. They can enter a request for you, or may invite you to try the experimental local-network singer page. Remote access over the internet and singer account sign-in are not available. The host can search a saved local Karaoke Nerds metadata snapshot and may open a separate experimental YouTube preview, and may add supported YouTube recordings to the normal Song Library and rotation. Those recordings need internet and may be blocked by their owners or YouTube. The host can change a waiting request’s track or singer and manually adjust order; staged performances remain locked.
+The host operates the app on a computer and may promote a waiting request; an already staged song remains ahead of it. They can enter a request for you, or may invite you to try the experimental local-network singer page. Remote access over the internet and singer account sign-in are not available. The host can search a saved local Karaoke Nerds metadata snapshot and may open a separate experimental YouTube preview, and may add supported YouTube recordings to the normal Song Library and rotation. The host downloads those recordings first; once saved, they play like other local songs, including offline. Downloads can fail, and finishing a download does not start your turn. The host can change a waiting request’s track or singer and manually adjust order; staged performances remain locked.
 
 ## Join from the venue network
 

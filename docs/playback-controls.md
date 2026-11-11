@@ -4,7 +4,7 @@ The host's bottom transport includes a playback-position slider, elapsed and rem
 
 Seeking a paused performance keeps it paused. Only the current generation may acknowledge a seek; stale events from an earlier performance cannot update the current position. An acknowledged position is saved through the existing authority and is restored paused after restart. Seeking very near the endpoint can still lead naturally to the song ending when it plays.
 
-The local MP4 player and the embedded YouTube source use the same host timeline. YouTube timing, buffering and native controls remain subject to the provider. Output routing, real-device audio/lyric synchronization and recovery on physical show hardware still require verification.
+Imported MP4s and permanently downloaded YouTube videos use the same local player and host timeline. The separate embedded preview remains outside the show transport. Output routing, real-device audio/lyric synchronization and recovery on physical show hardware still require verification.
 
 The singer video fits within the window viewport with preserved aspect ratio and no page scrolling, including portrait and 4:3 videos. Optional branding and singer captions overlay the picture; they do not add height. The viewport regression checks three video shapes across four large, small and portrait window sizes.
 

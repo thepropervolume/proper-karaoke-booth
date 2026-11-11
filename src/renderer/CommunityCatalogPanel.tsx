@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 
 export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: {
-  addVideo: (input: {url:string;title:string;artist:string}) => Promise<{ok:boolean;error?:string;versionId?:string}>; onAdded: (id:string) => void;
+  addVideo: (input: {url:string;title:string;artist:string;brandSlug?:string}) => Promise<{ok:boolean;error?:string;versionId?:string;notice?:string}>; onAdded: (id:string, notice?:string) => void;
   search: (query: string) => Promise<LocalCatalogResult>; openVideo: (id: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
-  const add = async (input: {url:string;title:string;artist:string}) => {
+  const add = async (input: {url:string;title:string;artist:string;brandSlug?:string}) => {
     if (busy) return; setBusy(true); setError('');
-    try { const result = await addVideo(input); if (!result.ok || !result.versionId) setError(result.error || 'Could not add the YouTube song.'); else onAdded(result.versionId); }
+    try { const result = await addVideo(input); if (!result.ok || !result.versionId) setError(result.error || 'Could not add the YouTube song.'); else onAdded(result.versionId, result.notice); }
     catch { setError('Could not add the YouTube song.'); } finally { setBusy(false); }
   };
   const [query, setQuery] = useState('');
@@ -26,8 +26,8 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
     finally { setBusy(false); }
   };
   return <section aria-label="Karaoke Nerds catalog">
-    <h2>Streaming & Karaoke Nerds</h2>
-    <p className="muted">Add a YouTube recording to Song Library, then select a singer and queue it like a local song. Playback needs internet and uses the system audio output. Embedding can be blocked by the video owner, and ads or region limits may apply.</p>
+    <h2>YouTube & Karaoke Nerds</h2>
+    <p className="muted">Add a recording to download it permanently with yt-dlp. Once saved, it plays like a local song through your selected output, including offline. Choose the download folder in Preferences. One video downloads at a time; other added songs can be downloaded from the library menu.</p>
     <form className="request-form" onSubmit={event => { event.preventDefault(); void add({url,title,artist}); }}>
       <label>YouTube video link<input aria-label="YouTube video link" value={url} maxLength={2048} onChange={e=>setUrl(e.target.value)} required /></label>
       <label>Song title<input aria-label="YouTube song title" value={title} maxLength={500} onChange={e=>setTitle(e.target.value)} required /></label>
@@ -47,7 +47,7 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
       <p role="status">{result.tracks.length ? `${result.tracks.length} results${result.limited ? ' shown; refine your search for more' : ''}.` : 'No songs match this search.'} {result.lastSuccess === null ? '' : `Snapshot updated ${new Date(result.lastSuccess).toLocaleDateString()}.`}</p>
       <div className="song-list">{result.tracks.map((track, index) => <div className="track-row" key={`${track.id}-${index}`}>
         <div><strong>{track.title}</strong><small>{track.artist} · {track.brand ?? 'Brand not identified'}</small><small>{track.youtubeId ? `YouTube ID: ${track.youtubeId}` : 'No supported YouTube link'}</small></div>
-        {track.youtubeId && <button type="button" disabled={busy} onClick={() => void add({url:track.youtubeId!,title:track.title,artist:track.artist})}>Add to Library</button>}
+        {track.youtubeId && <button type="button" disabled={busy} onClick={() => void add({url:track.youtubeId!,title:track.title,artist:track.artist,...(track.brandSlug ? {brandSlug:track.brandSlug} : {})})}>Add to Library</button>}
         {track.youtubeId && <button type="button" onClick={() => { setError(''); void openVideo(track.youtubeId!).then(value => { if (!value.ok) setError(value.error || 'Could not open the YouTube player.'); }).catch(() => setError('Could not open the YouTube player.')); }}>Preview YouTube</button>}
       </div>)}</div>
     </>}

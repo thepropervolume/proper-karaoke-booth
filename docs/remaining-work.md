@@ -4,7 +4,7 @@ Updated 11 November 2026 from the current checkout. This is the working checklis
 
 ## Current foundation
 
-The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host can search a previously saved local Karaoke Nerds snapshot; supported YouTube recordings can be added to the normal library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
+The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host can search a previously saved local Karaoke Nerds snapshot; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
 
 ## Priority 0 — streaming and catalog
 
@@ -28,15 +28,17 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Make eligible streaming results requestable and queueable with singer selection and normal rotation rules.
 - [ ] Route eligible provider playback to the singer display and selected audio output with stage/play/pause/stop/skip and safe transition handling.
 - [ ] Handle expired links, network failure, provider unavailability, rate limits, ads and unsupported or region-blocked recordings without consuming a singer's turn.
-- [x] Extend YouTube playback beyond its separate preview (live muted sample verified; broad failure/hardware checks remain): integrate eligible videos with the show queue and singer display, preserve YouTube controls/attribution, and test prohibited/disabled embeds and error recovery.
-- [ ] Verify the installed application identity, visible-player and referrer requirements for distributed YouTube playback; the current development identity is provisional.
-- [ ] Verify network loss, output selection, switching away from the preview and physical singer-display behavior for YouTube.
+- [x] Add permanent yt-dlp downloads, progress/cancel/retry, exact-ID hash-verified reuse and local/offline playback through the regular queue and singer display.
+- [ ] Verify the installed application identity, visible-player and referrer requirements for the separate distributed YouTube preview; queued performances now use downloaded local media.
+- [ ] Verify download interruption/recovery, cached output selection and physical singer-display behavior on show hardware.
+- [ ] Package/test yt-dlp and FFmpeg installation, upgrades and all supported operating systems.
 - [ ] Make the Karaoke Nerds shared MySQL catalog service production-ready and deploy it with a restricted service, backups and restore procedure.
 - [ ] Confirm that every old Karaoke Nerds refresher is stopped, retire the local updater, and migrate the existing snapshot and refresh cooldown without another upstream call.
 - [ ] Schedule a single centrally coordinated refresh at most once per day, including failed attempts and recovery after restart; keep the provider key out of clients.
 - [ ] Connect desktop and remote clients to authenticated shared catalog access with a usable offline cache and a clear stale-data status.
 - [ ] Improve brand mapping and review unknown/conflicting brand codes, creator track codes, and alternate video versions.
-- [ ] Connect the host's opt-in brand/artist selection to reviewed, cancellable `yt-dlp` cache jobs and import completed eligible videos.
+- [x] Download individually selected YouTube/catalog videos and attach completed media to the same library identity without overwriting other recordings.
+- [ ] Connect the host's opt-in brand/artist selection to reviewed automatic/bulk yt-dlp jobs; individual downloads are available.
 - [ ] Select the newest artist/track recording using verified publication dates or labeled yt-dlp upload-date fallback; surface incomplete or ambiguous choices.
 - [ ] Preserve safe configured cache paths, detect destination collisions and verify cancellation including any ffmpeg child process.
 

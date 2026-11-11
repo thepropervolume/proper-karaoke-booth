@@ -12,7 +12,7 @@ import { Store } from './store';
 import { readSettings, writeSettings } from './settings';
 import { nextAccentColor, parseSettings, type Settings } from '../domain/settings';
 import { SettingsUpdateQueue } from './settings-update-queue';
-import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import { DEFAULT_SHORTCUTS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts } from './shortcuts';
 import { loadLogo, saveLogo } from './logo';
 import { BumperCatalog } from './bumper-catalog';
@@ -35,7 +35,8 @@ import { DisplayFullscreen } from './display-fullscreen';
 import { LocalCommunityBrowser } from './karaokenerds-local-browser';
 import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-window';
 import { YouTubeAudioGate } from './youtube-audio-gate';
-import { YouTubeShowPlayer } from './youtube-show-player';
+import { YouTubeDownloads } from './youtube-download';
+import { resolveYtDlpExecutable } from './youtube-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
 
@@ -90,7 +91,9 @@ const historyExport = new HistoryExport(() => store.collections.snapshot().histo
 const mediaChecks = new Set<AbortController>();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
-let youtubeAudioAcknowledgement: string | null = null;
+let youtubeDownloads: YouTubeDownloads | null = null;
+let youtubeDownloadConfig = '';
+let preparingDownload = false;
 const pendingSeeks = new Map<string, { generation: string; resolve: (position: number) => void; reject: () => void }>();
 function seekDisplay(generation: string, position: number): Promise<number> {
   if (!display || display.isDestroyed() || !displayReady || state.playback?.generationId !== generation) return Promise.reject(new Error('Player unavailable.'));
@@ -102,7 +105,7 @@ function seekDisplay(generation: string, position: number): Promise<number> {
     display!.webContents.send('display:seek', { id, generation, position });
   });
 }
-const playbackTimeline = new PlaybackTimeline((generation, position) => youtubeShowPlayer.isCurrent(generation) ? youtubeShowPlayer.seek(position) : seekDisplay(generation, position),
+const playbackTimeline = new PlaybackTimeline(seekDisplay,
   (generation, position) => { if (state.playback?.generationId !== generation) throw new Error('Track changed.'); store.checkpoint(generation, position); }, publishTimeline);
 function timelineState() {
   playbackTimeline.sync(state.playback?.generationId ?? null, state.playback ? store.position(state.playback.generationId) : 0);
@@ -111,6 +114,47 @@ function timelineState() {
 function publishTimeline(): void {
   const value = timelineState();
   if (host && !host.isDestroyed()) host.webContents.send('host:timeline', value);
+}
+
+function videoCacheDirectory(): string {
+  return settings.karaokeNerdsCacheDirectory || join(app.getPath('videos'), 'The Proper Volume Karaoke');
+}
+function downloadStatus() {
+  const sources = new Set(state.versions.filter(version => version.source?.provider === 'youtube').map(version => version.id));
+  return { job: youtubeDownloads?.snapshot() ?? null, preparing: preparingDownload,
+    cachedVersionIds: Object.keys(store.mediaFilenames()).filter(id => sources.has(id) && existsSync(store.media(id)!.path)) };
+}
+async function startYouTubeDownload(versionId: string) {
+  if (shuttingDown || preparingDownload) throw new Error('A video download is being prepared. Try again shortly.');
+  const version = state.versions.find(item => item.id === versionId);
+  if (!version?.source || !isVersionAllowed(state, versionId)) throw new Error('This video is unavailable.');
+  const existingJob = youtubeDownloads?.snapshot();
+  if (youtubeDownloads?.active()) {
+    if (existingJob?.versionId === versionId) return existingJob;
+    throw new Error('Another video is downloading. Wait or cancel it before downloading this song.');
+  }
+  if (store.media(versionId) && existsSync(store.media(versionId)!.path)) return null;
+  preparingDownload = true;
+  try {
+    const executable = await resolveYtDlpExecutable(settings.ytDlpExecutable);
+    if (shuttingDown) throw new Error('The application is closing.');
+    const directory = videoCacheDirectory(), config = JSON.stringify([directory, executable]);
+    if (!youtubeDownloads || config !== youtubeDownloadConfig) {
+      youtubeDownloads = new YouTubeDownloads(directory, executable, asset => {
+        const current = state.versions.find(item => item.id === asset.versionId);
+        if (shuttingDown || current?.source?.videoId !== asset.videoId) throw new Error('The video selection changed before download finished.');
+        const previous = store.media(asset.versionId);
+        const active = state.requests.find(request => request.id === state.playback?.requestId);
+        if (previous && active?.versionId === asset.versionId) throw new Error('Stop the performance before replacing its video.');
+        store.save(state, [{ id: asset.versionId, path: asset.path, fingerprint: asset.fingerprint }]);
+        // The current Version and queued request IDs stay unchanged.
+        try { broadcast(); } catch { /* A committed download must not be reported as failed by a view. */ }
+      });
+      youtubeDownloadConfig = config;
+    }
+    return youtubeDownloads.start({ versionId: version.id, videoId: version.source.videoId, title: version.title, artist: version.artist,
+      ...(version.source.brandSlug ? {brandSlug: version.source.brandSlug} : {}) });
+  } finally { preparingDownload = false; }
 }
 
 const publishRemoteStatus = (value: ReturnType<HostRemoteLifecycle['status']>) => {
@@ -152,21 +196,8 @@ function broadcast(): void {
   publishDisplay();
   publishBumper();
 }
-const youtubeShowPlayer = new YouTubeShowPlayer({
-  report: (generation, value) => { if (shuttingDown || state.playback?.generationId !== generation) return; timelineState(); playbackTimeline.report(generation, value); publishTimeline(); if (!playbackTimeline.snapshot().seeking) store.checkpoint(generation, value.position); },
-  ended: generation => { if (!shuttingDown && state.playback?.generationId === generation && state.playback.status === 'playing') perform({ type: 'complete', generationId: generation }, 'engine'); },
-  nativeStatus: (generation, status) => { if (shuttingDown || playbackTransition || state.playback?.generationId !== generation || state.playback.status === status) return; if (status === 'paused') perform({ type: 'pause' }); else void executeHostCommand({ type: 'resume' }); },
-  failure: (generation, message) => { if (shuttingDown || state.playback?.generationId !== generation) return; pauseForOutputLoss(); if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'YouTube playback paused', detail: message }); },
-  shortcut: input => {
-    const action = matchesShortcut(shortcuts, 'search', input) ? 'search' : matchesShortcut(shortcuts, 'playPause', input) ? 'playPause' : null;
-    if (!action) return false;
-    if (!input.repeat && action === 'search' && host && !host.isDestroyed()) { host.show(); host.focus(); host.webContents.send('host:focus-search'); }
-    if (!input.repeat && action === 'playPause' && state.playback) void executeHostCommand({ type: state.playback.status === 'paused' ? 'resume' : 'pause' });
-    return true;
-  }
-});
 function publishDisplay(): void {
-  if (!display || display.isDestroyed() || !displayReady) { youtubeShowPlayer.stop(); return; }
+  if (!display || display.isDestroyed() || !displayReady) return;
   const playback = state.playback;
   const request = state.requests.find(r => r.id === playback?.requestId);
   const version = state.versions.find(v => v.id === request?.versionId);
@@ -174,8 +205,6 @@ function publishDisplay(): void {
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
     .filter(r => singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId)).slice(0, 3)
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
-  if (playback && version?.source?.provider === 'youtube') youtubeShowPlayer.update(playback.generationId, playback.status, `${singer?.name ?? 'Singer'} · ${version.title}`, settings.masterVolume);
-  else youtubeShowPlayer.stop();
   const current = playback && request && version && singer && store.media(version.id) ? { generation: playback.generationId, status: playback.status,
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
     position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
@@ -273,7 +302,6 @@ async function createDisplay(): Promise<void> {
     displayOutputIds.add(displayId);
   });
   display.on('closed', () => {
-    youtubeShowPlayer.stop();
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
     bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
@@ -317,14 +345,25 @@ function playable(command: Command): string | null {
   const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
   const request = state.requests.find(r => r.id === requestId);
   const streaming = state.versions.find(version => version.id === request?.versionId)?.source;
-  if (streaming?.provider === 'youtube') return null;
   const media = request && store.media(request.versionId);
+  if (streaming?.provider === 'youtube' && !media) return null;
+  if (streaming?.provider === 'youtube' && media && !existsSync(media.path)) return 'The saved video is missing. Right-click the library song and choose Download Video / Retry, or relink the original file.';
   if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
 }
 async function executeHostCommand(command: Command): Promise<{ ok: boolean; error?: string }> {
   if (playbackTransition && ['start', 'resume', 'pause', 'stop', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
     return { ok: false, error: 'Wait for the current playback transition to finish.' };
+  if (command.type === 'start' || command.type === 'resume') {
+    const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
+    const version = state.versions.find(item => item.id === state.requests.find(request => request.id === requestId)?.versionId);
+    if (version?.source?.provider === 'youtube' && !store.media(version.id)) {
+      try {
+        await startYouTubeDownload(version.id);
+        return { ok: false, error: 'Preparing this video on your drive. Follow download progress, then press Play when ready.' };
+      } catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Could not download this video.' }; }
+    }
+  }
   const initial = playable(command);
   if (initial) return { ok: false, error: initial };
   if (command.type === 'start' || command.type === 'resume') {
@@ -332,23 +371,6 @@ async function executeHostCommand(command: Command): Promise<{ ok: boolean; erro
     try {
       const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
       const versionId = state.requests.find(item => item.id === requestId)?.versionId;
-      const source = state.versions.find(version => version.id === versionId)?.source;
-      if (source?.provider === 'youtube') {
-        if (settings.audioOutputId && settings.audioOutputId !== 'default' && youtubeAudioAcknowledgement !== settings.audioOutputId) {
-          const selectedOutput = settings.audioOutputId;
-          if (!host || host.isDestroyed()) return { ok: false, error: 'The host window is unavailable.' };
-          const choice = await dialog.showMessageBox(host, { type: 'warning', message: 'YouTube uses the system audio output', detail: 'The audio output selected for local songs cannot be applied to the YouTube player. Check your system sound routing before continuing.', buttons: ['Use system output', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true });
-          if (shuttingDown || choice.response !== 0 || settings.audioOutputId !== selectedOutput) return { ok: false, error: 'YouTube playback cancelled. Check system sound routing before starting.' };
-          youtubeAudioAcknowledgement = selectedOutput;
-        }
-        const generation = command.type === 'start' ? command.generationId : state.playback!.generationId;
-        await bumper?.karaokeStarting();
-        if (!youtubeShowPlayer.isCurrent(generation)) await youtubeShowPlayer.prepare(display!, generation, source.videoId, command.type === 'resume' ? store.position(generation) : 0);
-        if (shuttingDown || playable(command)) { youtubeShowPlayer.stop(); return { ok: false, error: 'The singer display or show changed. Reopen the display and try again.' }; }
-        const result = perform(command);
-        if (!result.ok) youtubeShowPlayer.stop();
-        return result.ok ? { ok: true } : { ok: false, error: result.message };
-      }
       const media = versionId && store.media(versionId);
       if (!media) return { ok: false, error: 'The source file is unavailable. Relink the song in Song Library.' };
       const check = new AbortController(); mediaChecks.add(check);
@@ -515,6 +537,27 @@ else {
   ipcMain.handle('host:backup-cleanup', event => { guardHost(event.sender.id); return showBackup.retryCleanup(); });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); refreshAvailabilityDeadline(); return state; });
+  ipcMain.handle('host:youtube-download-status', event => { guardHost(event.sender.id); return downloadStatus(); });
+  ipcMain.handle('host:youtube-download', async (event, versionId: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof versionId !== 'string') throw new Error('Choose a YouTube song.');
+    return startYouTubeDownload(versionId);
+  });
+  ipcMain.handle('host:youtube-download-cancel', (event, id: unknown) => {
+    guardHost(event.sender.id); return typeof id === 'string' && !!youtubeDownloads?.cancel(id);
+  });
+  ipcMain.handle('host:choose-video-cache', async event => {
+    guardHost(event.sender.id);
+    if (!host || shuttingDown) return null;
+    const selection = await dialog.showOpenDialog(host, { title: 'Choose permanent video download folder', properties: ['openDirectory', 'createDirectory'] });
+    return selection.canceled || shuttingDown ? null : selection.filePaths[0] ?? null;
+  });
+  ipcMain.handle('host:reveal-video-cache', async event => {
+    guardHost(event.sender.id);
+    const directory = videoCacheDirectory();
+    if (!existsSync(directory)) throw new Error('Download a video first, or choose an existing cache folder in Preferences.');
+    const error = await shell.openPath(directory); if (error) throw new Error('The download folder could not be opened.');
+  });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
   ipcMain.handle('host:export-history', (event, filter: unknown) => { guardHost(event.sender.id); return historyExport.start(filter); });
   ipcMain.handle('host:history-export-status', event => { guardHost(event.sender.id); return historyExport.status(); });
@@ -576,16 +619,22 @@ else {
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
   ipcMain.handle('host:karaokenerds-search', (event, query: unknown) => { guardHost(event.sender.id); if (!communityBrowser) throw new Error('Catalog unavailable.'); return communityBrowser.search(query); });
-  ipcMain.handle('host:add-youtube', (event, input: unknown) => {
+  ipcMain.handle('host:add-youtube', async (event, input: unknown) => {
     guardHost(event.sender.id);
     if (shuttingDown || !isRecord(input) || !shortString(input.title) || typeof input.artist !== 'string' || input.artist.length > 500) return { ok: false, error: 'Enter a song title and optional artist.' };
     const videoId = youtubeIdentity(input.url);
     if (!videoId) return { ok: false, error: 'Enter a valid YouTube video link or ID.' };
     const existing = state.versions.find(version => version.source?.provider === 'youtube' && version.source.videoId === videoId);
-    if (existing) return { ok: true, versionId: existing.id };
+    const brandSlug = typeof input.brandSlug === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(input.brandSlug) ? input.brandSlug : undefined;
+    if (existing) {
+      try { await startYouTubeDownload(existing.id); return { ok: true, versionId: existing.id }; }
+      catch (error) { return { ok: true, versionId: existing.id, notice: error instanceof Error ? error.message : 'Choose Download Video from the library menu to try again.' }; }
+    }
     const id = randomUUID();
-    const result = perform({ type: 'addVersion', version: { id, title: input.title.trim(), artist: input.artist.trim(), rating: 'unrated', source: { provider: 'youtube', videoId } } });
-    return result.ok ? { ok: true, versionId: id } : { ok: false, error: result.message };
+    const result = perform({ type: 'addVersion', version: { id, title: input.title.trim(), artist: input.artist.trim(), rating: 'unrated', source: { provider: 'youtube', videoId, ...(brandSlug ? {brandSlug} : {}) } } });
+    if (!result.ok) return { ok: false, error: result.message };
+    try { await startYouTubeDownload(id); return { ok: true, versionId: id }; }
+    catch (error) { return { ok: true, versionId: id, notice: error instanceof Error ? error.message : 'Choose Download Video from the library menu to try again.' }; }
   });
   ipcMain.handle('host:karaokenerds-open-video', async (event, id: unknown) => {
     guardHost(event.sender.id);
@@ -613,7 +662,6 @@ else {
       try {
         if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
         settings = writeSettings(settingsPath, proposed);
-        if (changingOutput) youtubeAudioAcknowledgement = null;
         settingsCreated = false;
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
         publishDisplay();
@@ -795,7 +843,7 @@ function waitForImport(job: ImportJob): Promise<boolean> {
   });
 }
 app.on('before-quit', event => {
-  shuttingDown = true; youtubeShowPlayer.stop(); for (const check of mediaChecks) check.abort();
+  shuttingDown = true; for (const check of mediaChecks) check.abort();
   const pendingImport = importJob?.snapshot();
   const importing = !!pendingImport && ['scanning', 'hashing', 'cancelling'].includes(pendingImport.phase);
   if (importing) importJob?.cancel(pendingImport!.jobId);
@@ -805,7 +853,9 @@ app.on('before-quit', event => {
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
   const convertingCdg = !!cdgImport?.active();
   const cdgShutdown = cdgImport?.shutdown() ?? Promise.resolve();
-  const wait = remoteHost.needsShutdownWait() || importing || convertingCdg || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
+  const downloading = !!youtubeDownloads?.active();
+  const downloadShutdown = Promise.race([youtubeDownloads?.shutdown().then(() => true, () => false) ?? Promise.resolve(true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
+  const wait = remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
   const backupShutdown = showBackup.shutdown();
   const historyShutdown = historyExport.shutdown();
@@ -816,8 +866,8 @@ app.on('before-quit', event => {
   const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean]) => {
-    if (!remoteClean || !importClean || !backupClean || !historyClean || !seekClean) {
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean]) => {
+    if (!remoteClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;
