@@ -15,6 +15,23 @@ spec.loader.exec_module(generator)
 
 
 class MockupGeneratorTest(unittest.TestCase):
+    def test_growing_inventory_paginates_before_the_screen_pages(self):
+        colors = {key: '#123456' for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')}
+        meta = {'product': 'Test', 'deck_title': 'Inventory', 'deck_subtitle': 'Synthetic', 'themes': {'Night': colors, 'Day': colors}}
+        screens = [{'id': f'T{i:02}', 'title': f'Screen {i}', 'status': 'Planned', 'description': 'Synthetic',
+                    'layout': 'display', 'detail': 'Not implemented', 'display_title': 'DEMO', 'display_subtitle': 'Example', 'display_next': 'Next: Sam'} for i in range(15)]
+        content = '```mockup-theme\n' + json.dumps(meta) + '\n```\n' + ''.join('```mockup\n' + json.dumps(screen) + '\n```\n' for screen in screens)
+        with tempfile.TemporaryDirectory(prefix='tpv-inventory-test-') as directory:
+            source, output = Path(directory) / 'spec.md', Path(directory) / 'inventory.pdf'
+            source.write_text(content, encoding='utf-8'); generator.generate(source, output)
+            pdf = PdfReader(output)
+            self.assertEqual(len(pdf.pages), 33)
+            inventory = '\n'.join(page.extract_text() for page in pdf.pages[1:3])
+            for screen in screens:
+                self.assertIn(screen['id'], inventory)
+            self.assertIn('Screen inventory', pdf.pages[2].extract_text())
+            self.assertIn('NIGHT', pdf.pages[3].extract_text())
+
     def test_single_markdown_source_generates_both_themes_deterministically(self):
         colors = {key: '#123456' for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')}
         meta = {'product': 'Test Product', 'deck_title': 'Test Deck', 'deck_subtitle': 'Synthetic', 'themes': {'Night': colors, 'Day': colors}}

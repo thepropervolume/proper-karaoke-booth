@@ -273,18 +273,19 @@ def settings_dialog(c, item, p):
     rect(c, x, y, w, h, p['panel'], 8, p['line'])
     line(c, item['footer_heading'], x + 27, y + h - 40, 'TPVBold', 22, p['text'])
     yy = y + h - 79
+    scale = min(1, (h - 138) / (34 * len(item['navigation']) + 25 * len(item['rows'])))
     for section in item['navigation']:
         is_open = section == item['selected_navigation']
-        rect(c, x + 24, yy, w - 48, 29, p['card'], 4)
-        line(c, section, x + 37, yy + 9, 'TPVBold', 11, p['text'])
-        line(c, '-' if is_open else '+', x + w - 47, yy + 8, 'TPVBold', 14, p['accent'])
-        yy -= 34
+        rect(c, x + 24, yy, w - 48, 29 * scale, p['card'], 4)
+        line(c, section, x + 37, yy + 9 * scale, 'TPVBold', 11 * max(.9, scale), p['text'])
+        line(c, '-' if is_open else '+', x + w - 47, yy + 8 * scale, 'TPVBold', 14 * max(.9, scale), p['accent'])
+        yy -= 34 * scale
         if is_open:
             for entry in item['rows']:
                 parts = entry.split(' | ')
-                line(c, parts[0], x + 46, yy + 10, 'TPVBold', 10, p['text'], 250)
-                line(c, parts[1] if len(parts) > 1 else '', x + 302, yy + 10, size=10, fill=p['muted'], max_width=w - 360)
-                yy -= 25
+                line(c, parts[0], x + 46, yy + 10 * scale, 'TPVBold', 10 * max(.9, scale), p['text'], 250)
+                line(c, parts[1] if len(parts) > 1 else '', x + 302, yy + 10 * scale, size=10 * max(.9, scale), fill=p['muted'], max_width=w - 360)
+                yy -= 25 * scale
     rect(c, x + w - 245, y + 12, 90, 29, p['card'], 5)
     rect(c, x + w - 145, y + 12, 121, 29, p['accent'], 5)
     line(c, item['footer_rows'][0], x + w - 225, y + 21, 'TPVBold', 10, p['text'])
@@ -322,18 +323,21 @@ def cover(c, meta, screens, digest):
 
 
 def contents(c, meta, screens):
-    rect(c, 0, 0, PAGE_W, PAGE_H, WHITE)
-    line(c, 'Screen inventory', 56, 680, 'TPVBold', 30, '#17283d')
-    line(c, 'Each screen appears in Night followed by Day.', 56, 648, size=14, fill='#51657a')
-    for index, item in enumerate(screens):
-        column, row_index = divmod(index, 6)
-        x, y = 56 + column * 610, 580 - row_index * 83
-        line(c, item['id'], x, y, 'TPVBold', 14, '#007fae')
-        line(c, item['title'], x + 62, y, 'TPVBold', 15, '#17283d', 410)
-        line(c, item['status'].upper(), x + 480, y, 'TPVBold', 10, '#51657a', 100)
-        line(c, item['description'], x + 62, y - 22, size=11, fill='#51657a', max_width=500)
-    line(c, f"{meta['product']}  /  INTERFACE SPECIFICATION", 56, 29, size=9, fill='#6e7b89')
-    c.showPage()
+    pages = (len(screens) + 13) // 14
+    for start in range(0, len(screens), 14):
+        rect(c, 0, 0, PAGE_W, PAGE_H, WHITE)
+        line(c, 'Screen inventory', 56, 680, 'TPVBold', 30, '#17283d')
+        line(c, 'Each screen appears in Night followed by Day.', 56, 648, size=14, fill='#51657a')
+        for index, item in enumerate(screens[start:start + 14]):
+            column, row_index = divmod(index, 7)
+            x, y = 56 + column * 610, 580 - row_index * 72
+            line(c, item['id'], x, y, 'TPVBold', 14, '#007fae')
+            line(c, item['title'], x + 62, y, 'TPVBold', 15, '#17283d', 410)
+            line(c, item['status'].upper(), x + 480, y, 'TPVBold', 10, '#51657a', 100)
+            line(c, item['description'], x + 62, y - 22, size=11, fill='#51657a', max_width=500)
+        line(c, f"{meta['product']}  /  INTERFACE SPECIFICATION", 56, 29, size=9, fill='#6e7b89')
+        c.showPage()
+    return pages
 
 
 def generate(source: Path, output: Path):
@@ -342,8 +346,8 @@ def generate(source: Path, output: Path):
     c = canvas.Canvas(str(output), pagesize=(PAGE_W, PAGE_H), pageCompression=1, invariant=1)
     c.setTitle(meta['deck_title']); c.setAuthor(meta['product'])
     c.setSubject(f'Generated from Markdown SHA-256 {digest}')
-    cover(c, meta, screens, digest); contents(c, meta, screens)
-    page = 3
+    cover(c, meta, screens, digest)
+    page = 2 + contents(c, meta, screens)
     host_actions = meta.get('host_actions', ['search', 'display', 'fullscreen', 'settings'])
     for item in screens:
         for theme in ('Night', 'Day'):
