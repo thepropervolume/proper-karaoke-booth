@@ -42,6 +42,9 @@ try {
   await display.locator('video').waitFor({ state: 'attached' });
   assert.equal((await host.evaluate(() => window.tpv.command({ type: 'start', generationId: crypto.randomUUID() }))).ok, true);
   await display.waitForFunction(() => { const video = document.querySelector('video'); return video && !video.paused && video.currentTime > .1; });
+  const playingGeneration = (await host.evaluate(() => window.tpv.getState())).playback.generationId;
+  assert.equal((await host.evaluate(input => window.tpv.seek(input), { generation: playingGeneration, position: 8 })).ok, true);
+  assert.equal(await display.locator('video').evaluate(video => video.paused), false, 'Seek must preserve playing state');
   assert.equal((await host.evaluate(() => window.tpv.command({ type: 'pause' }))).ok, true);
   await display.waitForFunction(() => document.querySelector('video').paused);
   const generation = (await host.evaluate(() => window.tpv.getState())).playback.generationId;

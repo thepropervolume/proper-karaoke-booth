@@ -4,7 +4,7 @@ Updated 11 November 2026 from the current checkout. This is the working checklis
 
 ## Current foundation
 
-The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host can search a previously saved local Karaoke Nerds snapshot; its separate experimental YouTube preview plays outside the show queue. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
+The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host can search a previously saved local Karaoke Nerds snapshot; supported YouTube recordings can be added to the normal library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
 
 ## Priority 0 — streaming and catalog
 
@@ -25,7 +25,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Make eligible streaming results requestable and queueable with singer selection and normal rotation rules.
 - [ ] Route eligible provider playback to the singer display and selected audio output with stage/play/pause/stop/skip and safe transition handling.
 - [ ] Handle expired links, network failure, provider unavailability, rate limits, ads and unsupported or region-blocked recordings without consuming a singer's turn.
-- [ ] Extend YouTube playback beyond its separate preview: integrate eligible videos with the show queue and singer display, preserve YouTube controls/attribution, and test prohibited/disabled embeds and error recovery.
+- [x] Extend YouTube playback beyond its separate preview (live muted sample verified; broad failure/hardware checks remain): integrate eligible videos with the show queue and singer display, preserve YouTube controls/attribution, and test prohibited/disabled embeds and error recovery.
 - [ ] Verify the installed application identity, visible-player and referrer requirements for distributed YouTube playback; the current development identity is provisional.
 - [ ] Verify network loss, output selection, switching away from the preview and physical singer-display behavior for YouTube.
 - [ ] Make the Karaoke Nerds shared MySQL catalog service production-ready and deploy it with a restricted service, backups and restore procedure.
@@ -54,9 +54,11 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 ## Priority 1 — host, queue and library
 
 - [x] Allow the host to promote one waiting request without displacing the staged song.
-- [ ] Add full manual request reordering without unexpectedly changing the staged song.
-- [ ] Move a request between singers with an explicit fairness policy and visible history.
-- [ ] Add singer hold, absence, return and skip-turn controls; define returning-singer fairness.
+- [x] Add persisted manual request reordering without unexpectedly changing the staged song.
+- [x] Edit a waiting request’s track or singer with next-free-round reassignment and preserved manual slot.
+- [ ] Add actor/reason audit history for queue edits.
+- [x] Add timed singer absence and return (1–60 minutes), one future request while away, authenticated self-service and tested return fairness.
+- [ ] Add indefinite singer hold and skip-turn controls.
 - [ ] Show current singer, upcoming singers, queue position and clearly approximate wait time.
 - [ ] Support duets and groups with multiple performers on one request.
 - [ ] Start, save, restore and end named shows without losing or accidentally replaying requests.
@@ -77,9 +79,10 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 ## Priority 1 — playback and display
 
-- [ ] Support paired MP3+CDG and ZIP karaoke files, safe extraction, pairing, ambiguity and diagnostics.
+- [x] Import same-name MP3/CDG and single-pair ZIP through bounded cancellable FFmpeg conversion; originals stay unchanged.
+- [ ] Package/validate FFmpeg, verify real producer CDG audio synchronization and support multi-song archive imports if useful.
 - [ ] Evaluate and add useful KaraFun Player 2 formats separately from MP4 and CDG support.
-- [ ] Add seek, elapsed/remaining time and reliable resume position.
+- [x] Add seek, elapsed/remaining time and acknowledged resume checkpoints; verify audio/sync on real hardware separately.
 - [ ] Add pitch/key and tempo controls with per-song and per-singer defaults and reset.
 - [ ] Support separate lead and backing vocal controls only when the source provides compatible stems or multiplex audio.
 - [ ] Add automatic intermission/bumper scheduling, transitions and fade controls; current bumper playback is manual.

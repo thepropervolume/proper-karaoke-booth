@@ -4,7 +4,7 @@ import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
-declare global { interface Window { tpvDisplay: { ready(): void; shortcut(action: 'search' | 'playPause'): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
+declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: 'search' | 'playPause'): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
@@ -13,6 +13,37 @@ const logos = document.querySelectorAll<HTMLImageElement>('#idle-logo, #header-l
 let current: PlaybackState | null = null;
 let updateSequence = 0;
 let shortcuts = DEFAULT_SHORTCUTS;
+let lastTimelineReport = 0;
+function reportTimeline(force = false): void {
+  if (!current || (!force && Date.now() - lastTimelineReport < 350)) return;
+  lastTimelineReport = Date.now();
+  const duration = video.duration;
+  if (!Number.isFinite(duration) || duration <= 0) return;
+  window.tpvDisplay.event({ type: 'timeline', generation: current.generation, position: video.currentTime || 0, duration,
+    seekable: video.seekable.length > 0 });
+}
+window.tpvDisplay.onSeek((value) => {
+  if (!value || typeof value !== 'object') return;
+  const request = value as { id?: unknown; generation?: unknown; position?: unknown };
+  const player = video, generation = current?.generation;
+  if (!generation || request.generation !== generation || typeof request.id !== 'string' || typeof request.position !== 'number' ||
+      !Number.isFinite(request.position) || request.position < 0 || !Number.isFinite(player.duration) || request.position >= player.duration) return;
+  const target = request.position;
+  let withinRange = false;
+  for (let i = 0; i < player.seekable.length; i++) if (target >= player.seekable.start(i) && target <= player.seekable.end(i)) withinRange = true;
+  const reply = (ok: boolean) => {
+    if (video === player && current?.generation === generation)
+      window.tpvDisplay.event({ type: 'seek-result', id: request.id, generation, position: player.currentTime || 0, ok });
+  };
+  if (!withinRange) { reply(false); return; }
+  if (Math.abs(player.currentTime - target) < 0.001) { reply(true); return; }
+  const done = (ok: boolean) => { clearTimeout(timer); player.removeEventListener('seeked', seeked); player.removeEventListener('error', failed); reply(ok); reportTimeline(true); };
+  const seeked = () => done(true), failed = () => done(false);
+  const timer = setTimeout(failed, 4500);
+  player.addEventListener('seeked', seeked, { once: true });
+  player.addEventListener('error', failed, { once: true });
+  try { player.currentTime = target; } catch { done(false); }
+});
 const bumperPlayer = createBumperPlayer(value => window.tpvDisplay.bumperAck(value), value => window.tpvDisplay.bumperEvent(value));
 window.tpvDisplay.onBumperCommand(request => bumperPlayer.handle(request));
 const output = new AudioOutputRouter(async () => {
@@ -49,8 +80,12 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   };
   player.addEventListener('ended', () => report('ended'));
   player.addEventListener('error', () => report('error', mediaFailure(player.error?.code)));
-  player.addEventListener('pause', () => report('checkpoint'));
+  player.addEventListener('pause', () => { report('checkpoint'); reportTimeline(true); });
+  for (const event of ['loadedmetadata', 'durationchange', 'progress', 'canplay', 'seeked']) player.addEventListener(event, () => {
+    if (video === player && current?.generation === generation) reportTimeline(true);
+  });
   player.addEventListener('timeupdate', () => {
+    if (video === player && current?.generation === generation) reportTimeline();
     if (Date.now() - lastCheckpoint > 5000) { lastCheckpoint = Date.now(); report('checkpoint'); }
   });
   video.pause();

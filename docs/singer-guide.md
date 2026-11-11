@@ -1,6 +1,6 @@
 # Singer guide for the rehearsal build
 
-The host operates the app on a computer and may promote a waiting request; an already staged song remains ahead of it. They can enter a request for you, or may invite you to try the experimental local-network singer page. Remote access over the internet and singer account sign-in are not available. The host can search a saved local Karaoke Nerds metadata snapshot and may open a separate experimental YouTube preview, but those results do not add songs to the singer catalog or rotation; only songs the host has imported can be requested for show playback.
+The host operates the app on a computer and may promote a waiting request; an already staged song remains ahead of it. They can enter a request for you, or may invite you to try the experimental local-network singer page. Remote access over the internet and singer account sign-in are not available. The host can search a saved local Karaoke Nerds metadata snapshot and may open a separate experimental YouTube preview, and may add supported YouTube recordings to the normal Song Library and rotation. Those recordings need internet and may be blocked by their owners or YouTube. The host can change a waiting request’s track or singer and manually adjust order; staged performances remain locked.
 
 ## Join from the venue network
 
@@ -22,3 +22,7 @@ Your invitation can be used by anyone who has it until it expires or the host re
 Tell the host the song title, your name and, if known, the artist. They can save it under **Can't Find a Song?** in the library. It appears in the host's **Unavailable Song Requests** list, but saving it does not add the recording to the library or put you in the rotation. The host can privately track whether a request is being reviewed, fulfilled or declined; that status is not shown on the singer page. The host needs an available recording before it can be requested for playback.
 
 Your singer name and request information are stored locally for the host's show. The host can create singer playlists and review performances completed or skipped since the history feature was added. Personal self-service, favorites and cross-device profiles are not yet available.
+
+## Step away and return
+
+On the local singer page, choose 1–60 whole minutes under availability, or use the return action when back. The host can do this for you. While unavailable you can have one upcoming request; existing extras are retained but block additions. You become eligible at the saved return time in the normal FIFO/fair order, subject to host manual order and the staged song. Returning does not start playback. If already staged or singing, ask the host before stepping away. After an uncertain connection result, check the outcome before another change. See [availability rules](singer-availability.md).

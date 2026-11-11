@@ -4,7 +4,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
+import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
 import type { HistoryEntry } from '../domain/collections';
 import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
@@ -12,7 +12,7 @@ import { Store } from './store';
 import { readSettings, writeSettings } from './settings';
 import { nextAccentColor, parseSettings, type Settings } from '../domain/settings';
 import { SettingsUpdateQueue } from './settings-update-queue';
-import { DEFAULT_SHORTCUTS, type Shortcuts } from '../domain/shortcuts';
+import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts } from './shortcuts';
 import { loadLogo, saveLogo } from './logo';
 import { BumperCatalog } from './bumper-catalog';
@@ -28,12 +28,16 @@ import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './me
 import { mediaErrorDetail } from './media-error-message';
 import { mediaRange } from './media-range';
 import { ImportJob } from './import-job';
+import { CdgImport } from './cdg-import';
 import { ShowBackup } from './show-backup';
 import { HistoryExport } from './history-export';
 import { DisplayFullscreen } from './display-fullscreen';
 import { LocalCommunityBrowser } from './karaokenerds-local-browser';
 import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-window';
 import { YouTubeAudioGate } from './youtube-audio-gate';
+import { YouTubeShowPlayer } from './youtube-show-player';
+import { youtubeIdentity } from '../domain/streaming-source';
+import { PlaybackTimeline } from './playback-timeline';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -66,6 +70,9 @@ let bumperError = '';
 let playbackTransition = false;
 const youtubeAudioGate = new YouTubeAudioGate(isYouTubePlayerActive);
 let importJob: ImportJob | null = null;
+let cdgImport: CdgImport | null = null;
+let cdgPickerOpen = false;
+let cdgImportParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
 let importParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
 let relinking = false;
 const showBackup = new ShowBackup(async () => {
@@ -83,6 +90,29 @@ const historyExport = new HistoryExport(() => store.collections.snapshot().histo
 const mediaChecks = new Set<AbortController>();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
+let youtubeAudioAcknowledgement: string | null = null;
+const pendingSeeks = new Map<string, { generation: string; resolve: (position: number) => void; reject: () => void }>();
+function seekDisplay(generation: string, position: number): Promise<number> {
+  if (!display || display.isDestroyed() || !displayReady || state.playback?.generationId !== generation) return Promise.reject(new Error('Player unavailable.'));
+  const id = randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { pendingSeeks.delete(id); reject(new Error('Seek timed out.')); }, 5000);
+    pendingSeeks.set(id, { generation, resolve: actual => { clearTimeout(timer); pendingSeeks.delete(id); resolve(actual); },
+      reject: () => { clearTimeout(timer); pendingSeeks.delete(id); reject(new Error('Seek failed.')); } });
+    display!.webContents.send('display:seek', { id, generation, position });
+  });
+}
+const playbackTimeline = new PlaybackTimeline((generation, position) => youtubeShowPlayer.isCurrent(generation) ? youtubeShowPlayer.seek(position) : seekDisplay(generation, position),
+  (generation, position) => { if (state.playback?.generationId !== generation) throw new Error('Track changed.'); store.checkpoint(generation, position); }, publishTimeline);
+function timelineState() {
+  playbackTimeline.sync(state.playback?.generationId ?? null, state.playback ? store.position(state.playback.generationId) : 0);
+  return playbackTimeline.snapshot();
+}
+function publishTimeline(): void {
+  const value = timelineState();
+  if (host && !host.isDestroyed()) host.webContents.send('host:timeline', value);
+}
+
 const publishRemoteStatus = (value: ReturnType<HostRemoteLifecycle['status']>) => {
   if (host && !host.isDestroyed()) host.webContents.send('host:remote-status', value);
 };
@@ -107,20 +137,45 @@ function bumperInfo() {
     karaokeActive: !!state.playback || playbackTransition, error: bumperError };
 }
 function publishBumper(): void { if (host && !host.isDestroyed()) host.webContents.send('host:bumper-state', bumperInfo()); }
+let availabilityTimer: NodeJS.Timeout | undefined;
+function refreshAvailabilityDeadline(): void {
+  if (availabilityTimer) clearTimeout(availabilityTimer);
+  const now = Date.now();
+  let next = Infinity;
+  for (const singer of state.singers) if ((singer.unavailableUntilMs ?? 0) > now) next = Math.min(next, singer.unavailableUntilMs!);
+  if (Number.isFinite(next)) { availabilityTimer = setTimeout(() => { if (!shuttingDown) broadcast(); }, Math.min(2147483647, Math.max(1, next - now))); availabilityTimer.unref(); }
+}
 function broadcast(): void {
+  refreshAvailabilityDeadline();
+  publishTimeline();
   if (host && !host.isDestroyed()) host.webContents.send('host:state', state);
   publishDisplay();
   publishBumper();
 }
+const youtubeShowPlayer = new YouTubeShowPlayer({
+  report: (generation, value) => { if (shuttingDown || state.playback?.generationId !== generation) return; timelineState(); playbackTimeline.report(generation, value); publishTimeline(); if (!playbackTimeline.snapshot().seeking) store.checkpoint(generation, value.position); },
+  ended: generation => { if (!shuttingDown && state.playback?.generationId === generation && state.playback.status === 'playing') perform({ type: 'complete', generationId: generation }, 'engine'); },
+  nativeStatus: (generation, status) => { if (shuttingDown || playbackTransition || state.playback?.generationId !== generation || state.playback.status === status) return; if (status === 'paused') perform({ type: 'pause' }); else void executeHostCommand({ type: 'resume' }); },
+  failure: (generation, message) => { if (shuttingDown || state.playback?.generationId !== generation) return; pauseForOutputLoss(); if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'YouTube playback paused', detail: message }); },
+  shortcut: input => {
+    const action = matchesShortcut(shortcuts, 'search', input) ? 'search' : matchesShortcut(shortcuts, 'playPause', input) ? 'playPause' : null;
+    if (!action) return false;
+    if (!input.repeat && action === 'search' && host && !host.isDestroyed()) { host.show(); host.focus(); host.webContents.send('host:focus-search'); }
+    if (!input.repeat && action === 'playPause' && state.playback) void executeHostCommand({ type: state.playback.status === 'paused' ? 'resume' : 'pause' });
+    return true;
+  }
+});
 function publishDisplay(): void {
-  if (!display || display.isDestroyed() || !displayReady) return;
+  if (!display || display.isDestroyed() || !displayReady) { youtubeShowPlayer.stop(); return; }
   const playback = state.playback;
   const request = state.requests.find(r => r.id === playback?.requestId);
   const version = state.versions.find(v => v.id === request?.versionId);
   const singer = state.singers.find(s => s.id === request?.singerId);
-  const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode)
-    .filter(r => isVersionAllowed(state, r.versionId)).slice(0, 3)
+  const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
+    .filter(r => singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId)).slice(0, 3)
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
+  if (playback && version?.source?.provider === 'youtube') youtubeShowPlayer.update(playback.generationId, playback.status, `${singer?.name ?? 'Singer'} · ${version.title}`, settings.masterVolume);
+  else youtubeShowPlayer.stop();
   const current = playback && request && version && singer && store.media(version.id) ? { generation: playback.generationId, status: playback.status,
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
     position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
@@ -218,6 +273,7 @@ async function createDisplay(): Promise<void> {
     displayOutputIds.add(displayId);
   });
   display.on('closed', () => {
+    youtubeShowPlayer.stop();
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
     bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
@@ -239,6 +295,10 @@ function validateCommand(value: unknown): Command | null {
       return shortString(value.requestId) && shortString(value.singerId) && shortString(value.versionId) ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
     case 'accept': return shortString(value.requestId) ? { type: 'accept', requestId: value.requestId } : null;
     case 'removeRequest': return shortString(value.requestId) ? { type: 'removeRequest', requestId: value.requestId } : null;
+    case 'setSingerAvailability': return shortString(value.singerId) && Number.isInteger(value.minutes) && (value.minutes as number) >= 0 && (value.minutes as number) <= 60 && (value.releaseStaged === undefined || typeof value.releaseStaged === 'boolean') ? { type: 'setSingerAvailability', singerId: value.singerId, minutes: value.minutes as number, releaseStaged: value.releaseStaged as boolean | undefined } : null;
+    case 'moveRequest': return shortString(value.requestId) && (value.beforeRequestId === null || shortString(value.beforeRequestId)) ? { type: 'moveRequest', requestId: value.requestId, beforeRequestId: value.beforeRequestId } : null;
+    case 'editRequest': return shortString(value.requestId) && shortString(value.singerId) && shortString(value.versionId) ? { type: 'editRequest', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
+    case 'resetQueueOrder': return { type: 'resetQueueOrder' };
     case 'promoteRequest': return shortString(value.requestId) ? { type: 'promoteRequest', requestId: value.requestId } : null;
     case 'rejectRequest': return shortString(value.requestId) ? { type: 'rejectRequest', requestId: value.requestId } : null;
     case 'start': return { type: 'start', generationId: randomUUID() };
@@ -256,6 +316,8 @@ function playable(command: Command): string | null {
   if (!display || display.isDestroyed() || !displayReady) return 'Open the singer display before starting or resuming.';
   const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
   const request = state.requests.find(r => r.id === requestId);
+  const streaming = state.versions.find(version => version.id === request?.versionId)?.source;
+  if (streaming?.provider === 'youtube') return null;
   const media = request && store.media(request.versionId);
   if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
@@ -270,6 +332,23 @@ async function executeHostCommand(command: Command): Promise<{ ok: boolean; erro
     try {
       const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
       const versionId = state.requests.find(item => item.id === requestId)?.versionId;
+      const source = state.versions.find(version => version.id === versionId)?.source;
+      if (source?.provider === 'youtube') {
+        if (settings.audioOutputId && settings.audioOutputId !== 'default' && youtubeAudioAcknowledgement !== settings.audioOutputId) {
+          const selectedOutput = settings.audioOutputId;
+          if (!host || host.isDestroyed()) return { ok: false, error: 'The host window is unavailable.' };
+          const choice = await dialog.showMessageBox(host, { type: 'warning', message: 'YouTube uses the system audio output', detail: 'The audio output selected for local songs cannot be applied to the YouTube player. Check your system sound routing before continuing.', buttons: ['Use system output', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true });
+          if (shuttingDown || choice.response !== 0 || settings.audioOutputId !== selectedOutput) return { ok: false, error: 'YouTube playback cancelled. Check system sound routing before starting.' };
+          youtubeAudioAcknowledgement = selectedOutput;
+        }
+        const generation = command.type === 'start' ? command.generationId : state.playback!.generationId;
+        await bumper?.karaokeStarting();
+        if (!youtubeShowPlayer.isCurrent(generation)) await youtubeShowPlayer.prepare(display!, generation, source.videoId, command.type === 'resume' ? store.position(generation) : 0);
+        if (shuttingDown || playable(command)) { youtubeShowPlayer.stop(); return { ok: false, error: 'The singer display or show changed. Reopen the display and try again.' }; }
+        const result = perform(command);
+        if (!result.ok) youtubeShowPlayer.stop();
+        return result.ok ? { ok: true } : { ok: false, error: result.message };
+      }
       const media = versionId && store.media(versionId);
       if (!media) return { ok: false, error: 'The source file is unavailable. Relink the song in Song Library.' };
       const check = new AbortController(); mediaChecks.add(check);
@@ -370,10 +449,10 @@ else {
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
-  importJob = new ImportJob((path, fingerprint) => {
-    if (shuttingDown || !importParsing) throw new Error('Import is unavailable.');
-    if (store.byFingerprint(fingerprint)) return { outcome: 'duplicate' };
-    const id = randomUUID(), parsed = metadataFromPath(path, importParsing.metadataTemplates, importParsing.metadataFormat);
+  const commitImported = (path: string, fingerprint: string, metadataPath = path, parsing = importParsing ?? settings) => {
+    if (shuttingDown) throw new Error('Import is unavailable.');
+    if (store.byFingerprint(fingerprint)) return { outcome: 'duplicate' as const };
+    const id = randomUUID(), parsed = metadataFromPath(metadataPath, parsing.metadataTemplates, parsing.metadataFormat);
     const { artist, title, djCode, trackNumber, matchedTemplate } = parsed;
     const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision,
       actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: { id, title, artist, rating: 'unrated',
@@ -384,8 +463,11 @@ else {
     state = result.state;
     // A UI notification must not make a successful durable import look failed.
     try { broadcast(); } catch { /* The host can reload the persisted show. */ }
-    return { outcome: 'imported', needsReview: parsed.ambiguous };
-  }, progress => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:import-progress', progress); });
+    return { outcome: 'imported' as const, needsReview: parsed.ambiguous };
+  };
+  importJob = new ImportJob(commitImported, progress => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:import-progress', progress); });
+  cdgImport = new CdgImport(join(app.getPath('userData'), 'cdg-library'), (path, fingerprint, metadataPath) =>
+    commitImported(path, fingerprint, metadataPath.replace(/\.(mp3|cdg)$/i, '.mp4'), cdgImportParsing ?? settings).outcome);
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; broadcast(); };
@@ -416,10 +498,23 @@ else {
     if (state.playback) await bumper.karaokeStarting();
   } catch (error) { bumper = null; bumperOutput = null; bumperError = error instanceof Error ? error.message : String(error); }
   protocol.handle('tpv-media', serveMedia);
+  ipcMain.handle('host:cdg-status', event => { guardHost(event.sender.id); return cdgImport?.snapshot() ?? null; });
+  ipcMain.handle('host:cdg-cancel', (event, id: unknown) => { guardHost(event.sender.id); return typeof id === 'string' && !!cdgImport?.cancel(id); });
+  ipcMain.handle('host:cdg-import', async event => {
+    guardHost(event.sender.id);
+    if (!host || shuttingDown || cdgPickerOpen || cdgImport?.active()) throw new Error('Finish the current CD+G import first.');
+    cdgPickerOpen = true;
+    try {
+      const picked = await dialog.showOpenDialog(host, { title: 'Import CD+G karaoke pair or ZIP', properties: ['openFile'], filters: [{ name: 'MP3 + CDG karaoke', extensions: ['zip', 'cdg', 'mp3'] }] });
+      if (picked.canceled || !picked.filePaths[0] || shuttingDown) return null;
+      cdgImportParsing = structuredClone({ metadataFormat: settings.metadataFormat, metadataTemplates: settings.metadataTemplates });
+      return cdgImport!.start(picked.filePaths[0]);
+    } finally { cdgPickerOpen = false; }
+  });
   ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
   ipcMain.handle('host:backup-cleanup', event => { guardHost(event.sender.id); return showBackup.retryCleanup(); });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
-  ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
+  ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); refreshAvailabilityDeadline(); return state; });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
   ipcMain.handle('host:export-history', (event, filter: unknown) => { guardHost(event.sender.id); return historyExport.start(filter); });
   ipcMain.handle('host:history-export-status', event => { guardHost(event.sender.id); return historyExport.status(); });
@@ -481,6 +576,17 @@ else {
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
   ipcMain.handle('host:karaokenerds-search', (event, query: unknown) => { guardHost(event.sender.id); if (!communityBrowser) throw new Error('Catalog unavailable.'); return communityBrowser.search(query); });
+  ipcMain.handle('host:add-youtube', (event, input: unknown) => {
+    guardHost(event.sender.id);
+    if (shuttingDown || !isRecord(input) || !shortString(input.title) || typeof input.artist !== 'string' || input.artist.length > 500) return { ok: false, error: 'Enter a song title and optional artist.' };
+    const videoId = youtubeIdentity(input.url);
+    if (!videoId) return { ok: false, error: 'Enter a valid YouTube video link or ID.' };
+    const existing = state.versions.find(version => version.source?.provider === 'youtube' && version.source.videoId === videoId);
+    if (existing) return { ok: true, versionId: existing.id };
+    const id = randomUUID();
+    const result = perform({ type: 'addVersion', version: { id, title: input.title.trim(), artist: input.artist.trim(), rating: 'unrated', source: { provider: 'youtube', videoId } } });
+    return result.ok ? { ok: true, versionId: id } : { ok: false, error: result.message };
+  });
   ipcMain.handle('host:karaokenerds-open-video', async (event, id: unknown) => {
     guardHost(event.sender.id);
     if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(id)) return { ok: false, error: 'Invalid YouTube video.' };
@@ -507,6 +613,7 @@ else {
       try {
         if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
         settings = writeSettings(settingsPath, proposed);
+        if (changingOutput) youtubeAudioAcknowledgement = null;
         settingsCreated = false;
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
         publishDisplay();
@@ -630,9 +737,29 @@ else {
       if (!result.ok && host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: result.error || 'Playback could not start.' });
     }
   });
+  ipcMain.handle('host:get-timeline', event => { guardHost(event.sender.id); return timelineState(); });
+  ipcMain.handle('host:seek', async (event, input: unknown) => {
+    guardHost(event.sender.id);
+    if (shuttingDown || playbackTransition || !displayReady) return { ok: false, error: 'The player is not ready to seek.' };
+    timelineState();
+    return playbackTimeline.seek(input);
+  });
   ipcMain.on('display:event', (event, value: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !isRecord(value) || !state.playback || value.generation !== state.playback.generationId) return;
-    if (typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);
+    if (value.type === 'timeline') {
+      if (typeof value.position === 'number' && typeof value.duration === 'number' && typeof value.seekable === 'boolean' &&
+          playbackTimeline.report(state.playback.generationId, { position: value.position, duration: value.duration, seekable: value.seekable })) publishTimeline();
+      return;
+    }
+    if (value.type === 'seek-result') {
+      const pending = typeof value.id === 'string' ? pendingSeeks.get(value.id) : null;
+      if (pending?.generation === value.generation) {
+        if (value.ok === true && typeof value.position === 'number' && Number.isFinite(value.position)) pending.resolve(value.position);
+        else pending.reject();
+      }
+      return;
+    }
+    if (!playbackTimeline.snapshot().seeking && typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);
     if (value.type === 'ended' && state.playback.status === 'playing') perform({ type: 'complete', generationId: state.playback.generationId }, 'engine');
     else if (value.type === 'output-error') {
       pauseForOutputLoss();
@@ -668,7 +795,7 @@ function waitForImport(job: ImportJob): Promise<boolean> {
   });
 }
 app.on('before-quit', event => {
-  shuttingDown = true; for (const check of mediaChecks) check.abort();
+  shuttingDown = true; youtubeShowPlayer.stop(); for (const check of mediaChecks) check.abort();
   const pendingImport = importJob?.snapshot();
   const importing = !!pendingImport && ['scanning', 'hashing', 'cancelling'].includes(pendingImport.phase);
   if (importing) importJob?.cancel(pendingImport!.jobId);
@@ -676,7 +803,9 @@ app.on('before-quit', event => {
   if (quitReady) { closeStore(); return; }
   if (quitStarted) { event.preventDefault(); return; }
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
-  const wait = remoteHost.needsShutdownWait() || importing || showBackup.needsShutdownWait() || historyExport.needsShutdownWait();
+  const convertingCdg = !!cdgImport?.active();
+  const cdgShutdown = cdgImport?.shutdown() ?? Promise.resolve();
+  const wait = remoteHost.needsShutdownWait() || importing || convertingCdg || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
   const backupShutdown = showBackup.shutdown();
   const historyShutdown = historyExport.shutdown();
@@ -685,9 +814,10 @@ app.on('before-quit', event => {
   quitStarted = true;
   const importShutdown = importing && importJob ? waitForImport(importJob) : Promise.resolve(true);
   const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
+  const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory]).then(([remoteClean, importClean, backupClean, historyClean]) => {
-    if (!remoteClean || !importClean || !backupClean || !historyClean) {
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean]) => {
+    if (!remoteClean || !importClean || !backupClean || !historyClean || !seekClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;

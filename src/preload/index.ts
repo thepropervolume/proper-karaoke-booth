@@ -3,6 +3,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 contextBridge.exposeInMainWorld('tpv', {
   getState: () => ipcRenderer.invoke('host:get-state'),
+  getTimeline: () => ipcRenderer.invoke('host:get-timeline'),
+  seek: (input: unknown) => ipcRenderer.invoke('host:seek', input),
+  onTimeline: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('host:timeline', listener);
+    return () => ipcRenderer.removeListener('host:timeline', listener);
+  },
   getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
   backupShow: () => ipcRenderer.invoke('host:backup-show'),
   retryBackupCleanup: () => ipcRenderer.invoke('host:backup-cleanup'),
@@ -15,6 +22,7 @@ contextBridge.exposeInMainWorld('tpv', {
   relinkMedia: (versionId: string) => ipcRenderer.invoke('host:relink-media', versionId),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
   searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
+  addYouTube: (input: unknown) => ipcRenderer.invoke('host:add-youtube', input),
   openCommunityVideo: (id: string) => ipcRenderer.invoke('host:karaokenerds-open-video', id),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
@@ -58,6 +66,11 @@ contextBridge.exposeInMainWorld('tpv', {
     return () => ipcRenderer.removeListener('host:focus-search', listener);
   },
   importFiles: (kind?: 'files' | 'folder') => ipcRenderer.invoke('host:import', kind),
+  cdg: {
+    status: () => ipcRenderer.invoke('host:cdg-status'),
+    start: () => ipcRenderer.invoke('host:cdg-import'),
+    cancel: (id: string) => ipcRenderer.invoke('host:cdg-cancel', id),
+  },
   imports: {
     status: () => ipcRenderer.invoke('host:import-status'),
     subscribe: (callback: (value: unknown) => void) => {
@@ -89,6 +102,11 @@ contextBridge.exposeInMainWorld('tpv', {
 
 contextBridge.exposeInMainWorld('tpvDisplay', {
   ready: () => ipcRenderer.send('display:ready'),
+  onSeek: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('display:seek', listener);
+    return () => ipcRenderer.removeListener('display:seek', listener);
+  },
   shortcut: (action: 'search' | 'playPause') => ipcRenderer.send('display:shortcut', action),
   event: (event: unknown) => ipcRenderer.send('display:event', event),
   bumperAck: (value: unknown) => ipcRenderer.send('display:bumper-ack', value),
