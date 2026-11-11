@@ -4,7 +4,7 @@ Updated 11 November 2026 from the current checkout. This is the working checklis
 
 ## Current foundation
 
-The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host can search a previously saved local Karaoke Nerds snapshot; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
+The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host has implemented shared catalog connection/preferences and offline query-cache support, with a legacy local-catalog fallback when unconfigured. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
 
 ## Priority 0 — streaming and catalog
 
@@ -32,11 +32,15 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Verify the installed application identity, visible-player and referrer requirements for the separate distributed YouTube preview; queued performances now use downloaded local media.
 - [ ] Verify download interruption/recovery, cached output selection and physical singer-display behavior on show hardware.
 - [ ] Package/test yt-dlp and FFmpeg installation, upgrades and all supported operating systems.
-- [ ] Make the Karaoke Nerds shared MySQL catalog service production-ready and deploy it with a restricted service, backups and restore procedure.
-- [ ] Restore or connect the saved Karaoke Nerds catalog on this host: on 11 November the file at the desktop's expected local location was absent. Search code is implemented, but a usable snapshot/service connection is required; do not trigger an uncoordinated upstream refresh to fill this gap.
-- [ ] Confirm that every old Karaoke Nerds refresher is stopped, retire the local updater, and migrate the existing snapshot and refresh cooldown without another upstream call.
+- [x] Deploy the dedicated shared MySQL catalog search service behind HTTPS and verify server backup/scratch restore using the recovered raw snapshot.
+- [ ] Finish production monitoring, recovery/rotation operations and real desktop end-to-end verification; deployed search is not a working daily-refresh pipeline.
+- [x] Recover and seed the 64,261-record raw Karaoke Nerds snapshot without a new feed request; expose valid unique recordings including unmapped brands.
+- [x] Implement desktop shared HTTPS configuration/preferences and scoped offline query caching (100 entries/20 MiB).
+- [x] Verify live Windows HTTPS status/search against the deployed service and durable offline reuse after a simulated connection failure; the legacy local default snapshot remains absent.
+- [ ] Verify an actual catalog result download, playback and recovery on the host show system.
+- [ ] Locate/reconcile every old Karaoke Nerds refresher and its last attempt/retirement state. The original SQLite/cooldown database was not recovered; lastAttempt/lastSuccess/sqlite_retired_ms remain null and refresh stays disabled.
 - [ ] Schedule a single centrally coordinated refresh at most once per day, including failed attempts and recovery after restart; keep the provider key out of clients.
-- [ ] Connect desktop and remote clients to authenticated shared catalog access with a usable offline cache and a clear stale-data status.
+- [ ] Expand desktop network/recovery checks beyond the passed live status/search and saved-query offline test, and define any future remote singer catalog access; singers currently use only the host library.
 - [ ] Improve brand mapping and review unknown/conflicting brand codes, creator track codes, and alternate video versions.
 - [x] Download individually selected YouTube/catalog videos and attach completed media to the same library identity without overwriting other recordings.
 - [ ] Connect the host's opt-in brand/artist selection to reviewed automatic/bulk yt-dlp jobs; individual downloads are available.
@@ -46,7 +50,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 ## Priority 0 — dependable show operation
 
-- [ ] Verify Windows packaging and installation on real show hardware, including representative MP4 codecs.
+- [x] Build development 0.2.0 Windows installer/ZIP and pass an isolated packaged launch/restart check.
+- [ ] Rebuild the final delivery and verify actual install/upgrade/uninstall and representative codecs on Windows show hardware.
 - [ ] Verify audible output and routing through the connected sound device/mixer, including loss, reconnect and safe rerouting.
 - [ ] Verify the singer display on the external monitor, moving windows, fullscreen, disconnect/reconnect and deliberate recovery.
 - [ ] Make missing files, unreadable media, unsupported codecs and decode errors explain how to recover while retaining the singer's turn.
@@ -57,7 +62,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Add comprehensive end-to-end coverage for queue, transport, import, shortcuts, device loss and display recovery.
-- [ ] Validate Windows, Linux and macOS builds and installation independently; preserve the working local show when network services fail.
+- [ ] Finish Linux package build/installation verification; build and test macOS on a Mac. Windows package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
 
 ## Priority 1 — host, queue and library
 
@@ -119,10 +124,10 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 ## Documentation and release
 
 - [ ] Keep this checklist, [handoff](handoff.md), [host README](../README.md), [singer guide](singer-guide.md) and developer/operator guides synchronized with implemented behavior and tested limits.
-- [x] Reconcile the [Karaoke Nerds operator guide](karaokenerds-catalog.md) with the available local desktop search and separate YouTube preview.
+- [x] Reconcile the [Karaoke Nerds operator guide](karaokenerds-catalog.md) with deployed shared search, private desktop connection, offline query cache and refresh recovery limits.
 - [ ] Regenerate the Word specification from [product specification](product-specification.md) and visually verify it; the existing Word edition is outdated.
 - [ ] Regenerate and visually verify the mockup PDF from the Markdown source when requirements or screens change.
-- [ ] Complete cross-platform packaging, install/update/uninstall and distribution checks; determine stable app identifiers.
+- [ ] Complete platform install/update/uninstall, signing/icon and distribution checks; private catalog configuration and media tools remain separately provisioned. Keep delivery versions 0.x.y until approved 1.0.0.
 - [ ] Prepare a release checklist covering backups, migration/rollback, real-hardware tests, privacy and provider/venue terms.
 
 Provider notes: [provider research](provider-research.md), [Sunfly operator](sunfly-account-status.md), [Stingray operator](stingray-catalog.md), and [Karaoke Nerds catalog](karaokenerds-catalog.md). Current automated tests and prior muted rehearsals are useful evidence, but they do not replace real hardware, real accounts or production verification.

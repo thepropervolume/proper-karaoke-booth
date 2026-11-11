@@ -34,7 +34,7 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
       <label>Artist<input aria-label="YouTube artist" value={artist} maxLength={500} onChange={e=>setArtist(e.target.value)} /></label>
       <button type="submit" disabled={busy || !url.trim() || !title.trim()}>Add YouTube to Library</button>
     </form>
-    <p className="muted">Search the saved local community snapshot. Add a recording to your library to queue it; Preview opens the separate, manually controlled player.</p>
+    <p className="muted">Search the configured shared catalog or saved local snapshot. Add a recording to your library to queue it; Preview opens the separate, manually controlled player.</p>
     <form className="library-toolbar" onSubmit={event => void submit(event)}>
       <label>Artist or song title<input type="search" value={query} maxLength={200} disabled={busy} onChange={event => { setQuery(event.target.value); setResult(null); }} /></label>
       <button type="submit" disabled={busy || query.trim().length < 2}>{busy ? 'Searching…' : 'Search catalog'}</button>
@@ -42,8 +42,11 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
     {error && <p role="alert">{error}</p>}
     {result?.status === 'missing' && <p role="status">No local catalog snapshot was found on this computer.</p>}
     {result?.status === 'uninitialized' && <p role="status">The local catalog snapshot has not been initialized.</p>}
-    {result?.status === 'unavailable' && <p role="status">The local catalog could not be read. Check the snapshot and try again.</p>}
+    {result?.status === 'unavailable' && <p role="status">The catalog could not be reached or read, and no matching offline search was available. Check the connection or local snapshot.</p>}
+    {result && ['unauthorized','forbidden','configuration-error','timed-out','invalid-request','invalid-response','rate-limited'].includes(result.status) && <p role="alert">{result.status === 'unauthorized' || result.status === 'forbidden' ? 'Shared catalog access was rejected. Check the client configuration in Preferences.' : result.status === 'configuration-error' ? 'Choose a valid private shared catalog configuration in Preferences.' : 'The shared catalog request could not be completed. Check the connection and try again.'}</p>}
     {result?.status === 'ready' && <>
+      {result.cachePersisted === false && <p role="status">This search could not be saved for offline use. Check available disk space and app data permissions.</p>}
+      {result.source && <p role="status">{result.source === 'offline-cache' ? `Offline saved search${result.fetchedAt ? ` from ${new Date(result.fetchedAt).toLocaleString()}` : ''}` : 'Shared catalog'}{result.stale ? ' · Catalog may be stale or its upstream refresh time is unknown.' : ''}</p>}
       <p role="status">{result.tracks.length ? `${result.tracks.length} results${result.limited ? ' shown; refine your search for more' : ''}.` : 'No songs match this search.'} {result.lastSuccess === null ? '' : `Snapshot updated ${new Date(result.lastSuccess).toLocaleDateString()}.`}</p>
       <div className="song-list">{result.tracks.map((track, index) => <div className="track-row" key={`${track.id}-${index}`}>
         <div><strong>{track.title}</strong><small>{track.artist} · {track.brand ?? 'Brand not identified'}</small><small>{track.youtubeId ? `YouTube ID: ${track.youtubeId}` : 'No supported YouTube link'}</small></div>

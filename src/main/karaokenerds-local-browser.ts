@@ -3,10 +3,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { parseCommunityCatalog } from '../catalog/karaokenerds';
 import { youtubeVideoId } from '../catalog/karaokenerds-brand-map';
 
-export type LocalCatalogTrack = { id: number; artist: string; title: string; brand: string | null; brandSlug?: string; youtubeId: string | null };
+export type LocalCatalogTrack = { id: number | string; artist: string; title: string; brand: string | null; brandSlug?: string; youtubeId: string | null };
 export type LocalCatalogResult =
-  | { status: 'ready'; tracks: LocalCatalogTrack[]; limited: boolean; lastSuccess: number | null }
-  | { status: 'missing' | 'unavailable' | 'uninitialized'; tracks: []; limited: false; lastSuccess: null };
+  | { status: 'ready'; tracks: LocalCatalogTrack[]; limited: boolean; lastSuccess: number | null; source?: 'shared' | 'offline-cache'; fetchedAt?: number; stale?: boolean; revision?: string | null; cachePersisted?: boolean }
+  | { status: 'missing' | 'unavailable' | 'uninitialized' | 'unauthorized' | 'forbidden' | 'configuration-error' | 'rate-limited' | 'timed-out' | 'invalid-request' | 'invalid-response'; tracks: []; limited: false; lastSuccess: null };
 
 type Entry = { track: LocalCatalogTrack; search: string };
 const normalize = (value: string) => value.normalize('NFKC').toLocaleLowerCase().trim();

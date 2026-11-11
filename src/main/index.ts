@@ -32,13 +32,15 @@ import { CdgImport } from './cdg-import';
 import { ShowBackup } from './show-backup';
 import { HistoryExport } from './history-export';
 import { DisplayFullscreen } from './display-fullscreen';
-import { LocalCommunityBrowser } from './karaokenerds-local-browser';
+import { LocalCommunityBrowser, type LocalCatalogResult } from './karaokenerds-local-browser';
+import { SharedCatalogConnection } from './shared-catalog-connection';
 import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-window';
 import { YouTubeAudioGate } from './youtube-audio-gate';
 import { YouTubeDownloads } from './youtube-download';
 import { resolveYtDlpExecutable } from './youtube-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
+import { applicationUserData } from './user-data-path';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -48,6 +50,8 @@ let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
 let communityBrowser: LocalCommunityBrowser | null = null;
+let sharedCatalog: SharedCatalogConnection | null = null;
+function catalogConfigFile(): string { return settings.sharedCatalogConfigFile || join(app.getPath('userData'), 'catalog-connection.json'); }
 let state: ShowState;
 let settings: Settings;
 const settingsUpdates = new SettingsUpdateQueue();
@@ -445,6 +449,9 @@ async function serveMedia(request: Request): Promise<Response> {
 }
 
 // Only one process can own the show and audible player at a time.
+const selectedUserData = applicationUserData({ appData: app.getPath('appData'), current: app.getPath('userData'), appName: app.getName(),
+  packaged: app.isPackaged, explicit: app.commandLine.getSwitchValue('user-data-dir') || undefined });
+app.setPath('userData', selectedUserData);
 const hasInstanceLock = app.requestSingleInstanceLock();
 if (!hasInstanceLock) app.quit();
 else {
@@ -464,6 +471,7 @@ else {
   settings = readSettings(settingsPath);
   const localData = process.platform === 'win32' ? process.env.LOCALAPPDATA : process.env.XDG_DATA_HOME || join(app.getPath('home'), '.local', 'share');
   communityBrowser = new LocalCommunityBrowser(join(localData || app.getPath('userData'), 'ProperKaraokeBooth', 'karaokenerds', 'community.sqlite'));
+  sharedCatalog = new SharedCatalogConnection(join(app.getPath('userData'), 'shared-catalog-cache', 'queries.json'));
   logoData = await loadLogo(logoPath);
   store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
   state = store.load() ?? createInitialState(randomUUID(), randomUUID());
@@ -617,8 +625,31 @@ else {
     publishMissingRequests();
     return { ok: true };
   });
+  ipcMain.handle('host:app-version', event => { guardHost(event.sender.id); return app.getVersion(); });
+  ipcMain.handle('host:choose-catalog-config', async event => {
+    guardHost(event.sender.id); if (!host || shuttingDown) return null;
+    const selected = await dialog.showOpenDialog(host, {title:'Choose private shared catalog configuration',properties:['openFile'],filters:[{name:'Catalog client configuration',extensions:['json']}]});
+    return selected.canceled || shuttingDown ? null : selected.filePaths[0] ?? null;
+  });
+  ipcMain.handle('host:catalog-status', async (event, path: unknown) => {
+    guardHost(event.sender.id); if (!sharedCatalog || shuttingDown) return {status:'unavailable'};
+    if (path !== undefined && (typeof path !== 'string' || path.length > 4096)) return {status:'configuration-error'};
+    const requested = typeof path === 'string' && path ? path : catalogConfigFile();
+    return sharedCatalog.status(requested, requested === catalogConfigFile());
+  });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
-  ipcMain.handle('host:karaokenerds-search', (event, query: unknown) => { guardHost(event.sender.id); if (!communityBrowser) throw new Error('Catalog unavailable.'); return communityBrowser.search(query); });
+  ipcMain.handle('host:karaokenerds-search', async (event, query: unknown): Promise<LocalCatalogResult> => {
+    guardHost(event.sender.id);
+    const config = catalogConfigFile();
+    if (settings.sharedCatalogEnabled && settings.sharedCatalogConfigFile && !existsSync(config)) return {status:'configuration-error',tracks:[],limited:false,lastSuccess:null};
+    if (settings.sharedCatalogEnabled && existsSync(config) && sharedCatalog) {
+      const result = await sharedCatalog.search(config, query);
+      if (shuttingDown || !settings.sharedCatalogEnabled || config !== catalogConfigFile()) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
+      return result;
+    }
+    if (!communityBrowser) throw new Error('Catalog unavailable.');
+    return communityBrowser.search(query);
+  });
   ipcMain.handle('host:add-youtube', async (event, input: unknown) => {
     guardHost(event.sender.id);
     if (shuttingDown || !isRecord(input) || !shortString(input.title) || typeof input.artist !== 'string' || input.artist.length > 500) return { ok: false, error: 'Enter a song title and optional artist.' };

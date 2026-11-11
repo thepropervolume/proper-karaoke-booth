@@ -3,6 +3,7 @@ import type { Settings } from '../domain/settings';
 import { AudioOutputPicker } from './AudioOutputPicker';
 import { BumperControls } from './BumperPanel';
 import { HostRemotePanel } from '../remote/HostRemotePanel';
+import { SharedCatalogControls } from './SharedCatalogControls';
 import '../styles/settings.scss';
 
 export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: {
@@ -33,6 +34,7 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
     <form onSubmit={event => void submit(event)}>
       <h2 id="settings-title">Preferences</h2>
       <div className="settings-groups">
+        <SharedCatalogControls value={draft} onChange={setDraft} />
         <details className="settings-group" open>
           <summary>Appearance</summary>
           <div className="settings-group__content">

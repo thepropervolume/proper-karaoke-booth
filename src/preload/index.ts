@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 contextBridge.exposeInMainWorld('tpv', {
+  getAppVersion: () => ipcRenderer.invoke('host:app-version'),
+  chooseSharedCatalogConfiguration: () => ipcRenderer.invoke('host:choose-catalog-config'),
+  getSharedCatalogStatus: (file?: string) => ipcRenderer.invoke('host:catalog-status', file),
   getState: () => ipcRenderer.invoke('host:get-state'),
   getTimeline: () => ipcRenderer.invoke('host:get-timeline'),
   seek: (input: unknown) => ipcRenderer.invoke('host:seek', input),

@@ -30,6 +30,7 @@ import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { requestWithSinger } from './request-singer';
 import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
+import type { CatalogConnectionStatus } from '../main/shared-catalog-connection';
 import type { ImportProgress } from '../domain/import-job';
 import type { BackupResult } from '../main/show-backup';
 import type { HistoryExportResult } from '../main/history-export';
@@ -43,6 +44,9 @@ function formatShortcut(binding: string): string { return binding.split('+').map
 declare global {
   interface Window {
     tpv: {
+      getAppVersion: () => Promise<string>;
+      chooseSharedCatalogConfiguration: () => Promise<string | null>;
+      getSharedCatalogStatus: (file?: string) => Promise<CatalogConnectionStatus>;
       getState: () => Promise<ShowState>;
       getTimeline: () => Promise<PlaybackTimelineState>;
       onTimeline: (callback: (value: PlaybackTimelineState) => void) => () => void;
@@ -96,7 +100,9 @@ declare global {
 }
 
 function App() {
+  const [appVersion, setAppVersion] = useState('');
   const [state, setState] = useState<ShowState | null>(null);
+  useEffect(() => { let alive = true; void window.tpv.getAppVersion().then(value => {if(alive)setAppVersion(value);}).catch(() => {});return()=>{alive=false;}; }, []);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [screen, setScreen] = useState<Screen>('library');
   const [search, setSearch] = useState('');
@@ -373,7 +379,7 @@ function App() {
   return <div className="app" data-layout={settings.layout}>
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">▥</span><span>The Proper Volume<small>Karaoke host</small></span></div>
-      <h1>Local rehearsal</h1>
+      <h1>Local rehearsal{appVersion && <small style={{marginLeft:'0.6em'}} aria-label="Application version">v{appVersion}</small>}</h1>
       <Tooltip text={`Accent color: ${settings.accentColor}. Switch to ${nextAccentColor(settings.accentColor)}`}><button className="icon-button accent-button" aria-label={`Accent color: ${settings.accentColor}. Switch to ${nextAccentColor(settings.accentColor)}`} onClick={() => void cycleAccent()} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
       <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>
       <Tooltip text="Singer Display"><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
