@@ -1,5 +1,5 @@
 /** Shared MySQL 8 catalog storage. Upstream credentials never belong in this database. */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { parseCommunityCatalog, type CommunityCatalog } from './karaokenerds';
 import { validateSQLiteExport, type CatalogMigrationExport } from './karaokenerds-migration-schema';
@@ -19,6 +19,8 @@ export type SharedCatalogSnapshot = {
   videoMetadata: { youtubeId: string; brandSlug: string; producerTrackCode: string | null; codeSource: string | null }[];
   videoDates: { youtubeId: string; uploadDate: string | null; releaseDate: string | null; source: string; observedAt: number }[];
   revision: string;
+  lastAttempt: number | null;
+  lastSuccess: number | null;
 };
 
 function millis(value: DbTime): number | null {
@@ -134,6 +136,46 @@ export class MySqlCommunityCatalogStore {
     finally { connection.release(); }
   }
 
+  /**
+   * Publish an existing raw snapshot for reads when refresh history is missing.
+   * Unknown attempt/success/retirement times remain NULL. In particular, the
+   * refresh gate rejects this state before calling its fetcher; this is not a
+   * migration of refresh authority or permission to start an updater.
+   */
+  async seedReadOnlyCatalog(input: unknown): Promise<void> {
+    const parsed = parseCommunityCatalog(input);
+    // Fixed field order gives the same digest for equivalent JSON input while
+    // excluding unknown raw fields from the stored public metadata snapshot.
+    const snapshot = JSON.stringify({ Items: parsed.Items.map(item => ({ Id: item.Id, Artist: item.Artist,
+      Title: item.Title, Brand: item.Brand, Watch: item.Watch, Created: item.Created })) });
+    const digest = createHash('sha256').update(snapshot, 'utf8').digest('hex');
+    const connection = await this.pool.getConnection(); let transaction = false, destroy = false;
+    try {
+      await connection.beginTransaction(); transaction = true;
+      const row = await queryState(connection, true);
+      if (row.snapshot !== null || row.last_attempt_ms !== null || row.last_success_ms !== null || row.attempt_token !== null)
+        throw new Error('Catalog is already initialized.');
+      const [markers] = await connection.query<(RowDataPacket & { import_sha256: string | null; sqlite_retired_ms: DbTime; revision: string })[]>(
+        'SELECT import_sha256, sqlite_retired_ms, CAST(revision AS CHAR) AS revision FROM tpv_kn_state WHERE id = 1');
+      if (markers.length !== 1 || markers[0].import_sha256 !== null || markers[0].sqlite_retired_ms !== null || markers[0].revision !== '0')
+        throw new Error('Catalog state is not empty.');
+      const [tables] = await connection.query<(RowDataPacket & { name: string })[]>(
+        "SELECT TABLE_NAME AS name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'");
+      const [versions] = await connection.query<(RowDataPacket & { version: number })[]>('SELECT version FROM tpv_kn_version WHERE id = 1');
+      if (tables.length !== SCHEMA_TABLES.length || tables.some(table => !SCHEMA_TABLES.includes(table.name)) || versions.length !== 1 || versions[0].version !== 1)
+        throw new Error('Catalog database is not dedicated and initialized.');
+      for (const table of ['tpv_kn_brands', 'tpv_kn_videos', 'tpv_kn_dates']) {
+        const [existing] = await connection.query<RowDataPacket[]>(`SELECT 1 AS present FROM ${table} LIMIT 1 FOR UPDATE`);
+        if (existing.length) throw new Error('Catalog metadata tables are not empty.');
+      }
+      const [updated] = await connection.execute<ResultSetHeader>(
+        'UPDATE tpv_kn_state SET snapshot = CAST(? AS JSON), import_sha256 = ?, revision = revision + 1 WHERE id = 1', [snapshot, digest]);
+      if (updated.affectedRows !== 1) throw new Error('Catalog state is unavailable.');
+      await connection.commit(); transaction = false;
+    } catch (error) { if (transaction) try { await connection.rollback(); } catch { destroy = true; } throw error; }
+    finally { if (destroy) connection.destroy(); else connection.release(); }
+  }
+
   /** Import a verified, complete SQLite export into an empty dedicated database. */
   async importCatalog(input: unknown): Promise<void> {
     const data: CatalogMigrationExport = validateSQLiteExport(input);
@@ -221,12 +263,13 @@ export class MySqlCommunityCatalogStore {
     try {
       await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       await connection.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY'); transaction = true;
-      const [state] = await connection.query<(RowDataPacket & { snapshot: unknown; revision: string })[]>("SELECT snapshot, CAST(revision AS CHAR) AS revision FROM tpv_kn_state WHERE id = 1");
+      const [state] = await connection.query<(RowDataPacket & { snapshot: unknown; revision: string; last_attempt_ms: DbTime; last_success_ms: DbTime })[]>("SELECT snapshot, CAST(revision AS CHAR) AS revision, last_attempt_ms, last_success_ms FROM tpv_kn_state WHERE id = 1");
       if (state.length !== 1 || state[0].snapshot === null || !/^\d+$/.test(state[0].revision)) throw new Error('Catalog is not initialized.');
       const [brands] = await connection.query<(RowDataPacket & { slug: string; name: string; upstreamBrand: string; observedAt: string })[]>('SELECT slug, display_name AS name, upstream_brand AS upstreamBrand, observed_at AS observedAt FROM tpv_kn_brands ORDER BY display_name, slug');
       const [videos] = await connection.query<(RowDataPacket & { youtubeId: string; brandSlug: string; producerTrackCode: string | null; codeSource: string | null })[]>('SELECT youtube_id AS youtubeId, brand_slug AS brandSlug, producer_track_code AS producerTrackCode, code_source AS codeSource FROM tpv_kn_videos ORDER BY youtube_id');
       const [dates] = await connection.query<(RowDataPacket & { youtubeId: string; uploadDate: string | null; releaseDate: string | null; source: string; observedAt: string })[]>('SELECT youtube_id AS youtubeId, upload_date AS uploadDate, release_date AS releaseDate, source, observed_at AS observedAt FROM tpv_kn_dates ORDER BY youtube_id');
       const snapshot: SharedCatalogSnapshot = { catalog: decodeSnapshot(state[0].snapshot), revision: state[0].revision,
+        lastAttempt: millis(state[0].last_attempt_ms), lastSuccess: millis(state[0].last_success_ms),
         brandMappings: brands.map(row => ({ slug: row.slug, name: row.name, upstreamBrand: row.upstreamBrand, observedAt: millis(row.observedAt)! })),
         videoMetadata: videos.map(row => ({ youtubeId: row.youtubeId, brandSlug: row.brandSlug, producerTrackCode: row.producerTrackCode, codeSource: row.codeSource })),
         videoDates: dates.map(row => ({ youtubeId: row.youtubeId, uploadDate: row.uploadDate, releaseDate: row.releaseDate, source: row.source, observedAt: millis(row.observedAt)! })) };

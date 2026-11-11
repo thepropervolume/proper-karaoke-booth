@@ -1,0 +1,11 @@
+[Unit]
+Description=Check hourly whether the shared karaoke catalog is due for its daily refresh
+
+[Timer]
+OnCalendar=hourly
+Persistent=yes
+AccuracySec=1min
+Unit=tpv-karaoke-catalog-refresh.service
+
+[Install]
+WantedBy=timers.target

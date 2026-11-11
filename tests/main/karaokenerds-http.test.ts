@@ -48,6 +48,45 @@ test('passes bounded search values to the reader and projects only public fields
   });
 });
 
+test('projects optional freshness and unmapped brand codes without leaking internal fields', async () => {
+  const metadata = { revision: '12', lastAttempt: 2000, lastSuccess: 1000 };
+  await withServer({ async search() {
+    return { items: [{ ...item, brandSlug: '', brandCode: 'UPSTREAM', secret: 'never-return' }], nextCursor: null,
+      metadata: { ...metadata, privateEndpoint: 'never-return' } };
+  } }, async origin => {
+    const response = await fetch(`${origin}/v1/catalog/tracks`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { items: [{ ...item, brandSlug: '', brandCode: 'UPSTREAM' }], nextCursor: null, metadata });
+  });
+});
+
+test('status requires the same authentication and returns only validated public counts and freshness', async () => {
+  let calls = 0;
+  const status = { revision: '12', lastAttempt: 2000, lastSuccess: 1000, recordCount: 10, searchableCount: 8 };
+  await withServer({ async search() { throw new Error('Search should not be called.'); }, async status() { calls++; return { ...status, privatePath: 'never-return' }; } }, async origin => {
+    assert.equal((await fetch(`${origin}/v1/catalog/status`)).status, 401); assert.equal(calls, 0);
+    const response = await fetch(`${origin}/v1/catalog/status`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200); assert.deepEqual(await response.json(), status); assert.equal(calls, 1);
+    for (const suffix of ['?token=anything', '?limit=1', '/']) {
+      assert.equal((await fetch(`${origin}/v1/catalog/status${suffix}`, { headers: { authorization: `Bearer ${token}` } })).status, 400);
+    }
+    assert.equal(calls, 1);
+  });
+});
+
+test('rejects malformed status and freshness instead of serving misleading counts or times', async () => {
+  const status = { revision: '12', lastAttempt: 2000, lastSuccess: 1000, recordCount: 10, searchableCount: 8 };
+  for (const bad of [{ ...status, searchableCount: 11 }, { ...status, lastSuccess: -1 }, { ...status, revision: '01' }]) {
+    await withServer({ async search() { return { items: [], nextCursor: null }; }, async status() { return bad; } }, async origin => {
+      const response = await fetch(`${origin}/v1/catalog/status`, { headers: { authorization: `Bearer ${token}` } });
+      assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: 'Catalog unavailable' });
+    });
+  }
+  await withServer({ async search() { return { items: [], nextCursor: null, metadata: { revision: '1', lastSuccess: Number.NaN, lastAttempt: 1 } }; } }, async origin => {
+    assert.equal((await fetch(`${origin}/v1/catalog/tracks`, { headers: { authorization: `Bearer ${token}` } })).status, 503);
+  });
+});
+
 test('rejects invalid routes, duplicate or unknown parameters, bad cursors and unsafe limits', async () => {
   let calls = 0;
   await withServer({ async search() { calls++; return { items: [], nextCursor: null }; } }, async origin => {
@@ -65,6 +104,8 @@ test('returns a generic error for backend failures or malformed results without 
   const failures: CatalogReader[] = [
     { async search() { throw new Error(`private: ${token}`); } },
     { async search() { return { items: [{ ...item, youtubeId: 'not-an-id' }], nextCursor: null }; } },
+    { async search() { return { items: [{ ...item, artist: 'A'.repeat(501) }], nextCursor: null }; } },
+    { async search() { return { items: [{ ...item, title: 'T'.repeat(501) }], nextCursor: null }; } },
     { async search() { return { items: Array(26).fill(item), nextCursor: null }; } },
   ];
   for (const reader of failures) await withServer(reader, async origin => {

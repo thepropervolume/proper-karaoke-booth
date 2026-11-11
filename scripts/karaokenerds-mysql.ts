@@ -29,7 +29,8 @@ function mysqlConfig(): PoolOptions {
 
 async function main(): Promise<void> {
   const operation = process.argv[2];
-  if (process.argv.length !== 3 || !['initialize', 'import', 'status', 'refresh', 'recover-refresh'].includes(operation)) throw new Error('Invalid operation.');
+  if (process.argv.length !== 3 || !['initialize', 'import', 'seed-readonly', 'status', 'refresh', 'recover-refresh'].includes(operation)) throw new Error('Invalid operation.');
+  if (operation === 'seed-readonly' && process.env.TPV_KN_REFRESH_DISABLED !== 'yes') throw new Error('Read-only snapshot seeding requires disabled refresh.');
   const pool = createPool(mysqlConfig());
   try {
     if (operation === 'initialize') {
@@ -37,7 +38,11 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({ status: 'initialized' }));
     } else {
       const store = new MySqlCommunityCatalogStore(pool);
-      if (operation === 'import') {
+      if (operation === 'seed-readonly') {
+        const raw = JSON.parse(privateFile('TPV_KN_RAW_SNAPSHOT_FILE', 128 * 1024 * 1024)) as unknown;
+        await store.seedReadOnlyCatalog(raw);
+        console.log(JSON.stringify({ status: 'seeded-readonly', refreshEnabled: false }));
+      } else if (operation === 'import') {
         if (process.env.TPV_KN_LEGACY_UPDATER_STOPPED !== 'yes') throw new Error('Stop the legacy updater first.');
         const exported = JSON.parse(privateFile('TPV_KN_SQLITE_EXPORT_FILE', 128 * 1024 * 1024)) as unknown;
         await store.importCatalog(exported);

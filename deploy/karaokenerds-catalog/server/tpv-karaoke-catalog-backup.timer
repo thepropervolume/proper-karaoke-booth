@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily private TPV karaoke catalog backup
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 UTC
+Persistent=yes
+AccuracySec=1min
+Unit=tpv-karaoke-catalog-backup.service
+
+[Install]
+WantedBy=timers.target

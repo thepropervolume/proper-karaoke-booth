@@ -1,0 +1,50 @@
+[Unit]
+Description=TPV single karaoke metadata updater (durable 24-hour cooldown)
+After=mysql.service network-online.target
+Wants=network-online.target
+Requires=mysql.service
+ConditionPathExists=/etc/tpv-karaoke-catalog/refresh-enabled.json
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+User=tpv-catalog-updater
+Group=tpv-catalog-updater
+UMask=0077
+RuntimeDirectory=tpv-karaoke-catalog-updater
+RuntimeDirectoryMode=0700
+WorkingDirectory=/opt/tpv-karaoke-catalog
+EnvironmentFile=/etc/tpv-karaoke-catalog/production.env
+Environment=TPV_KN_MYSQL_USER=tpv_kn_writer
+Environment=TPV_KN_MYSQL_PASSWORD_FILE=/run/tpv-karaoke-catalog-updater/mysql.password
+Environment=TPV_KN_UPSTREAM_URL_FILE=/run/tpv-karaoke-catalog-updater/upstream.url
+Environment=TPV_KN_SINGLE_UPDATER_CONFIRMED=yes
+# The preflight runs as root; provider credentials are read only by the isolated updater.
+ExecStartPre=+/usr/bin/python3 /opt/tpv-karaoke-catalog/verify-refresh-gate.py
+LoadCredential=mysql.password:/etc/tpv-karaoke-catalog/writer.password
+LoadCredential=upstream.url:/etc/tpv-karaoke-catalog/upstream.url
+ExecStartPre=/usr/bin/install -m0400 %d/mysql.password /run/tpv-karaoke-catalog-updater/mysql.password
+ExecStartPre=/usr/bin/install -m0400 %d/upstream.url /run/tpv-karaoke-catalog-updater/upstream.url
+ExecStart=/opt/tpv-karaoke-catalog/node /opt/tpv-karaoke-catalog/catalog-operator.cjs refresh
+TimeoutStartSec=5min
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LimitNOFILE=256
+TasksMax=64
+MemoryMax=512M

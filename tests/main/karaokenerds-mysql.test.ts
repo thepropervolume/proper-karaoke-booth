@@ -1,5 +1,6 @@
 /** Explicit opt-in only: a disposable local MySQL database with synthetic credentials. */
 import { strict as assert } from 'node:assert';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { createPool, type Pool, type PoolConnection, type RowDataPacket } from 'mysql2/promise';
 import { catalogMigrationIntegrity, type CatalogMigrationPayload } from '../../src/catalog/karaokenerds-migration-schema';
@@ -18,7 +19,7 @@ const payload: CatalogMigrationPayload = {
 };
 const bundle = { ...payload, integrity: catalogMigrationIntegrity(payload) };
 
-test('MySQL 8 catalog import, daily gate, cross-connection lock and failure retention', { skip: !enabled }, async () => {
+test('MySQL 8 catalog import, daily gate, cross-connection lock and failure retention', { skip: !enabled }, async t => {
   // Intentionally cannot select a remote host or user database: this suite is
   // intended exclusively for the locally spawned disposable test container.
   const pool = createPool({ host: '127.0.0.1', port: Number(rawPort), user: 'tpvtest', password: 'synthetic_test_only', database: 'tpvtest',
@@ -34,6 +35,42 @@ test('MySQL 8 catalog import, daily gate, cross-connection lock and failure rete
     assert.equal(await first.read(), null);
     assert.equal((await first.refresh(async () => { calls++; return payload.snapshot; })).status, 'not-initialized');
     assert.equal(calls, 0);
+    await t.test('raw read-only seeding preserves unknown refresh history and cannot enable fetching', async () => {
+      await assert.rejects(first.seedReadOnlyCatalog({ Items: [] }), /Invalid catalog/);
+      await pool.query("INSERT INTO tpv_kn_brands (slug, display_name, upstream_brand, observed_at) VALUES ('Stray', 'Synthetic stray', 'STRAY', 1)");
+      await assert.rejects(first.seedReadOnlyCatalog(payload.snapshot), /metadata tables are not empty/);
+      await pool.query("DELETE FROM tpv_kn_brands WHERE slug = 'Stray'");
+      const commitFailurePool = { getConnection: async () => {
+        const connection = await pool.getConnection();
+        return new Proxy(connection, { get(target, property) {
+          if (property === 'commit') return async () => { throw new Error('Synthetic seed commit failure'); };
+          const value = Reflect.get(target, property, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        } }) as PoolConnection;
+      } } as unknown as Pool;
+      await assert.rejects(new MySqlCommunityCatalogStore(commitFailurePool).seedReadOnlyCatalog(payload.snapshot), /Synthetic seed commit failure/);
+      assert.equal(await first.read(), null);
+      const [rolledBack] = await pool.query<(RowDataPacket & { import_sha256: string | null; revision: string })[]>('SELECT import_sha256, CAST(revision AS CHAR) AS revision FROM tpv_kn_state WHERE id = 1');
+      assert.deepEqual({ hash: rolledBack[0].import_sha256, revision: rolledBack[0].revision }, { hash: null, revision: '0' });
+      const reordered = { ignored: 'synthetic-private-field', Items: payload.snapshot.Items.map(item => ({
+        Created: item.Created, Watch: item.Watch, Brand: item.Brand, Title: item.Title, Artist: item.Artist, Id: item.Id, ignored: 'synthetic-private-field',
+      })) };
+      await first.seedReadOnlyCatalog(reordered);
+      assert.deepEqual(await first.read(), payload.snapshot);
+      assert.deepEqual(await first.status(), { lastAttempt: null, lastSuccess: null, nextAttempt: null, recoveryRequired: false });
+      const [seeded] = await pool.query<(RowDataPacket & { import_sha256: string; sqlite_retired_ms: string | null })[]>('SELECT import_sha256, sqlite_retired_ms FROM tpv_kn_state WHERE id = 1');
+      assert.equal(seeded[0].import_sha256, createHash('sha256').update(JSON.stringify(payload.snapshot)).digest('hex'));
+      assert.equal(seeded[0].sqlite_retired_ms, null);
+      assert.deepEqual(await createMySqlCatalogReader(first).status(), { revision: '1', lastAttempt: null, lastSuccess: null, recordCount: 4, searchableCount: 4 });
+      assert.equal((await first.refresh(async () => { calls++; return payload.snapshot; })).status, 'not-initialized');
+      assert.equal(calls, 0);
+      await assert.rejects(first.seedReadOnlyCatalog(payload.snapshot), /already initialized/);
+      await assert.rejects(first.importCatalog(bundle), /already initialized/);
+      // Reset only this explicitly disposable test schema for the separate
+      // full-history migration tests below. Production has no such operation.
+      await pool.query('UPDATE tpv_kn_state SET snapshot = NULL, import_sha256 = NULL, revision = 0 WHERE id = 1');
+      assert.equal(await first.read(), null);
+    });
     const failPool = { getConnection: async () => {
       const connection = await pool.getConnection();
       return new Proxy(connection, { get(target, property) {
@@ -83,6 +120,8 @@ test('MySQL 8 catalog import, daily gate, cross-connection lock and failure rete
     await first.saveVideoDates('abcdefghij2', { uploadDate: '2026-05-01', releaseDate: null, provenance: 'yt-dlp' }, 103);
     const coherent = await first.searchSnapshot();
     assert.equal(coherent.revision, '4'); assert.equal(coherent.videoMetadata.length, 2); assert.equal(coherent.videoDates.length, 2);
+    assert.equal(coherent.lastSuccess, 900); assert.ok(coherent.lastAttempt! >= before - 5000);
+    assert.deepEqual(await reader.status(), { revision: '4', lastAttempt: coherent.lastAttempt, lastSuccess: 900, recordCount: 4, searchableCount: 4 });
     assert.equal(coherent.videoMetadata[1].producerTrackCode, 'SYN-004');
     const firstPage = await reader.search(request); assert.equal(firstPage.items.length, 1); assert.ok(firstPage.nextCursor);
     await assert.rejects(first.saveBrandMapping({ slug: 'syntheticbrand', name: 'Conflict', upstreamBrand: 'OTHER' }, 104), /conflicts/);
