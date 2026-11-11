@@ -20,6 +20,7 @@ function validState(value: unknown): boolean {
       !Array.isArray(value.usedGenerationIds) || !value.usedGenerationIds.every(id) || !Array.isArray(value.receipts) ||
       !whole(value.currentRound) || (value.currentRound as number) < 1 || !whole(value.nextOrder) || (value.nextOrder as number) < 1 ||
       typeof value.finalTurnBegun !== 'boolean' || !(value.stagedRequestId === null || id(value.stagedRequestId)) ||
+      !(value.promotedRequestId === undefined || value.promotedRequestId === null || id(value.promotedRequestId)) ||
       (value.nextStartAtMs !== undefined && (!whole(value.nextStartAtMs)))) return false;
   if (!record(value.policy) || typeof value.policy.ageRestricted !== 'boolean' ||
       !(value.policy.includeVersionIds === null || (Array.isArray(value.policy.includeVersionIds) && value.policy.includeVersionIds.every(id))) ||
@@ -35,6 +36,15 @@ function validState(value: unknown): boolean {
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
   if (new Set(requests.map(request => request.id)).size !== requests.length) return false;
+  if (value.promotedRequestId !== undefined && value.promotedRequestId !== null) {
+    const promoted = requests.find(request => request.id === value.promotedRequestId);
+    const version = promoted && value.versions.find(item => (item as Record<string, unknown>).id === promoted.versionId) as Record<string, unknown> | undefined;
+    const policy = value.policy;
+    if (!promoted || !['accepted', 'staged', 'playing'].includes(String(promoted.status)) || !version ||
+        (policy.excludeVersionIds as string[]).includes(String(promoted.versionId)) ||
+        (policy.includeVersionIds !== null && !(policy.includeVersionIds as string[]).includes(String(promoted.versionId))) ||
+        (policy.ageRestricted === true && version.rating !== 'clean')) return false;
+  }
   const staged = requests.filter(request => request.status === 'staged');
   const playing = requests.filter(request => request.status === 'playing');
   // Orphaned or duplicate active rows cannot be resumed or released after a

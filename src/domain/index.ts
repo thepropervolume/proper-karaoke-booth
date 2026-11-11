@@ -20,6 +20,7 @@ export type Command =
   | { type: 'request'; requestId: string; singerId: string; versionId: string }
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
+  | { type: 'promoteRequest'; requestId: string }
   | { type: 'rejectRequest'; requestId: string }
   | { type: 'withdrawRequest'; requestId: string }
   | { type: 'stage' }
@@ -37,6 +38,8 @@ export type ShowState = {
   singers: Singer[]; versions: Version[]; requests: SongRequest[];
   policy: Policy; currentRound: number; finalTurnBegun: boolean; nextOrder: number;
   stagedRequestId: string | null; playback: Playback | null; usedGenerationIds: string[];
+  /** One explicit host override; optional for shows saved by older versions. */
+  promotedRequestId?: string | null;
   /** Absolute deadline, persisted across host restart. */
   nextStartAtMs?: number;
   receipts: Receipt[];
@@ -47,7 +50,7 @@ export function createInitialState(showId: string, hostEpoch: string): ShowState
   return { showId, hostEpoch, revision: 0, singers: [], versions: [], requests: [],
     policy: { ageRestricted: false, includeVersionIds: null, excludeVersionIds: [] },
     currentRound: 1, finalTurnBegun: false, nextOrder: 1, stagedRequestId: null,
-    playback: null, usedGenerationIds: [], receipts: [] };
+    playback: null, usedGenerationIds: [], promotedRequestId: null, receipts: [] };
 }
 
 /** The same predicate must also guard catalog search and direct lookups. */
@@ -82,6 +85,7 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode']):
   return future.sort((left, right) => {
     const a = left.request, b = right.request;
     return (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
+      (a.id === state.promotedRequestId ? -1 : 0) - (b.id === state.promotedRequestId ? -1 : 0) ||
       // Request arrays are append-only, so this also preserves FIFO for older
       // shows and for requests approved in a different order than they arrived.
       (mode === 'fifo' ? left.index - right.index : a.round! - b.round! ||
@@ -181,7 +185,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       const request = state.requests.find(r => r.id === cmd.requestId && r.singerId === envelope.actor.id);
       if (!request) reject('FORBIDDEN', 'Request is not available');
       else if (!['pending', 'accepted'].includes(request.status)) reject('INVALID_STATE', 'Only a pending or queued request can be withdrawn');
-      else request.status = 'withdrawn';
+      else { request.status = 'withdrawn'; if (state.promotedRequestId === request.id) state.promotedRequestId = null; }
       break;
     }
     case 'removeRequest': {
@@ -189,8 +193,16 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!request || !['pending', 'accepted', 'staged'].includes(request.status)) reject('INVALID_STATE', 'Only a pending, accepted, or staged request can be removed');
       else {
         if (state.stagedRequestId === request.id) state.stagedRequestId = null;
+        if (state.promotedRequestId === request.id) state.promotedRequestId = null;
         request.status = 'removed';
       }
+      break;
+    }
+    case 'promoteRequest': {
+      const request = state.requests.find(r => r.id === cmd.requestId);
+      if (!request || request.status !== 'accepted') reject('INVALID_STATE', 'Only an accepted waiting request can be promoted');
+      else if (!isVersionAllowed(state, request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else state.promotedRequestId = request.id;
       break;
     }
     case 'stage': {
@@ -217,7 +229,11 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else if (!nonempty(cmd.generationId) || state.usedGenerationIds.includes(cmd.generationId)) reject('INVALID', 'Playback generation must be new');
       else {
         // Preparing a later song does not consume or advance the active round.
-        if (staged.round! > state.currentRound) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
+        // An explicit promotion (or FIFO mode) can start a later round before
+        // earlier eligible turns. Keep the current round open until those turns run.
+        const earlierWaiting = state.requests.some(r => r.status === 'accepted' && r.round !== null &&
+          r.round < staged.round! && isVersionAllowed(state, r.versionId));
+        if (staged.round! > state.currentRound && !earlierWaiting) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
         staged.status = 'playing'; state.stagedRequestId = null;
         state.playback = { requestId: staged.id, generationId: cmd.generationId, status: 'playing' };
         state.usedGenerationIds.push(cmd.generationId);
@@ -249,7 +265,9 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!active || state.playback?.generationId !== cmd.generationId) reject('STALE_GENERATION', 'Playback generation is no longer active');
       else if (cmd.type === 'skip' && cmd.confirmed !== true) reject('CONFIRMATION_REQUIRED', 'Skip must be confirmed');
       else {
-        active.status = cmd.type === 'complete' ? 'completed' : 'skipped'; state.playback = null;
+        active.status = cmd.type === 'complete' ? 'completed' : 'skipped';
+        if (state.promotedRequestId === active.id) state.promotedRequestId = null;
+        state.playback = null;
         state.nextStartAtMs = nowMs + (settings.pauseIntervalSeconds ?? 0) * 1000;
       }
       break;
@@ -258,6 +276,8 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       const p = cmd.policy;
       if (!p || typeof p.ageRestricted !== 'boolean' || !(p.includeVersionIds === null || (Array.isArray(p.includeVersionIds) && p.includeVersionIds.every(nonempty))) || !Array.isArray(p.excludeVersionIds) || !p.excludeVersionIds.every(nonempty)) { reject('INVALID', 'Invalid policy'); break; }
       state.policy = { ageRestricted: p.ageRestricted, includeVersionIds: p.includeVersionIds === null ? null : [...p.includeVersionIds], excludeVersionIds: [...p.excludeVersionIds] };
+      const promoted = state.requests.find(r => r.id === state.promotedRequestId);
+      if (promoted && !isVersionAllowed(state, promoted.versionId)) state.promotedRequestId = null;
       const staged = state.requests.find(r => r.id === state.stagedRequestId && r.status === 'staged');
       if (staged && !isVersionAllowed(state, staged.versionId)) { staged.status = 'accepted'; state.stagedRequestId = null; }
       break;

@@ -53,7 +53,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 ## Priority 1 — host, queue and library
 
-- [ ] Add manual request reordering and promotion without unexpectedly changing the staged song.
+- [x] Allow the host to promote one waiting request without displacing the staged song.
+- [ ] Add full manual request reordering without unexpectedly changing the staged song.
 - [ ] Move a request between singers with an explicit fairness policy and visible history.
 - [ ] Add singer hold, absence, return and skip-turn controls; define returning-singer fairness.
 - [ ] Show current singer, upcoming singers, queue position and clearly approximate wait time.

@@ -31,3 +31,30 @@ test('snapshot inspection rejects orphaned or duplicate active queue entries', (
     save(valid); assert.deepEqual(inspectShowSnapshot(db), { revision: 0, singers: 1, songs: 1, requests: 2 });
   } finally { db.close(); }
 });
+
+test('snapshot accepts legacy and valid promotion state and rejects stale or disallowed pointers', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateShowSchema(db);
+    const save = (state: ShowState) => db.prepare('INSERT OR REPLACE INTO show_state VALUES (1, ?)').run(JSON.stringify(state));
+    const make = () => {
+      const state = makeState();
+      state.requests.push({ id: 'one', singerId: 's', versionId: 'v', status: 'accepted', round: 1, order: 1 });
+      return state;
+    };
+    const legacy = make(); delete legacy.promotedRequestId; save(legacy); assert.equal(inspectShowSnapshot(db).requests, 1);
+    const valid = make(); valid.promotedRequestId = 'one'; save(valid); assert.equal(inspectShowSnapshot(db).requests, 1);
+    valid.requests[0].status = 'staged'; valid.stagedRequestId = 'one'; save(valid); assert.equal(inspectShowSnapshot(db).requests, 1);
+    valid.requests[0].status = 'playing'; valid.stagedRequestId = null;
+    valid.playback = { requestId: 'one', generationId: 'g', status: 'paused' }; valid.usedGenerationIds.push('g');
+    save(valid); assert.equal(inspectShowSnapshot(db).requests, 1);
+    for (const variant of ['missing', 'removed', 'pending', 'disallowed', 'unrated', 'invalid-type'] as const) {
+      const bad = make(); bad.promotedRequestId = variant === 'missing' ? 'missing' : 'one';
+      if (variant === 'removed' || variant === 'pending') bad.requests[0].status = variant;
+      if (variant === 'disallowed') bad.policy.excludeVersionIds = ['v'];
+      if (variant === 'unrated') { bad.policy.ageRestricted = true; bad.versions[0].rating = 'unrated'; }
+      if (variant === 'invalid-type') (bad as unknown as Record<string, unknown>).promotedRequestId = 123;
+      save(bad); assert.throws(() => inspectShowSnapshot(db), /incomplete or incompatible/, variant);
+    }
+  } finally { db.close(); }
+});
