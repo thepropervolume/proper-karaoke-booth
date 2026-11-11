@@ -23,3 +23,9 @@ This contacts only the fixed Sunfly HTTPS account endpoint and sends the key in 
 | `invalid-credential`, `configuration-error` | 7 | The key or its private-file configuration is invalid. |
 
 These cases have only been verified with synthetic responses, not a real Sunfly account. The provider's account-specific schema, commercial terms, and supported SDKs must be confirmed when access is granted.
+
+## Inspect a catalog change page
+
+With the same private access-key file, `node --import tsx scripts/sunfly-catalog.ts changes` explicitly requests one metadata change page from Sunfly's protected v2 API. No request is made automatically. The default page limit is 100; set `TPV_SUNFLY_LIMIT` from 1 to 500, and optionally set `TPV_SUNFLY_DIRECTORY_ID` to a positive integer or `TPV_SUNFLY_CURSOR` to the UTC timestamp cursor from a previous result. The JSON result contains the projected track metadata, withdrawal flags, `nextCursor`, and `hasMore`; it omits provider paths, access keys, and raw response bodies. Check its status and exit code before using a result.
+
+This tool previews one page only: it does not persist catalog state, automatically follow cursors, import songs, obtain media links or licenses, or play video. Sunfly documents a 90-day withdrawal-notification window; an eventual persistent sync must handle a cursor older than that window with a complete resync rather than silently missing removals. The published response describes an example rather than a complete response schema. Parsing and failures were tested with fixtures only; a provider-issued account is needed to confirm real compatibility and applicable metadata rights.

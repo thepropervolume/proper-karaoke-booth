@@ -4,7 +4,7 @@ import { inspectSunflyAccount, type SunflyAccountStatus } from './sunfly-client'
 
 const MAX_KEY_BYTES = 1026; // Maximum 1024-character key plus an optional CRLF.
 
-function readPrivateKey(path: string | undefined): string {
+export function readSunflyAccessKey(path: string | undefined): string {
   if (!path || !isAbsolute(path) || /[\x00-\x1f\x7f]/.test(path)) throw new Error('Invalid configuration');
   const before = lstatSync(path);
   if (!before.isFile() || before.isSymbolicLink()) throw new Error('Invalid configuration');
@@ -39,6 +39,6 @@ export async function runSunflyStatus(
   file: string | undefined,
   inspect: (key: string) => Promise<SunflyAccountStatus> = inspectSunflyAccount,
 ): Promise<SunflyOperatorResult> {
-  try { return await inspect(readPrivateKey(file)); }
+  try { return await inspect(readSunflyAccessKey(file)); }
   catch { return { status: 'configuration-error' }; }
 }
