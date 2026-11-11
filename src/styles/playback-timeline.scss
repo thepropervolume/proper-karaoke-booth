@@ -1,0 +1,5 @@
+.playback-timeline { display: flex; flex: 1 1 100%; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.playback-timeline > input { flex: 1 1 100px; min-width: 80px; min-height: 32px; padding: 0; accent-color: var(--accent); }
+.playback-timeline__time { font-variant-numeric: tabular-nums; font-size: .85rem; white-space: nowrap; }
+.playback-timeline button { min-height: 36px; padding: 4px 8px; white-space: nowrap; }
+.playback-timeline__error { flex: 1 1 100%; color: var(--muted); font-size: .85rem; }
