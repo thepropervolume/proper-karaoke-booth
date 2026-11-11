@@ -23,5 +23,8 @@ export default {
     artifactName: 'Proper-Karaoke-Booth-${version}-windows-${arch}-setup.${ext}',
   },
   linux: { target: ['AppImage', 'deb'], category: 'AudioVideo', maintainer: 'The Proper Volume' },
+  // Retain builder 26's defaults and include Electron's directly linked libraries.
+  deb: { depends: ['libgtk-3-0 | libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils',
+    'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0', 'libgbm1', 'libasound2 | libasound2t64', 'libdrm2', 'libx11-xcb1'] },
   mac: { target: ['dmg', 'zip'], category: 'public.app-category.music', hardenedRuntime: true, identity: null },
 };
