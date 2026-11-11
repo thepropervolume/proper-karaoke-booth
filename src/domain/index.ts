@@ -68,13 +68,25 @@ export function remainingPauseSeconds(state: ShowState, nowMs: number): number {
 
 /** The staged request remains locked when the scheduling mode changes. */
 export function orderedFuture(state: ShowState, mode: Settings['rotationMode']): SongRequest[] {
-  const position = (singerId: string) => Math.min(...state.requests
-    .filter(r => r.singerId === singerId && r.order !== null && !['removed', 'withdrawn', 'rejected'].includes(r.status)).map(r => r.order!));
-  return state.requests.filter(r => r.status === 'accepted' || r.status === 'staged')
-    .sort((a, b) => (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
+  // Precompute each singer's position once. Spreading an entire retained
+  // history into Math.min can exceed the engine's argument limit, and
+  // repeatedly filtering it during sorting grows quadratic with show history.
+  const positions = new Map<string, number>();
+  const future: { request: SongRequest; index: number }[] = [];
+  state.requests.forEach((request, index) => {
+    if (request.order !== null && !['removed', 'withdrawn', 'rejected'].includes(request.status)) {
+      positions.set(request.singerId, Math.min(positions.get(request.singerId) ?? Infinity, request.order));
+    }
+    if (request.status === 'accepted' || request.status === 'staged') future.push({ request, index });
+  });
+  return future.sort((left, right) => {
+    const a = left.request, b = right.request;
+    return (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
       // Request arrays are append-only, so this also preserves FIFO for older
       // shows and for requests approved in a different order than they arrived.
-      (mode === 'fifo' ? state.requests.indexOf(a) - state.requests.indexOf(b) : a.round! - b.round! || position(a.singerId) - position(b.singerId) || a.order! - b.order!));
+      (mode === 'fifo' ? left.index - right.index : a.round! - b.round! ||
+        (positions.get(a.singerId) ?? Infinity) - (positions.get(b.singerId) ?? Infinity) || a.order! - b.order!);
+  }).map(item => item.request);
 }
 
 function acceptRequest(state: ShowState, request: SongRequest): void {
