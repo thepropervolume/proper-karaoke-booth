@@ -33,6 +33,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Verify download interruption/recovery, cached output selection and physical singer-display behavior on show hardware.
 - [ ] Package/test yt-dlp and FFmpeg installation, upgrades and all supported operating systems.
 - [ ] Make the Karaoke Nerds shared MySQL catalog service production-ready and deploy it with a restricted service, backups and restore procedure.
+- [ ] Restore or connect the saved Karaoke Nerds catalog on this host: on 11 November the file at the desktop's expected local location was absent. Search code is implemented, but a usable snapshot/service connection is required; do not trigger an uncoordinated upstream refresh to fill this gap.
 - [ ] Confirm that every old Karaoke Nerds refresher is stopped, retire the local updater, and migrate the existing snapshot and refresh cooldown without another upstream call.
 - [ ] Schedule a single centrally coordinated refresh at most once per day, including failed attempts and recovery after restart; keep the provider key out of clients.
 - [ ] Connect desktop and remote clients to authenticated shared catalog access with a usable offline cache and a clear stale-data status.
@@ -40,7 +41,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Download individually selected YouTube/catalog videos and attach completed media to the same library identity without overwriting other recordings.
 - [ ] Connect the host's opt-in brand/artist selection to reviewed automatic/bulk yt-dlp jobs; individual downloads are available.
 - [ ] Select the newest artist/track recording using verified publication dates or labeled yt-dlp upload-date fallback; surface incomplete or ambiguous choices.
-- [ ] Preserve safe configured cache paths, detect destination collisions and verify cancellation including any ffmpeg child process.
+- [x] Preserve safe paths, avoid overwrite collisions and test yt-dlp/FFmpeg descendant cancellation for individual downloads.
+- [ ] Bring the legacy batch/operator path to the same cancellation/recovery standard and verify on show hardware.
 
 ## Priority 0 — dependable show operation
 
@@ -51,7 +53,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add a guided missing/moved-file review and relinking workflow; current relinking accepts an exact original only.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [ ] Add restore from a checked backup; existing backup does not restore or include media/settings.
-- [ ] Add versioned SQLite migrations and upgrade, interrupted-write and rollback tests.
+- [x] Add versioned SQLite migrations (current schema v2) with upgrade, interrupted-write and rollback tests.
+- [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Add comprehensive end-to-end coverage for queue, transport, import, shortcuts, device loss and display recovery.
 - [ ] Validate Windows, Linux and macOS builds and installation independently; preserve the working local show when network services fail.
@@ -64,7 +67,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add actor/reason audit history for queue edits.
 - [x] Add timed singer absence and return (1–60 minutes), one future request while away, authenticated self-service and tested return fairness.
 - [ ] Add indefinite singer hold and skip-turn controls.
-- [ ] Show current singer, upcoming singers, queue position and clearly approximate wait time.
+- [x] Show current singer, upcoming singers and the ordered queue.
+- [ ] Add clearly approximate wait times with assumptions and unavailable states.
 - [ ] Support duets and groups with multiple performers on one request.
 - [ ] Start, save, restore and end named shows without losing or accidentally replaying requests.
 - [x] Make recorded singer/song history searchable by singer, artist and title.
@@ -77,7 +81,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Finish playlist/favorite management, singer organization and playlist import/export; current playlists/history are partial.
 - [ ] Add genre metadata and make the genre browser functional.
 - [ ] Verify the existing standard, rotation and library layouts at small and large window sizes and keep critical controls visible.
-- [ ] Make all settings validated and editable with defaults, migrations, clear error messages and documentation.
+- [x] Validate and persist the implemented settings in editable JSON with defaults and error messages.
+- [ ] Extend settings coverage and migration/recovery guidance as remaining features are implemented.
 - [ ] Extend the keybindings text file to every actionable command, including conflict detection, reset and updated tooltip hints.
 - [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
 - [ ] Add a CLI for application actions through one authenticated local authority with structured output and stable exit codes; do not introduce another SQLite writer.
