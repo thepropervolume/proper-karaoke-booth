@@ -9,6 +9,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 ## Priority 0 — streaming and catalog
 
 - [x] Send KaraFun an OEM content/playback API inquiry (owner submitted through Business support on 11 November 2026; reply pending).
+- [x] Inspect the owner-provided Business API specification and test the dashboard token read-only: device listing returned 402 and room-token listing 403; content/playback access remains unverified.
 - [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees; the existing consumer subscription has not been proven usable in this app.
 - [ ] Implement and test approved KaraFun account linking, secure credential storage, refresh/revocation and entitlement checks.
 - [ ] Add KaraFun catalog search and exact recording/version identity.
