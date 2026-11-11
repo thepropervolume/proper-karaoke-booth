@@ -21,7 +21,7 @@ YouTube's [required minimum functionality](https://developers.google.com/youtube
 
 ## Published price leads (reviewed 2026-11-10)
 
-The owner wants additional services that can be connected for under USD $20 per month. The following are publicly listed customer-facing prices, not quotes for this application. **No provider has yet confirmed a third-party playback integration, applicable usage rights, and total costs together below that threshold.** Taxes, device restrictions, software purchases, region and changing offers may affect the total. Ask about the pricing for an API partner and linking existing accounts, not just the price of a consumer app.
+The owner wants additional services that can be connected for under USD $20 per month each; the limit applies per service, not to their combined cost. The following are publicly listed customer-facing prices, not quotes for this application. **No provider has yet confirmed a third-party playback integration, applicable usage rights, and total costs together below that threshold.** Taxes, device restrictions, software purchases, region and changing offers may affect the total. Ask about the pricing for an API partner and linking existing accounts, not just the price of a consumer app.
 
 | Provider | Publicly advertised lead | Integration and venue questions |
 | --- | --- | --- |
