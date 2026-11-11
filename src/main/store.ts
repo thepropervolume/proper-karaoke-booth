@@ -83,6 +83,14 @@ export class Store<T> {
     installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {}): RemoteQueue {
     this.assertRemoteAuthority();
     if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
+    const failAuthority = () => {
+      this.authorityFault = true;
+      // Notify only after the write gate is latched; observers can reenter.
+      try {
+        const result: unknown = onAuthorityFailure();
+        if (result && typeof result === 'object' && 'then' in result) void Promise.resolve(result).catch(() => {});
+      } catch {}
+    };
     const queue = new RemoteQueue(this.db, settings, state => {
       try {
         const result: unknown = installCommitted(state);
@@ -96,15 +104,10 @@ export class Store<T> {
       catch {
         // The database has already committed. Never let an older in-memory host
         // state overwrite it; a fresh Store must reload the committed state.
-        this.authorityFault = true;
-        // Notify only after the write gate is latched; observers can reenter.
-        try {
-          const result: unknown = onAuthorityFailure();
-          if (result && typeof result === 'object' && 'then' in result) void Promise.resolve(result).catch(() => {});
-        } catch {}
+        failAuthority();
         throw new Error('Show authority needs recovery. Restart the application before making further changes.');
       }
-    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); });
+    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority);
     this.remoteQueueOpened = true;
     return queue;
   }

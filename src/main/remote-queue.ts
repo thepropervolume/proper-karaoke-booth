@@ -27,9 +27,11 @@ export class JoinRevisionConflict extends Error {
 export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
+  private authorityFault = false;
   constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger'>>,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
-    private readonly assertAuthority: (cleanup?: boolean) => void = () => {}) {
+    private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
+    private readonly onUncertainCommit: () => void = () => {}) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_invitation_scopes (token_hash TEXT PRIMARY KEY, scope_id TEXT NOT NULL);
@@ -39,16 +41,35 @@ export class RemoteQueue {
       CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS remote_missing_song_owners (request_id TEXT PRIMARY KEY, guest_id TEXT NOT NULL, singer_id TEXT NOT NULL, show_id TEXT NOT NULL);`);
   }
-  private state(cleanup = false): ShowState {
+  private requireAuthority(cleanup = false): void {
+    if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
     this.assertAuthority(cleanup);
+  }
+  private state(cleanup = false): ShowState {
+    this.requireAuthority(cleanup);
     const row = this.db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: string } | undefined;
     if (!row) throw new Error('Show is unavailable.');
     return JSON.parse(row.value) as ShowState;
   }
   private transaction<T>(operation: () => T): T {
+    if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = operation(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    catch (error) {
+      try { this.db.exec('ROLLBACK'); }
+      catch {
+        // A failed rollback means the transaction may already have committed.
+        // Block every authority before notifying the host; otherwise an older
+        // in-memory show can overwrite an acknowledged guest request.
+        this.authorityFault = true;
+        try {
+          const result: unknown = this.onUncertainCommit();
+          if (result && typeof result === 'object' && 'then' in result) void Promise.resolve(result).catch(() => {});
+        } catch { /* The recovery latch remains set. */ }
+        throw new Error('Show authority needs recovery. Restart the application before making further changes.');
+      }
+      throw error;
+    }
   }
   private save(state: ShowState): void {
     this.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
@@ -147,7 +168,7 @@ export class RemoteQueue {
   }
   /** Host-only bounded list. Guest access expires with the private resume credential. */
   listGuests(scope = ''): { singerId: string; name: string }[] {
-    this.assertAuthority();
+    this.requireAuthority();
     const rows = this.db.prepare("SELECT singer_id AS singerId, join_name AS name FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ? AND COALESCE((SELECT scope_id FROM remote_guest_scopes WHERE guest_id = remote_guests.id), '') = ? ORDER BY rowid LIMIT ?")
       .all(this.state().showId, this.now(), scope, MAX_ROOM_GUESTS + 1) as { singerId: string; name: string }[];
     if (rows.length > MAX_ROOM_GUESTS) throw new Error('Remote guest list needs recovery.');
@@ -155,7 +176,7 @@ export class RemoteQueue {
   }
   /** Host-only, revokes both active and future resumed sessions. */
   revokeGuest(singerId: string, scope = ''): void {
-    this.assertAuthority();
+    this.requireAuthority();
     if (!validId(singerId)) throw new Error('Invalid singer ID.');
     this.db.prepare("UPDATE remote_guests SET revoked = 1 WHERE singer_id = ? AND show_id = ? AND COALESCE((SELECT scope_id FROM remote_guest_scopes WHERE guest_id = remote_guests.id), '') = ?").run(singerId, this.state().showId, scope);
   }
