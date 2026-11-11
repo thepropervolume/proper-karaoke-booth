@@ -154,6 +154,15 @@ try {
   const rotation = host.getByRole('listbox', { name: 'Singer Rotation' });
   const queued = rotation.getByRole('option').filter({ hasText: 'QA Singer' });
   await queued.click();
+  await songRow.click();
+  await host.keyboard.press('Delete');
+  await host.waitForTimeout(200);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.filter(r => r.status === 'accepted').length, 1, 'Delete in the song library must not remove the selected queue request.');
+  await host.getByRole('button', { name: 'Stage next' }).focus();
+  await host.keyboard.press('Delete');
+  await host.waitForTimeout(200);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.filter(r => r.status === 'accepted').length, 1, 'Delete on an unrelated button must not remove the selected queue request.');
+  await queued.focus();
   await host.keyboard.press('Delete');
   await untilState(state => state.requests.some(r => r.status === 'removed'), 'queue removal');
 

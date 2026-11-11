@@ -255,7 +255,7 @@ function App() {
         return;
       }
       const target = event.target as HTMLElement | null;
-      if (event.key === 'Delete' && !event.repeat && selectedRequestId && !target?.closest('input, textarea, select, [contenteditable="true"]') && !busy && !settingsOpen && !editingVersion && !queueVersion && !playlistVersion && !contextMenu) {
+      if (event.key === 'Delete' && !event.repeat && selectedRequestId && target?.closest('[data-queue-list]') && !target.closest('input, textarea, select, button, [contenteditable="true"]') && !busy && !settingsOpen && !editingVersion && !queueVersion && !playlistVersion && !contextMenu) {
         event.preventDefault(); void command({ type: 'removeRequest', requestId: selectedRequestId }); setSelectedRequestId(''); return;
       }
       if (!matchesShortcut(shortcuts, 'playPause', input) || event.repeat || settingsOpen || editingVersion || queueVersion || playlistVersion ||
@@ -390,7 +390,7 @@ function App() {
       <div className="eyebrow">On Stage</div>
       <div className="on-stage">{active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small></> : <span className="muted">No singer on stage</span>}</div>
       <div className="section-heading"><span className="eyebrow">Up Next</span><button disabled={busy || !!staged || !eligibleFuture} onClick={() => void command({ type: 'stage' })}>Stage next</button></div>
-      <div role="listbox" aria-label="Singer Rotation">{future.map((request, index) => { const item = describe(request); return <div className={`queue-row ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? 'Staged · locked' : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div></div></div>; })}</div>
+      <div role="listbox" aria-label="Singer Rotation" data-queue-list>{future.map((request, index) => { const item = describe(request); return <div className={`queue-row ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? 'Staged · locked' : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div></div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       {staged && <button disabled={busy} onClick={() => void command({ type: 'release' })}>Release staged song</button>}
     </aside>
