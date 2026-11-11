@@ -26,6 +26,7 @@ import { requestWithSinger } from './request-singer';
 import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 import type { ImportProgress } from '../domain/import-job';
 import type { BackupResult } from '../main/show-backup';
+import type { HistoryExportResult } from '../main/history-export';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
@@ -41,6 +42,9 @@ declare global {
       backupShow: () => Promise<BackupResult>;
       retryBackupCleanup: () => Promise<BackupResult>;
       getCollections: () => Promise<CollectionsSnapshot>;
+      exportHistory: (filter: { query: string; singerId: string }) => Promise<HistoryExportResult>;
+      historyExportStatus: () => Promise<{ cleanupNeeded: boolean; published: boolean }>;
+      retryHistoryExportCleanup: () => Promise<HistoryExportResult>;
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
       searchCommunityCatalog: (query: string) => Promise<LocalCatalogResult>;

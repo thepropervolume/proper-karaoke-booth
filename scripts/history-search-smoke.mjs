@@ -2,7 +2,7 @@
 // Initializes a disposable show, closes it, then seeds synthetic history before reopening.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -42,6 +42,11 @@ try {
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   const host = await app.firstWindow();
   await host.waitForFunction(() => !!window.tpv);
+  const exportFile = join(temp, 'exported-history.csv');
+  await app.evaluate(({ dialog }, path) => {
+    globalThis.tpvHistoryDestination = path;
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: globalThis.tpvHistoryDestination });
+  }, exportFile);
   const result = await host.evaluate(async () => window.tpv.command({ type: 'addSinger', singer: { id: 'singer-one', name: 'José' } }));
   assert.equal(result.ok, true);
   await host.getByRole('button', { name: 'Playlists', exact: true }).click();
@@ -56,6 +61,15 @@ try {
   assert.equal(await history.getByText('Popular', { exact: true }).count(), 1);
   await search.fill('jose deja');
   await history.getByText('Déjà Vu', { exact: true }).waitFor();
+  await history.getByRole('button', { name: 'Export matching history…' }).click();
+  await history.getByText('Exported 1 performance to CSV.', { exact: true }).waitFor();
+  const csv = await readFile(exportFile, 'utf8');
+  assert.ok(csv.startsWith('\uFEFF"Performed at"'));
+  assert.ok(csv.includes('José'));
+  assert.equal(csv.includes('Casey'), false);
+  await history.getByRole('button', { name: 'Export matching history…' }).click();
+  await history.getByText('That file already exists. Choose a new filename; existing files are never replaced.', { exact: true }).waitFor();
+  assert.equal(await readFile(exportFile, 'utf8'), csv);
   await search.fill('not a song');
   await history.getByText('No performances match the current search and singer filter.', { exact: true }).waitFor();
   assert.equal((await host.evaluate(() => window.tpv.getCollections())).history.length, 3, 'Searching must not modify history.');

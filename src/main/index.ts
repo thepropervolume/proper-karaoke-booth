@@ -29,6 +29,7 @@ import { mediaErrorDetail } from './media-error-message';
 import { mediaRange } from './media-range';
 import { ImportJob } from './import-job';
 import { ShowBackup } from './show-backup';
+import { HistoryExport } from './history-export';
 import { DisplayFullscreen } from './display-fullscreen';
 import { LocalCommunityBrowser } from './karaokenerds-local-browser';
 import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-window';
@@ -73,6 +74,12 @@ const showBackup = new ShowBackup(async () => {
     filters: [{ name: 'Show backup', extensions: ['sqlite'] }], properties: ['showOverwriteConfirmation'] });
   return result.canceled ? null : result.filePath ?? null;
 }, destination => store.backup(destination));
+const historyExport = new HistoryExport(() => store.collections.snapshot().history, async () => {
+  if (!host || host.isDestroyed() || shuttingDown) return null;
+  const result = await dialog.showSaveDialog(host, { title: 'Export shown history to a new CSV file', defaultPath: 'karaoke-history.csv',
+    filters: [{ name: 'CSV file', extensions: ['csv'] }], properties: ['showOverwriteConfirmation'] });
+  return shuttingDown || !host || host.isDestroyed() || result.canceled ? null : result.filePath ?? null;
+});
 const mediaChecks = new Set<AbortController>();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
@@ -414,6 +421,9 @@ else {
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); return state; });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
+  ipcMain.handle('host:export-history', (event, filter: unknown) => { guardHost(event.sender.id); return historyExport.start(filter); });
+  ipcMain.handle('host:history-export-status', event => { guardHost(event.sender.id); return historyExport.status(); });
+  ipcMain.handle('host:history-export-cleanup', event => { guardHost(event.sender.id); return historyExport.retryCleanup(); });
   ipcMain.handle('host:reveal-media', (event, versionId: unknown) => {
     guardHost(event.sender.id);
     if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId)) throw new Error('Song unavailable.');
@@ -666,16 +676,18 @@ app.on('before-quit', event => {
   if (quitReady) { closeStore(); return; }
   if (quitStarted) { event.preventDefault(); return; }
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
-  const wait = remoteHost.needsShutdownWait() || importing || showBackup.needsShutdownWait();
+  const wait = remoteHost.needsShutdownWait() || importing || showBackup.needsShutdownWait() || historyExport.needsShutdownWait();
   const shutdown = remoteHost.shutdown();
   const backupShutdown = showBackup.shutdown();
+  const historyShutdown = historyExport.shutdown();
   if (!wait) { quitReady = true; closeStore(); return; }
   event.preventDefault();
   quitStarted = true;
   const importShutdown = importing && importJob ? waitForImport(importJob) : Promise.resolve(true);
   const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup]).then(([remoteClean, importClean, backupClean]) => {
-    if (!remoteClean || !importClean || !backupClean) {
+  const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory]).then(([remoteClean, importClean, backupClean, historyClean]) => {
+    if (!remoteClean || !importClean || !backupClean || !historyClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;

@@ -61,7 +61,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Support duets and groups with multiple performers on one request.
 - [ ] Start, save, restore and end named shows without losing or accidentally replaying requests.
 - [x] Make recorded singer/song history searchable by singer, artist and title.
-- [ ] Export singer/song history to CSV.
+- [x] Export matching recorded singer/song history to CSV with spreadsheet-formula protection and no overwrite.
 - [ ] Add folder watching/rescanning and review for duplicates, moved media and alternate versions.
 - [ ] Verify and improve search, scrolling, filtering and sorting with a genuinely large library.
 - [ ] Add batch metadata review/editing, source provenance, reversible overrides and safe rescan preview.
