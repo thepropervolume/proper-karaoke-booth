@@ -6,4 +6,6 @@ Seeking a paused performance keeps it paused. Only the current generation may ac
 
 The local MP4 player and the embedded YouTube source use the same host timeline. YouTube timing, buffering and native controls remain subject to the provider. Output routing, real-device audio/lyric synchronization and recovery on physical show hardware still require verification.
 
+The singer video fits within the window viewport with preserved aspect ratio and no page scrolling, including portrait and 4:3 videos. Optional branding and singer captions overlay the picture; they do not add height. The viewport regression checks three video shapes across four large, small and portrait window sizes.
+
 Developer notes: `PlaybackTimeline` validates finite positions and duration, serializes seeks, requires decoder/provider acknowledgement and ignores telemetry during a pending seek. Display requests/acknowledgements have an unpredictable request ID and performance generation. Closing the app gives an in-flight seek a bounded chance to settle before the database closes; an unacknowledged seek is not promised durable.

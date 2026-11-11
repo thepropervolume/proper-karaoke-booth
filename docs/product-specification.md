@@ -72,6 +72,8 @@ Authenticated local singers may withdraw their own pending or accepted request. 
 
 **Available:** the host chooses an audio output or the operating-system default and can adjust global volume. The singer window is assigned to a monitor; hosts can toggle fullscreen or set the next-open fullscreen preference. Optional singer-display settings show upcoming names and a custom PNG/JPEG logo. The configured inter-song pause interval is 0–300 seconds after completion or confirmed skip; staging may occur while the clock runs, the deadline persists across restart, and the host still starts the next song. A zero interval is the default.
 
+The singer video is bounded to the full window viewport (maximum 100vh/100vw) with aspect ratio preserved and no vertical scrolling. Landscape, 4:3 and portrait sources use letterboxing/pillarboxing as needed. Branding, caption and next-singer information overlay the viewport instead of adding height. The separate embedded preview uses its own bounded layout and retains visible native controls.
+
 **Experimental:** bumper music requires a ready singer display and an explicitly selected output; system default is not accepted for this feature. Three original locally generated instrumental options are provided, and the host can add up to five local MP3, M4A, WAV or OGG files. The host starts it manually. Tracks continue through the list until stopped or karaoke starts; no automatic start occurs on app launch, on song completion, or after output recovery. The main process awaits acknowledgement of bumper silence before starting or resuming karaoke. Removing an entry does not delete the file. Codec support and physical mixer, device-loss and shutdown behavior require tests.
 
 **Available:** the bottom timeline shows elapsed/remaining time, supports dragging or keyboard scrubbing and ten-second rewind/forward. Seeking preserves play/pause state and saves acknowledged positions; stale-generation events are rejected. It supports local MP4s (including converted CDG) and the embedded YouTube player. Real-hardware synchronization and recovery remain unverified.
@@ -252,7 +254,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "O01", "title": "Singer display", "status": "Current",
   "description": "Presentation-only output keeps the karaoke video prominent and leaves source colors unchanged.",
   "layout": "display", "display_title": "SINGER VIDEO", "display_subtitle": "Lyrics and video appear here", "display_next": "Coming up: Casey  /  Jordan",
-  "detail": "Current options include monitor selection, fullscreen, idle logo and upcoming singers. Actual display hot-plug behavior remains to be verified."
+  "detail": "Video fits the viewport without cropping or scrolling; captions and branding overlay it. Monitor hot-plug still needs verification."
 }
 ```
 
