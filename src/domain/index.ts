@@ -1,3 +1,4 @@
+import { validStreamingSource, type StreamingSource } from './streaming-source';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { futureRequestLimitMessage } from './future-request-limit';
 
@@ -7,7 +8,7 @@ export type Role = 'host' | 'staff' | 'singer' | 'engine';
 export type Actor = { role: Role; id: string };
 export type Rating = 'clean' | 'explicit' | 'unrated' | 'uncertain';
 export type Version = { id: string; title: string; artist: string; rating: Rating;
-  djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string };
+  source?: StreamingSource; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string };
 export type Singer = { id: string; name: string };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
 export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
@@ -143,7 +144,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     case 'addVersion': {
       const v = cmd.version;
       if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating) ||
-          (v.djCode !== undefined && typeof v.djCode !== 'string') || (v.trackNumber !== undefined && typeof v.trackNumber !== 'string') ||
+          (v.source !== undefined && !validStreamingSource(v.source)) || (v.djCode !== undefined && typeof v.djCode !== 'string') || (v.trackNumber !== undefined && typeof v.trackNumber !== 'string') ||
           (v.metadataAmbiguous !== undefined && typeof v.metadataAmbiguous !== 'boolean') || (v.metadataTemplate !== undefined && typeof v.metadataTemplate !== 'string')) reject('INVALID', 'Invalid version');
       else if (state.versions.some(x => x.id === v.id)) reject('DUPLICATE', 'Version already exists');
       else state.versions.push({ ...v });

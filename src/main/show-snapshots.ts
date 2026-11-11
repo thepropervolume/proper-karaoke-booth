@@ -1,3 +1,4 @@
+import { validStreamingSource } from '../domain/streaming-source';
 /** Snapshot primitives; callers must keep the source connection open until the promise settles. */
 import { backup, DatabaseSync } from 'node:sqlite';
 import { link, lstat, mkdtemp, open, realpath, rmdir, unlink } from 'node:fs/promises';
@@ -27,7 +28,7 @@ function validState(value: unknown): boolean {
       !Array.isArray(value.policy.excludeVersionIds) || !value.policy.excludeVersionIds.every(id)) return false;
   if (!value.singers.every(singer => record(singer) && id(singer.id) && id(singer.name)) ||
       !value.versions.every(version => record(version) && id(version.id) && id(version.title) && typeof version.artist === 'string' &&
-        ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)))) return false;
+        ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)) && (version.source === undefined || validStreamingSource(version.source)))) return false;
   const singers = new Set(value.singers.map(singer => (singer as Record<string, unknown>).id));
   const versions = new Set(value.versions.map(version => (version as Record<string, unknown>).id));
   if (singers.size !== value.singers.length || versions.size !== value.versions.length) return false;

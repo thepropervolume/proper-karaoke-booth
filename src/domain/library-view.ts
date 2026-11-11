@@ -16,7 +16,7 @@ export function libraryView(versions: readonly Version[], query: string, filenam
     if ((filter === 'clean' || filter === 'explicit' || filter === 'unrated' || filter === 'uncertain') && song.rating !== filter) return false;
     if (!terms.length) return true;
     const filename = Object.hasOwn(filenames, song.id) && typeof filenames[song.id] === 'string' ? filenames[song.id] : '';
-    const fields = [song.title, song.artist, filename, song.djCode ?? '', song.trackNumber ?? ''].map(normalize);
+    const fields = [song.title, song.artist, filename, song.djCode ?? '', song.trackNumber ?? '', song.source?.provider ?? ''].map(normalize);
     return terms.every(term => fields.some(field => field.includes(term)));
   });
   if (sort === 'import-oldest') return filtered;
