@@ -34,6 +34,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Package/test yt-dlp and FFmpeg installation, upgrades and all supported operating systems.
 - [x] Deploy the dedicated shared MySQL catalog search service behind HTTPS and verify server backup/scratch restore using the recovered raw snapshot.
 - [ ] Finish production monitoring, recovery/rotation operations and real desktop end-to-end verification; deployed search is not a working daily-refresh pipeline.
+- [ ] Replace per-request full-snapshot catalog scans with indexed reads and load-test concurrent clients; current service reads are serialized and not a production throughput guarantee.
 - [x] Recover and seed the 64,261-record raw Karaoke Nerds snapshot without a new feed request; expose valid unique recordings including unmapped brands.
 - [x] Implement desktop shared HTTPS configuration/preferences and scoped offline query caching (100 entries/20 MiB).
 - [x] Verify live Windows HTTPS status/search against the deployed service and durable offline reuse after a simulated connection failure; the legacy local default snapshot remains absent.
@@ -51,7 +52,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 ## Priority 0 — dependable show operation
 
 - [x] Build development 0.2.0 Windows installer/ZIP and pass an isolated packaged launch/restart check.
-- [ ] Rebuild the final delivery and verify actual install/upgrade/uninstall and representative codecs on Windows show hardware.
+- [x] Rebuild Windows 0.2.0 with the concurrent-access-denial cache fix and repeat packaged launch/version/restart checks.
+- [ ] Verify actual install/upgrade/uninstall and representative codecs on Windows show hardware.
 - [ ] Verify audible output and routing through the connected sound device/mixer, including loss, reconnect and safe rerouting.
 - [ ] Verify the singer display on the external monitor, moving windows, fullscreen, disconnect/reconnect and deliberate recovery.
 - [ ] Make missing files, unreadable media, unsupported codecs and decode errors explain how to recover while retaining the singer's turn.
@@ -62,7 +64,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Add comprehensive end-to-end coverage for queue, transport, import, shortcuts, device loss and display recovery.
-- [ ] Finish Linux package build/installation verification; build and test macOS on a Mac. Windows package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
+- [x] Build Linux x64 AppImage and Debian packages, verify dependency metadata and payload, and pass final AppImage launch/restart under an isolated virtual display.
+- [ ] Verify Linux desktop installation, upgrade/removal, sandbox behavior and show hardware; build and test macOS on a Mac. Package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
 
 ## Priority 1 — host, queue and library
 

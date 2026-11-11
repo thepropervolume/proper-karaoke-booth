@@ -19,6 +19,9 @@ state as unknown, rather than inventing timestamps. This is a working read
 service, not a completed transfer of provider refresh authority.
 
 - Reader service is enabled at boot, bound only to loopback port 8765 behind TLS.
+- The existing Linode cloud firewall now also allows inbound TCP 443 on IPv4 and
+  IPv6. SSH, the default inbound drop policy and outbound rules were preserved.
+  Windows live HTTPS status/search and durable offline query reuse passed.
 - MySQL remains bound to loopback; separate reader, writer, migrator and backup
   accounts have privileges only on the catalog schema.
 - Daily private backups run at 06:30 UTC and retain 14 successful dumps locally.

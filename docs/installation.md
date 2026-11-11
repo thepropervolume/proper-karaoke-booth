@@ -6,8 +6,8 @@ The current development milestone is **0.2.0**. The target for the approved offi
 
 | Platform | Package | Current verification |
 | --- | --- | --- |
-| Windows 64-bit | Assisted installer (`windows-x64-setup.exe`) and extractable ZIP (`win-x64.zip`) | Both built. Packaged app opened with an isolated profile and preserved a singer after restart. Actual install/upgrade/uninstall and show hardware checks remain to be completed. |
-| Linux 64-bit | AppImage and Debian `.deb` build targets | Build recipe provided; no Linux package or hardware verification claimed yet. |
+| Windows 64-bit | Assisted installer (`windows-x64-setup.exe`) and extractable ZIP (`win-x64.zip`) | Both final builds include the cache-access fix. Packaged app opened with an isolated profile, displayed 0.2.0 and preserved a singer after restart. Actual install/upgrade/uninstall and show hardware checks remain to be completed. |
+| Linux 64-bit | AppImage (`linux-x86_64.AppImage`) and Debian (`linux-amd64.deb`) | Both built. Final AppImage opened and restarted under a private virtual display with singer persistence and stopped playback. Debian dependencies, metadata and extracted payload passed. Actual installation and show hardware remain unverified. |
 | macOS Intel and Apple silicon | `.dmg` and ZIP build targets | Must be built and verified on a Mac. No macOS package claimed yet. |
 
 Generated files live in the repository's `release` folder and are not committed to Git. Windows development packages are **unsigned** and currently use Electron's default app icon. Windows may identify them as an unrecognized publisher. Only use packages from a trusted project build. Official distribution still needs the approved app icon and platform signing.
@@ -21,6 +21,23 @@ Alternatively, extract the entire `Proper-Karaoke-Booth-0.2.0-win-x64.zip` to a 
 The show database, settings and keybindings stay in the existing `proper-karaoke-booth` user-data directory (normally `%APPDATA%\proper-karaoke-booth` on Windows). An explicit `--user-data-dir` or a custom startup profile is honored before the single-instance check. Uninstalling is configured to preserve application data. Back up the show before upgrading; uninstalling is not a backup procedure.
 
 The installer includes the app and Electron runtime. It does not bundle media files, account credentials, a shared catalog database, `yt-dlp`, FFmpeg, or LibreOffice. Configure the shared catalog through Preferences using a private connection file supplied separately. YouTube downloads require `yt-dlp` and its media-processing dependencies on the host; see [YouTube downloads](youtube-downloads.md). LibreOffice is only needed to generate planning documents, not to run the karaoke app.
+
+## Linux
+
+For an AppImage, save it in a folder you want to keep, allow it to run as a program in your file manager, and open it. From a terminal:
+
+```sh
+chmod +x Proper-Karaoke-Booth-0.2.0-linux-x86_64.AppImage
+./Proper-Karaoke-Booth-0.2.0-linux-x86_64.AppImage
+```
+
+For Debian or Ubuntu, install the downloaded `.deb` through your software installer or use:
+
+```sh
+sudo apt install ./Proper-Karaoke-Booth-0.2.0-linux-amd64.deb
+```
+
+Run the app as your regular desktop user. Some distributions require AppImage/FUSE support libraries. The app's established profile is normally `~/.config/proper-karaoke-booth`, respecting the desktop's configuration location. Keep private catalog configuration and media separate from the downloaded package. Linux audio outputs, codecs, desktop launch, upgrade and removal still need verification on the intended show computer.
 
 ## Building packages
 
@@ -42,6 +59,10 @@ node scripts/packaged-app-smoke.mjs release/win-unpacked/proper-karaoke-booth.ex
 ```
 
 This launches the actual packaged app using a new disposable profile, checks its version and packaged identity, verifies persistence after restart, and cleans up only the profile it created. It does not run the installer or change the normal show.
+
+## Verification for 0.2.0
+
+Windows packages contain the final application at `f60e073`; Linux packages use `7bfa5f7`, whose only additional application-packaging change declares Debian runtime dependencies. Both include the same cache-access fix. The Windows receipt flags that Linux-only commit occurring during its build; no Windows payload changed. Versioned checksums and build receipts accompany both platforms. The Linux verification receipt records test-only root/virtual-display launch flags; normal packages retain their shipping sandbox defaults. Actual non-root desktop sandbox operation still needs checking.
 
 ## Before 1.0.0
 

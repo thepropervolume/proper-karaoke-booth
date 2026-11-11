@@ -4,7 +4,7 @@ Version **0.2.0**, a local-first desktop karaoke rehearsal application. Developm
 
 ## Run or install
 
-Windows 0.2.0 installer and ZIP packages have been built and an isolated packaged launch/restart passed. The final delivery rebuild and actual install/upgrade/uninstall checks are still pending. Linux packaging is being verified separately; macOS packages require a Mac. See [installation and packaging](docs/installation.md). Private catalog configuration, media, yt-dlp and FFmpeg are not bundled.
+Windows 0.2.0 installer and ZIP packages have been built and an isolated packaged launch/restart passed. The final 0.2.0 Windows packages include the access-denial cache-race fix. Actual install/upgrade/uninstall checks remain. Linux x64 AppImage and Debian packages are also built and passed isolated packaged launch/restart checks; macOS packages require a Mac. See [installation and packaging](docs/installation.md). Private catalog configuration, media, yt-dlp and FFmpeg are not bundled.
 
 For development, prerequisites are Node.js and npm. Automated rehearsals have run on Linux and Windows with Electron 45; macOS and physical audio/display devices still need testing. Install dependencies once (internet required), then build and start:
 
