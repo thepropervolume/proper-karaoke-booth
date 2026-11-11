@@ -26,6 +26,7 @@ import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { createSingerStaticHandler } from './remote-static';
 import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
 import { mediaErrorDetail } from './media-error-message';
+import { mediaRange } from './media-range';
 import { ImportJob } from './import-job';
 import { ShowBackup } from './show-backup';
 import { DisplayFullscreen } from './display-fullscreen';
@@ -323,18 +324,14 @@ async function serveMedia(request: Request): Promise<Response> {
   if (!media) return new Response(null, { status: 404 });
   try {
     const size = (await stat(media.path)).size;
-    let start = 0, end = size - 1;
-    const range = request.headers.get('range');
-    if (range) {
-      const match = /^bytes=(\d+)-(\d*)$/.exec(range);
-      if (!match) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
-      start = Number(match[1]); end = match[2] ? Math.min(Number(match[2]), end) : end;
-      if (start > end || !Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
-    }
+    if (!Number.isSafeInteger(size) || size <= 0) return new Response(null, { status: 404 });
+    const range = mediaRange(request.headers.get('range'), size);
+    if (!range) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+    const { start, end, partial } = range;
     const headers: Record<string, string> = { 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1), 'Cache-Control': 'no-store' };
-    if (range) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+    if (partial) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
     const stream = Readable.toWeb(createReadStream(media.path, { start, end })) as ReadableStream<Uint8Array>;
-    return new Response(stream, { status: range ? 206 : 200, headers });
+    return new Response(stream, { status: partial ? 206 : 200, headers });
   } catch { return new Response(null, { status: 404 }); }
 }
 
