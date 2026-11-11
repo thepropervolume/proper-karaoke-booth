@@ -22,6 +22,7 @@ import type { HostRemoteBridge } from '../remote/host-control';
 import { ImportPanel, type ImportBridge } from './ImportPanel';
 import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
+import { requestWithSinger } from './request-singer';
 import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 import type { ImportProgress } from '../domain/import-job';
 import type { BackupResult } from '../main/show-backup';
@@ -437,11 +438,13 @@ function App() {
       <button role="menuitem" disabled={relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
       <button role="menuitem" onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files...</button>
     </div>}
-    {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async choice => {
-      let singerId = choice.singerId;
-      if (!singerId) { singerId = crypto.randomUUID(); const added = await window.tpv.command({ type: 'addSinger', singer: { id: singerId, name: choice.newSingerName! } }); if (!added.ok) throw new Error(added.error || 'Could not add singer'); }
-      const result = await window.tpv.command({ type: 'request', requestId: crypto.randomUUID(), singerId, versionId: queueVersion.id });
-      if (!result.ok) throw new Error(result.error || 'Could not add request');
+    {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated) => {
+      await requestWithSinger(choice, {
+        createSingerId: () => crypto.randomUUID(),
+        addSinger: singer => window.tpv.command({ type: 'addSinger', singer }),
+        singerCreated,
+        addRequest: singerId => window.tpv.command({ type: 'request', requestId: crypto.randomUUID(), singerId, versionId: queueVersion.id }),
+      });
       setNotice(settings.autoApprove ? 'Song added to the queue.' : 'Request submitted for review.');
     }} />}
     {playlistVersion && state && <AddToPlaylistDialog song={playlistVersion} singers={state.singers} playlists={collections.playlists} onClose={() => setPlaylistVersion(null)} onSave={async playlistId => { if (!await mutateCollections({ type: 'add', playlistId, versionId: playlistVersion.id })) throw new Error('Could not add the song.'); }} />}

@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Singer, Version } from '../domain/index';
+import type { SingerChoice } from './request-singer';
 
-export type SingerChoice = { singerId: string; newSingerName?: never } | { singerId?: never; newSingerName: string };
+export type { SingerChoice } from './request-singer';
 
 export function SongRequestDialog({ version, singers, onSubmit, onClose }: {
   version: Version;
   singers: Singer[];
-  onSubmit: (singer: SingerChoice) => Promise<void>;
+  onSubmit: (singer: SingerChoice, singerCreated: (id: string) => void) => Promise<void>;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -21,7 +22,7 @@ export function SongRequestDialog({ version, singers, onSubmit, onClose }: {
     if (saving || !singerId || (singerId === '__new__' && !name)) return;
     setSaving(true); setError('');
     try {
-      await onSubmit(singerId === '__new__' ? { newSingerName: name } : { singerId });
+      await onSubmit(singerId === '__new__' ? { newSingerName: name } : { singerId }, id => { setSingerId(id); setNewName(''); });
       onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
