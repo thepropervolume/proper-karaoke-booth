@@ -35,12 +35,16 @@ function validState(value: unknown): boolean {
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
   if (new Set(requests.map(request => request.id)).size !== requests.length) return false;
-  if (value.stagedRequestId !== null && !requests.some(request => request.id === value.stagedRequestId && request.status === 'staged')) return false;
+  const staged = requests.filter(request => request.status === 'staged');
+  const playing = requests.filter(request => request.status === 'playing');
+  // Orphaned or duplicate active rows cannot be resumed or released after a
+  // restore. Reject them instead of publishing a backup with a stranded queue.
+  if (value.stagedRequestId === null ? staged.length !== 0 : staged.length !== 1 || staged[0].id !== value.stagedRequestId) return false;
   if (value.playback !== null) {
     if (!record(value.playback) || !id(value.playback.requestId) || !id(value.playback.generationId) ||
         !['playing', 'paused'].includes(String(value.playback.status)) || !value.usedGenerationIds.includes(value.playback.generationId) ||
-        !requests.some(request => request.id === (value.playback as Record<string, unknown>).requestId && request.status === 'playing')) return false;
-  }
+        playing.length !== 1 || playing[0].id !== value.playback.requestId) return false;
+  } else if (playing.length !== 0) return false;
   return true;
 }
 async function absent(path: string): Promise<void> {
