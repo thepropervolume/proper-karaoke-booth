@@ -8,7 +8,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 ## Priority 0 — streaming and catalog
 
-- [ ] Obtain KaraFun OEM documentation, developer/sandbox credentials, eligible account-linking rules, commercial/territory rights and a price; the existing consumer subscription has not been proven usable in this app.
+- [x] Send KaraFun an OEM content/playback API inquiry (owner submitted through Business support on 11 November 2026; reply pending).
+- [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees; the existing consumer subscription has not been proven usable in this app.
 - [ ] Implement and test approved KaraFun account linking, secure credential storage, refresh/revocation and entitlement checks.
 - [ ] Add KaraFun catalog search and exact recording/version identity.
 - [ ] Integrate approved KaraFun playback with the singer display, queue, transport, reporting and permitted offline behavior; handle failures without losing a turn.
