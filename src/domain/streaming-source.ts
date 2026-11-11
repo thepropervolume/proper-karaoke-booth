@@ -1,10 +1,11 @@
-export type StreamingSource = { provider: 'youtube'; videoId: string };
+export type StreamingSource = { provider: 'youtube'; videoId: string; brandSlug?: string };
 
 export function validStreamingSource(value: unknown): value is StreamingSource {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const source = value as Record<string, unknown>;
-  return Object.keys(source).length === 2 && source.provider === 'youtube' &&
-    typeof source.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(source.videoId);
+  return Object.keys(source).every(key => ['provider', 'videoId', 'brandSlug'].includes(key)) && source.provider === 'youtube' &&
+    typeof source.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(source.videoId) &&
+    (source.brandSlug === undefined || (typeof source.brandSlug === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(source.brandSlug)));
 }
 
 /** Accept only an exact video identity or normal HTTPS YouTube watch/short links. */

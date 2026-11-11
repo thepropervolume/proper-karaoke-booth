@@ -32,6 +32,12 @@ test('searches the existing local snapshot without creating a database or contac
     assert.equal(updated.status, 'ready');
     if (updated.status !== 'ready') throw new Error('Unexpected status');
     assert.equal(updated.tracks[0].id, 3);
+    db.exec('ALTER TABLE community_brand_mappings ADD COLUMN slug TEXT');
+    db.prepare('UPDATE community_brand_mappings SET slug = ?').run('TheProperVolume');
+    browser.close();
+    const mapped = browser.search('new song');
+    assert.equal(mapped.status, 'ready');
+    if (mapped.status === 'ready') assert.equal(mapped.tracks[0].brandSlug, 'TheProperVolume');
     assert.throws(() => browser.search('x'), /at least two characters/);
     db.close();
   } finally { browser.close(); rmSync(dir, { recursive: true, force: true }); }
