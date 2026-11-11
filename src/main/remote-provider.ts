@@ -147,6 +147,7 @@ export function createLanHostProvider(options: LanProviderOptions): HostRoomProv
           catalog: (token, offset, limit) => { requireActive(); return queue!.catalog(token, offset, limit); },
           outcome: (token, id) => { requireActive(); return queue!.outcome(token, id); },
           submit: (token, command) => { requireActive(); return queue!.submit(token, command); },
+          setAvailability: (token, command) => { requireActive(); return queue!.setAvailability(token, command); },
           withdraw: (token, command) => { requireActive(); return queue!.withdraw(token, command); },
           submitMissing: (token, command) => { requireActive(); const outcome = queue!.submitMissing(token, command); if (outcome.ok) safeNotify(input.onMissingRequest); return outcome; },
         };

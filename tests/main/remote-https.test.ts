@@ -202,6 +202,14 @@ test('HTTPS guest admission and missing-song retries use the real SQLite authori
     assert.equal((withdrawn.json as { ok: boolean }).ok, true);
     assert.deepEqual((await post(server.origin, '/api/v1/withdraw', { command: withdraw }, auth)).json, withdrawn.json);
     assert.equal(service.snapshot(session).requests[0].status, 'withdrawn');
+    const beforeAway = service.snapshot(session);
+    const away = { commandId: 'away-http-1234', showId: beforeAway.showId, hostEpoch: beforeAway.hostEpoch, expectedRevision: beforeAway.revision, minutes: 10 };
+    assert.equal((await post(server.origin, '/api/v1/availability', { command: away })).status, 400);
+    const unavailable = await post(server.origin, '/api/v1/availability', { command: away }, auth);
+    assert.equal((unavailable.json as { ok: boolean }).ok, true);
+    assert.deepEqual((await post(server.origin, '/api/v1/availability', { command: away }, auth)).json, unavailable.json);
+    assert.equal((await post(server.origin, '/api/v1/availability', { command: { ...away, singerId: 'other-singer' } }, auth)).status, 400);
+    assert.ok(service.snapshot(session).unavailableUntilMs > Date.now());
     const requests = store.missingSongRequests();
     assert.equal(requests.length, 1);
     assert.equal(requests[0].singer, 'Alice');

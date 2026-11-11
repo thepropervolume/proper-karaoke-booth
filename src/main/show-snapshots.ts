@@ -26,7 +26,7 @@ function validState(value: unknown): boolean {
   if (!record(value.policy) || typeof value.policy.ageRestricted !== 'boolean' ||
       !(value.policy.includeVersionIds === null || (Array.isArray(value.policy.includeVersionIds) && value.policy.includeVersionIds.every(id))) ||
       !Array.isArray(value.policy.excludeVersionIds) || !value.policy.excludeVersionIds.every(id)) return false;
-  if (!value.singers.every(singer => record(singer) && id(singer.id) && id(singer.name)) ||
+  if (!value.singers.every(singer => record(singer) && id(singer.id) && id(singer.name) && (singer.unavailableUntilMs === undefined || whole(singer.unavailableUntilMs))) ||
       !value.versions.every(version => record(version) && id(version.id) && id(version.title) && typeof version.artist === 'string' &&
         ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)) && (version.source === undefined || validStreamingSource(version.source)))) return false;
   const singers = new Set(value.singers.map(singer => (singer as Record<string, unknown>).id));

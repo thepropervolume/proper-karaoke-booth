@@ -209,6 +209,7 @@ export class RemoteQueue {
     }
     const selected = [...active, ...recent.slice(0, MAX_SNAPSHOT_REQUESTS - active.length)].sort((a, b) => a.index - b.index);
     return { showId: state.showId, hostEpoch: state.hostEpoch, revision: state.revision, singerId: guest.singerId, singerName,
+      unavailableUntilMs: state.singers.find(s => s.id === guest.singerId)?.unavailableUntilMs ?? 0, serverNowMs: this.now(),
       catalog: catalog.items, catalogNextOffset: catalog.nextOffset,
       requests: selected.map(({ request }) => ({ id: request.id, versionId: request.versionId, status: request.status })),
       requestsTruncated: visibleCount > selected.length };
@@ -275,6 +276,31 @@ export class RemoteQueue {
       if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false as const, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
       const applied = applyCommand(this.state(), { commandId: `remote-${guest.id}-${command.commandId}`, showId: command.showId, hostEpoch: command.hostEpoch,
         expectedRevision: command.expectedRevision, actor: { role: 'singer', id: guest.singerId }, command: { type: 'withdrawRequest', requestId: command.requestId } }, this.settings(), this.now());
+      this.save(applied.state);
+      this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, command.commandId, fingerprint, JSON.stringify(applied.outcome));
+      committed = applied.state;
+      return applied.outcome;
+    });
+    if (committed) this.onCommitted(committed);
+    return outcome;
+  }
+  /** Only the authenticated singer may mark their own future availability. */
+  setAvailability(token: unknown, input: unknown, scope = ''): Outcome {
+    const guest = this.authenticate(token, scope);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw denied();
+    const value = input as Record<string, unknown>;
+    if (Object.keys(value).some(k => !['commandId', 'showId', 'hostEpoch', 'expectedRevision', 'minutes'].includes(k)) ||
+        !validId(value.commandId) || !validId(value.showId) || !validId(value.hostEpoch) ||
+        !Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0 ||
+        !Number.isInteger(value.minutes) || (value.minutes as number) < 0 || (value.minutes as number) > 60) throw denied();
+    const command = value as { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; minutes: number };
+    const fingerprint = digest(JSON.stringify(['availability', command.showId, command.hostEpoch, command.expectedRevision, command.minutes]));
+    let committed: ShowState | undefined;
+    const outcome = this.transaction(() => {
+      const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, command.commandId) as Receipt | undefined;
+      if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false as const, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
+      const applied = applyCommand(this.state(), { commandId: `remote-${guest.id}-${command.commandId}`, showId: command.showId, hostEpoch: command.hostEpoch,
+        expectedRevision: command.expectedRevision, actor: { role: 'singer', id: guest.singerId }, command: { type: 'setSingerAvailability', singerId: guest.singerId, minutes: command.minutes } }, this.settings(), this.now());
       this.save(applied.state);
       this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, command.commandId, fingerprint, JSON.stringify(applied.outcome));
       committed = applied.state;

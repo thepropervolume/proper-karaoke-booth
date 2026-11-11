@@ -2,7 +2,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { JoinRevisionConflict, type RemoteQueue } from './remote-queue';
 
-export type GuestAuthority = Pick<RemoteQueue, 'admissionInfo' | 'join' | 'resume' | 'snapshot' | 'catalog' | 'outcome' | 'submit' | 'submitMissing' | 'withdraw'>;
+export type GuestAuthority = Pick<RemoteQueue, 'admissionInfo' | 'join' | 'resume' | 'snapshot' | 'catalog' | 'outcome' | 'submit' | 'submitMissing' | 'withdraw'> & Partial<Pick<RemoteQueue, 'setAvailability'>>;
 const MAX_BODY = 8192, MAX_RESPONSE = 2 * 1024 * 1024;
 function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function exact(value: Record<string, unknown>, fields: string[]): boolean { return Object.keys(value).every(key => fields.includes(key)) && fields.every(key => key in value); }
@@ -69,6 +69,9 @@ export function createGuestApiHandler(authority: GuestAuthority) {
         case '/api/v1/withdraw':
           if (!exact(payload, ['command']) || !bearer) throw new Error();
           result = authority.withdraw(bearer, payload.command); break;
+        case '/api/v1/availability':
+          if (!exact(payload, ['command']) || !bearer || !authority.setAvailability) throw new Error();
+          result = authority.setAvailability(bearer, payload.command); break;
         case '/api/v1/missing-request':
           if (!exact(payload, ['command']) || !bearer) throw new Error();
           result = authority.submitMissing(bearer, payload.command); break;

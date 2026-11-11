@@ -108,3 +108,19 @@ test('uncertain withdrawal recovers its receipt without resending or a singer id
   await client.withdraw('request-123', listen); assert.equal(calls, 1);
   await client.checkOutcome(listen); assert.equal(outcomeId, 'secret-3'); assert.equal(client.state().message, 'Request withdrawn.');
 });
+
+
+test('availability uses its own outcome receipt and never repeats an uncertain deadline update', async () => {
+  const transport = fake(); let calls = 0, sent: unknown, outcomeId = '';
+  transport.setAvailability = async (_session, command) => { calls++; sent = command; throw new Error('lost response'); };
+  transport.outcome = async (_session, id) => { outcomeId = id; return { ok: true, revision: 5 }; };
+  const client = new SingerClient(transport, 'invite', secrets());
+  await client.join('Sam', listen);
+  await client.setAvailability(0.5, listen); assert.equal(calls, 0);
+  await client.setAvailability(60, listen);
+  assert.deepEqual(sent, { commandId: 'secret-3', showId: 'show-123', hostEpoch: 'epoch-123', expectedRevision: 4, minutes: 60 });
+  assert.equal(client.state().uncertain, true);
+  await client.setAvailability(0, listen); await client.request('song-123', listen); assert.equal(calls, 1);
+  await client.checkOutcome(listen); assert.equal(outcomeId, 'secret-3');
+  assert.equal(client.state().message, 'Availability updated.'); assert.equal(client.state().uncertain, false);
+});

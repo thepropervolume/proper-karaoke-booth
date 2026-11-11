@@ -297,3 +297,44 @@ test('withdrawal accepts maximum-length generated and host request IDs while enf
     assert.equal(service.withdraw(alice.session, hostRequest).ok, true);
   } finally { s.db.close(); }
 });
+
+
+test('availability is self-owned, minute-bounded, receipt-recoverable and does not extend on retry', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invitation = service.createInvitation(60000);
+    const a = service.join(invitation, 'join-away-a', secret(), 'Alice', 0);
+    const b = service.join(invitation, 'join-away-b', secret(), 'Bob', s.read().revision);
+    const snapshot = service.snapshot(a.session);
+    const command = { commandId: 'away-command-1', showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, minutes: 5 };
+    for (const minutes of [-1, 0.5, 61]) assert.throws(() => service.setAvailability(a.session, { ...command, minutes }));
+    assert.throws(() => service.setAvailability(a.session, { ...command, singerId: b.singerId }));
+    const outcome = service.setAvailability(a.session, command); assert.equal(outcome.ok, true);
+    assert.equal(s.read().singers.find(singer => singer.id === a.singerId)?.unavailableUntilMs, 301000);
+    assert.equal(s.read().singers.find(singer => singer.id === b.singerId)?.unavailableUntilMs, undefined);
+    s.tick(10000); assert.deepEqual(service.setAvailability(a.session, command), outcome);
+    assert.equal(service.snapshot(a.session).unavailableUntilMs, 301000, 'replaying does not extend the deadline');
+    assert.deepEqual(service.outcome(a.session, command.commandId), outcome);
+    const reused = service.setAvailability(a.session, { ...command, minutes: 6 }); assert.equal(reused.ok, false);
+    assert.equal(service.outcome(b.session, command.commandId), null);
+    const current = service.snapshot(a.session);
+    assert.equal(service.setAvailability(a.session, { ...command, commandId: 'away-return-1', expectedRevision: current.revision, minutes: 0 }).ok, true);
+    assert.equal(service.snapshot(a.session).unavailableUntilMs, 0);
+  } finally { s.db.close(); }
+});
+
+test('availability state and receipt roll back together when persistence fails', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invitation = service.createInvitation(60000);
+    const a = service.join(invitation, 'join-away-a', secret(), 'Alice', 0);
+    const snapshot = service.snapshot(a.session);
+    const command = { commandId: 'away-command-1', showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, minutes: 1 };
+    s.db.exec("CREATE TRIGGER fail_away BEFORE INSERT ON remote_receipts BEGIN SELECT RAISE(ABORT, 'simulated failure'); END");
+    assert.throws(() => service.setAvailability(a.session, command));
+    assert.equal(service.snapshot(a.session).unavailableUntilMs, 0);
+    assert.equal(service.outcome(a.session, command.commandId), null);
+    s.db.exec('DROP TRIGGER fail_away');
+    assert.equal(service.setAvailability(a.session, command).ok, true);
+  } finally { s.db.close(); }
+});

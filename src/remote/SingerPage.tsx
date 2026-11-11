@@ -8,6 +8,7 @@ export function SingerPage({ client }: { client: SingerClient }) {
   const [view, setView] = useState<GuestView>(() => client.state());
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
+  const [awayMinutes, setAwayMinutes] = useState(5);
   const [missingTitle, setMissingTitle] = useState('');
   const [missingArtist, setMissingArtist] = useState('');
   useEffect(() => {
@@ -33,6 +34,12 @@ export function SingerPage({ client }: { client: SingerClient }) {
       {view.uncertain && <section className="singer-warning"><p>A previous request may have been received. Check its outcome before making another request.</p>
         <button disabled={view.busy} onClick={() => void client.checkOutcome(setView)}>Check request outcome</button></section>}
       {view.snapshot && <>
+        <section><h2>Your availability</h2>
+          <p>{(view.snapshot.unavailableUntilMs ?? 0) > (view.snapshot.serverNowMs ?? Date.now()) ? `Unavailable · return in about ${Math.ceil(((view.snapshot.unavailableUntilMs ?? 0) - (view.snapshot.serverNowMs ?? Date.now())) / 60000)} min at last refresh.` : 'Available for your turn.'} You can keep one upcoming request while unavailable; existing requests stay saved. Your turn rejoins automatically when the time expires, and the host starts playback.</p>
+          <label>Minutes away<input type="number" min="1" max="60" step="1" value={awayMinutes} onChange={event => setAwayMinutes(Number(event.target.value))} /></label>
+          <button disabled={view.busy || view.uncertain || !Number.isInteger(awayMinutes) || awayMinutes < 1 || awayMinutes > 60} onClick={() => void client.setAvailability(awayMinutes, setView)}>Mark me unavailable</button>{' '}
+          <button disabled={view.busy || view.uncertain} onClick={() => void client.setAvailability(0, setView)}>I'm back</button>
+        </section>
         <section><h2>Your requests</h2>{view.snapshot.requests.length ? <ul>{view.snapshot.requests.map(request => {
           const song = view.songs.find(item => item.id === request.versionId);
           return <li key={request.id}>{song ? `${song.artist} — ${song.title}` : 'Song'} <strong>{request.status}</strong>{['pending', 'accepted'].includes(request.status) && <button disabled={view.busy || view.uncertain} onClick={() => void client.withdraw(request.id, setView)}>Withdraw</button>}</li>;

@@ -25,6 +25,7 @@ export function httpsGuestTransport(origin: string, fetcher: typeof fetch = fetc
     snapshot: session => post('/api/v1/snapshot', {}, session),
     catalog: (session, offset, limit) => post('/api/v1/catalog', { offset, limit }, session),
     submit: (session, command) => post('/api/v1/request', { command }, session),
+    setAvailability: (session, command) => post('/api/v1/availability', { command }, session),
     withdraw: (session, command) => post('/api/v1/withdraw', { command }, session),
     submitMissing: (session, command) => post('/api/v1/missing-request', { command }, session),
     outcome: (session, commandId) => post('/api/v1/outcome', { commandId }, session),

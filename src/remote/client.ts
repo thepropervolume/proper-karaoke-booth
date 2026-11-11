@@ -2,7 +2,7 @@ import type { Outcome, RequestStatus } from '../domain';
 
 export type Song = { id: string; title: string; artist: string };
 export type GuestSnapshot = { showId: string; hostEpoch: string; revision: number; singerId: string; singerName: string;
-  catalog: Song[]; catalogNextOffset: number | null; requestsTruncated?: boolean; requests: { id: string; versionId: string; status: RequestStatus }[] };
+  unavailableUntilMs?: number; serverNowMs?: number; catalog: Song[]; catalogNextOffset: number | null; requestsTruncated?: boolean; requests: { id: string; versionId: string; status: RequestStatus }[] };
 export type GuestTransport = {
   admission(invitation: string): Promise<{ showId: string; hostEpoch: string; revision: number }>;
   join(invitation: string, joinId: string, resumeSecret: string, name: string, revision: number): Promise<{ session: string; singerId: string }>;
@@ -11,6 +11,7 @@ export type GuestTransport = {
   catalog(session: string, offset: number, limit: number): Promise<{ revision: number; items: Song[]; nextOffset: number | null }>;
   submit(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; versionId: string }): Promise<Outcome>;
   withdraw(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; requestId: string }): Promise<Outcome>;
+  setAvailability?(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; minutes: number }): Promise<Outcome>;
   submitMissing(session: string, request: { commandId: string; title: string; artist: string }): Promise<Outcome>;
   outcome(session: string, commandId: string): Promise<Outcome | null>;
 };
@@ -28,7 +29,7 @@ export class SingerClient {
   private resumeSecret = '';
   private pendingJoin: PendingJoin | null = null;
   private pendingRequest: string | null = null;
-  private pendingKind: 'song' | 'missing' | 'withdraw' | null = null;
+  private pendingKind: 'song' | 'missing' | 'withdraw' | 'availability' | null = null;
   private view: GuestView = { joined: false, snapshot: null, songs: [], nextOffset: null, busy: false, message: '', uncertain: false, joinUncertain: false };
   constructor(private transport: GuestTransport, invitation: string, private random: () => string = randomSecret) { this.invitation = invitation; }
   private emit(listener: (view: GuestView) => void, changes: Partial<GuestView>): void {
@@ -112,6 +113,20 @@ export class SingerClient {
     } catch { this.emit(listener, { uncertain: true, message: 'Withdrawal may have been received. Check its outcome before making another request.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
+  async setAvailability(minutes: number, listener: (view: GuestView) => void): Promise<void> {
+    const snapshot = this.view.snapshot;
+    if (!this.session || !snapshot || this.view.busy || this.pendingRequest) return;
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 60) { this.emit(listener, { message: 'Choose a whole number of minutes from 0 to 60.' }); return; }
+    if (!this.transport.setAvailability) { this.emit(listener, { message: 'Availability controls are unavailable on this connection.' }); return; }
+    const commandId = this.random(); this.pendingRequest = commandId; this.pendingKind = 'availability';
+    this.emit(listener, { busy: true, message: '' });
+    try {
+      const result = await this.transport.setAvailability(this.session, { commandId, showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, minutes });
+      this.pendingRequest = null; this.pendingKind = null;
+      await this.afterOutcome(result, listener, 'availability');
+    } catch { this.emit(listener, { uncertain: true, message: 'Availability may have been updated. Check its outcome before making another change.' }); }
+    finally { this.emit(listener, { busy: false }); }
+  }
   /** Missing songs go to the host's request list, not the performance rotation. */
   async requestMissing(title: string, artist: string, listener: (view: GuestView) => void): Promise<void> {
     if (!this.session || !this.view.snapshot || this.view.busy || this.pendingRequest) return;
@@ -136,9 +151,9 @@ export class SingerClient {
     } catch { this.emit(listener, { message: 'Could not check the request. Reconnect and try again.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
-  private async afterOutcome(result: Outcome, listener: (view: GuestView) => void, kind: 'song' | 'missing' | 'withdraw'): Promise<void> {
+  private async afterOutcome(result: Outcome, listener: (view: GuestView) => void, kind: 'song' | 'missing' | 'withdraw' | 'availability'): Promise<void> {
     this.emit(listener, { uncertain: false });
-    const success = kind === 'missing' ? 'Missing-song request sent to the host.' : kind === 'withdraw' ? 'Request withdrawn.' : 'Request received.';
+    const success = kind === 'availability' ? 'Availability updated.' : kind === 'missing' ? 'Missing-song request sent to the host.' : kind === 'withdraw' ? 'Request withdrawn.' : 'Request received.';
     try { await this.loadSnapshot(listener); }
     catch { this.emit(listener, { message: result.ok ? `${success} Refresh when connected for status.` : `${result.message} Refresh when connected.` }); return; }
     this.emit(listener, { message: result.ok ? success : `${result.message} Review the refreshed list before trying again.` });

@@ -9,7 +9,7 @@ export type Actor = { role: Role; id: string };
 export type Rating = 'clean' | 'explicit' | 'unrated' | 'uncertain';
 export type Version = { id: string; title: string; artist: string; rating: Rating;
   source?: StreamingSource; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string };
-export type Singer = { id: string; name: string };
+export type Singer = { id: string; name: string; unavailableUntilMs?: number };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
 export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
 export type SongRequest = { id: string; singerId: string; versionId: string; status: RequestStatus; round: number | null; order: number | null };
@@ -18,6 +18,7 @@ export type Command =
   | { type: 'addVersion'; version: Version }
   | { type: 'editVersion'; id: string; title: string; artist: string }
   | { type: 'addSinger'; singer: Singer }
+  | { type: 'setSingerAvailability'; singerId: string; minutes: number; releaseStaged?: boolean }
   | { type: 'request'; requestId: string; singerId: string; versionId: string }
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
@@ -75,12 +76,26 @@ export function remainingPauseSeconds(state: ShowState, nowMs: number): number {
   return Number.isFinite(state.nextStartAtMs) ? Math.ceil(Math.max(0, state.nextStartAtMs! - nowMs) / 1000) : 0;
 }
 
+export function singerAvailable(state: ShowState, singerId: string, nowMs: number): boolean {
+  return (state.singers.find(singer => singer.id === singerId)?.unavailableUntilMs ?? 0) <= nowMs;
+}
+
+function singerRequestLimit(state: ShowState, singerId: string, configured: number | undefined, nowMs: number): string | null {
+  if (!singerAvailable(state, singerId, nowMs)) {
+    const message = futureRequestLimitMessage(state.requests, singerId, 1);
+    if (message) return 'An unavailable singer may have at most one upcoming request. Existing requests are retained; return or remove requests before adding another.';
+  }
+  return futureRequestLimitMessage(state.requests, singerId, configured);
+}
+
 /** The staged request remains locked when the scheduling mode changes. */
-export function orderedFuture(state: ShowState, mode: Settings['rotationMode']): SongRequest[] {
+export function orderedFuture(state: ShowState, mode: Settings['rotationMode'], nowMs = 0): SongRequest[] {
   // Precompute each singer's position once. Spreading an entire retained
   // history into Math.min can exceed the engine's argument limit, and
   // repeatedly filtering it during sorting grows quadratic with show history.
   const positions = new Map<string, number>();
+  const deadlines = new Map(state.singers.map(s => [s.id, s.unavailableUntilMs ?? 0]));
+  const available = (id: string) => (deadlines.get(id) ?? 0) <= nowMs;
   const future: { request: SongRequest; index: number }[] = [];
   state.requests.forEach((request, index) => {
     if (request.order !== null && !['removed', 'withdrawn', 'rejected'].includes(request.status)) {
@@ -92,6 +107,8 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode']):
   return future.sort((left, right) => {
     const a = left.request, b = right.request;
     return (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
+      (available(a.singerId) ? 0 : 1) - (available(b.singerId) ? 0 : 1) ||
+      (!available(a.singerId) && !available(b.singerId) ? (deadlines.get(a.singerId) ?? 0) - (deadlines.get(b.singerId) ?? 0) : 0) ||
       (a.id === state.promotedRequestId ? -1 : 0) - (b.id === state.promotedRequestId ? -1 : 0) ||
       (manual.get(a.id) ?? Infinity) - (manual.get(b.id) ?? Infinity) ||
       // Request arrays are append-only, so this also preserves FIFO for older
@@ -120,7 +137,7 @@ function permitted(actor: Actor, command: Command): boolean {
   if (actor.role === 'host') return command.type !== 'complete' && command.type !== 'withdrawRequest';
   if (actor.role === 'engine') return command.type === 'complete';
   if (actor.role === 'staff') return command.type === 'addSinger' || command.type === 'request' || command.type === 'accept';
-  return actor.role === 'singer' && ((command.type === 'request' && command.singerId === actor.id) || command.type === 'withdrawRequest');
+  return actor.role === 'singer' && ((command.type === 'request' && command.singerId === actor.id) || (command.type === 'setSingerAvailability' && command.singerId === actor.id && command.releaseStaged !== true) || command.type === 'withdrawRequest');
 }
 
 export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
@@ -157,12 +174,25 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     }
     case 'addSinger':
-      if (!cmd.singer || !nonempty(cmd.singer.id) || !nonempty(cmd.singer.name)) reject('INVALID', 'Invalid singer');
+      if (!cmd.singer || !nonempty(cmd.singer.id) || !nonempty(cmd.singer.name) || (cmd.singer.unavailableUntilMs !== undefined && (!Number.isSafeInteger(cmd.singer.unavailableUntilMs) || cmd.singer.unavailableUntilMs < 0 || cmd.singer.unavailableUntilMs > nowMs + 3600000))) reject('INVALID', 'Invalid singer');
       else if (state.singers.some(s => s.id === cmd.singer.id)) reject('DUPLICATE', 'Singer already exists');
       else state.singers.push({ ...cmd.singer });
       break;
+    case 'setSingerAvailability': {
+      const singer = state.singers.find(s => s.id === cmd.singerId);
+      const staged = state.requests.find(r => r.id === state.stagedRequestId && r.singerId === cmd.singerId);
+      const playing = state.requests.find(r => r.id === state.playback?.requestId && r.singerId === cmd.singerId);
+      if (!singer || !Number.isInteger(cmd.minutes) || cmd.minutes < 0 || cmd.minutes > 60 || !Number.isSafeInteger(nowMs) || nowMs < 0 || !Number.isSafeInteger(nowMs + cmd.minutes * 60000) || (cmd.releaseStaged !== undefined && typeof cmd.releaseStaged !== 'boolean')) reject('INVALID', 'Choose a whole number of minutes from 0 to 60');
+      else if (cmd.minutes > 0 && playing && envelope.actor.role !== 'host') reject('LOCKED', 'Ask the host while your performance is active');
+      else if (cmd.minutes > 0 && staged && (envelope.actor.role !== 'host' || cmd.releaseStaged !== true)) reject('LOCKED', 'Ask the host to release the staged song before marking this singer unavailable');
+      else {
+        singer.unavailableUntilMs = cmd.minutes === 0 ? 0 : nowMs + cmd.minutes * 60000;
+        if (cmd.minutes > 0 && staged) { staged.status = 'accepted'; state.stagedRequestId = null; }
+      }
+      break;
+    }
     case 'request': {
-      const limitMessage = futureRequestLimitMessage(state.requests, cmd.singerId, settings.maxFutureRequestsPerSinger);
+      const limitMessage = singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
       if (!nonempty(cmd.requestId) || !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
       else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
@@ -220,7 +250,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
         reject('INVALID_STATE', 'Only accepted waiting requests may be reordered; staged and playing songs are locked');
       else if (cmd.beforeRequestId === request.id) reject('INVALID', 'Choose a different position');
       else {
-        const order = orderedFuture(state, settings.rotationMode).filter(r => r.status === 'accepted' && r.id !== request.id).map(r => r.id);
+        const order = orderedFuture(state, settings.rotationMode, nowMs).filter(r => r.status === 'accepted' && r.id !== request.id).map(r => r.id);
         const position = target ? order.indexOf(target.id) : order.length;
         order.splice(position, 0, request.id);
         // Keep an interrupted/active turn's place for Stop, without changing playback.
@@ -240,7 +270,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
         const changingSinger = request.singerId !== cmd.singerId;
-        const limit = changingSinger && futureRequestLimitMessage(state.requests, cmd.singerId, settings.maxFutureRequestsPerSinger);
+        const limit = changingSinger && singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
         if (limit) reject('LIMIT', limit);
         else {
           request.versionId = cmd.versionId;
@@ -255,7 +285,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     }
     case 'stage': {
       if (state.stagedRequestId) { reject('LOCKED', 'Release the staged track first'); break; }
-      const next = orderedFuture(state, settings.rotationMode).find(r => r.status === 'accepted' && isVersionAllowed(state, r.versionId));
+      const next = orderedFuture(state, settings.rotationMode, nowMs).find(r => r.status === 'accepted' && singerAvailable(state, r.singerId, nowMs) && isVersionAllowed(state, r.versionId));
       if (!next) reject('NOT_AVAILABLE', 'No eligible accepted request');
       else {
         next.status = 'staged'; state.stagedRequestId = next.id;
@@ -273,6 +303,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (state.playback) reject('INVALID_STATE', 'A track is already active');
       else if (!staged) reject('INVALID_STATE', 'No staged track');
       else if (remainingPauseSeconds(state, nowMs)) reject('PAUSE_INTERVAL', `Wait ${remainingPauseSeconds(state, nowMs)} seconds before starting the next song.`);
+      else if (!singerAvailable(state, staged.singerId, nowMs)) reject('UNAVAILABLE', 'This singer is unavailable; release the staged song or wait until they return');
       else if (!isVersionAllowed(state, staged.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (!nonempty(cmd.generationId) || state.usedGenerationIds.includes(cmd.generationId)) reject('INVALID', 'Playback generation must be new');
       else {
