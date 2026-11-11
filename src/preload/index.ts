@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('tpv', {
   openCommunityVideo: (id: string) => ipcRenderer.invoke('host:karaokenerds-open-video', id),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
+  cycleAccentColor: () => ipcRenderer.invoke('host:cycle-accent-color'),
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),
   clearDisplayLogo: () => ipcRenderer.invoke('host:clear-display-logo'),

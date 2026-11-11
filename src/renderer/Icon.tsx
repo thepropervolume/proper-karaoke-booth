@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type IconName = 'search' | 'display' | 'fullscreen' | 'play' | 'pause' | 'stop' | 'skip' | 'settings' | 'file' | 'folder';
+export type IconName = 'search' | 'display' | 'fullscreen' | 'play' | 'pause' | 'stop' | 'skip' | 'settings' | 'file' | 'folder' | 'palette';
 
 /** Decorative icons: the containing control supplies an accessible name. */
 export function Icon({ name }: { name: IconName }) {
@@ -13,6 +13,7 @@ export function Icon({ name }: { name: IconName }) {
     stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
     skip: <><path d="M5 5v14l10-7zM19 5v14" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4m0-14.2-1.4 1.4M6.3 17.7l-1.4 1.4" /><circle cx="12" cy="12" r="8" /></>,
+    palette: <><path d="M12 3a9 9 0 0 0 0 18h1.5a2.5 2.5 0 0 0 0-5H13a2 2 0 0 1 0-4h4a4 4 0 0 0 3.5-6.1A9 9 0 0 0 12 3z" /><circle cx="7.5" cy="11" r=".7" /><circle cx="10" cy="7" r=".7" /><circle cx="15" cy="7" r=".7" /></>,
     file: <><path d="M6 2h8l4 4v16H6zM14 2v5h4M12 11v7M8.5 14.5h7" /></>,
     folder: <><path d="M3 6h7l2 2h9v11H3zM12 10v7M8.5 13.5h7" /></>,
   };

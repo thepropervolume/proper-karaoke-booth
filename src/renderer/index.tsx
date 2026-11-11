@@ -5,7 +5,7 @@ import '@fontsource/nunito-sans/800.css';
 import { createRoot } from 'react-dom/client';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
-import { DEFAULT_SETTINGS, type Settings } from '../domain/settings';
+import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/settings';
 import { libraryView, type LibraryFilter, type LibrarySort } from '../domain/library-view';
 import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
 import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
@@ -46,6 +46,7 @@ declare global {
       openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
       saveSettings: (settings: Settings) => Promise<Settings>;
+      cycleAccentColor: () => Promise<Settings['accentColor']>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
       onFocusSearch: (callback: () => void) => () => void;
       importFiles: (kind?: 'files' | 'folder') => Promise<ImportProgress | null>;
@@ -107,6 +108,8 @@ function App() {
   const [importPickerBusy, setImportPickerBusy] = useState(false);
   const [relinkBusy, setRelinkBusy] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [accentSaving, setAccentSaving] = useState(false);
+  const accentSaveInFlight = useRef(false);
   const [settingsPath, setSettingsPath] = useState('');
   const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
   const [shortcutsPath, setShortcutsPath] = useState('');
@@ -174,6 +177,18 @@ function App() {
     preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
   }, [settings.appearance]);
+
+  useEffect(() => { document.documentElement.dataset.accent = settings.accentColor; }, [settings.accentColor]);
+
+  const cycleAccent = async () => {
+    if (accentSaveInFlight.current || !settingsPath) return;
+    accentSaveInFlight.current = true; setAccentSaving(true);
+    try {
+      const accentColor = await window.tpv.cycleAccentColor();
+      setSettings(current => ({ ...current, accentColor }));
+    } catch { setNotice('Could not save the accent color. Please try again.'); }
+    finally { accentSaveInFlight.current = false; setAccentSaving(false); }
+  };
 
   useEffect(() => window.tpv.onFocusSearch(focusSearch), []);
   useEffect(() => { if (searchFocusRequest) searchInput.current?.focus(); }, [searchFocusRequest, screen, !!state]);
@@ -320,10 +335,11 @@ function App() {
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">▥</span><span>The Proper Volume<small>Karaoke host</small></span></div>
       <h1>Local rehearsal</h1>
+      <Tooltip text={`Accent color: ${settings.accentColor}. Switch to ${nextAccentColor(settings.accentColor)}`}><button className="icon-button accent-button" aria-label={`Accent color: ${settings.accentColor}. Switch to ${nextAccentColor(settings.accentColor)}`} onClick={() => void cycleAccent()} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
       <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>
       <Tooltip text="Singer Display"><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
       <Tooltip text="Toggle singer display fullscreen"><button className="icon-button" aria-label="Toggle singer display fullscreen" onClick={() => void run(() => window.tpv.toggleDisplayFullscreen())}><Icon name="fullscreen" /></button></Tooltip>
-      <Tooltip text="Preferences"><button className="icon-button" aria-label="Preferences" onClick={() => setSettingsOpen(true)} disabled={!settingsPath}><Icon name="settings" /></button></Tooltip>
+      <Tooltip text="Preferences"><button className="icon-button" aria-label="Preferences" onClick={() => setSettingsOpen(true)} disabled={!settingsPath || accentSaving}><Icon name="settings" /></button></Tooltip>
     </header>
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
@@ -405,7 +421,7 @@ function App() {
         <Tooltip text={`Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text="Stop"><button className="icon-button" aria-label="Stop" disabled={busy || !active} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
         <Tooltip text="Skip"><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
-        <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" value={Math.round(settings.masterVolume * 100)} onChange={event => { const next = { ...settings, masterVolume: Number(event.target.value) / 100 }; setSettings(next); void window.tpv.saveSettings(next).catch(error => setNotice(`Could not save volume: ${String(error)}`)); }} /></label>
+        <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const next = { ...settings, masterVolume: Number(event.target.value) / 100 }; setSettings(next); void window.tpv.saveSettings(next).catch(error => setNotice(`Could not save volume: ${String(error)}`)); }} /></label>
       </div>
       <div className="transport__status" role="status">{!active && pauseRemaining > 0 ? `Pause interval: ${pauseRemaining}s remaining. Press Play when ready.` : 'Key, tempo, seek and filler are not yet available in this rehearsal build.'}</div>
     </footer>

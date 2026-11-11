@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readSettings, writeSettings } from '../../src/main/settings';
+import { nextAccentColor } from '../../src/domain/settings';
 
 test('volume persists, upgrades older preferences, and rejects invalid edits without overwriting', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-settings-test-'));
@@ -17,6 +18,25 @@ test('volume persists, upgrades older preferences, and rejects invalid edits wit
     assert.equal(readSettings(path).masterVolume, 0.35);
     const before = readFileSync(path, 'utf8');
     assert.throws(() => writeSettings(path, { ...saved, masterVolume: 2 }));
+    assert.equal(readFileSync(path, 'utf8'), before);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('accent color defaults for older settings, cycles and persists, and rejects invalid values', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-accent-test-'));
+  const path = join(directory, 'settings.json');
+  try {
+    writeFileSync(path, JSON.stringify({ appearance: 'day' }));
+    let current = readSettings(path);
+    assert.equal(current.accentColor, 'blue');
+    for (const color of ['pink', 'purple', 'blue'] as const) {
+      current = writeSettings(path, { ...current, accentColor: nextAccentColor(current.accentColor) });
+      assert.equal(current.accentColor, color);
+      assert.equal(readSettings(path).accentColor, color);
+      assert.equal(current.appearance, 'day');
+    }
+    const before = readFileSync(path, 'utf8');
+    assert.throws(() => writeSettings(path, { ...current, accentColor: 'orange' }), /accent color/i);
     assert.equal(readFileSync(path, 'utf8'), before);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

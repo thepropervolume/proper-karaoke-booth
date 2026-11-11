@@ -10,7 +10,8 @@ import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-
 import { metadataFromPath } from '../domain/metadata';
 import { Store } from './store';
 import { readSettings, writeSettings } from './settings';
-import { parseSettings, type Settings } from '../domain/settings';
+import { nextAccentColor, parseSettings, type Settings } from '../domain/settings';
+import { SettingsUpdateQueue } from './settings-update-queue';
 import { DEFAULT_SHORTCUTS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts } from './shortcuts';
 import { loadLogo, saveLogo } from './logo';
@@ -42,6 +43,7 @@ let store: Store<ShowState>;
 let communityBrowser: LocalCommunityBrowser | null = null;
 let state: ShowState;
 let settings: Settings;
+const settingsUpdates = new SettingsUpdateQueue();
 let settingsPath: string;
 let settingsCreated = false;
 let shortcuts: Shortcuts = DEFAULT_SHORTCUTS;
@@ -490,17 +492,27 @@ else {
   ipcMain.handle('host:save-settings', async (event, value: unknown) => {
     guardHost(event.sender.id);
     const proposed = parseSettings(value);
-    const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
-    if (changingOutput && playbackTransition) throw new Error('Wait for the current playback transition.');
-    if (changingOutput) { playbackTransition = true; publishBumper(); }
-    try {
-      if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
-      settings = writeSettings(settingsPath, proposed);
+    return settingsUpdates.run(async () => {
+      const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
+      if (changingOutput && playbackTransition) throw new Error('Wait for the current playback transition.');
+      if (changingOutput) { playbackTransition = true; publishBumper(); }
+      try {
+        if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
+        settings = writeSettings(settingsPath, proposed);
+        settingsCreated = false;
+        if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
+        publishDisplay();
+        return settings;
+      } finally { if (changingOutput) { playbackTransition = false; publishBumper(); } }
+    });
+  });
+  ipcMain.handle('host:cycle-accent-color', event => {
+    guardHost(event.sender.id);
+    return settingsUpdates.run(() => {
+      settings = writeSettings(settingsPath, { ...settings, accentColor: nextAccentColor(settings.accentColor) });
       settingsCreated = false;
-      if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
-      publishDisplay();
-      return settings;
-    } finally { if (changingOutput) { playbackTransition = false; publishBumper(); } }
+      return settings.accentColor;
+    });
   });
   ipcMain.handle('host:reveal-config-file', (event, kind: unknown) => {
     guardHost(event.sender.id);

@@ -10,6 +10,7 @@
   --muted: #b9c2d0;
   --line: #334052;
   --accent: #0eb7ff;
+  --accent-contrast: #06111b;
   --purple: #c7adff;
   --danger: #ffbbbf;
   --focus: #0eb7ff;
@@ -24,10 +25,15 @@
   --muted: #625e58;
   --line: #c8c8bf;
   --accent: #1765a6;
+  --accent-contrast: #ffffff;
   --purple: #423f9f;
   --danger: #a02a3a;
   --focus: #1765a6;
 }
+:root[data-accent='pink'] { --accent: #ff92bf; --focus: #ff92bf; --panel-selected: #402438; }
+:root[data-accent='purple'] { --accent: #c7adff; --focus: #c7adff; --panel-selected: #302744; }
+:root[data-theme='day'][data-accent='pink'] { --accent: #a91e5c; --focus: #a91e5c; --panel-selected: #f5dce8; }
+:root[data-theme='day'][data-accent='purple'] { --accent: #5b35aa; --focus: #5b35aa; --panel-selected: #e9e0f7; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
 button, input, select { font: inherit; }

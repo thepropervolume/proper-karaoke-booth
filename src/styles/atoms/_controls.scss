@@ -2,10 +2,11 @@ button, input, select { color: var(--text); }
 button { min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-raised); font-weight: 700; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { cursor: not-allowed; opacity: .56; }
-button.primary { color: #06111b; background: #0eb7ff; border-color: #0eb7ff; }
+button.primary { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); }
 button.link { border: 0; background: transparent; color: var(--accent); padding: 0 8px; }
 input, select { min-height: 44px; width: 100%; padding: 9px 12px; background: var(--panel-raised); border: 1px solid transparent; border-radius: 7px; }
 input::placeholder { color: var(--muted); opacity: 1; }
+input { accent-color: var(--accent); }
 label { color: var(--muted); font-size: .87rem; font-weight: 700; }
 small, .muted { color: var(--muted); }
 .eyebrow { color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .055em; text-transform: uppercase; }
