@@ -106,7 +106,7 @@ Required failure handling covers missing/corrupt files, unsupported codecs, outp
 
 ## 10. Collections, history and policies
 
-**Available:** host-managed Singer Playlists, KJ Picks, Artists and History views. Genres is a placeholder until genre metadata exists. These are local show/library features, not cross-device singer accounts. **Planned:** favorites, playlist import/export, per-singer ownership and sharing, searchable/exportable history, and retention/deletion controls.
+**Available:** host-managed Singer Playlists, KJ Picks, Artists and History views. Hosts can search recorded performance history by singer, artist or title and filter it by singer. Genres is a placeholder until genre metadata exists. These are local show/library features, not cross-device singer accounts. **Planned:** favorites, playlist import/export, per-singer ownership and sharing, CSV history export, and retention/deletion controls.
 
 **Policy foundation exists:** versions can be included or excluded, and age-restricted eligibility hides unrated, uncertain and conflicting material. Guest catalog and request boundaries use the same eligibility decision. **Planned:** an accessible host policy interface, show/party allowlists and exclusions by song/version/source/playlist, preview of affected future turns, owner-only blocked-item maintenance, evidence provenance and audit. Exclusions win; all discovery, direct-ID, favorites, request, stage, playback and API paths must enforce policy. A policy change must not silently stop active audio.
 

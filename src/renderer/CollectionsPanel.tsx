@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { CollectionsAction, CollectionsSnapshot } from '../domain/collections';
 import type { Singer, Version } from '../domain/index';
+import { historyView } from '../domain/history-view';
 
 type Props = {
   data: CollectionsSnapshot;
@@ -20,11 +21,12 @@ export function CollectionsPanel({ data, singers, versions, selectedVersionId, b
   const [name, setName] = useState('');
   const [artist, setArtist] = useState('');
   const [historySinger, setHistorySinger] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
   const currentPlaylistId = view === 'kj' ? 'kj-picks' : playlistId;
   const playlist = data.playlists.find(p => p.id === currentPlaylistId);
   const songs = data.items.filter(i => i.playlistId === currentPlaylistId).map(i => versions.find(v => v.id === i.versionId)).filter((v): v is Version => !!v);
   const artists = [...new Set(versions.map(v => v.artist.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const history = data.history.filter(h => !historySinger || h.singerId === historySinger);
+  const history = useMemo(() => view === 'history' ? historyView(data.history, historySearch, historySinger) : [], [view, data.history, historySearch, historySinger]);
   const make = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!name.trim() || !ownerId) return;
@@ -56,9 +58,11 @@ export function CollectionsPanel({ data, singers, versions, selectedVersionId, b
       {!artists.length && <p className="empty">No artist metadata is available.</p>}
     </>}
     {view === 'genres' && <p className="empty">Genre metadata is not available in this library yet.</p>}
-    {view === 'history' && <><label>Filter by singer<select value={historySinger} onChange={e => setHistorySinger(e.target.value)}><option value="">All singers</option>{singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select></label>
+    {view === 'history' && <><p className="muted">Shows completed and skipped performances recorded since history became available; earlier performances are not included.</p>
+      <label>Search history<input type="search" value={historySearch} maxLength={200} placeholder="Singer, artist or title" onChange={e => setHistorySearch(e.target.value)} /></label>
+      <label>Filter by singer<select value={historySinger} onChange={e => setHistorySinger(e.target.value)}><option value="">All singers</option>{singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select></label>
       {history.map(item => <div className="track-row" key={item.generationId}><div><strong>{item.title}</strong><small>{item.singer}{item.artist ? ` · ${item.artist}` : ''} · {item.outcome} · {new Date(item.at).toLocaleString()}</small></div></div>)}
-      {!history.length && <p className="empty">No completed or skipped performances yet.</p>}
+      {!history.length && <p className="empty">{data.history.length ? 'No performances match the current search and singer filter.' : 'No completed or skipped performances yet.'}</p>}
     </>}
   </section>;
 }
