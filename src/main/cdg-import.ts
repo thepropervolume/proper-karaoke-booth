@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, rename, rm, copyFile, realpath } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, rename, rm, open, realpath } from 'node:fs/promises';
 import { basename, dirname, extname, join, sep } from 'node:path';
 import { crc32 } from 'node:zlib';
 import { spawn } from 'node:child_process';
@@ -12,6 +12,23 @@ import { hashImportFile } from './import-hash';
 export type CdgProgress = { id: string; phase: 'preparing' | 'converting' | 'importing' | 'completed' | 'cancelled' | 'failed'; name: string; seconds: number; message: string };
 const AUDIO_LIMIT = 256 * 1024 * 1024, CDG_LIMIT = 32 * 1024 * 1024;
 const checkAbort = (signal: AbortSignal) => { if (signal.aborted) throw new Error('Import cancelled.'); };
+
+/** Bound copied bytes and refuse source replacement during asynchronous staging. */
+async function copyAsset(source: string, destination: string, limit: number, signal: AbortSignal): Promise<void> {
+  const named = await lstat(source);
+  if (!named.isFile() || named.isSymbolicLink() || !named.size || named.size > limit) throw new Error('Source pair is invalid or exceeds size limits.');
+  const file = await open(source, 'r');
+  try {
+    const start = await file.stat();
+    if (start.dev !== named.dev || start.ino !== named.ino || start.size !== named.size || start.mtimeMs !== named.mtimeMs) throw new Error('Source changed before import.');
+    let bytes = 0;
+    const bounded = new Transform({ transform(chunk: Buffer, _encoding, callback) { bytes += chunk.length; callback(bytes > limit ? new Error('Source exceeds size limits.') : null, chunk); } });
+    await pipeline(file.createReadStream({ autoClose: false }), bounded, createWriteStream(destination, { flags: 'wx', mode: 0o600 }), { signal });
+    const end = await file.stat(), stillNamed = await lstat(source);
+    if (bytes !== start.size || end.size !== start.size || end.mtimeMs !== start.mtimeMs || end.ctimeMs !== start.ctimeMs ||
+        stillNamed.isSymbolicLink() || stillNamed.dev !== start.dev || stillNamed.ino !== start.ino || stillNamed.size !== start.size || stillNamed.mtimeMs !== start.mtimeMs) throw new Error('Source changed during import.');
+  } finally { await file.close(); }
+}
 
 /** Select exactly one sibling pair. Case-insensitive duplicates are ambiguous. */
 export async function resolveCdgPair(selected: string): Promise<{ audio: string; graphics: string }> {
@@ -123,9 +140,13 @@ export class CdgImport {
   async shutdown(): Promise<void> { this.controller?.abort(); await this.completion; }
   private async run(selected: string, controller: AbortController): Promise<void> {
     const progress = this.progress!; let directory: string | null = null, retain = false;
+    let directoryIdentity: { dev: number; ino: number } | null = null;
+    let canonicalRoot = '';
     try {
       await mkdir(this.root, { recursive: true }); checkAbort(controller.signal);
+      canonicalRoot = await realpath(this.root);
       directory = await mkdtemp(join(this.root, 'track-'));
+      const created = await lstat(directory); directoryIdentity = { dev: created.dev, ino: created.ino };
       let audio: string, graphics: string, metadataPath = selected;
       if (extname(selected).toLowerCase() === '.zip') {
         const pair = await extractCdgZip(selected, directory, controller.signal);
@@ -133,7 +154,7 @@ export class CdgImport {
       } else {
         const pair = await resolveCdgPair(selected); checkAbort(controller.signal);
         audio = join(directory, 'audio.mp3'); graphics = join(directory, 'lyrics.cdg');
-        await copyFile(pair.audio, audio); checkAbort(controller.signal); await copyFile(pair.graphics, graphics);
+        await copyAsset(pair.audio, audio, AUDIO_LIMIT, controller.signal); checkAbort(controller.signal); await copyAsset(pair.graphics, graphics, CDG_LIMIT, controller.signal);
       }
       const info = await lstat(graphics);
       if (!info.size || info.size % 24 !== 0) throw new Error('CDG data must contain complete 24-byte packets.');
@@ -154,15 +175,16 @@ export class CdgImport {
       progress.message = controller.signal.aborted ? 'Import cancelled.' : error instanceof Error ? error.message : 'CD+G import failed.';
     } finally {
       // This directory is created exclusively by this job; archive paths are never used for cleanup.
-      if (directory && !retain) {
+      if (directory) {
         try {
-          const root = await realpath(this.root), target = await realpath(directory);
+          const target = await realpath(directory);
           const identity = await lstat(directory);
-          if (!target.startsWith(root + sep) || dirname(target) !== root || identity.isSymbolicLink()) throw new Error('Unsafe cleanup path.');
-          await rm(directory, { recursive: true, force: true });
+          if (!directoryIdentity || !target.startsWith(canonicalRoot + sep) || dirname(target) !== canonicalRoot ||
+              !identity.isDirectory() || identity.isSymbolicLink() || identity.dev !== directoryIdentity.dev || identity.ino !== directoryIdentity.ino) throw new Error('Unsafe cleanup path.');
+          if (!retain) await rm(directory, { recursive: true, force: true });
+          else await Promise.all(['audio.mp3', 'lyrics.cdg'].map(name => rm(join(directory!, name), { force: true })));
         } catch { progress.message += ' Temporary files could not be removed.'; }
       }
-      else if (directory) await Promise.all(['audio.mp3', 'lyrics.cdg'].map(name => rm(join(directory!, name), { force: true }).catch(() => {})));
       this.controller = null;
     }
   }

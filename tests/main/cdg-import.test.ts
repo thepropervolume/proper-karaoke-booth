@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { crc32 } from 'node:zlib';
 import { CdgImport, extractCdgZip, resolveCdgPair } from '../../src/main/cdg-import';
@@ -84,5 +84,26 @@ test('CDG/MP3 conversion produces a playable MP4 before committing without chang
     assert.equal(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', committed], { windowsHide: true }).status, 0);
     assert.deepEqual(await readFile(audio), original); assert.deepEqual(await readFile(cdg), graphics);
     assert.deepEqual(await readdir(join(committed, '..')), ['track.mp4']);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test('cleanup refuses a replaced managed directory for both retained and duplicate conversions', { skip: !hasFfmpeg }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cdg-cleanup-'));
+  try {
+    const audio = join(dir, 'song.mp3'), cdg = join(dir, 'song.cdg');
+    assert.equal(spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-c:a', 'libmp3lame', audio], { windowsHide: true }).status, 0);
+    await writeFile(cdg, graphics);
+    for (const outcome of ['imported', 'duplicate'] as const) {
+      const victim = join(dir, `victim-${outcome}`); await mkdir(victim); await writeFile(join(victim, 'audio.mp3'), 'preserve audio'); await writeFile(join(victim, 'lyrics.cdg'), 'preserve graphics');
+      const job = new CdgImport(join(dir, `managed-${outcome}`), path => {
+        // This callback is synchronous like Store.save. Replace the job directory
+        // between publication and cleanup to reproduce a hostile junction swap.
+        const directory = dirname(path);
+        const result = spawnSync(process.execPath, ['-e', `const f=require('node:fs'); f.renameSync(process.argv[1],process.argv[1]+'-moved'); f.symlinkSync(process.argv[2],process.argv[1],process.platform==='win32'?'junction':'dir');`, directory, victim], { windowsHide: true });
+        assert.equal(result.status, 0); return outcome;
+      });
+      job.start(cdg); while (job.active()) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.equal(job.snapshot()?.phase, 'completed', job.snapshot()?.message); assert.match(job.snapshot()!.message, /Temporary files could not be removed/);
+      assert.equal(await readFile(join(victim, 'audio.mp3'), 'utf8'), 'preserve audio'); assert.equal(await readFile(join(victim, 'lyrics.cdg'), 'utf8'), 'preserve graphics');
+    }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
