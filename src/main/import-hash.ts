@@ -1,6 +1,10 @@
 import { Worker } from 'node:worker_threads';
 
 export class ImportCancelled extends Error { constructor() { super('Import cancelled.'); this.name = 'ImportCancelled'; } }
+export type ImportFileFailure = 'missing' | 'permission' | 'unavailable' | 'empty' | 'not-file' | 'changed' | 'unknown';
+export class ImportFileError extends Error {
+  constructor(readonly reason: ImportFileFailure) { super(`Import failed: ${reason === 'changed' ? 'source changed during import' : reason}`); this.name = 'ImportFileError'; }
+}
 
 // This fixed, app-owned worker program never incorporates paths or metadata as
 // code. The selected path is sent separately through workerData.
@@ -14,10 +18,11 @@ const same = (a,b) => a.dev === b.dev && a.ino === b.ino && a.size === b.size &&
   try {
     const path = workerData.path;
     const startPath = await lstat(path);
-    if (!startPath.isFile() || startPath.isSymbolicLink() || !Number.isSafeInteger(startPath.size) || startPath.size < 1) throw new Error('The source is not a nonempty regular file.');
+    if (!startPath.isFile() || startPath.isSymbolicLink()) throw Object.assign(new Error('Not a regular file'), { reason: 'not-file' });
+    if (!Number.isSafeInteger(startPath.size) || startPath.size < 1) throw Object.assign(new Error('Empty file'), { reason: 'empty' });
     file = await open(path, 'r');
     const before = await file.stat();
-    if (!before.isFile() || !same(startPath,before)) throw new Error('The source changed while opening.');
+    if (!before.isFile() || !same(startPath,before)) throw Object.assign(new Error('Source changed'), { reason: 'changed' });
     const hash = createHash('sha256');
     let read = 0, lastBytes = 0, lastTime = 0;
     parentPort.postMessage({type:'progress', read:0, total:before.size});
@@ -30,9 +35,13 @@ const same = (a,b) => a.dev === b.dev && a.ino === b.ino && a.size === b.size &&
       }
     }
     const after = await file.stat(), endPath = await lstat(path);
-    if (read !== before.size || !same(before,after) || !endPath.isFile() || endPath.isSymbolicLink() || !same(before,endPath)) throw new Error('The source changed during import.');
+    if (read !== before.size || !same(before,after) || !endPath.isFile() || endPath.isSymbolicLink() || !same(before,endPath)) throw Object.assign(new Error('Source changed'), { reason: 'changed' });
     parentPort.postMessage({type:'done', hash:hash.digest('hex'), read, total:before.size});
-  } catch (error) { parentPort.postMessage({type:'error', message: error && typeof error.message === 'string' ? error.message : 'The file could not be read.'}); }
+  } catch (error) {
+    const code = error && error.code;
+    const reason = error && error.reason || (code === 'ENOENT' ? 'missing' : ['EACCES','EPERM'].includes(code) ? 'permission' : ['EIO','EBUSY','ENODEV','ETIMEDOUT','ENETUNREACH'].includes(code) ? 'unavailable' : 'unknown');
+    parentPort.postMessage({type:'error', reason});
+  }
   finally { if (file) await file.close().catch(() => {}); }
 })().catch(() => {});
 `;
@@ -56,7 +65,10 @@ export function hashImportFile(path: string, signal: AbortSignal, progress: (byt
       if (data.type === 'progress' && typeof data.read === 'number' && typeof data.total === 'number') {
         try { progress(data.read, data.total); } catch { /* Progress cannot affect the import. */ }
       } else if (data.type === 'done' && typeof data.hash === 'string' && /^[a-f0-9]{64}$/.test(data.hash)) finish(undefined, data.hash);
-      else if (data.type === 'error') finish(new Error('The file could not be read or changed during import.'));
+      else if (data.type === 'error') {
+        const reasons: ImportFileFailure[] = ['missing', 'permission', 'unavailable', 'empty', 'not-file', 'changed', 'unknown'];
+        finish(new ImportFileError(reasons.includes(data.reason as ImportFileFailure) ? data.reason as ImportFileFailure : 'unknown'));
+      }
     });
     worker.once('error', () => finish(new Error('The file could not be read.')));
     worker.once('exit', () => { if (!settled) finish(new Error('The hash worker stopped unexpectedly.')); });

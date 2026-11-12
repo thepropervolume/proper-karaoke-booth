@@ -71,12 +71,13 @@ export function ImportProgressView({ progress, page, error = '', cancelling = fa
     <div className="import-panel__heading"><h3>{title}</h3>
       {active && <button type="button" disabled={cancelling || progress.phase === 'cancelling'} onClick={onCancel}>Cancel import</button>}
     </div>
-    <p role="status" aria-live="polite">{progress.processed} processed · {progress.imported} imported · {progress.duplicates} duplicates · {progress.failed} failed{progress.cancelled ? ` · ${progress.cancelled} cancelled` : ''}{progress.needsReview ? ` · ${progress.needsReview} need metadata review` : ''}</p>
-    {active && <p className="import-panel__hint">Folder totals may grow as files are discovered. Playback controls remain available.</p>}
+    <p role="status" aria-live="polite">{progress.processed} processed · {progress.imported} imported · {progress.duplicates} duplicates · {progress.failed} failed{progress.cancelled ? ` · ${progress.cancelled} cancelled` : ''}{progress.needsReview ? ` · ${progress.needsReview} need metadata review` : ''}{progress.directoriesScanned ? ` · ${progress.directoriesScanned} folders scanned` : ''}{progress.skippedUnsupported ? ` · ${progress.skippedUnsupported} other files skipped` : ''}</p>
+    {active && <p className="import-panel__hint">Folder totals grow as files are discovered. Large or cloud-only files may take time to download and fingerprint. Playback controls remain available.</p>}
+    {progress.phase === 'completed' && progress.discovered === 0 && <p className="import-panel__hint">No MP4 videos were found. To import an MP3 + CDG pair or ZIP, use Import CD+G / ZIP.</p>}
     {progress.current && <div className="import-panel__current">
       <span className="import-panel__filename">{progress.current.name}</span>
-      {progress.current.bytesTotal > 0 ? <progress aria-label={`Hashing ${progress.current.name}`} value={Math.min(progress.current.bytesRead, progress.current.bytesTotal)} max={progress.current.bytesTotal} /> : <progress aria-label={`Preparing ${progress.current.name}`} />}
-      <span>{formatImportBytes(progress.current.bytesRead)}{progress.current.bytesTotal > 0 ? ` / ${formatImportBytes(progress.current.bytesTotal)}` : ''}</span>
+      {progress.current.bytesTotal > 0 ? <progress aria-label={`Hashing ${progress.current.name}`} value={Math.min(progress.current.bytesRead, progress.current.bytesTotal)} max={progress.current.bytesTotal} /> : <progress aria-label={`${progress.phase === 'scanning' ? 'Scanning' : 'Preparing'} ${progress.current.name}`} />}
+      {progress.phase !== 'scanning' && <span>{formatImportBytes(progress.current.bytesRead)}{progress.current.bytesTotal > 0 ? ` / ${formatImportBytes(progress.current.bytesTotal)}` : ''}</span>}
     </div>}
     {progress.phase === 'cancelled' && <p className="import-panel__hint">Files not yet discovered were not processed. Songs already imported remain in the library.</p>}
     {progress.phase === 'failed' && <p className="import-panel__hint">The import stopped before all files could be processed. Songs already imported remain in the library.</p>}

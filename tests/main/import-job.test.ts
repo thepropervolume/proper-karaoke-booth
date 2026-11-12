@@ -4,7 +4,7 @@ import { closeSync, ftruncateSync, mkdtempSync, mkdirSync, openSync, rmSync, sym
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
-import { hashImportFile } from '../../src/main/import-hash';
+import { hashImportFile, ImportFileError } from '../../src/main/import-hash';
 import { ImportJob } from '../../src/main/import-job';
 
 function fixture() { return mkdtempSync(join(tmpdir(), 'tpv-import-test-')); }
@@ -115,9 +115,36 @@ test('recursive folder scan includes MP4 files, ignores other files and does not
     const started = job.start('folder', [dir, join(dir, 'missing-folder')]); const final = await job.wait(); assert.ok(final);
     const results = job.page(started.jobId).items;
     assert.equal(final.imported, 2); assert.equal(final.failed, 1); assert.equal(results.length, 3);
+    assert.equal(final.directoriesScanned, 2); assert.equal(final.skippedUnsupported, 1);
     assert.ok(results.every(item => !item.name.includes('outside')));
     assert.ok(results.some(item => item.name.endsWith(join('nested', 'b.MP4'))));
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(external, { recursive: true, force: true }); }
+});
+
+test('empty folders report skipped formats and never hash other file types', async () => {
+  const dir = fixture();
+  try {
+    writeFileSync(join(dir, 'song.cdg'), 'graphics'); writeFileSync(join(dir, 'song.mp3'), 'audio');
+    let hashes = 0;
+    const job = new ImportJob(() => ({ outcome: 'imported' }), () => {}, async () => { hashes++; return 'fingerprint'; });
+    job.start('folder', [dir]); const result = await job.wait(); assert.ok(result);
+    assert.equal(result.phase, 'completed'); assert.equal(result.discovered, 0); assert.equal(result.directoriesScanned, 1);
+    assert.equal(result.skippedUnsupported, 2); assert.equal(hashes, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('per-file diagnostic classifies a read failure without exposing a private path', async () => {
+  const dir = fixture();
+  try {
+    const file = join(dir, 'song.mp4'); writeFileSync(file, 'fixture');
+    const job = new ImportJob(() => ({ outcome: 'imported' }), () => {}, async () => { throw new ImportFileError('permission'); });
+    const started = job.start('files', [file]); const result = await job.wait(); assert.ok(result);
+    assert.equal(result.failed, 1);
+    const item = job.page(started.jobId).items[0];
+    assert.match(item.message ?? '', /permissions/); assert.ok(!(item.message ?? '').includes(dir));
+    const missing = join(dir, 'missing.mp4');
+    await assert.rejects(hashImportFile(missing, new AbortController().signal), (error: unknown) => error instanceof ImportFileError && error.reason === 'missing');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('a file that changes during background hashing is rejected', async () => {
