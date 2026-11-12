@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bindingFromKeyInput, canonicalShortcut, DEFAULT_SHORTCUTS, formatShortcut, matchesShortcut, parseShortcuts } from '../../src/domain/shortcuts';
+import { bindingFromKeyInput, canonicalShortcut, DEFAULT_SHORTCUTS, formatShortcut, matchesShortcut, parseShortcuts, isTextEditingShortcut } from '../../src/domain/shortcuts';
 
 test('shortcuts provide defaults and normalize configurable bindings', () => {
   assert.deepEqual(parseShortcuts({}), DEFAULT_SHORTCUTS);
@@ -67,4 +67,18 @@ test('queue Delete is configurable and cannot silently collide with an applicati
   const legacy = parseShortcuts({ search: ['Delete'], playPause: ['Space'] });
   assert.deepEqual(legacy.removeRequest, []);
   assert.deepEqual(legacy.search, ['Delete']);
+});
+
+test('native text selection, clipboard, history and caret movement survive custom navigation bindings', () => {
+  const input = (code: string, changes = {}) => ({ code, control: false, alt: false, shift: false, meta: false, ...changes });
+  for (const modifier of ['control', 'meta']) {
+    for (const code of ['KeyA', 'KeyC', 'KeyV', 'KeyX', 'KeyZ', 'KeyY']) {
+      assert.equal(isTextEditingShortcut(input(code, { [modifier]: true })), true);
+      assert.equal(isTextEditingShortcut(input(code, { [modifier]: true, shift: true })), true);
+    }
+  }
+  for (const code of ['ArrowLeft', 'Home', 'End', 'Backspace', 'Delete'])
+    assert.equal(isTextEditingShortcut(input(code, { control: true, shift: true })), true);
+  for (const code of ['KeyF', 'Comma', 'Slash', 'F1'])
+    assert.equal(isTextEditingShortcut(input(code, { control: true })), false);
 });

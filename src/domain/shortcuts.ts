@@ -100,3 +100,9 @@ const keyLabels: Record<string, string> = {
 export function formatShortcut(binding: string): string {
   return binding.split('+').map(part => keyLabels[part] ?? part.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Numpad ')).join('+');
 }
+
+/** Native editing chords take precedence over custom actions inside text fields. */
+export function isTextEditingShortcut(input: ShortcutKeyInput): boolean {
+  if ((input.control || input.meta) && !input.alt && /^Key[ACVXYZ]$/.test(input.code)) return true;
+  return /^(Arrow(?:Up|Down|Left|Right)|Home|End|Backspace|Delete|Insert)$/.test(input.code);
+}

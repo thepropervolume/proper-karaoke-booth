@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-Open **Preferences → Keyboard Shortcuts** to review or edit keyboard commands. The editor groups actions by Application, Playback, Singer Display, Library, Appearance and Layouts, with an action label beside its assigned keys.
+Open **Preferences → Keyboard Shortcuts** to review or edit keyboard commands. The editor groups actions by Application, Playback, Queue, Singer Display, Library, Appearance and Layouts, with an action label beside its assigned keys.
 
 ## Defaults
 
@@ -46,3 +46,5 @@ This is a partial example: omitted actions receive their defaults. Modifier orde
 `src/domain/shortcuts.ts` owns the action registry, defaults, bounded validation, normalization, display labels and exact key matching. `SHORTCUT_ACTIONS` supplies `id`, `label`, `group` and `scope`; dispatch must honor the player-only fullscreen scope and preserve normal text editing. `bindingFromKeyInput` ignores unsupported/modifier-only codes. `parseShortcuts` clones arrays, validates missing/default and explicit/disabled actions, and rejects unknown actions or conflicting normalized combinations.
 
 `writeShortcuts` validates before writing a private temporary sibling and atomically replacing the file. Invalid edits retain the last working file; failed publication removes only the staged sibling. The main process owns saving, opening the file and broadcasting effective bindings. The renderer editor receives named callbacks and does not access the filesystem or arbitrary IPC.
+
+Inside text fields, normal selection, clipboard, undo/redo and caret movement take precedence over custom action bindings. The same custom chord still works from the workspace; the shortcut recorder can capture it explicitly.
