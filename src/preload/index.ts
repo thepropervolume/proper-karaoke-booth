@@ -56,6 +56,14 @@ contextBridge.exposeInMainWorld('tpv', {
     revokeInvitations: () => ipcRenderer.invoke('host:remote-revoke-invites'),
     revokeGuest: (singerId: string) => ipcRenderer.invoke('host:remote-revoke-guest', singerId)
   },
+  internetSessions: {
+    status:()=>ipcRenderer.invoke('host:internet-status'),
+    start:(input:unknown)=>ipcRenderer.invoke('host:internet-start',input),
+    stop:()=>ipcRenderer.invoke('host:internet-stop'),
+    copyLink:()=>ipcRenderer.invoke('host:internet-copy'),
+    revokeGuest:(id:string)=>ipcRenderer.invoke('host:internet-revoke',id),
+    subscribe:(callback:(value:unknown)=>void)=>{const listener=(_event:unknown,value:unknown)=>callback(value);ipcRenderer.on('host:internet-state',listener);return()=>ipcRenderer.removeListener('host:internet-state',listener);},
+  },
   getBumpers: () => ipcRenderer.invoke('host:get-bumpers'),
   addBumpers: () => ipcRenderer.invoke('host:add-bumpers'),
   removeBumper: (id: string) => ipcRenderer.invoke('host:remove-bumper', id),

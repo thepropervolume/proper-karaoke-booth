@@ -25,6 +25,8 @@ import { SettingsDialog } from './SettingsDialog';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';
+import { InternetSessionPanel } from '../remote/InternetSessionPanel';
+import type { InternetSessionBridge } from '../remote/internet-session-control';
 import { ImportPanel, type ImportBridge } from './ImportPanel';
 import { CdgImportPanel, type CdgBridge } from './CdgImportPanel';
 import { YouTubeDownloadsPanel, type YouTubeDownloadBridge } from './YouTubeDownloadsPanel';
@@ -43,7 +45,7 @@ import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
 
-type Screen = 'library' | 'catalog' | 'requests' | 'singers' | 'playlists';
+type Screen = 'library' | 'catalog' | 'requests' | 'singers' | 'playlists' | 'remote';
 type Result = { ok: boolean; error?: string; cancelled?: boolean; notice?: string };
 function formatShortcut(binding: string): string { return binding.split('+').map(part => part === 'Space' ? 'Spacebar' : part === 'Control' ? 'Ctrl' : part.replace(/^Key/, '').replace(/^Digit/, '')).join('+'); }
 declare global {
@@ -101,6 +103,7 @@ declare global {
       revealMedia: (versionId: string) => Promise<void>;
       relinkMedia: (versionId: string) => Promise<Result>;
       remote: HostRemoteBridge;
+      internetSessions: InternetSessionBridge;
     };
   }
 }
@@ -399,10 +402,11 @@ function App() {
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
       <button className="nav-item" disabled={backupBusy} onClick={() => void backupShow(backupCleanup)}>{backupBusy ? 'Backing up…' : backupCleanup ? 'Retry backup cleanup' : 'Back up show…'}</button>
-      {([['library', 'Library'], ['catalog', 'Karaoke Nerds'], ['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['playlists', 'Playlists']] as const).map(([id, label]) =>
+      {([['library', 'Library'], ['catalog', 'Karaoke Nerds'], ['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['playlists', 'Playlists'], ['remote','Remote Sessions']] as const).map(([id, label]) =>
         <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}
     </nav>
     <main className="main-panel">
+      {screen==='remote' && <><InternetSessionPanel bridge={window.tpv.internetSessions} /><p className="muted">Singers open your link, enter their name and request songs from your library. Keep this app running. This internet link also works for guests on venue Wi-Fi.</p></>}
       {notice && <p className="notice" role="status">{notice}</p>}
       <ImportPanel bridge={window.tpv.imports} onActiveChange={setImportActive} />
       <YouTubeDownloadsPanel bridge={window.tpv.youtubeDownloads} onCached={setCachedVideoIds} />

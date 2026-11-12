@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { YouTubeDownloadProgress } from '../main/youtube-download';
 export type YouTubeDownloadStatus = { job: YouTubeDownloadProgress | null; preparing: boolean; cachedVersionIds: string[];
-  queue?: {pendingVersionIds:string[];activeVersionId:string|null;failures:{versionId:string;message:string;title?:string}[];blocked:boolean} };
+  queue?: {pendingVersionIds:string[];waitingVideos?:{versionId:string;title:string}[];activeVersionId:string|null;failures:{versionId:string;message:string;title?:string}[];blocked:boolean} };
 export type YouTubeDownloadBridge = { status(): Promise<YouTubeDownloadStatus>; start(versionId: string): Promise<YouTubeDownloadProgress | null>; cancel(id: string): Promise<boolean> };
 export function YouTubeDownloadsPanel({ bridge, onCached }: { bridge: YouTubeDownloadBridge; onCached: (ids: string[]) => void }) {
   const [state, setState] = useState<YouTubeDownloadStatus | null>(null);
@@ -32,6 +32,7 @@ export function YouTubeDownloadsPanel({ bridge, onCached }: { bridge: YouTubeDow
     <h3>{active || state?.preparing ? 'Downloading Video to Your Drive' : job?.phase === 'completed' ? 'Video Saved' : 'Video Download'}</h3>
     {state?.preparing && <p role="status">Preparing yt-dlp…</p>}
     {!!state?.queue?.pendingVersionIds.length && <p role="status">{state.queue.pendingVersionIds.length} video{state.queue.pendingVersionIds.length===1?'':'s'} waiting to download. Downloads run one at a time.</p>}
+    {!!state?.queue?.waitingVideos?.length && <ul>{state.queue.waitingVideos.slice(0,5).map(video=><li key={video.versionId}>{video.title} <button type="button" aria-label={`Cancel waiting download for ${video.title}`} onClick={()=>{void bridge.cancel(video.versionId).catch(()=>setError('The waiting download could not be cancelled.'));}}>Cancel waiting download</button></li>)}</ul>}
     {state?.queue?.failures.slice(-5).map(failure=><p key={failure.versionId} role="alert">{failure.title || 'Video'}: {failure.message} <button type="button" disabled={state.queue?.blocked} onClick={()=>{void bridge.start(failure.versionId).catch(()=>setError('The video could not be retried.'));}}>Retry download</button></p>)}
     {job && <p role={job.phase === 'failed' ? 'alert' : 'status'}>{job.message || job.phase}</p>}
     {active && <>

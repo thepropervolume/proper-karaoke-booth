@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
@@ -23,6 +23,7 @@ import { serveBumper } from './bumper-media';
 import { HostRemoteLifecycle } from './remote-host-lifecycle';
 import { createLanHostProvider } from './remote-provider';
 import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
+import { InternetQueueClient } from './internet-queue-client';
 import { createSingerStaticHandler } from './remote-static';
 import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
 import { mediaErrorDetail } from './media-error-message';
@@ -129,7 +130,9 @@ function videoCacheDirectory(): string {
 function downloadStatus() {
   const sources = new Set(state.versions.filter(version => version.source?.provider === 'youtube').map(version => version.id));
   const queue=queuedDownloads.snapshot();
-  return { job: youtubeDownloads?.snapshot() ?? null, preparing: preparingDownload, queue:{...queue,failures:queue.failures.map(failure=>({...failure,title:state.versions.find(version=>version.id===failure.versionId)?.title ?? 'Video'}))},
+  return { job: youtubeDownloads?.snapshot() ?? null, preparing: preparingDownload, queue:{...queue,
+    waitingVideos:queue.pendingVersionIds.map(versionId=>({versionId,title:state.versions.find(version=>version.id===versionId)?.title ?? 'Video'})),
+    failures:queue.failures.map(failure=>({...failure,title:state.versions.find(version=>version.id===failure.versionId)?.title ?? 'Video'}))},
     cachedVersionIds: Object.keys(store.mediaFilenames()).filter(id => sources.has(id) && existsSync(store.media(id)!.path)) };
 }
 const queuedDownloads = new QueuedVideoDownloads(async versionId => {
@@ -138,6 +141,8 @@ const queuedDownloads = new QueuedVideoDownloads(async versionId => {
 });
 function syncQueuedDownloads(): void {
   if (shuttingDown || !store || !settings) return;
+  const active=youtubeDownloads?.snapshot();
+  if(active && !isVersionAllowed(state,active.versionId))youtubeDownloads?.cancel(active.id);
   queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state,request.versionId))
     .map(request=>request.versionId).filter(id=>state.versions.find(version=>version.id===id)?.source?.provider==='youtube' && (!store.media(id) || !existsSync(store.media(id)!.path))));
 }
@@ -167,6 +172,9 @@ async function startYouTubeDownload(versionId: string) {
   try {
     const executable = await resolveYtDlpExecutable(settings.ytDlpExecutable);
     if (shuttingDown) throw new Error('The application is closing.');
+    const current=state.versions.find(item=>item.id===versionId);
+    if(!current?.source || current.source.videoId!==version.source.videoId || !isVersionAllowed(state,versionId))throw new Error('This video selection is no longer available.');
+    if(store.media(versionId) && existsSync(store.media(versionId)!.path))return null;
     const directory = videoCacheDirectory(), config = JSON.stringify([directory, executable]);
     if (!youtubeDownloads || config !== youtubeDownloadConfig) {
       youtubeDownloads = new YouTubeDownloads(directory, executable, asset => {
@@ -197,6 +205,7 @@ const publishMissingRequests = () => {
 };
 let remoteHost = new HostRemoteLifecycle(null, publishRemoteStatus, publishMissingRequests);
 let remoteAuthority: RemoteAuthorityCoordinator | null = null;
+let internetQueue: InternetQueueClient | null = null;
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
 
@@ -260,7 +269,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
   if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) automaticBumper.arm(previousGeneration);
   if (result.outcome.ok && ['request','accept','editRequest','moveRequest','promoteRequest','removeRequest','rejectRequest','setPolicy'].includes(command.type)) syncQueuedDownloads();
-  broadcast();
+  try{broadcast();}catch{/* A closed view must not turn a durable command into a failure. */}
   return result.outcome;
 }
 function pauseForOutputLoss(): boolean {
@@ -531,6 +540,8 @@ else {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; syncQueuedDownloads(); broadcast(); };
     remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted);
+    internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
+      publish:value=>{if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value)});
     const provider = createLanHostProvider({ store, settings: () => settings, staticHandler,
       installCommitted, coordinator: remoteAuthority,
       pickFile: async kind => {
@@ -686,7 +697,9 @@ else {
     if(shuttingDown)return {ok:false,error:'The application is closing.'};
     const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now());
     if(!planned.result.ok)return planned.result;
-    store.save(planned.state);state=planned.state;syncQueuedDownloads();broadcast();
+    store.save(planned.state);state=planned.state;
+    try{syncQueuedDownloads();}catch{return {...planned.result,notice:'Queued successfully. Use Download Video / Retry if its download does not appear.'};}
+    try{broadcast();}catch{/* A committed request remains successful even if a view closes. */}
     return planned.result;
   });
   ipcMain.handle('host:add-youtube', async (event, input: unknown) => {
@@ -711,6 +724,11 @@ else {
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Could not open the YouTube player.' }; }
   });
   ipcMain.handle('host:remote-status', event => { guardHost(event.sender.id); return remoteHost.status(); });
+  ipcMain.handle('host:internet-status', event => {guardHost(event.sender.id);return internetQueue?.status() ?? {available:false,state:'failed',suggestedSlug:'proper-volume',slug:null,joinUrl:null,guests:[],message:'Internet sessions are unavailable. Reopen the app after checking its installation.'};});
+  ipcMain.handle('host:internet-start', async(event,input:unknown)=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.start(input);});
+  ipcMain.handle('host:internet-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stop();});
+  ipcMain.handle('host:internet-copy', event=>{guardHost(event.sender.id);internetQueue?.copyLink();});
+  ipcMain.handle('host:internet-revoke', (event,id:unknown)=>{guardHost(event.sender.id);if(typeof id!=='string'||id.length>500)throw new Error('Choose a singer.');internetQueue?.revokeGuest(id);});
   ipcMain.handle('host:remote-choose-certificate', event => { guardHost(event.sender.id); return remoteHost.select('certificate'); });
   ipcMain.handle('host:remote-choose-key', event => { guardHost(event.sender.id); return remoteHost.select('privateKey'); });
   ipcMain.handle('host:remote-open-lan', (event, input: unknown) => { guardHost(event.sender.id); return remoteHost.open(input); });
@@ -929,8 +947,9 @@ app.on('before-quit', event => {
   const cdgShutdown = cdgImport?.shutdown() ?? Promise.resolve();
   const downloading = !!youtubeDownloads?.active() || preparingDownload || !!queuedDownloads.snapshot().activeVersionId;
   const downloadShutdown = Promise.race([Promise.all([queuedDownloads.shutdown(),youtubeDownloads?.shutdown()]).then(() => true, () => false), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  const wait = remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
+  const wait = !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
+  const internetShutdown=internetQueue?.shutdown() ?? Promise.resolve(true);
   const backupShutdown = showBackup.shutdown();
   const historyShutdown = historyExport.shutdown();
   if (!wait) { quitReady = true; closeStore(); return; }
@@ -940,8 +959,8 @@ app.on('before-quit', event => {
   const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean]) => {
-    if (!remoteClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean) {
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean]) => {
+    if (!remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;
