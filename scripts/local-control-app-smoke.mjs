@@ -42,8 +42,8 @@ const cli = async (...args) => {
   catch (error) { if (typeof error.code !== 'number') throw error; return { code: error.code, out: error.stdout, err: error.stderr }; }
 };
 const successful = async (...args) => { const result = await cli(...args); assert.equal(result.code, 0, result.err); const body = JSON.parse(result.out); assert.equal(body.ok, true); return body; };
-const launch = async () => {
-  app = await electron.launch({ executablePath: packagedExecutable || require('electron'), args: [...(packagedExecutable ? [] : [bootstrap]), `--user-data-dir=${canonicalProfile}`, '--mute-audio'], cwd: repo, env });
+const launch = async (navigationFlags = []) => {
+  app = await electron.launch({ executablePath: packagedExecutable || require('electron'), args: [...(packagedExecutable ? [] : [bootstrap]), `--user-data-dir=${canonicalProfile}`, '--mute-audio', ...navigationFlags], cwd: repo, env });
   assert.equal(await app.evaluate(({ app }) => app.isPackaged), !!packagedExecutable);
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   const page = await app.firstWindow(); await page.waitForFunction(() => !!window.tpv);
@@ -97,7 +97,28 @@ try {
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
   await toggle(host, false); await assert.rejects(access(discoveryFile));
   assert.equal((await cli('status')).code, 3);
-  console.log('Local API/compiled CLI: opt-in, owner-only discovery, live reads/navigation, no mutation fallback, token rotation, restart persistence, disabled cleanup and no autoplay passed.');
+  if (packagedExecutable) {
+    // The desktop launch aliases must also work while the control API is off.
+    const wrapper = join(dirname(packagedExecutable), process.platform === 'win32' ? 'tpv-karaoke.cmd' : 'tpv-karaoke');
+    for (const flag of ['--settings', '--keybindings']) {
+      const args = [flag, `--user-data-dir=${canonicalProfile}`, '--mute-audio'];
+      if (process.platform === 'win32') {
+        const quote = value => "'" + value.replaceAll("'", "''") + "'";
+        const command = `& ${[wrapper, ...args].map(quote).join(' ')}; exit $LASTEXITCODE`;
+        await run(join(process.env.SystemRoot || 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+          ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], { windowsHide: true, timeout: 20000 });
+      } else await run(wrapper, args, { timeout: 20000 });
+      await host.getByRole('dialog', { name: 'Preferences', exact: true }).waitFor();
+      if (flag === '--keybindings') assert.equal(await host.locator('[data-settings-section="keyboard-shortcuts"]').evaluate(element => element.open), true);
+      assert.equal((await app.windows()).length, 1, 'Navigation must focus the original host.');
+      await host.getByRole('button', { name: 'Cancel', exact: true }).click();
+    }
+    await app.close(); app = undefined;
+    host = await launch(['--settings']);
+    await host.getByRole('dialog', { name: 'Preferences', exact: true }).waitFor();
+    assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
+  }
+  console.log('Local API/CLI (packaged wrapper when supplied): opt-in, owner-only discovery, live reads/navigation, no mutation fallback, token rotation, restart persistence, disabled cleanup and no autoplay passed.');
 } finally {
   if (app) await app.close();
   const actual = await realpath(temp);
