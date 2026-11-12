@@ -15,3 +15,7 @@ Tests use an injected worker for exact identity, collisions, hash-based reuse, m
 The host workflow is described in [YouTube playback](youtube-streaming.md). Automatic brand/artist batch downloads and production packaging of yt-dlp/FFmpeg remain separate work.
 
 Reference: [yt-dlp upstream documentation](https://github.com/yt-dlp/yt-dlp#usage-and-options).
+
+## Queue-time acquisition in 0.3.0
+
+Adding a YouTube link saves metadata. Committing an approved request dispatches its video immediately to a serial download queue; pending moderation waits for approval. Several singers choosing the same recording share its saved media. Reordering waiting requests updates pending download priority. Completed files remain on the host drive; download completion never starts playback. The host can retry failures or cancel a waiting/active job from download progress. A normal failure does not discard the singer request or repeatedly retry on every state update. Uncertain process cleanup pauses further automatic downloads for review. Accepted/staged requests with missing media are reconciled on restart. All library additions and request validation occur through the host authority before acquisition begins; no second SQLite writer is introduced.

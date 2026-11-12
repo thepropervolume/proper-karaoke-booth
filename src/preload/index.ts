@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('tpv', {
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
   searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
   addYouTube: (input: unknown) => ipcRenderer.invoke('host:add-youtube', input),
+  requestCatalogTrack: (input: unknown) => ipcRenderer.invoke('host:request-catalog-track', input),
   youtubeDownloads: {
     status: () => ipcRenderer.invoke('host:youtube-download-status'),
     start: (versionId: string) => ipcRenderer.invoke('host:youtube-download', versionId),
