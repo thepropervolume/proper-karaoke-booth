@@ -20,6 +20,10 @@ async function fixture(run:(root:string)=>Promise<void>) {
 async function configFile(root:string,name:string,credential=token) {
   const file=join(root,name);await writeFile(file,JSON.stringify({baseUrl,token:credential}),{mode:0o600});return file;
 }
+function deferred<T>() {
+  let resolve!:(value:T)=>void;
+  return {promise:new Promise<T>(done=>{resolve=done;}),resolve:(value:T)=>resolve(value)};
+}
 test('catalog settings upgrade defaults and private config parsing reject secrets in URLs or unrelated files', async () => {
   const root = await mkdtemp(join(tmpdir(),'shared-config-'));
   try {
@@ -107,4 +111,61 @@ test('host search and status projections report failed cache persistence',async(
 test('private configurations reject Unix group or world access', {skip:process.platform==='win32'},async()=>fixture(async root=>{
   const file=await configFile(root,'active.json');await chmod(file,0o644);await assert.rejects(readSharedCatalogConfig(file));
   await chmod(file,0o600);assert.equal((await readSharedCatalogConfig(file)).baseUrl,baseUrl);
+}));
+
+test('older configuration reads cannot replace a newer client, lose its result or overwrite its offline cache',{timeout:5000},async()=>fixture(async root=>{
+  for(const samePath of [false,true]){
+    const cacheFile=join(root,`switch-${samePath}.json`),pathA=join(root,'a.json'),pathB=samePath?pathA:join(root,'b.json');
+    const configA={baseUrl,token},configB={baseUrl,token:token+'-new'};
+    const oldRead=deferred<typeof configA>(),started=deferred<void>(),newResponse=deferred<Response>();
+    let reads=0;const clients:string[]=[],fetches:string[]=[];
+    const connection=new SharedCatalogConnection(cacheFile,(config,cacheFile)=>{
+      clients.push(config.token);
+      return new SharedCatalogClient({...config,cacheFile,fetch:async()=>{
+        fetches.push(config.token);started.resolve();return newResponse.promise;
+      }});
+    },async()=>++reads===1?oldRead.promise:configB);
+    const oldSearch=connection.search(pathA,'Song'),newSearch=connection.search(pathB,'Song');
+    await started.promise;oldRead.resolve(configA);
+    assert.equal((await oldSearch).status,'unavailable');
+    assert.deepEqual(clients,[configB.token]);assert.deepEqual(fetches,[configB.token]);
+    newResponse.resolve(json(searchPage));assert.equal((await newSearch).status,'ready');
+    const restarted=new SharedCatalogConnection(cacheFile,(config,cacheFile)=>new SharedCatalogClient({...config,cacheFile,fetch:async()=>{throw new Error('offline');}}),async()=>configB);
+    const cached=await restarted.search(pathB,'Song');assert.equal(cached.status,'ready');
+    if(cached.status==='ready')assert.equal(cached.source,'offline-cache');
+  }
+}));
+
+test('parallel reads of the same active credentials share one authority without rejecting an older read',{timeout:5000},async()=>fixture(async root=>{
+  const path=join(root,'active.json'),first=deferred<{baseUrl:string;token:string}>(),second=deferred<{baseUrl:string;token:string}>();
+  let reads=0,clients=0;
+  const connection=new SharedCatalogConnection(join(root,'parallel.json'),(config,cacheFile)=>{
+    ++clients;return new SharedCatalogClient({...config,cacheFile,fetch:async input=>json(String(input).endsWith('/status')?serviceStatus:searchPage)});
+  },()=>++reads===1?first.promise:second.promise);
+  const search=connection.search(path,'Song'),status=connection.status(path);
+  second.resolve({baseUrl,token});assert.equal((await status).status,'ready');
+  first.resolve({baseUrl,token});assert.equal((await search).status,'ready');assert.equal(clients,1);
+}));
+
+test('a delayed same-scope read preserves the active status denial latch',{timeout:5000},async()=>fixture(async root=>{
+  const path=join(root,'active.json'),cacheFile=join(root,'denial.json'),config={baseUrl,token};
+  const create=(config:{baseUrl:string;token:string},cacheFile:string)=>new SharedCatalogClient({...config,cacheFile,fetch:async input=>{
+    if(String(input).endsWith('/status'))return new Response(null,{status:403});throw new Error('offline');
+  }});
+  const seed=new SharedCatalogClient({...config,cacheFile,fetch:async()=>json(searchPage)});assert.equal((await seed.search({query:'Song'})).status,'ready');
+  const oldRead=deferred<typeof config>();let reads=0,clients=0;
+  const connection=new SharedCatalogConnection(cacheFile,(config,cacheFile)=>{++clients;return create(config,cacheFile);},async()=>++reads===1?oldRead.promise:config);
+  const delayedSearch=connection.search(path,'Song');assert.equal((await connection.status(path)).status,'forbidden');
+  oldRead.resolve(config);assert.equal((await delayedSearch).status,'unavailable');assert.equal(clients,1);
+  const restarted=new SharedCatalogConnection(cacheFile,create,async()=>config);assert.equal((await restarted.search(path,'Song')).status,'unavailable');
+}));
+
+test('an active path change supersedes in-flight replies even when the replacement configuration cannot be read',{timeout:5000},async()=>fixture(async root=>{
+  const oldResponse=deferred<Response>(),started=deferred<void>(),pathA=join(root,'a.json'),pathB=join(root,'b.json');
+  const connection=new SharedCatalogConnection(join(root,'reply.json'),(config,cacheFile)=>new SharedCatalogClient({...config,cacheFile,fetch:async()=>{
+    started.resolve();return oldResponse.promise;
+  }}),async path=>{if(path===pathB)throw new Error('Invalid replacement');return {baseUrl,token};});
+  const oldSearch=connection.search(pathA,'Song');await started.promise;
+  assert.equal((await connection.search(pathB,'Song')).status,'configuration-error');
+  oldResponse.resolve(json(searchPage));assert.equal((await oldSearch).status,'unavailable');
 }));
