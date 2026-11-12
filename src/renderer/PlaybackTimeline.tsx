@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { formatPlaybackTime, type PlaybackTimelineState } from '../domain/playback-timeline';
 import { Tooltip } from './Tooltip';
+import { DEFAULT_SHORTCUTS, formatShortcut, type Shortcuts } from '../domain/shortcuts';
 import '../styles/playback-timeline.scss';
 const empty: PlaybackTimelineState = { generation: null, position: 0, duration: 0, seekable: false, seeking: false };
 
-export function PlaybackTimeline({ generation, disabled }: { generation: string | null; disabled: boolean }) {
+export function PlaybackTimeline({ generation, disabled, shortcuts = DEFAULT_SHORTCUTS }: { generation: string | null; disabled: boolean; shortcuts?: Shortcuts }) {
+  const hint = (label: string, action: 'seekBackward' | 'seekForward') => `${label}${shortcuts[action].length ? ` (${shortcuts[action].map(formatShortcut).join(', ')})` : ''}`;
   const [timeline, setTimeline] = useState(empty);
   const generationRef = useRef(generation); generationRef.current = generation;
   const [draft, setDraft] = useState<number | null>(null);
@@ -31,7 +33,7 @@ export function PlaybackTimeline({ generation, disabled }: { generation: string 
     finally { if (generationRef.current === generation) setPending(false); }
   };
   return <div className="playback-timeline" aria-label="Track position">
-    <Tooltip text="Rewind 10 seconds"><button type="button" aria-label="Rewind 10 seconds" disabled={!available} onClick={() => void seek(timeline.position - 10)}>↶ 10s</button></Tooltip>
+    <Tooltip text={hint('Rewind 10 seconds', 'seekBackward')}><button type="button" aria-label="Rewind 10 seconds" disabled={!available} onClick={() => void seek(timeline.position - 10)}>↶ 10s</button></Tooltip>
     <span className="playback-timeline__time" aria-label="Elapsed time">{formatPlaybackTime(position)}</span>
     <input type="range" aria-label="Playback position" aria-valuetext={`${formatPlaybackTime(position)} of ${formatPlaybackTime(duration)}`}
       min="0" max={duration || 1} step="0.1" value={position} disabled={!available}
@@ -41,7 +43,7 @@ export function PlaybackTimeline({ generation, disabled }: { generation: string 
       onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) void seek(Number(event.currentTarget.value)); }}
       onBlur={event => { if (draft !== null) void seek(Number(event.currentTarget.value)); }} />
     <span className="playback-timeline__time" aria-label="Remaining time">−{formatPlaybackTime(Math.max(0, duration - position))}</span>
-    <Tooltip text="Forward 10 seconds"><button type="button" aria-label="Forward 10 seconds" disabled={!available} onClick={() => void seek(timeline.position + 10)}>10s ↷</button></Tooltip>
+    <Tooltip text={hint('Forward 10 seconds', 'seekForward')}><button type="button" aria-label="Forward 10 seconds" disabled={!available} onClick={() => void seek(timeline.position + 10)}>10s ↷</button></Tooltip>
     {error && <span className="playback-timeline__error" role="status">{error}</span>}
   </div>;
 }

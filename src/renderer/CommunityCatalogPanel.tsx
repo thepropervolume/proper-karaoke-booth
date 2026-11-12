@@ -8,10 +8,11 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
-  const add = async (input: {url:string;title:string;artist:string;brandSlug?:string}) => {
-    if (busy) return; setBusy(true); setError('');
-    try { const result = await addVideo(input); if (!result.ok || !result.versionId) setError(result.error || 'Could not add the YouTube song.'); else onAdded(result.versionId, result.notice); }
-    catch { setError('Could not add the YouTube song.'); } finally { setBusy(false); }
+  const [importError, setImportError] = useState('');
+  const add = async (input: {url:string;title:string;artist:string;brandSlug?:string}, manual = false) => {
+    if (busy) return; const reportError = manual ? setImportError : setError; setBusy(true); reportError('');
+    try { const result = await addVideo(input); if (!result.ok || !result.versionId) reportError(result.error || 'Could not add the YouTube song.'); else onAdded(result.versionId, result.notice); }
+    catch { reportError('Could not add the YouTube song.'); } finally { setBusy(false); }
   };
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<LocalCatalogResult | null>(null);
@@ -25,15 +26,10 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
     catch { setError('The catalog search could not be completed.'); }
     finally { setBusy(false); }
   };
-  return <section aria-label="Karaoke Nerds catalog">
-    <h2>YouTube & Karaoke Nerds</h2>
+  return <><section aria-label="Karaoke Nerds catalog">
+    <h2>Karaoke Nerds</h2>
     <p className="muted">Search directly in Song Library to choose a singer and queue a Karaoke Nerds recording. Requesting it schedules a permanent yt-dlp download; saved videos play through your selected output, including offline. This page also lets you save a manual YouTube link to the library. Choose the download folder in Preferences.</p>
-    <form className="request-form" onSubmit={event => { event.preventDefault(); void add({url,title,artist}); }}>
-      <label>YouTube video link<input aria-label="YouTube video link" value={url} maxLength={2048} onChange={e=>setUrl(e.target.value)} required /></label>
-      <label>Song title<input aria-label="YouTube song title" value={title} maxLength={500} onChange={e=>setTitle(e.target.value)} required /></label>
-      <label>Artist<input aria-label="YouTube artist" value={artist} maxLength={500} onChange={e=>setArtist(e.target.value)} /></label>
-      <button type="submit" disabled={busy || !url.trim() || !title.trim()}>Add YouTube to Library</button>
-    </form>
+
     <p className="muted">Search the configured shared catalog or saved local snapshot. Add to Library saves a recording for later; queue it from Song Library when ready to download. Preview opens the separate, manually controlled player.</p>
     <form className="library-toolbar" onSubmit={event => void submit(event)}>
       <label>Artist or song title<input type="search" value={query} maxLength={200} disabled={busy} onChange={event => { setQuery(event.target.value); setResult(null); }} /></label>
@@ -54,5 +50,14 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
         {track.youtubeId && <button type="button" onClick={() => { setError(''); void openVideo(track.youtubeId!).then(value => { if (!value.ok) setError(value.error || 'Could not open the YouTube player.'); }).catch(() => setError('Could not open the YouTube player.')); }}>Preview YouTube</button>}
       </div>)}</div>
     </>}
-  </section>;
+  </section><section aria-label="Custom YouTube Video Importer"><h2>Custom YouTube Video Importer</h2>
+    <p className="muted">Save an exact YouTube link to Song Library, then queue it or choose Download Video. Adding a link does not start playback.</p>
+    <form className="request-form" onSubmit={event => { event.preventDefault(); void add({url,title,artist}, true); }}>
+      <label>YouTube video link<input aria-label="YouTube video link" value={url} maxLength={2048} onChange={e=>setUrl(e.target.value)} required /></label>
+      <label>Song title<input aria-label="YouTube song title" value={title} maxLength={500} onChange={e=>setTitle(e.target.value)} required /></label>
+      <label>Artist<input aria-label="YouTube artist" value={artist} maxLength={500} onChange={e=>setArtist(e.target.value)} /></label>
+      <button type="submit" disabled={busy || !url.trim() || !title.trim()}>Add YouTube to Library</button>
+    </form>
+    {importError && <p role="alert">{importError}</p>}
+  </section></>;
 }

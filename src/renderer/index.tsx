@@ -9,7 +9,12 @@ import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/sett
 import type { LibraryFilter, LibrarySort } from '../domain/library-view';
 import { unifiedLibrary, type LibrarySearchVersion } from '../domain/unified-library';
 import type { CatalogRequestTrack } from '../domain/catalog-request';
-import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import { recordingKeyFor, type RecordingKey, type SongRating } from '../domain/song-rating';
+import type { SongRatingsLookup, SongRatingVote } from '../main/song-ratings-client';
+import type { LocalControlUiStatus } from './LocalControlSettings';
+import { SongRatingButton, SongRatingDialog } from './SongRating';
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
+import type { AppAction, SettingsSection } from '../domain/app-action';
 import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
 import type { CollectionsAction, CollectionsSnapshot } from '../domain/collections';
 import { Icon } from './Icon';
@@ -36,6 +41,7 @@ import { LibraryCatalogStatus } from './LibraryCatalogStatus';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { requestWithSinger } from './request-singer';
 import { requestLibrarySong } from './request-library-song';
+import { downloadLibrarySong } from './download-library-song';
 import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 import type { CatalogConnectionStatus } from '../main/shared-catalog-connection';
 import type { ImportProgress } from '../domain/import-job';
@@ -45,13 +51,20 @@ import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
 
-type Screen = 'library' | 'catalog' | 'requests' | 'singers' | 'playlists' | 'remote';
+type Screen = 'library' | 'sources' | 'requests' | 'singers' | 'playlists' | 'remote';
 type Result = { ok: boolean; error?: string; cancelled?: boolean; notice?: string };
-function formatShortcut(binding: string): string { return binding.split('+').map(part => part === 'Space' ? 'Spacebar' : part === 'Control' ? 'Ctrl' : part.replace(/^Key/, '').replace(/^Digit/, '')).join('+'); }
 declare global {
   interface Window {
     tpv: {
       getAppVersion: () => Promise<string>;
+      appReady: () => Promise<void>;
+      refreshMenu: () => Promise<void>;
+      updateMenuContext: (value: { busy: boolean; modal: boolean }) => Promise<void>;
+      getLocalControlStatus: () => Promise<LocalControlUiStatus>;
+      showControlCli: () => Promise<void>;
+      onAppAction: (callback: (action: AppAction) => void) => () => void;
+      onSettings: (callback: (value: Settings) => void) => () => void;
+      onShortcuts: (callback: (value: Shortcuts) => void) => () => void;
       chooseSharedCatalogConfiguration: () => Promise<string | null>;
       getSharedCatalogStatus: (file?: string) => Promise<CatalogConnectionStatus>;
       getState: () => Promise<ShowState>;
@@ -68,11 +81,20 @@ declare global {
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
       searchCommunityCatalog: (query: string) => Promise<LocalCatalogResult>;
+      ratingKeys: (ids: string[]) => Promise<Record<string, RecordingKey>>;
+      lookupSongRatings: (keys: RecordingKey[]) => Promise<SongRatingsLookup>;
+      rateSong: (key: RecordingKey, value: number | null) => Promise<SongRatingVote>;
+      chooseRatingProfile: () => Promise<string | null>;
+      ratingProfileStatus: (file?: string) => Promise<SongRatingsLookup>;
       requestCatalogTrack: (input: { track: CatalogRequestTrack; singerId: string; requestId: string }) => Promise<Result & { versionId?: string; notice?: string }>;
       addYouTube: (input: {url:string;title:string;artist:string;brandSlug?:string}) => Promise<Result & {versionId?:string;notice?:string}>;
       openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
-      saveSettings: (settings: Settings) => Promise<Settings>;
+      saveShortcuts: (value: Shortcuts) => Promise<Shortcuts>;
+      editShortcutsFile: () => Promise<void>;
+      playPause: () => Promise<Result>;
+      restartTrack: () => Promise<Result>;
+      saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
       chooseLyricBackdrop: () => Promise<string | null>;
       cycleAccentColor: () => Promise<Settings['accentColor']>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
@@ -121,8 +143,9 @@ function App() {
   const [libraryFilenames, setLibraryFilenames] = useState<Record<string, string>>({});
   const [filenameRefresh, setFilenameRefresh] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
+  const songList = useRef<HTMLDivElement>(null);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
-  const focusSearch = () => { setEditingRequest(null); setQueueMenu(null); setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
+  const focusSearch = () => { pendingPreferences.current = null; ++ratingOpenSequence.current; setRatingDialog(null); setEditingRequest(null); setQueueMenu(null); setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [cachedVideoIds, setCachedVideoIds] = useState<string[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState('');
@@ -153,7 +176,34 @@ function App() {
   const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
   const [shortcutsPath, setShortcutsPath] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
+  const [settingsFocusRequest, setSettingsFocusRequest] = useState(0);
+  const actionHandler = useRef<(action: AppAction) => void>(() => {});
+  const pendingPreferences = useRef<SettingsSection | null>(null);
+  const openPreferences = (section: SettingsSection = 'general') => {
+    if (busy) { pendingPreferences.current = section; setNotice('Preferences will open when the current action finishes.'); return; }
+    pendingPreferences.current = null;
+    ++ratingOpenSequence.current; setEditingRequest(null); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setQueueMenu(null); setContextMenu(null); setRatingDialog(null);
+    setSettingsSection(section); setSettingsFocusRequest(value => value + 1); setSettingsOpen(true);
+  };
+  useEffect(() => { if (!busy && pendingPreferences.current) openPreferences(pendingPreferences.current); }, [busy]);
   const [editingVersion, setEditingVersion] = useState<Version | null>(null);
+  const [ratingKeys, setRatingKeys] = useState<Record<string, RecordingKey>>({});
+  const [ratings, setRatings] = useState<Record<string, SongRating>>({});
+  const [ratingsLoading, setRatingsLoading] = useState(false);
+  const [canRate, setCanRate] = useState(false);
+  const [ratingDialog, setRatingDialog] = useState<{ title: string; key: RecordingKey } | null>(null);
+  const ratingOpenSequence = useRef(0);
+  const ratingWriteEpoch = useRef(0);
+  const [ratingReload, setRatingReload] = useState(0);
+  const [ratingWindowStart, setRatingWindowStart] = useState(0);
+  useEffect(() => { setRatingWindowStart(0); songList.current?.scrollTo(0, 0); }, [search, librarySort, libraryFilter]);
+  useEffect(() => { setRatings({}); setCanRate(false); setRatingDialog(null); ++ratingOpenSequence.current; }, [settings.ratingProfileConfigFile]);
+  useEffect(() => {
+    ++ratingOpenSequence.current;
+    if (settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion) setRatingDialog(null);
+  }, [screen, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion]);
+  useEffect(() => { void window.tpv.updateMenuContext({ busy, modal: !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || ratingDialog) }).catch(() => {}); }, [busy, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, !!ratingDialog]);
 
   useEffect(() => {
     let deadline = state?.nextStartAtMs ?? 0;
@@ -204,7 +254,7 @@ function App() {
       let loaded = result.settings;
       const previousTheme = localStorage.getItem('tpv-theme');
       if (result.created && (previousTheme === 'day' || previousTheme === 'night'))
-        loaded = await window.tpv.saveSettings({ ...loaded, appearance: previousTheme });
+        loaded = await window.tpv.saveSettings({ appearance: previousTheme });
       if (alive) { setSettings(loaded); setSettingsPath(result.path); }
     }).catch(error => { if (alive) setNotice(`Could not load preferences: ${String(error)}`); });
     return () => { alive = false; };
@@ -231,6 +281,10 @@ function App() {
   };
 
   useEffect(() => window.tpv.onFocusSearch(focusSearch), []);
+  useEffect(() => window.tpv.onAppAction(action => actionHandler.current(action)), []);
+  useEffect(() => window.tpv.onSettings(setSettings), []);
+  useEffect(() => window.tpv.onShortcuts(setShortcuts), []);
+  useEffect(() => { if (settingsPath) void window.tpv.appReady(); }, [settingsPath]);
   useEffect(() => { if (searchFocusRequest) searchInput.current?.focus(); }, [searchFocusRequest, screen, !!state]);
   useEffect(() => {
     if (!contextMenu) return;
@@ -259,6 +313,32 @@ function App() {
   const eligibleFuture = state && future.some(r => r.status === 'accepted' && singerAvailable(state, r.singerId, clockMs) && isVersionAllowed(state, r.versionId));
   const staged = state?.requests.find(r => r.id === state.stagedRequestId);
   const active = state?.requests.find(r => r.id === state.playback?.requestId);
+  const ratingSelection = JSON.stringify([...new Set([...filtered.slice(ratingWindowStart, ratingWindowStart + 80).map(version => version.id), ...future.map(request => request.versionId), ...(active ? [active.versionId] : [])])].slice(0, 1000));
+  useEffect(() => {
+    let alive = true;
+    const writeEpoch = ratingWriteEpoch.current;
+    setRatingsLoading(true);
+    void (async () => {
+      const ids = JSON.parse(ratingSelection) as string[];
+      const resolved = await window.tpv.ratingKeys(ids);
+      for (const version of filtered) { const key = recordingKeyFor(version.source); if (key && ids.includes(version.id)) resolved[version.id] = key; }
+      if (!alive) return;
+      setRatingKeys(resolved);
+      const keys = [...new Set(Object.values(resolved))];
+      if (!keys.length) return;
+      const loaded: Record<string, SongRating> = {};
+      let allowed = false;
+      for (let offset = 0; offset < keys.length; offset += 100) {
+        const result = await window.tpv.lookupSongRatings(keys.slice(offset, offset + 100));
+        if (!alive || writeEpoch !== ratingWriteEpoch.current) return;
+        if (result.status !== 'ready') { setCanRate(false); setRatings({}); return; }
+        allowed = result.canVote;
+        for (const item of result.items) loaded[item.recordingKey] = item;
+      }
+      if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings(current => ({ ...current, ...loaded })); setCanRate(allowed); }
+    })().catch(() => { if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings({}); setCanRate(false); } }).finally(() => { if (alive) setRatingsLoading(false); });
+    return () => { alive = false; };
+  }, [ratingSelection, settings.ratingProfileConfigFile, ratingReload, filenameRefresh]);
   const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
   const describe = (request?: SongRequest) => {
     const singer = state?.singers.find(s => s.id === request?.singerId)?.name ?? 'Unknown singer';
@@ -302,36 +382,27 @@ function App() {
     catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setRelinkBusy(false); }
   };
-  const playPause = () => run(async () => {
-    if (state?.playback) return window.tpv.command({ type: state.playback.status === 'paused' ? 'resume' : 'pause' });
-    const remaining = state ? remainingPauseSeconds(state, Date.now()) : 0;
-    if (remaining) return { ok: false, error: `Wait ${remaining} seconds before starting the next song.` };
-    if (!state?.stagedRequestId) {
-      const staged = await window.tpv.command({ type: 'stage' });
-      if (!staged.ok) return staged;
-    }
-    return window.tpv.command({ type: 'start', generationId: crypto.randomUUID() });
-  });
+  const playPause = () => run(() => window.tpv.playPause());
   const mutateCollections = async (action: CollectionsAction): Promise<boolean> => {
     try { setCollections(await window.tpv.mutateCollections(action)); setNotice(''); return true; }
     catch (error) { setNotice(error instanceof Error ? error.message : String(error)); return false; }
   };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const input = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey };
-      if (!event.repeat && matchesShortcut(shortcuts, 'search', input)) {
-        event.preventDefault();
-        focusSearch();
-        return;
-      }
       const target = event.target as HTMLElement | null;
-      if (event.key === 'Delete' && !event.repeat && selectedRequestId && target?.closest('[data-queue-list]') && !target.closest('input, textarea, select, button, [contenteditable="true"]') && !busy && !settingsOpen && !editingRequest && !queueMenu && !editingVersion && !queueVersion && !playlistVersion && !contextMenu) {
-        event.preventDefault(); void command({ type: 'removeRequest', requestId: selectedRequestId }); setSelectedRequestId(''); return;
-      }
-      if (!matchesShortcut(shortcuts, 'playPause', input) || event.repeat || settingsOpen || editingRequest || editingVersion || queueVersion || playlistVersion ||
-          target?.closest('input, textarea, select, button, [contenteditable="true"]') || busy || (!state?.playback && !state?.stagedRequestId && !eligibleFuture)) return;
+      if (event.defaultPrevented || event.repeat || event.isComposing || target?.closest('[data-shortcut-capture]')) return;
+      const input = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey };
+      const textEntry = target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+      if (textEntry && isTextEditingShortcut(input)) return;
+      const inQueue = !!target?.closest('[data-queue-list]');
+      const action = SHORTCUT_ACTIONS.find(action => (action.scope === 'application' || action.scope === 'queue' && inQueue) && matchesShortcut(shortcuts, action.id, input))?.id;
+      if (!action) return;
+      const interactive = target?.closest('input, textarea, select, button, [contenteditable]:not([contenteditable="false"])');
+      if (interactive && !event.ctrlKey && !event.metaKey && !event.altKey && !/^F\d+$/.test(event.code)) return;
+      const navigation = ['search', 'preferences', 'keybindings', 'appearance', 'accentColor'].includes(action);
+      if (!navigation && (settingsOpen || editingRequest || editingVersion || queueVersion || playlistVersion || target?.closest('input, textarea, select, button, [contenteditable]:not([contenteditable="false"])') || busy)) return;
       event.preventDefault();
-      void playPause();
+      actionHandler.current(action);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -387,6 +458,64 @@ function App() {
     if (state?.playback && window.confirm('Skip this performance? This consumes the singer’s turn.'))
       void command({ type: 'skip', generationId: state.playback.generationId, confirmed: true });
   };
+  const shortcutHint = (label: string, action: ShortcutAction) => `${label}${shortcuts[action].length ? ` (${shortcuts[action].map(formatShortcut).join(', ')}${SHORTCUT_ACTIONS.find(item => item.id === action)?.scope === 'player' ? '; player window' : ''})` : ''}`;
+  const showSongRating = async (version: Pick<Version, 'id' | 'title' | 'source'>) => {
+    const sequence = ++ratingOpenSequence.current;
+    try {
+      const key = recordingKeyFor(version.source) ?? ratingKeys[version.id] ?? (await window.tpv.ratingKeys([version.id]))[version.id];
+      if (!key) { setNotice('This recording needs an imported media fingerprint before it can be rated.'); return; }
+      const result = await window.tpv.lookupSongRatings([key]);
+      if (sequence !== ratingOpenSequence.current) return;
+      if (result.status !== 'ready') { setNotice(`Shared ratings are unavailable (${result.status}). Your song and queue are unchanged.`); return; }
+      setRatings(current => ({ ...current, ...Object.fromEntries(result.items.map(item => [item.recordingKey, item])) }));
+      setCanRate(result.canVote); setRatingDialog({ title: version.title, key });
+    } catch { if (sequence === ratingOpenSequence.current) setNotice('Shared ratings could not be reached. Your song and queue are unchanged.'); }
+  };
+  const ratingButton = (version: Version | LibrarySearchVersion | undefined) => {
+    if (!version) return null;
+    const key = recordingKeyFor(version.source) ?? ratingKeys[version.id];
+    return <SongRatingButton title={version.title} rating={key ? ratings[key] ?? null : null} loading={ratingsLoading && !!key && !ratings[key]} onClick={() => void showSongRating(version)} />;
+  };
+  const savePreferencePatch = (patch: Partial<Settings>) => run(async () => { setSettings(await window.tpv.saveSettings(patch)); });
+  const seekOffset = (seconds: number) => run(async () => {
+    const timeline = await window.tpv.getTimeline();
+    if (!timeline.generation || !timeline.seekable || timeline.seeking) return { ok: false, error: 'The current song is not ready to seek.' };
+    return window.tpv.seek({ generation: timeline.generation, position: Math.max(0, Math.min(timeline.duration - .001, timeline.position + seconds)) });
+  });
+  actionHandler.current = action => {
+    if (action === 'search') { focusSearch(); return; }
+    if (action === 'preferences' || action === 'keybindings' || action === 'appearance' || action === 'accentColor') {
+      openPreferences(action === 'keybindings' ? 'keyboard-shortcuts' : action === 'appearance' || action === 'accentColor' ? 'appearance' : 'general'); return;
+    }
+    if (action.startsWith('appearance:') || action.startsWith('accent:') || ['layoutStandard', 'layoutRotation', 'layoutLibrary'].includes(action)) {
+      if (busy) { void window.tpv.refreshMenu(); return; }
+      if (action.startsWith('appearance:')) void savePreferencePatch({ appearance: action.slice(11) as Settings['appearance'] });
+      else if (action.startsWith('accent:')) void savePreferencePatch({ accentColor: action.slice(7) as Settings['accentColor'] });
+      else void savePreferencePatch({ layout: action === 'layoutStandard' ? 'standard' : action === 'layoutRotation' ? 'rotation' : 'library' });
+      return;
+    }
+    if (busy || settingsOpen || editingVersion || editingRequest || queueVersion || playlistVersion || ratingDialog) return;
+    switch (action) {
+      case 'playPause': void playPause(); break;
+      case 'previous': void run(() => window.tpv.restartTrack()); break;
+      case 'stop': void command({ type: 'stop' }); break;
+      case 'skip': skip(); break;
+      case 'seekBackward': void seekOffset(-10); break;
+      case 'seekForward': void seekOffset(10); break;
+      case 'singerDisplay': void run(() => window.tpv.openDisplay()); break;
+      case 'toggleFullscreen': void run(() => window.tpv.toggleDisplayFullscreen()); break;
+      case 'importVideo': setScreen('library'); void beginImport('files'); break;
+      case 'importDirectory': setScreen('library'); void beginImport('folder'); break;
+      case 'importCdg': setScreen('library'); void run(async () => { await window.tpv.cdg.start(); }); break;
+      case 'backupShow': void backupShow(backupCleanup); break;
+      case 'removeRequest': if (selectedRequestId) { void command({ type: 'removeRequest', requestId: selectedRequestId }); setSelectedRequestId(''); setQueueMenu(null); } break;
+      case 'cycleAccent': void cycleAccent(); break;
+      case 'cycleAppearance': void savePreferencePatch({ appearance: settings.appearance === 'system' ? 'night' : settings.appearance === 'night' ? 'day' : 'system' }); break;
+      case 'layoutStandard': void savePreferencePatch({ layout: 'standard' }); break;
+      case 'layoutRotation': void savePreferencePatch({ layout: 'rotation' }); break;
+      case 'layoutLibrary': void savePreferencePatch({ layout: 'library' }); break;
+    }
+  };
   const current = describe(active);
   const stage = describe(staged);
 
@@ -394,27 +523,27 @@ function App() {
     <header className="topbar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">▥</span><span>The Proper Volume<small>Karaoke host</small></span></div>
       <h1>Local rehearsal{appVersion && <small style={{marginLeft:'0.6em'}} aria-label="Application version">v{appVersion}</small>}</h1>
-      <Tooltip text={`Accent color: ${settings.accentColor}. Switch to ${nextAccentColor(settings.accentColor)}`}><button className="icon-button accent-button" aria-label={`Accent color: ${settings.accentColor}. Switch to ${nextAccentColor(settings.accentColor)}`} onClick={() => void cycleAccent()} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
+      <Tooltip text={shortcutHint('Appearance', 'appearance')}><button className="icon-button accent-button" aria-label="Appearance" onClick={() => openPreferences('appearance')} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
       <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>
-      <Tooltip text="Singer Display"><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
-      <Tooltip text="Toggle singer display fullscreen"><button className="icon-button" aria-label="Toggle singer display fullscreen" onClick={() => void run(() => window.tpv.toggleDisplayFullscreen())}><Icon name="fullscreen" /></button></Tooltip>
-      <Tooltip text="Preferences"><button className="icon-button" aria-label="Preferences" onClick={() => setSettingsOpen(true)} disabled={!settingsPath || accentSaving}><Icon name="settings" /></button></Tooltip>
+      <Tooltip text={shortcutHint('Singer Display', 'singerDisplay')}><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
+      <Tooltip text={shortcutHint('Toggle singer display fullscreen', 'toggleFullscreen')}><button className="icon-button" aria-label="Toggle singer display fullscreen" onClick={() => void run(() => window.tpv.toggleDisplayFullscreen())}><Icon name="fullscreen" /></button></Tooltip>
+      <Tooltip text={shortcutHint('Preferences', 'preferences')}><button className="icon-button" aria-label="Preferences" onClick={() => openPreferences()} disabled={!settingsPath || accentSaving}><Icon name="settings" /></button></Tooltip>
     </header>
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
-      <button className="nav-item" disabled={backupBusy} onClick={() => void backupShow(backupCleanup)}>{backupBusy ? 'Backing up…' : backupCleanup ? 'Retry backup cleanup' : 'Back up show…'}</button>
-      {([['library', 'Library'], ['catalog', 'Karaoke Nerds'], ['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['playlists', 'Playlists'], ['remote','Remote Sessions']] as const).map(([id, label]) =>
+      {([['library', 'Library'], ['playlists', 'Playlists'], ['sources', 'Sources']] as const).map(([id, label]) =>
         <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}
+      <div className="sidebar__host"><div className="eyebrow">Host Workspace</div>{([['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['remote', 'Remote Sessions']] as const).map(([id, label]) => <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}</div>
     </nav>
     <main className="main-panel">
       {screen==='remote' && <><InternetSessionPanel bridge={window.tpv.internetSessions} /><p className="muted">Singers open your link, enter their name and request songs from your library. Keep this app running. This internet link also works for guests on venue Wi-Fi.</p></>}
       {notice && <p className="notice" role="status">{notice}</p>}
       <ImportPanel bridge={window.tpv.imports} onActiveChange={setImportActive} />
       <YouTubeDownloadsPanel bridge={window.tpv.youtubeDownloads} onCached={setCachedVideoIds} />
-      {screen === 'library' && <CdgImportPanel bridge={window.tpv.cdg} />}
+      <CdgImportPanel bridge={window.tpv.cdg} showStart={false} />
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
-          <div className="section-heading"><h2>Song Library</h2><div><Tooltip text="Import Video File"><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text="Import Custom Directory"><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip></div></div>
+          <div className="section-heading"><h2>Song Library</h2><div><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint('Import CD+G / ZIP', 'importCdg')}><button className="icon-button" aria-label="Import CD+G / ZIP…" disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div></div>
           <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search your library and Karaoke Nerds" value={search} onChange={e => setSearch(e.target.value)} />
             <label>Sort<select aria-label="Sort songs" value={librarySort} onChange={event => setLibrarySort(event.target.value as LibrarySort)}>
               <option value="import-oldest">Import order</option><option value="import-newest">Newest imported</option><option value="title-asc">Title A–Z</option><option value="title-desc">Title Z–A</option><option value="artist-asc">Artist A–Z</option><option value="artist-desc">Artist Z–A</option>
@@ -424,13 +553,18 @@ function App() {
             </select></label></div>
           <LibraryCatalogStatus state={catalogSearch} />
           <div className="eyebrow">Title / artist <span className="muted"> · Local files and online recordings</span></div>
-          <div role="listbox" aria-label="Songs" className="song-list">
+          <div ref={songList} role="listbox" aria-label="Songs" className="song-list" onScroll={event => {
+            const rows = event.currentTarget.querySelectorAll<HTMLElement>('.song-option');
+            const step = rows[1] && rows[0] ? rows[1].offsetTop - rows[0].offsetTop : rows[0]?.offsetHeight;
+            if (step && step > 0) setRatingWindowStart(Math.max(0, Math.floor(event.currentTarget.scrollTop / step / 40) * 40));
+          }}>
             {filtered.map((version, index) => <div className={`track-row song-option ${version.id === selectedVersionId ? 'selected' : ''}`} key={version.id} role="option" aria-selected={version.id === selectedVersionId} tabIndex={0}
               onClick={() => setSelectedVersionId(version.id)} onDoubleClick={() => { setSelectedVersionId(version.id); setQueueVersion(version); }}
               onContextMenu={event => { event.preventDefault(); setSelectedVersionId(version.id); setContextMenu({ version, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 250)) }); }}
               onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setSelectedVersionId(version.id); setQueueVersion(version); } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]'); const i = Math.max(0, Math.min(filtered.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))); next?.[i]?.focus(); setSelectedVersionId(filtered[i]?.id ?? ''); } }}>
               <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'} · {version.source?.provider === 'youtube' ? `${cachedVideoIds.includes(version.id) ? 'Saved locally' : version.catalogTrack ? 'Downloads when queued · Found on Karaoke Nerds' : 'Download needed'}` : [version.djCode,version.trackNumber].filter(Boolean).join('-') || 'Local'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
               {version.source && <span className="badge">YouTube</span>}
+              {ratingButton(version)}
             </div>)}
             {!filtered.length && <p className="empty">{search.trim() || versions.length ? 'No songs match this search or filter.' : 'Search Karaoke Nerds or import a local video to begin. Your original file stays in place.'}</p>}
           </div>
@@ -448,7 +582,7 @@ function App() {
             <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
           </form>
         </>}
-        {screen === 'catalog' && <CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.'); }} />}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.'); }} /><section><h2>Third-Party Services</h2><p>Connect approved catalog and playback services here as provider access becomes available.</p><ul><li>KaraFun — partnership/playback access pending</li><li>Party Tyme — developer access pending</li><li>Sunfly — developer access pending</li><li>Stingray — developer access pending</li></ul><p className="muted">An ordinary subscription or metadata API token does not currently enable in-app playback from these services.</p></section></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -473,7 +607,7 @@ function App() {
     <aside className="rotation" aria-label="Singer rotation">
       <h2>{settings.rotationMode === 'singer' ? 'Singer Rotation' : 'Request Queue'}</h2><span className="badge">{settings.autoApprove ? 'Auto-approve' : 'Host moderated'}</span>
       <div className="eyebrow">On Stage</div>
-      <div className="on-stage">{active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small></> : <span className="muted">No singer on stage</span>}</div>
+      <div className="on-stage">{active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small>{ratingButton(state?.versions.find(version => version.id === active.versionId))}</> : <span className="muted">No singer on stage</span>}</div>
       <div className="section-heading"><span className="eyebrow">Up Next</span><button disabled={busy || !!staged || !eligibleFuture} onClick={() => void command({ type: 'stage' })}>Stage next</button></div>
       <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || !state || !isVersionAllowed(state, selectedFuture.versionId) || state.promotedRequestId === selectedFuture.id} onClick={() => { if (selectedFuture) void command({ type: 'promoteRequest', requestId: selectedFuture.id }, 'Request promoted to the front of the waiting queue.'); }}>Promote selected</button>
       <div className="queue-actions"><button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').findIndex(r => r.id === selectedFuture.id) < 1} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i > 0) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i - 1].id }); }}>Move up</button> <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').at(-1)?.id === selectedFuture.id} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i >= 0 && i < waiting.length - 1) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i + 2]?.id ?? null }); }}>Move down</button> <button disabled={busy || (!state?.manualQueueOrder?.length && !state?.promotedRequestId)} onClick={() => void command({ type: 'resetQueueOrder' }, 'Automatic queue order restored.')}>Automatic order</button></div>
@@ -483,20 +617,21 @@ function App() {
         onDragOver={event => { if (!busy && request.status === 'accepted' && draggedRequest.current && draggedRequest.current !== request.id) event.preventDefault(); }}
         onDrop={event => { event.preventDefault(); const id = draggedRequest.current; draggedRequest.current = ''; if (!busy && id && id !== request.id && request.status === 'accepted') void command({ type: 'moveRequest', requestId: id, beforeRequestId: request.id }); }}
         onContextMenu={event => { event.preventDefault(); setSelectedRequestId(request.id); setQueueMenu({ request, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 240)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 230)) }); }}
-        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? 'Staged · locked' : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div></div></div>; })}</div>
+        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? 'Staged · locked' : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       {staged && <button disabled={busy} onClick={() => void command({ type: 'release' })}>Release staged song</button>}
     </aside>
     <footer className="transport" aria-label="Playback controls">
       <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Staged' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Stage an accepted request to begin'}</small></div>
       <div className="transport__controls">
+        <Tooltip text={shortcutHint('Previous — Restart Current Song', 'previous')}><button className="icon-button" aria-label="Previous — Restart Current Song" disabled={busy || !active} onClick={() => void run(() => window.tpv.restartTrack())}><Icon name="previous" /></button></Tooltip>
         <Tooltip text={`Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
-        <Tooltip text="Stop"><button className="icon-button" aria-label="Stop" disabled={busy || !active} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
-        <Tooltip text="Skip"><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
-        <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const next = { ...settings, masterVolume: Number(event.target.value) / 100 }; setSettings(next); void window.tpv.saveSettings(next).catch(error => setNotice(`Could not save volume: ${String(error)}`)); }} /></label>
+        <Tooltip text={shortcutHint('Stop', 'stop')}><button className="icon-button" aria-label="Stop" disabled={busy || !active} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
+        <Tooltip text={shortcutHint('Skip', 'skip')}><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
+        <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const masterVolume = Number(event.target.value) / 100; setSettings(current => ({ ...current, masterVolume })); void window.tpv.saveSettings({ masterVolume }).catch(error => setNotice(`Could not save volume: ${String(error)}`)); }} /></label>
       </div>
-      <PlaybackTimeline generation={state?.playback?.generationId ?? null} disabled={busy} />
-      <div className="transport__status" role="status">{!active && pauseRemaining > 0 ? `Pause interval: ${pauseRemaining}s remaining. Press Play when ready.` : 'Key, tempo and automatic filler are not yet available in this rehearsal build.'}</div>
+      <PlaybackTimeline generation={state?.playback?.generationId ?? null} disabled={busy} shortcuts={shortcuts} />
+      <div className="transport__status" role="status">{!active && pauseRemaining > 0 ? `Pause interval: ${pauseRemaining}s remaining. Press Play when ready.` : 'Key and tempo controls are not yet available. Configure optional bumper music in Audio Controls.'}</div>
     </footer>
     {queueMenu && <div className="song-menu queue-menu" role="menu" aria-label="Queued request actions" style={{ left: queueMenu.x, top: queueMenu.y }}>
       <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { setEditingRequest(queueMenu.request); setQueueMenu(null); }}>Edit track or singer…</button>
@@ -510,7 +645,17 @@ function App() {
       if (!result.ok) throw new Error(result.error || 'The request could not be updated.');
       setNotice('Queued request updated.');
     }} />}
-    {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} onClose={() => setSettingsOpen(false)} onSave={async value => { const saved = await window.tpv.saveSettings(value); setSettings(saved); }} />}
+    {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} shortcuts={shortcuts} initialSection={settingsSection} focusRequest={settingsFocusRequest} onSaveShortcuts={async value => { setBusy(true); try { setShortcuts(await window.tpv.saveShortcuts(value)); } finally { setBusy(false); } }} onClose={() => setSettingsOpen(false)} onSave={async value => { setBusy(true); try { const saved = await window.tpv.saveSettings(value); setSettings(saved); } finally { setBusy(false); } }} />}
+    {ratingDialog && <SongRatingDialog title={ratingDialog.title} recordingKey={ratingDialog.key} rating={ratings[ratingDialog.key] ?? null} canVote={canRate} onClose={() => setRatingDialog(null)} onOpenPreferences={() => { setRatingDialog(null); openPreferences('ratings'); }} onSave={async value => {
+      ++ratingWriteEpoch.current;
+      setBusy(true);
+      try {
+        const result = await window.tpv.rateSong(ratingDialog.key, value);
+        if (result.status !== 'ready') throw new Error(`Your rating was not confirmed (${result.status}). Check the connection or rating profile and retry explicitly.`);
+        setRatings(current => ({ ...current, [result.item.recordingKey]: result.item })); setRatingReload(current => current + 1); return result.item;
+      } catch (error) { setNotice(error instanceof Error ? error.message : 'Your rating was not confirmed.'); throw error; }
+      finally { setBusy(false); }
+    }} />}
     {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist) => {
       const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist });
       if (!result.ok) throw new Error(result.error || 'The song could not be updated.');
@@ -520,7 +665,7 @@ function App() {
       {!contextMenu.version.catalogTrack && <>
         <button role="menuitem" onClick={() => { setPlaylistVersion(contextMenu.version); setContextMenu(null); }}>Add to Playlist</button>
         <button role="menuitem" onClick={() => { setEditingVersion(contextMenu.version); setContextMenu(null); }}>Edit Metadata</button>
-        {contextMenu.version.source && <button role="menuitem" onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(async () => { await window.tpv.youtubeDownloads.start(id); }); }}>Download Video / Retry</button>}
+        {contextMenu.version.source && <button role="menuitem" onClick={() => { const version = contextMenu.version; setContextMenu(null); void run(async () => { const result = await downloadLibrarySong(version, window.tpv); if (result.ok && result.versionId) setSelectedVersionId(result.versionId); return result; }); }}>Download Video / Retry</button>}
         <button role="menuitem" disabled={relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
         <button role="menuitem" disabled={!!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files...</button>
       </>}

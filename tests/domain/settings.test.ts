@@ -18,6 +18,7 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.throws(() => parseSettings({ layout: 'unknown' }));
   assert.throws(() => parseSettings({ autoApprove: 'false' }));
   assert.throws(() => parseSettings({ autoAprove: false }));
+  for (const key of ['constructor', '__proto__', 'toString']) assert.throws(() => parseSettings(JSON.parse(`{"${key}": true}`)), /Unknown settings/);
   assert.equal(parseSettings({}).audioOutputId, '');
   assert.equal(parseSettings({}).autoBumper, false);
   assert.equal(parseSettings({}).autoBumperTrackId, 'builtin-ambient');

@@ -7,9 +7,9 @@ export function nextAccentColor(current: AccentColor): AccentColor {
 export type RotationMode = 'singer' | 'fifo';
 export type Layout = 'standard' | 'rotation' | 'library';
 export type LyricBackdrop = 'default' | 'none' | 'custom';
-export type Settings = { appearance: Theme; accentColor: AccentColor; autoApprove: boolean; rotationMode: RotationMode; maxFutureRequestsPerSinger: number; layout: Layout; metadataFormat: MetadataFormat; metadataTemplates: string[]; masterVolume: number; audioOutputId: string; autoBumper: boolean; autoBumperTrackId: string; showNextSingers: boolean; showDisplayLogo: boolean; singerDisplayFullscreen: boolean; lyricBackdrop: LyricBackdrop; lyricBackdropFile: string; pauseIntervalSeconds: number; karaokeNerdsCacheDirectory: string; ytDlpExecutable: string; sharedCatalogEnabled: boolean; sharedCatalogConfigFile: string; karaokeNerdsAutoCache: boolean; karaokeNerdsBrands: string[]; karaokeNerdsArtists: string[] };
+export type Settings = { appearance: Theme; accentColor: AccentColor; autoApprove: boolean; localControlEnabled: boolean; rotationMode: RotationMode; maxFutureRequestsPerSinger: number; layout: Layout; metadataFormat: MetadataFormat; metadataTemplates: string[]; masterVolume: number; audioOutputId: string; autoBumper: boolean; autoBumperTrackId: string; showNextSingers: boolean; showDisplayLogo: boolean; singerDisplayFullscreen: boolean; lyricBackdrop: LyricBackdrop; lyricBackdropFile: string; pauseIntervalSeconds: number; karaokeNerdsCacheDirectory: string; ytDlpExecutable: string; sharedCatalogEnabled: boolean; sharedCatalogConfigFile: string; ratingProfileConfigFile: string; karaokeNerdsAutoCache: boolean; karaokeNerdsBrands: string[]; karaokeNerdsArtists: string[] };
 
-export const DEFAULT_SETTINGS: Settings = { appearance: 'system', accentColor: 'blue', autoApprove: true, rotationMode: 'singer', maxFutureRequestsPerSinger: 3, layout: 'standard', metadataFormat: 'artist-title', metadataTemplates: [], masterVolume: 1, audioOutputId: '', autoBumper: false, autoBumperTrackId: 'builtin-ambient', showNextSingers: false, showDisplayLogo: true, singerDisplayFullscreen: false, lyricBackdrop: 'default', lyricBackdropFile: '', pauseIntervalSeconds: 0, karaokeNerdsCacheDirectory: '', ytDlpExecutable: '', sharedCatalogEnabled: true, sharedCatalogConfigFile: '', karaokeNerdsAutoCache: false, karaokeNerdsBrands: [], karaokeNerdsArtists: [] };
+export const DEFAULT_SETTINGS: Settings = { appearance: 'system', accentColor: 'blue', autoApprove: true, localControlEnabled: false, rotationMode: 'singer', maxFutureRequestsPerSinger: 3, layout: 'standard', metadataFormat: 'artist-title', metadataTemplates: [], masterVolume: 1, audioOutputId: '', autoBumper: false, autoBumperTrackId: 'builtin-ambient', showNextSingers: false, showDisplayLogo: true, singerDisplayFullscreen: false, lyricBackdrop: 'default', lyricBackdropFile: '', pauseIntervalSeconds: 0, karaokeNerdsCacheDirectory: '', ytDlpExecutable: '', sharedCatalogEnabled: true, sharedCatalogConfigFile: '', ratingProfileConfigFile: '', karaokeNerdsAutoCache: false, karaokeNerdsBrands: [], karaokeNerdsArtists: [] };
 
 function validateCacheSelections(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.length > 500) throw new Error(`Invalid Karaoke Nerds ${label} list.`);
@@ -27,7 +27,7 @@ function validateCacheSelections(value: unknown, label: string): string[] {
 export function parseSettings(value: unknown): Settings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Settings must be a JSON object.');
   const input = value as Record<string, unknown>;
-  const unknown = Object.keys(input).filter(key => !(key in DEFAULT_SETTINGS));
+  const unknown = Object.keys(input).filter(key => !Object.hasOwn(DEFAULT_SETTINGS, key));
   if (unknown.length) throw new Error(`Unknown settings: ${unknown.join(', ')}`);
   const merged = { ...DEFAULT_SETTINGS, ...input };
   if (!ACCENT_COLORS.includes(merged.accentColor as AccentColor)) throw new Error('Invalid accent color: choose blue, pink or purple.');
@@ -39,6 +39,8 @@ export function parseSettings(value: unknown): Settings {
   if (!['default', 'none', 'custom'].includes(merged.lyricBackdrop) || typeof merged.lyricBackdropFile !== 'string' || merged.lyricBackdropFile.length > 4096 || /[\x00-\x1f\x7f]/.test(merged.lyricBackdropFile) ||
       (merged.lyricBackdropFile !== '' && (!/^(?:\/|[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(merged.lyricBackdropFile) || !/\.mp4$/i.test(merged.lyricBackdropFile))) ||
       (merged.lyricBackdrop === 'custom' && !merged.lyricBackdropFile)) throw new Error('Invalid lyric backdrop: choose the default, solid background, or an absolute custom MP4 path.');
+  if (typeof merged.ratingProfileConfigFile !== 'string' || merged.ratingProfileConfigFile.length > 4096 || /[\x00-\x1f\x7f]/.test(merged.ratingProfileConfigFile) || (merged.ratingProfileConfigFile !== '' && !/^(?:\/|[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(merged.ratingProfileConfigFile))) throw new Error('Invalid rating profile configuration: choose an absolute private JSON file path.');
+  if (typeof merged.localControlEnabled !== 'boolean') throw new Error('Invalid local control setting: use true or false.');
   const metadataTemplates = validateMetadataTemplates(merged.metadataTemplates);
   if (typeof merged.ytDlpExecutable !== 'string' || merged.ytDlpExecutable.length > 4096 || /[\x00-\x1f\x7f]/.test(merged.ytDlpExecutable) ||
       (merged.ytDlpExecutable !== '' && !/^(?:\/|[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(merged.ytDlpExecutable))) throw new Error('Invalid yt-dlp executable: use an absolute path or leave blank for PATH.');

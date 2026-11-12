@@ -1,10 +1,10 @@
-import { DEFAULT_SHORTCUTS, matchesShortcut, type Shortcuts } from '../domain/shortcuts';
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, matchesShortcut, type ShortcutAction, type Shortcuts } from '../domain/shortcuts';
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
-declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: 'search' | 'playPause'): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
+declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
@@ -60,9 +60,9 @@ navigator.mediaDevices?.addEventListener('devicechange', () => {
   window.tpvDisplay.event({ type: 'output-error', generation, position: video.currentTime || 0, message: 'Audio devices changed. Check the output in Preferences, then resume when ready.' });
 });
 window.addEventListener('keydown', event => {
-  if (event.repeat) return;
+  if (event.repeat || event.defaultPrevented || event.isComposing || (event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable]:not([contenteditable=\"false\"])')) return;
   const input = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey };
-  const action = matchesShortcut(shortcuts, 'search', input) ? 'search' : matchesShortcut(shortcuts, 'playPause', input) ? 'playPause' : null;
+  const action = SHORTCUT_ACTIONS.find(action => action.scope !== 'queue' && matchesShortcut(shortcuts, action.id, input))?.id;
   if (action) { event.preventDefault(); window.tpvDisplay.shortcut(action); }
 });
 

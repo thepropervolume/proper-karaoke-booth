@@ -3,6 +3,26 @@ import { contextBridge, ipcRenderer } from 'electron';
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 contextBridge.exposeInMainWorld('tpv', {
   getAppVersion: () => ipcRenderer.invoke('host:app-version'),
+  appReady: () => ipcRenderer.invoke('host:ui-ready'),
+  refreshMenu: () => ipcRenderer.invoke('host:refresh-menu'),
+  updateMenuContext: (value: { busy: boolean; modal: boolean }) => ipcRenderer.invoke('host:menu-context', value),
+  getLocalControlStatus: () => ipcRenderer.invoke('host:control-status'),
+  showControlCli: () => ipcRenderer.invoke('host:show-control-cli'),
+  onAppAction: (callback: (action: unknown) => void) => {
+    const listener = (_event: unknown, action: unknown) => callback(action);
+    ipcRenderer.on('host:app-action', listener);
+    return () => ipcRenderer.removeListener('host:app-action', listener);
+  },
+  onSettings: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('host:settings', listener);
+    return () => ipcRenderer.removeListener('host:settings', listener);
+  },
+  onShortcuts: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('host:shortcuts', listener);
+    return () => ipcRenderer.removeListener('host:shortcuts', listener);
+  },
   chooseSharedCatalogConfiguration: () => ipcRenderer.invoke('host:choose-catalog-config'),
   getSharedCatalogStatus: (file?: string) => ipcRenderer.invoke('host:catalog-status', file),
   getState: () => ipcRenderer.invoke('host:get-state'),
@@ -25,6 +45,11 @@ contextBridge.exposeInMainWorld('tpv', {
   relinkMedia: (versionId: string) => ipcRenderer.invoke('host:relink-media', versionId),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
   searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
+  ratingKeys: (versionIds: string[]) => ipcRenderer.invoke('host:rating-keys', versionIds),
+  lookupSongRatings: (keys: string[]) => ipcRenderer.invoke('host:rating-lookup', keys),
+  rateSong: (key: string, value: number | null) => ipcRenderer.invoke('host:rating-vote', key, value),
+  chooseRatingProfile: () => ipcRenderer.invoke('host:rating-choose-profile'),
+  ratingProfileStatus: (file?: string) => ipcRenderer.invoke('host:rating-profile-status', file),
   addYouTube: (input: unknown) => ipcRenderer.invoke('host:add-youtube', input),
   requestCatalogTrack: (input: unknown) => ipcRenderer.invoke('host:request-catalog-track', input),
   youtubeDownloads: {
@@ -36,6 +61,10 @@ contextBridge.exposeInMainWorld('tpv', {
   revealVideoCacheDirectory: () => ipcRenderer.invoke('host:reveal-video-cache'),
   openCommunityVideo: (id: string) => ipcRenderer.invoke('host:karaokenerds-open-video', id),
   getShortcuts: () => ipcRenderer.invoke('host:get-shortcuts'),
+  saveShortcuts: (value: unknown) => ipcRenderer.invoke('host:save-shortcuts', value),
+  editShortcutsFile: () => ipcRenderer.invoke('host:edit-shortcuts-file'),
+  playPause: () => ipcRenderer.invoke('host:play-pause'),
+  restartTrack: () => ipcRenderer.invoke('host:restart-track'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
   cycleAccentColor: () => ipcRenderer.invoke('host:cycle-accent-color'),
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
@@ -127,7 +156,7 @@ contextBridge.exposeInMainWorld('tpvDisplay', {
     ipcRenderer.on('display:seek', listener);
     return () => ipcRenderer.removeListener('display:seek', listener);
   },
-  shortcut: (action: 'search' | 'playPause') => ipcRenderer.send('display:shortcut', action),
+  shortcut: (action: string) => ipcRenderer.send('display:shortcut', action),
   event: (event: unknown) => ipcRenderer.send('display:event', event),
   bumperAck: (value: unknown) => ipcRenderer.send('display:bumper-ack', value),
   bumperEvent: (value: unknown) => ipcRenderer.send('display:bumper-event', value),

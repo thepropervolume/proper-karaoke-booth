@@ -4,24 +4,45 @@ import { AudioOutputPicker } from './AudioOutputPicker';
 import { BumperControls } from './BumperPanel';
 import { HostRemotePanel } from '../remote/HostRemotePanel';
 import { SharedCatalogControls } from './SharedCatalogControls';
+import { KeyboardShortcuts } from './KeyboardShortcuts';
+import { RatingProfileControls } from './RatingProfileControls';
+import { LocalControlSettings } from './LocalControlSettings';
+import type { Shortcuts } from '../domain/shortcuts';
+import type { SettingsSection } from '../domain/app-action';
 import '../styles/settings.scss';
 
-export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: {
-  value: Settings; path: string; shortcutsPath: string; onSave: (value: Settings) => Promise<void>; onClose: () => void;
+export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveShortcuts, initialSection = 'general', focusRequest = 0, onSave, onClose }: {
+  value: Settings; path: string; shortcutsPath: string; onSave: (value: Partial<Settings>) => Promise<void>; onClose: () => void;
+  shortcuts: Shortcuts; onSaveShortcuts: (value: Shortcuts) => Promise<void>; initialSection?: SettingsSection; focusRequest?: number;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(value);
+  const baseline = useRef<Settings | null>(null);
+  if (!baseline.current) baseline.current = structuredClone(value);
   const [templates, setTemplates] = useState(value.metadataTemplates.join('\n'));
   const [cacheBrands, setCacheBrands] = useState(value.karaokeNerdsBrands.join('\n'));
   const [cacheArtists, setCacheArtists] = useState(value.karaokeNerdsArtists.join('\n'));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  useEffect(() => { baseline.current!.appearance = value.appearance; setDraft(current => ({ ...current, appearance: value.appearance })); }, [value.appearance]);
+  useEffect(() => { baseline.current!.accentColor = value.accentColor; setDraft(current => ({ ...current, accentColor: value.accentColor })); }, [value.accentColor]);
+  useEffect(() => { baseline.current!.layout = value.layout; setDraft(current => ({ ...current, layout: value.layout })); }, [value.layout]);
   useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
+  useEffect(() => {
+    if (initialSection === 'general') return;
+    const section = dialog.current?.querySelector<HTMLDetailsElement>(`[data-settings-section="${initialSection}"]`);
+    if (section) {
+      section.open = true;
+      requestAnimationFrame(() => { section.scrollIntoView({ block: 'start' }); section.querySelector<HTMLElement>('summary')?.focus(); });
+    }
+  }, [initialSection, focusRequest]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true); setError('');
-    try { await onSave({ ...draft, metadataTemplates: templates.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+    try { const next = { ...draft, metadataTemplates: templates.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
       karaokeNerdsBrands: cacheBrands.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
-      karaokeNerdsArtists: cacheArtists.split(/\r?\n/).map(line => line.trim()).filter(Boolean) }); onClose(); }
+      karaokeNerdsArtists: cacheArtists.split(/\r?\n/).map(line => line.trim()).filter(Boolean) };
+      const patch = Object.fromEntries((Object.keys(next) as (keyof Settings)[]).filter(key => JSON.stringify(next[key]) !== JSON.stringify(baseline.current![key])).map(key => [key, next[key]]));
+      await onSave(patch); onClose(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
@@ -35,11 +56,18 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
       <h2 id="settings-title">Preferences</h2>
       <div className="settings-groups">
         <SharedCatalogControls value={draft} onChange={setDraft} />
-        <details className="settings-group" open>
+        <details className="settings-group" data-settings-section="ratings">
+          <summary>Song Ratings</summary>
+          <div className="settings-group__content"><RatingProfileControls configFile={draft.ratingProfileConfigFile} onChange={ratingProfileConfigFile => setDraft({ ...draft, ratingProfileConfigFile })} /></div>
+        </details>
+        <details className="settings-group" data-settings-section="appearance" open>
           <summary>Appearance</summary>
           <div className="settings-group__content">
             <label>Appearance<select value={draft.appearance} onChange={event => setDraft({ ...draft, appearance: event.target.value as Settings['appearance'] })}>
               <option value="system">Follow system</option><option value="night">Night</option><option value="day">Day</option>
+            </select></label>
+            <label>Accent Color<select aria-label="Accent Color" value={draft.accentColor} onChange={event => setDraft({ ...draft, accentColor: event.target.value as Settings['accentColor'] })}>
+              <option value="blue">Blue</option><option value="pink">Pink</option><option value="purple">Purple</option>
             </select></label>
             <label>Workspace layout<select value={draft.layout} onChange={event => setDraft({ ...draft, layout: event.target.value as Settings['layout'] })}>
               <option value="standard">Standard</option><option value="rotation">Wider singer rotation</option><option value="library">Wide song library</option>
@@ -51,6 +79,7 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
           <div className="settings-group__content">
             <label>Filename and folder templates, one per line<textarea rows={4} value={templates} onChange={event => setTemplates(event.target.value)} placeholder={'${DJ Code} - ${Artist} - ${Track Name}\n${Artist}/${Title}.mp4'} /></label>
             <p className="muted">Templates are tried in order. Use {'${Artist}'}, {'${Title}'} or {'${Track Name}'}, {'${DJ Code}'}, and {'${Track Number}'}. Use / between folders; .mp4 is optional.</p>
+            <p className="muted">Repeated artist/title fields are allowed when their values agree. Extra variables such as {'${Album}'} are captured and ignored. Put specific numbered patterns before a catch-all such as {'${Artist}/${Title}'}.</p>
             <label>When no template matches<select value={draft.metadataFormat} onChange={event => setDraft({ ...draft, metadataFormat: event.target.value as Settings['metadataFormat'] })}>
               <option value="artist-title">Artist - Title</option><option value="title-artist">Title - Artist</option><option value="filename">Full filename as title</option>
             </select></label>
@@ -137,6 +166,14 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
             <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="shortcuts-file-tip" onClick={() => void reveal('shortcuts')}>Show keybindings.json in file manager</button><span id="shortcuts-file-tip" role="tooltip">Show {shortcutsPath} in the file manager</span></span></p>
             <p className="muted">Close the app before editing settings. Restart to apply file edits.</p>
           </div>
+        </details>
+        <details className="settings-group" data-settings-section="keyboard-shortcuts">
+          <summary>Keyboard Shortcuts</summary>
+          <div className="settings-group__content"><KeyboardShortcuts value={shortcuts} onSave={onSaveShortcuts} onEditFile={() => window.tpv.editShortcutsFile()} /></div>
+        </details>
+        <details className="settings-group">
+          <summary>Local API and CLI</summary>
+          <div className="settings-group__content"><LocalControlSettings enabled={draft.localControlEnabled} onChange={localControlEnabled => setDraft({ ...draft, localControlEnabled })} /></div>
         </details>
       </div>
       {error && <p role="alert">{error}</p>}
