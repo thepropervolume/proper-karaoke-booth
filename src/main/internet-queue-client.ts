@@ -21,6 +21,10 @@ const MAX_PAYLOAD = 8192, MAX_REPLY = 2 * 1024 * 1024, MAX_POLL = 128 * 1024;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+// POSIX ownership/mode can be checked here. On Windows the installer/operator
+// must provision a protected current-user + SYSTEM ACL; Node mode bits do not prove it.
+const privateFile = (info: { mode: number; uid: number; isFile(): boolean }) => info.isFile() && (process.platform === 'win32' ||
+  (typeof process.getuid === 'function' && info.uid === process.getuid() && (info.mode & 0o077) === 0));
 
 /** Reuses the guest authority's allowlisted methods; no HTTP request can select a host operation. */
 export function dispatchInternetGuestCall(authority: GuestAuthority, call: InternetGuestCall, invitation: () => string): InternetGuestReply {
@@ -77,18 +81,19 @@ async function readConnection(file: string): Promise<Connection> {
   try {
     if (!isAbsolute(file)) throw new Error();
     const before = await lstat(file);
-    if (!before.isFile() || before.isSymbolicLink() || before.size < 1 || before.size > 8192) throw new Error();
+    if (!privateFile(before) || before.isSymbolicLink() || before.size < 1 || before.size > 8192) throw new Error();
     const handle = await open(file, 'r');
     let data: Buffer;
     try {
       const stat = await handle.stat();
-      if (stat.dev !== before.dev || stat.ino !== before.ino || stat.size !== before.size) throw new Error();
+      if (!privateFile(stat) || stat.dev !== before.dev || stat.ino !== before.ino || stat.size !== before.size || stat.mtimeMs !== before.mtimeMs || stat.ctimeMs !== before.ctimeMs) throw new Error();
       const bounded = Buffer.alloc(8193);
       const { bytesRead } = await handle.read(bounded, 0, bounded.length, 0);
       if (bytesRead !== stat.size) throw new Error();
       data = bounded.subarray(0, bytesRead);
       const after = await handle.stat(), named = await lstat(file);
-      if (data.length > 8192 || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || named.isSymbolicLink() || named.dev !== stat.dev || named.ino !== stat.ino) throw new Error();
+      if (!privateFile(after) || !privateFile(named) || data.length > 8192 || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs ||
+          named.isSymbolicLink() || named.dev !== stat.dev || named.ino !== stat.ino || named.size !== stat.size || named.mtimeMs !== stat.mtimeMs || named.ctimeMs !== stat.ctimeMs) throw new Error();
     } finally { await handle.close(); }
     const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data));
     if (!record(parsed) || !exact(parsed, ['baseUrl', 'ownerToken']) || parsed.baseUrl !== INTERNET_QUEUE_ORIGIN || typeof parsed.ownerToken !== 'string' || !OWNER.test(parsed.ownerToken)) throw new Error();
@@ -262,8 +267,9 @@ export class InternetQueueClient {
         const value = await post(this.options.fetch ?? fetch, this.config, 'poll', { roomId: current.roomId, generation: current.generation }, controller.signal, 25000);
         if (!this.live(controller, epoch)) return;
         const batch = calls(value, current), responses: InternetGuestReply[] = [];
+        if (this.state === 'reconnecting') { this.state = 'online'; this.message = 'Session online. Singers can reconnect and check their saved requests.'; this.changed(); }
         for (const call of batch) {
-          if (!this.live(controller, epoch) || !this.scope) return;
+          if (!this.live(controller, epoch) || !this.scope || this.state !== 'online') return;
           responses.push(dispatchInternetGuestCall(this.scope.authority, call, () => this.privateInvitation()));
           if (!this.live(controller, epoch)) return;
         }
@@ -285,9 +291,12 @@ export class InternetQueueClient {
               try {
                 const ack = await post(this.options.fetch ?? fetch, this.config, 'reply', payload, controller.signal, 10000);
                 if (!record(ack) || !exact(ack, ['ok']) || ack.ok !== true) throw new RelayFailure(false);
+                if (this.state === 'reconnecting') { this.state = 'online'; this.message = 'Session online. Singers can reconnect and check their saved requests.'; this.changed(); }
                 break;
               } catch (error) {
+                if (error instanceof RelayFailure && error.code === 409) break; // expired RPC tombstone; its durable command receipt remains recoverable
                 if (!this.live(controller, epoch) || !(error instanceof RelayFailure) || !error.retryable || attempt >= 2) throw error;
+                this.state = 'reconnecting'; this.message = 'Connection lost. Reconnecting… Your requests remain saved.'; this.changed();
                 await sleep(250, controller.signal);
               }
             }
@@ -296,22 +305,16 @@ export class InternetQueueClient {
         retry = 0;
       } catch (error) {
         if (!this.live(controller, epoch)) return;
-        const revoked = this.closeScope();
-        this.state = 'reconnecting'; this.message = 'Connection lost. Reconnecting… Singers may need to rejoin.'; this.changed();
-        if (!revoked || error instanceof RelayFailure && !error.retryable) {
-          controller.abort(); this.state = 'failed'; this.message = 'The session needs to be ended before it can reconnect.'; this.changed(); return;
+        // A temporary outage must preserve the authority scope and generation so
+        // singers can recover their original receipts. No dispatch occurs until a
+        // successful bounded poll restores the online state.
+        if (!(error instanceof RelayFailure) || !error.retryable && error.code !== 409) {
+          this.closeScope(); controller.abort(); this.state = 'failed';
+          this.message = error instanceof RelayFailure && error.code === 410 ? 'This session has ended. Choose End Session before starting again.' : 'The session needs to be ended before it can reconnect.';
+          this.changed(); return;
         }
-        this.pendingOpen ??= { slug: this.slug!, openId: randomUUID() };
-        while (this.live(controller, epoch)) {
-          await sleep(this.options.reconnectDelayMs ?? Math.min(15000, 1000 * 2 ** Math.min(retry++, 4)), controller.signal);
-          if (!this.live(controller, epoch)) return;
-          try { await this.connect(controller, epoch); break; }
-          catch (failure) {
-            this.closeScope();
-            if (!this.live(controller, epoch)) return;
-            if (!(failure instanceof RelayFailure) || !failure.retryable) { controller.abort(); this.state = 'failed'; this.message = 'The session could not reconnect. End it and start a new session.'; this.changed(); return; }
-          }
-        }
+        this.state = 'reconnecting'; this.message = 'Connection lost. Reconnecting… Your requests remain saved.'; this.changed();
+        await sleep(this.options.reconnectDelayMs ?? Math.min(15000, 1000 * 2 ** Math.min(retry++, 4)), controller.signal);
       }
     }
   }

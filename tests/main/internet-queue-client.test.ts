@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
@@ -56,6 +56,7 @@ class RelayFixture {
   closes: unknown[] = [];
   pending: { resolve: (value: Response) => void; reject: (reason: Error) => void; generation: string } | undefined;
   replyFailures = 0;
+  lateReplyConflict = false;
   ignorePollAbort = false;
   loseCloseAcknowledgement = false;
   alreadyEnded = false;
@@ -83,6 +84,7 @@ class RelayFixture {
       });
       case '/v1/relay/host/reply':
         this.replies.push(body as { roomId: string; generation: string; responses: InternetGuestReply[] });
+        if (this.lateReplyConflict) { this.lateReplyConflict = false; return response({ error: 'unknown-reply' }, 409); }
         if (this.replyFailures-- > 0) throw new Error('lost acknowledgement');
         return response({ ok: true });
       case '/v1/relay/host/close':
@@ -103,7 +105,7 @@ class RelayFixture {
 function clientFixture() {
   const f = show(), relay = new RelayFixture(), directory = mkdtempSync(join(tmpdir(), 'tpv-internet-client-'));
   const configurationFile = join(directory, 'connection.json'), owner = token();
-  writeFileSync(configurationFile, JSON.stringify({ baseUrl: INTERNET_QUEUE_ORIGIN, ownerToken: owner }));
+  writeFileSync(configurationFile, JSON.stringify({ baseUrl: INTERNET_QUEUE_ORIGIN, ownerToken: owner }), { mode: 0o600 });
   let copied = '';
   const client = new InternetQueueClient({ coordinator: f.coordinator, configurationFile, fetch: relay.fetch, reconnectDelayMs: 0, writeClipboard: value => { copied = value; } });
   return { ...f, relay, client, configurationFile, owner, copied: () => copied, async dispose() {
@@ -142,7 +144,7 @@ test('lost reply acknowledgement retries the exact receipt before another poll o
   } finally { await f.dispose(); }
 });
 
-test('poll failure revokes internet scope and reconnects with a new generation without revoking LAN', async () => {
+test('poll failure preserves the internet scope and same generation while reconnecting without changing LAN', async () => {
   const f = clientFixture();
   try {
     const queue = f.coordinator.getAuthority(), lan = queue.join(queue.createInvitation(60000), randomUUID(), token(), 'LAN', 0);
@@ -151,11 +153,42 @@ test('poll failure revokes internet scope and reconnects with a new generation w
     const old = (joined.body as { session: string }).session, generation = f.relay.generation;
     await until(() => !!f.relay.pending);
     const pending = f.relay.pending!; f.relay.pending = undefined; pending.reject(new Error('network lost'));
-    await until(() => f.relay.opens.length === 2 && f.client.status().state === 'online');
-    assert.notEqual(f.relay.generation, generation); assert.notEqual(f.relay.opens[0].openId, f.relay.opens[1].openId);
+    await until(() => !!f.relay.pending && f.client.status().state === 'reconnecting');
+    assert.equal(f.relay.generation, generation); assert.equal(f.relay.opens.length, 1);
     assert.equal(queue.snapshot(lan.session).singerName, 'LAN');
-    const [stale] = await f.relay.deliver([{ requestId: randomUUID(), operation: 'snapshot', payload: {}, session: old }]); assert.equal(stale.status, 400);
-    assert.deepEqual(f.client.status().guests, []);
+    const [restored] = await f.relay.deliver([{ requestId: randomUUID(), operation: 'snapshot', payload: {}, session: old }]); assert.equal(restored.status, 200);
+    assert.deepEqual(f.client.status().guests.map(item => item.name), ['Internet']); assert.equal(f.client.status().state, 'online');
+  } finally { await f.dispose(); }
+});
+
+test('a committed request remains recoverable by its original guest after every reply acknowledgement is lost', async () => {
+  const f = clientFixture();
+  try {
+    const queue = f.coordinator.getAuthority(), lan = queue.join(queue.createInvitation(60000), randomUUID(), token(), 'LAN', 0);
+    await f.client.start({ slug: 'proper-volume' });
+    const generation = f.relay.generation;
+    const [joined] = await f.relay.deliver([{ requestId: randomUUID(), operation: 'join', payload: { joinId: randomUUID(), resumeSecret: token(), name: 'Internet', expectedRevision: f.state().revision } }]);
+    const session = (joined.body as { session: string }).session, snap = f.state();
+    const commandId = randomUUID(), before = f.relay.replies.length;
+    f.relay.replyFailures = 3;
+    await f.relay.deliver([{ requestId: randomUUID(), operation: 'request', session, payload: { command: { commandId, showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, versionId: 'version-clean' } } }]);
+    await until(() => f.relay.replies.length === before + 3 && !!f.relay.pending && f.client.status().state === 'reconnecting');
+    assert.equal(f.state().requests.length, 1); assert.equal(f.relay.opens.length, 1); assert.equal(f.relay.generation, generation);
+    const [receipt] = await f.relay.deliver([{ requestId: randomUUID(), operation: 'outcome', session, payload: { commandId } }]);
+    assert.equal(receipt.status, 200); assert.equal((receipt.body as { ok: boolean }).ok, true);
+    assert.equal(f.state().requests.length, 1); assert.equal(queue.snapshot(lan.session).singerName, 'LAN');
+  } finally { await f.dispose(); }
+});
+
+test('an expired late reply returns 409 without ending the room or revoking its guests', async () => {
+  const f = clientFixture();
+  try {
+    await f.client.start({ slug: 'proper-volume' });
+    f.relay.lateReplyConflict = true;
+    await f.relay.deliver([{ requestId: randomUUID(), operation: 'admission', payload: {} }]);
+    await until(() => !!f.relay.pending);
+    assert.equal(f.client.status().state, 'online'); assert.equal(f.relay.opens.length, 1);
+    const [next] = await f.relay.deliver([{ requestId: randomUUID(), operation: 'admission', payload: {} }]); assert.equal(next.status, 200);
   } finally { await f.dispose(); }
 });
 
@@ -201,6 +234,22 @@ test('retrying End after a lost close acknowledgement treats room-ended 410 as s
     assert.equal(f.client.status().state, 'failed'); assert.equal(f.client.status().joinUrl, null);
     await f.client.stop();
     assert.equal(f.client.status().state, 'stopped'); assert.equal(f.relay.closes.length, 2); assert.equal(f.client.needsShutdownWait(), false);
+    await f.client.start({ slug: 'proper-volume' }); assert.equal(f.client.status().state, 'online');
+  } finally { await f.dispose(); }
+});
+
+test('POSIX private connection rejects group/world access and another owner', { skip: process.platform === 'win32' }, async () => {
+  const f = clientFixture();
+  try {
+    chmodSync(f.configurationFile, 0o640); await assert.rejects(f.client.start({ slug: 'proper-volume' })); await f.client.stop();
+    chmodSync(f.configurationFile, 0o604); await assert.rejects(f.client.start({ slug: 'proper-volume' })); await f.client.stop();
+    chmodSync(f.configurationFile, 0o600);
+    if (process.getuid?.() === 0) {
+      chownSync(f.configurationFile, 1, process.getgid!());
+      await assert.rejects(f.client.start({ slug: 'proper-volume' })); await f.client.stop();
+      chownSync(f.configurationFile, 0, process.getgid!());
+    }
+    assert.equal(f.relay.opens.length, 0);
     await f.client.start({ slug: 'proper-volume' }); assert.equal(f.client.status().state, 'online');
   } finally { await f.dispose(); }
 });
