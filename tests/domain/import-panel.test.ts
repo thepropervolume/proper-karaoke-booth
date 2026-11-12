@@ -47,3 +47,11 @@ test('empty sizes and phase helpers do not suggest an unknown total is complete'
   const html = render({ ...running, current: { name: 'empty.mp4', bytesRead: 0, bytesTotal: 0 } }, null);
   assert.match(html, /<progress aria-label="Preparing empty\.mp4"><\/progress>/);
 });
+
+test('folder scan explains skipped formats and cloud availability without inventing a total', () => {
+  const scanning = render({ ...running, phase: 'scanning', directoriesScanned: 2, skippedUnsupported: 3, current: { name: 'Video/Artist', bytesRead: 0, bytesTotal: 0 } }, null);
+  assert.match(scanning, /2 folders scanned/); assert.match(scanning, /3 other files skipped/);
+  assert.match(scanning, /aria-label="Scanning Video\/Artist"/); assert.match(scanning, /cloud-only files may take time/i);
+  const empty = render({ ...running, phase: 'completed', discovered: 0, processed: 0, imported: 0, duplicates: 0, needsReview: 0, current: null }, null);
+  assert.match(empty, /No MP4 videos were found/); assert.match(empty, /Import CD\+G \/ ZIP/);
+});
