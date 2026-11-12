@@ -9,3 +9,5 @@ await Promise.all(['main', 'preload'].map((entry) => build({
   external: ['electron'],
   sourcemap: true,
 })));
+await build({ entryPoints: ['src/control/entry.ts'], outfile: 'dist/control/cli.cjs', bundle: true,
+  platform: 'node', format: 'cjs', target: 'node24', sourcemap: true });

@@ -1,0 +1,18 @@
+#!/bin/sh
+# The installed Electron runtime also runs the CLI; no separate Node install.
+set -eu
+cli_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cli_runtime="$cli_dir/proper-karaoke-booth"
+cli_entry="$cli_dir/resources/control/cli.cjs"
+if [ -d "$cli_dir/MacOS" ]; then
+  cli_runtime="$cli_dir/MacOS/proper-karaoke-booth"
+  cli_entry="$cli_dir/Resources/control/cli.cjs"
+fi
+case "${1-}" in
+  --settings|--keybindings)
+    unset ELECTRON_RUN_AS_NODE
+    exec "$cli_runtime" "$@"
+    ;;
+esac
+export ELECTRON_RUN_AS_NODE=1
+exec "$cli_runtime" "$cli_entry" "$@"

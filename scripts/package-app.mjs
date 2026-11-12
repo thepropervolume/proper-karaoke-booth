@@ -1,5 +1,5 @@
 // Build from source into an isolated stage. Never cleans the running app's dist.
-import { cp, mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,11 +31,17 @@ try {
   await mkdir(join(stage, 'dist'), { recursive: true });
   await cp(join(repo, 'assets/backdrops'), join(stage, 'assets/backdrops'), { recursive: true, errorOnExist: true, force: false });
   await cp(join(repo, 'assets/branding'), join(stage, 'assets/branding'), { recursive: true, errorOnExist: true, force: false });
+  await cp(join(repo, 'assets/cli'), join(stage, 'assets/cli'), { recursive: true, errorOnExist: true, force: false });
+  const unixCli = join(stage, 'assets/cli/tpv-karaoke');
+  await writeFile(unixCli, (await readFile(unixCli, 'utf8')).replace(/\r\n/g, '\n'));
+  if (platform !== 'win') await chmod(unixCli, 0o755);
   await viteBuild({ root: repo, build: { outDir: join(stage, 'dist/ui'), emptyOutDir: true } });
   await Promise.all(['main', 'preload'].map(entry => bundle({
     entryPoints: [join(repo, `src/${entry}/index.ts`)], outfile: join(stage, `dist/${entry}/index.cjs`),
     bundle: true, platform: 'node', format: 'cjs', target: 'node24', external: ['electron'], sourcemap: false,
   })));
+  await bundle({ entryPoints: [join(repo, 'src/control/entry.ts')], outfile: join(stage, 'dist/control/cli.cjs'),
+    bundle: true, platform: 'node', format: 'cjs', target: 'node24', sourcemap: false });
   // All runtime JS is bundled above. Explicit manifest prevents node_modules,
   // development tools, private source directories and external files being shipped.
   await writeFile(join(stage, 'package.json'), JSON.stringify({
@@ -67,6 +73,7 @@ try {
     nsis: { ...configuration.nsis, installerIcon: join(stage, configuration.nsis.installerIcon),
       uninstallerIcon: join(stage, configuration.nsis.uninstallerIcon), installerHeaderIcon: join(stage, configuration.nsis.installerHeaderIcon) },
     extraResources: configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
+    extraFiles: configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
     // A multi-architecture build must download each matching Electron runtime.
     // Reusing the host runtime would silently mislabel (for example) an arm64 Mac.
     ...(target.nodeName === process.platform && architectures.length === 1 && Arch[architectures[0]] === process.arch

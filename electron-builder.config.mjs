@@ -9,8 +9,13 @@ export default {
   nodeGypRebuild: false,
   files: ['dist/**/*', 'package.json', 'THIRD-PARTY-LICENSES.txt', '!node_modules/**/*', '!**/*.map'],
   extraResources: [
+    { from: 'dist/control/cli.cjs', to: 'control/cli.cjs' },
     { from: 'assets/backdrops', to: 'backdrops', filter: ['tpv-karaoke-v3.mp4', 'README.md'] },
     { from: 'assets/branding', to: 'branding', filter: ['app.ico', 'app.png', 'icon-dark.svg', 'icon-light.svg', 'logo-dark.svg', 'logo-light.svg', 'wordmark-dark.svg', 'wordmark-light.svg', 'logo-dark.png', 'logo-light.png', 'wordmark-dark.png', 'wordmark-light.png', 'LICENSE-Lobster.txt', 'README.md'] },
+  ],
+  extraFiles: [
+    { from: 'assets/cli/tpv-karaoke.cmd', to: 'tpv-karaoke.cmd' },
+    { from: 'assets/cli/tpv-karaoke', to: 'tpv-karaoke' },
   ],
   directories: { output: 'release' },
   publish: null,
