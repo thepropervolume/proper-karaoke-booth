@@ -6,7 +6,7 @@ The current development version is **0.3.1**. The target for the approved offici
 
 | Platform | Package | Current verification |
 | --- | --- | --- |
-| Windows 64-bit | Assisted installer (`windows-x64-setup.exe`) and extractable ZIP (`win-x64.zip`) | Final 0.3.0 built from application source `7730814`, including bounded import recovery. Packaged launch/version/restart, real-folder import and public remote workflow passed. Actual 0.3 installation and upgrade testing remain. The owner reports the earlier 0.2 installers worked; platform was not specified. |
+| Windows 64-bit | Assisted installer (`windows-x64-setup.exe`) and extractable ZIP (`win-x64.zip`) | 0.3.1 built from application source `33eab78`. The actual package passed muted default/custom/solid preference persistence and CDG conversion against the bundled backdrop. ZIP asset/app bytes match the rehearsed package; checksums verified. Actual 0.3.1 installation and upgrade testing remain. The owner reports the earlier 0.2 installers worked; platform was not specified. |
 | Linux 64-bit | AppImage (`linux-x86_64.AppImage`) and Debian (`linux-amd64.deb`) | Final 0.3 packages built from `f1e7836`, which contains the same app plus server changes. Final AppImage launch/restart/persistence and 76 targeted checks passed. Linux installation and show hardware remain unverified. |
 | macOS Intel and Apple silicon | `.dmg` and ZIP build targets | Must be built and verified on a Mac. No macOS package claimed yet. |
 
@@ -14,9 +14,9 @@ Generated files live in the repository's `release` folder and are not committed 
 
 ## Windows
 
-Finish or stop the current show and close the app normally before replacing an installed version. Run `Proper-Karaoke-Booth-0.3.0-windows-x64-setup.exe` and follow the installation wizard. It defaults to installation for the current user, allows choosing a destination, and creates a Start menu shortcut. It does not automatically start the app after installation. Administrator elevation and a desktop shortcut are disabled by default.
+Finish or stop the current show and close the app normally before replacing an installed version. Run `Proper-Karaoke-Booth-0.3.1-windows-x64-setup.exe` and follow the installation wizard. It defaults to installation for the current user, allows choosing a destination, and creates a Start menu shortcut. It does not automatically start the app after installation. Administrator elevation and a desktop shortcut are disabled by default.
 
-Alternatively, extract the entire `Proper-Karaoke-Booth-0.3.0-win-x64.zip` to a folder and open `proper-karaoke-booth.exe`. Keep its supporting files together. The ZIP uses the same application profile as the installer; it is not a separate show profile.
+Alternatively, extract the entire `Proper-Karaoke-Booth-0.3.1-win-x64.zip` to a folder and open `proper-karaoke-booth.exe`. Keep its supporting files together. The ZIP uses the same application profile as the installer; it is not a separate show profile.
 
 The show database, settings and keybindings stay in the existing `proper-karaoke-booth` user-data directory (normally `%APPDATA%\proper-karaoke-booth` on Windows). An explicit `--user-data-dir` or a custom startup profile is honored before the single-instance check. Uninstalling is configured to preserve application data. Back up the show before upgrading; uninstalling is not a backup procedure.
 
@@ -75,3 +75,5 @@ The final Windows package imported all 237 MP4s from the reported folder into a 
 ## 0.3.1 Lyric Backdrop
 
 New CDG imports use the bundled TPV Version 3 animation by default. Configure **Preferences → Singer Display → Lyric Backdrop** before importing. Choose the default animation, **Solid CDG Background**, or a custom local MP4. Custom videos stay at their chosen path and must remain readable during import. They are not copied into installers. Existing converted CDG songs need reimporting to change their backdrop. Future LRC playback will use the same preference; it is not implemented yet. The original selected TPV asset is unchanged.
+
+0.3.1 package receipts record source `33eab78`. Their source-change flag is true because the documentation mockup and this smoke script were improved during packaging; application/runtime code and the backdrop did not change. The ZIP’s `app.asar` and backdrop hashes match the actual package used for the passing rehearsal. Run `node scripts/cdg-import-smoke.mjs /path/to/packaged/executable` for that isolated, muted check. Linux packages remain 0.3.0; they do not include this update yet.

@@ -160,7 +160,7 @@ Provider due diligence must establish documented authentication, commercial and 
 
 The 0.3.0 default Windows test run passed 566 checks with four opt-in/platform skips, including five asynchronous-wait regressions; six document-generator checks passed. Linux passed 76 targeted checks and final AppImage launch/version/restart/persistence/no-autoplay. The server passed 50 relay checks including real MySQL transactions and nonempty backup/restore/restart. Actual packaged Windows-to-public-relay-to-browser operations passed, as did real catalog search and immediate yt-dlp acquisition of the owner’s selected recording after queueing. The final package imported all 237 actual MP4s in a disposable library. Muted integration checks cover automatic bumper completion/Skip/silence and restart. These checks do not establish audible mixer output, physical monitor hot-plug, actual phones, non-root Linux sandbox behavior, long-show reliability, macOS or a complete platform support matrix.
 
-The 0.3.1 backdrop update passed type checking and 571 automated tests with four skips. Nine CDG checks include real FFmpeg pixels/audio, palette-index preservation, timing, looping, cancellation and error recovery. An isolated muted Electron rehearsal verified saved default/custom/solid choices across restarts, imported pixels against the actual bundled TPV video, unchanged source files and no rewriting of an existing converted song after a preference change. These synthetic CDG checks do not replace real-producer and physical synchronization verification.
+The 0.3.1 backdrop update passed type checking and 571 automated tests with four skips. Nine CDG checks include real FFmpeg pixels/audio, palette-index preservation, timing, looping, cancellation and error recovery. An isolated muted Electron rehearsal verified saved default/custom/solid choices across restarts, imported pixels against the actual bundled TPV video, unchanged source files and no rewriting of an existing converted song after a preference change. The Windows 0.3.1 installer and ZIP were built; the actual packaged app passed the same rehearsal using its real bundled resource, and the ZIP payload hashes match. Linux 0.3.1 and macOS packages have not been built. These synthetic CDG checks do not replace real-producer and physical synchronization verification.
 
 Before a live-show release, verify Windows 11 x64, an agreed Linux desktop and macOS on representative hardware, including codecs, installers/signing, external displays, output selection, hot-unplug/reconnect, audio routing, cross-platform shortcuts, screen readers, database upgrades/backups/recovery and long shows. Test real iOS and Android devices, venue Wi-Fi, DNS, firewall and relay outages. Record machine, OS, media fixtures, versions and observed output. No production support claim should be inferred from a unit test or a mockup.
 
@@ -396,6 +396,8 @@ The approved color preference for the current icon exploration is vivid purple `
     "Applies to | New CDG imports after saving",
     "LRC lyrics | Planned, not yet playable"
   ],
+  "side_heading": "Related Settings",
+  "side_rows": ["Logo and next singers | Separate display choices"],
   "footer_heading": "Preferences",
   "footer_rows": [
     "Cancel",

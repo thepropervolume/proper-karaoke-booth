@@ -7,6 +7,8 @@ import { join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 const repo = await realpath(resolve('.')), root = await realpath(tmpdir());
+if (process.argv.length > 3) throw new Error('Usage: node scripts/cdg-import-smoke.mjs [packaged-executable]');
+const packagedExecutable = process.argv[2] ? await realpath(resolve(process.argv[2])) : undefined;
 const require = createRequire(join(repo, 'package.json'));
 const { _electron: electron } = require('playwright-core');
 const temp = await mkdtemp(join(root, 'tpv-cdg-smoke-')), profile = join(temp, 'profile'); await mkdir(profile);
@@ -23,8 +25,13 @@ const env = { ...process.env, TPV_QA_REPO: repo, TPV_QA_PROFILE: await realpath(
 let app;
 try {
   const launch = async () => {
-    app = await electron.launch({ executablePath: require('electron'), args: [bootstrap, `--user-data-dir=${profile}`, '--mute-audio'], cwd: repo, env });
+    app = await electron.launch({ executablePath: packagedExecutable ?? require('electron'), args: [...(packagedExecutable ? [] : [bootstrap]), `--user-data-dir=${profile}`, '--mute-audio'], cwd: repo, env });
     assert.equal(await realpath(await app.evaluate(({app})=>app.getPath('userData'))), await realpath(profile));
+    if (packagedExecutable) {
+      const identity = await app.evaluate(({ app }) => ({ packaged: app.isPackaged, version: app.getVersion() }));
+      assert.equal(identity.packaged, true);
+      assert.equal(identity.version, JSON.parse(await readFile(join(repo, 'package.json'), 'utf8')).version);
+    }
     const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv); return host;
   };
   const openBackdropPreferences = async host => {
@@ -81,7 +88,7 @@ try {
   await (await openBackdropPreferences(host)).selectOption('none'); await savePreferences(host);
   assert.equal(createHash('sha256').update(await readFile(converted)).digest('hex'), beforePreferenceChange, 'Changing preferences never rewrites an existing converted song.');
   assert.deepEqual(await readFile(source), data); assert.deepEqual(await readFile(audio), originalAudio);
-  console.log('CD+G default bundled video pixels, persisted default/custom/solid preferences, native import, library metadata, unchanged existing conversion and original sources verified in an isolated muted profile.');
+  console.log(`${packagedExecutable ? 'Packaged app: ' : ''}CD+G default bundled video pixels, persisted default/custom/solid preferences, native import, library metadata, unchanged existing conversion and original sources verified in an isolated muted profile.`);
 } finally {
   if (app) await app.close();
   if (temp.startsWith(root + sep) && await realpath(temp) === temp) await rm(temp, { recursive: true, force: true });

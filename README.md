@@ -4,7 +4,7 @@ Version **0.3.1**, a local-first desktop karaoke rehearsal application. Developm
 
 ## Run or install
 
-Windows and Linux 0.3.0 packages passed launch/restart checks and the Windows package passed real-folder import and public remote-session rehearsals. The 0.3.1 update adds the bundled default CDG backdrop; see [installation and packaging](docs/installation.md) for its build and verification status. Actual installation/upgrade and physical show checks remain. macOS has not been built. Private configuration, song media, yt-dlp and FFmpeg are not bundled; the default silent lyric backdrop is bundled.
+Windows 0.3.1 installer and ZIP have been built, and the actual packaged app passed default/custom/solid backdrop persistence and CDG conversion checks. Linux 0.3.0 packages remain available; the new 0.3.1 backdrop has not yet been packaged for Linux. macOS has not been built. See [installation and packaging](docs/installation.md). Actual installation/upgrade and physical show checks remain. Private configuration, song media, yt-dlp and FFmpeg are not bundled; the default silent lyric backdrop is bundled.
 
 For development, prerequisites are Node.js and npm. Automated rehearsals have run on Linux and Windows with Electron 45; macOS and physical audio/display devices still need testing. Install dependencies once (internet required), then build and start:
 
