@@ -31,4 +31,8 @@ Your singer name and request information are stored locally for the host’s sho
 
 On the local singer page, choose 1–60 whole minutes under availability, or use the return action when back. The host can do this for you. While unavailable you can have one upcoming request; existing extras are retained but block additions. You become eligible at the saved return time in the normal FIFO/fair order, subject to host manual order and the staged song. Returning does not start playback. If already staged or singing, ask the host before stepping away. After an uncertain connection result, check the outcome before another change. See [availability rules](singer-availability.md).
 
-The desktop installer does not contain private catalog configuration, media, yt-dlp or FFmpeg. Those are host setup requirements. A host catalog outage does not automatically remove already loaded songs or saved videos from the show. Development versions remain `0.x.y`; the approved official release will be `1.0.0`.
+The desktop installer includes the default silent lyric backdrop, but does not contain private catalog configuration, song media, yt-dlp or FFmpeg. Those are host setup requirements. A host catalog outage does not automatically remove already loaded songs or saved videos from the show. Development versions remain `0.x.y`; the approved official release will be `1.0.0`.
+
+## CDG Lyrics and Backgrounds
+
+New CDG songs use the host’s TPV animated backdrop by default, with the original lyrics over the animation. The host can change the background before import. Your selected recording and song audio do not change. Existing converted songs may still show their earlier background. LRC lyric playback is planned.

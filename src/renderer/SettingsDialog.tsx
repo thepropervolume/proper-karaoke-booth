@@ -114,6 +114,14 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
         <details className="settings-group">
           <summary>Singer Display</summary>
           <div className="settings-group__content">
+            <label>Lyric Backdrop<select aria-label="Lyric Backdrop" value={draft.lyricBackdrop} onChange={event => setDraft({ ...draft, lyricBackdrop: event.target.value as Settings['lyricBackdrop'] })}>
+              <option value="default">TPV Animated Backdrop (Version 3)</option><option value="none">Solid CDG Background</option><option value="custom">Custom Video</option>
+            </select></label>
+            {draft.lyricBackdrop === 'custom' && <>
+              <label>Custom Backdrop MP4<input type="text" value={draft.lyricBackdropFile} onChange={event => setDraft({ ...draft, lyricBackdropFile: event.target.value })} placeholder="Choose an MP4 video" /></label>
+              <button type="button" onClick={() => { void window.tpv.chooseLyricBackdrop().then(file => { if (file) setDraft(current => ({ ...current, lyricBackdrop: 'custom', lyricBackdropFile: file })); }).catch(reason => setError(String(reason))); }}>Choose Backdrop Video…</button>
+            </>}
+            <p className="muted">Loops silently behind lyrics for new CD+G imports. Save before importing; reimport existing CD+G songs to change their backdrop. Future LRC playback will use this preference. Regular videos keep their own picture.</p>
             <label className="settings-check"><input type="checkbox" checked={draft.showNextSingers} onChange={event => setDraft({ ...draft, showNextSingers: event.target.checked })} /> Show the next singers</label>
             <label className="settings-check"><input type="checkbox" checked={draft.singerDisplayFullscreen} onChange={event => setDraft({ ...draft, singerDisplayFullscreen: event.target.checked })} /> Open singer display fullscreen</label>
             <p className="muted">Applies the next time you open the singer display. The fullscreen button changes the current display without changing this preference.</p>

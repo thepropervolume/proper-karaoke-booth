@@ -30,6 +30,7 @@ import { mediaErrorDetail } from './media-error-message';
 import { mediaRange } from './media-range';
 import { ImportJob } from './import-job';
 import { CdgImport } from './cdg-import';
+import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
 import { ShowBackup } from './show-backup';
 import { HistoryExport } from './history-export';
 import { DisplayFullscreen } from './display-fullscreen';
@@ -577,8 +578,12 @@ else {
     try {
       const picked = await dialog.showOpenDialog(host, { title: 'Import CD+G karaoke pair or ZIP', properties: ['openFile'], filters: [{ name: 'MP3 + CDG karaoke', extensions: ['zip', 'cdg', 'mp3'] }] });
       if (picked.canceled || !picked.filePaths[0] || shuttingDown) return null;
-      cdgImportParsing = structuredClone({ metadataFormat: settings.metadataFormat, metadataTemplates: settings.metadataTemplates });
-      return cdgImport!.start(picked.filePaths[0]);
+      const importSettings = structuredClone(settings);
+      const backdrop = lyricBackdropPath(importSettings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath });
+      if (backdrop) await validateLyricBackdropFile(backdrop);
+      if (shuttingDown) return null;
+      cdgImportParsing = { metadataFormat: importSettings.metadataFormat, metadataTemplates: importSettings.metadataTemplates };
+      return cdgImport!.start(picked.filePaths[0], backdrop);
     } finally { cdgPickerOpen = false; }
   });
   ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
@@ -680,6 +685,14 @@ else {
     return sharedCatalog.status(requested, requested === catalogConfigFile());
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
+  ipcMain.handle('host:choose-lyric-backdrop', async event => {
+    guardHost(event.sender.id);
+    if (!host || shuttingDown) return null;
+    const picked = await dialog.showOpenDialog(host, { title: 'Choose Lyric Backdrop Video', properties: ['openFile'], filters: [{ name: 'MP4 Video', extensions: ['mp4'] }] });
+    if (picked.canceled || !picked.filePaths[0] || shuttingDown) return null;
+    await validateLyricBackdropFile(picked.filePaths[0]);
+    return picked.filePaths[0];
+  });
   ipcMain.handle('host:karaokenerds-search', async (event, query: unknown): Promise<LocalCatalogResult> => {
     guardHost(event.sender.id);
     const config = catalogConfigFile();
@@ -741,6 +754,8 @@ else {
     guardHost(event.sender.id);
     const proposed = parseSettings(value);
     return settingsUpdates.run(async () => {
+      if (proposed.lyricBackdrop === 'custom' && (settings.lyricBackdrop !== 'custom' || proposed.lyricBackdropFile !== settings.lyricBackdropFile))
+        await validateLyricBackdropFile(proposed.lyricBackdropFile);
       const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
       const disablingAutomaticBumper=settings.autoBumper && !proposed.autoBumper;
       if(changingOutput || proposed.autoBumper !== settings.autoBumper || proposed.autoBumperTrackId !== settings.autoBumperTrackId) automaticBumper.cancel();

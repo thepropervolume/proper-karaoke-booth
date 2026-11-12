@@ -152,3 +152,9 @@ Provider notes: [provider research](provider-research.md), [Sunfly operator](sun
 - [ ] Verify real 0.3 installation/upgrade/removal and physical show hardware; macOS remains unbuilt.
 
 The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing/icon selection, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release.
+
+## 0.3.1 default lyric backdrop
+
+- [x] Bundle the owner-selected TPV Version 3 animation as a silent full-duration default for new CDG imports, with custom/solid choices in Singer Display preferences. Existing converted songs require reimporting.
+- [ ] Implement timed LRC import and playback using the same default backdrop preference; verify lyric timing, seek, pause/resume and accessibility.
+- [ ] Verify real-producer CDG lyric/background composition and synchronization on physical show hardware.

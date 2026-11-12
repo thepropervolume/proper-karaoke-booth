@@ -73,6 +73,7 @@ declare global {
       openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
       saveSettings: (settings: Settings) => Promise<Settings>;
+      chooseLyricBackdrop: () => Promise<string | null>;
       cycleAccentColor: () => Promise<Settings['accentColor']>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
       onFocusSearch: (callback: () => void) => () => void;

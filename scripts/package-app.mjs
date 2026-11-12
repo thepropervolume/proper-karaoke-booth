@@ -1,5 +1,5 @@
 // Build from source into an isolated stage. Never cleans the running app's dist.
-import { mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,7 @@ try {
   if (!/^0\.\d+\.\d+$/.test(metadata.version)) throw new Error('Development packaging expects a 0.x.y version until official release approval.');
   const installedElectron = JSON.parse(await readFile(join(repo, 'node_modules/electron/package.json'), 'utf8')).version;
   await mkdir(join(stage, 'dist'), { recursive: true });
+  await cp(join(repo, 'assets/backdrops'), join(stage, 'assets/backdrops'), { recursive: true, errorOnExist: true, force: false });
   await viteBuild({ root: repo, build: { outDir: join(stage, 'dist/ui'), emptyOutDir: true } });
   await Promise.all(['main', 'preload'].map(entry => bundle({
     entryPoints: [join(repo, `src/${entry}/index.ts`)], outfile: join(stage, `dist/${entry}/index.cjs`),
@@ -59,6 +60,7 @@ try {
   const config = { ...configuration,
     electronVersion: installedElectron,
     directories: { app: stage, output: join(repo, 'release') },
+    extraResources: configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
     // A multi-architecture build must download each matching Electron runtime.
     // Reusing the host runtime would silently mislabel (for example) an arm64 Mac.
     ...(target.nodeName === process.platform && architectures.length === 1 && Arch[architectures[0]] === process.arch

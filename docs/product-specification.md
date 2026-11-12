@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 12 November 2026. **Application milestone:** 0.3.0 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
+**Revision:** 12 November 2026. **Application milestone:** 0.3.1 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -52,7 +52,7 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Confirmed requirement, not implemented:** each metadata edit lets the host choose whether to also write supported embedded file tags. The default is local-only. Import, rescan and ordinary edits never silently change media or filenames. If an explicitly requested write is unsupported or fails, preserve the local edit and clearly report the file outcome. A safe implementation needs source-change checks, format support, backup/recovery, updating the whole-file fingerprint and tests for interruption, permissions and conflicting tags. See the metadata write-back design in the repository.
 
-**Available through conversion:** Import CD+G / ZIP accepts a same-name MP3/CDG pair or a ZIP with exactly one pair. FFmpeg on PATH converts it to a managed H.264/AAC MP4 before library insertion; originals remain unchanged. The job has progress and cancellation, fixed-name extraction, expanded-size/CRC checks, path/symlink checks and explicit ambiguity errors. It is not native CDG rendering. Converted videos use normal playback and require separate media backup. FFmpeg packaging, real-producer synchronization and other Player 2 formats still need evaluation. An extension alone does not prove a codec is playable; publish an evidenced codec matrix per supported platform.
+**Available through conversion:** Import CD+G / ZIP accepts a same-name MP3/CDG pair or a ZIP with exactly one pair. FFmpeg on PATH converts it to a managed H.264/AAC MP4 before library insertion; originals remain unchanged. The job has progress and cancellation, fixed-name extraction, expanded-size/CRC checks, path/symlink checks and explicit ambiguity errors. It is not native CDG playback: lyrics and the chosen background are composited at import. From 0.3.1, the default is the owner-selected `TPV-Karaoke-Backdrop-Video (Version 3).mp4`, bundled as a smaller, silent, full-duration 1080p playback copy. The animation loops behind the original CDG lyric colors; only the paired MP3 supplies audio. Preferences → Singer Display → Lyric Backdrop offers TPV Animated Backdrop (Version 3), Solid CDG Background, or a custom local MP4. The choice is captured for each new import; existing converted songs retain their picture and must be reimported to change it. Missing/unreadable selected backdrops stop import with a recovery message. Regular video songs retain their own picture. Converted videos use normal playback and require separate media backup. **Planned LRC support:** use this same backdrop selection by default when timed-lyric playback is implemented; LRC import, synchronization and rendering are not available yet. FFmpeg packaging, real-producer synchronization and other Player 2 formats still need evaluation. An extension alone does not prove a codec is playable; publish an evidenced codec matrix per supported platform.
 
 ## 5. Requests, rotation and singer fairness
 
@@ -159,6 +159,8 @@ Provider due diligence must establish documented authentication, commercial and 
 ## 13. Quality, verification and release gates
 
 The 0.3.0 default Windows test run passed 566 checks with four opt-in/platform skips, including five asynchronous-wait regressions; six document-generator checks passed. Linux passed 76 targeted checks and final AppImage launch/version/restart/persistence/no-autoplay. The server passed 50 relay checks including real MySQL transactions and nonempty backup/restore/restart. Actual packaged Windows-to-public-relay-to-browser operations passed, as did real catalog search and immediate yt-dlp acquisition of the owner’s selected recording after queueing. The final package imported all 237 actual MP4s in a disposable library. Muted integration checks cover automatic bumper completion/Skip/silence and restart. These checks do not establish audible mixer output, physical monitor hot-plug, actual phones, non-root Linux sandbox behavior, long-show reliability, macOS or a complete platform support matrix.
+
+The 0.3.1 backdrop update passed type checking and 571 automated tests with four skips. Nine CDG checks include real FFmpeg pixels/audio, palette-index preservation, timing, looping, cancellation and error recovery. An isolated muted Electron rehearsal verified saved default/custom/solid choices across restarts, imported pixels against the actual bundled TPV video, unchanged source files and no rewriting of an existing converted song after a preference change. These synthetic CDG checks do not replace real-producer and physical synchronization verification.
 
 Before a live-show release, verify Windows 11 x64, an agreed Linux desktop and macOS on representative hardware, including codecs, installers/signing, external displays, output selection, hot-unplug/reconnect, audio routing, cross-platform shortcuts, screen readers, database upgrades/backups/recovery and long shows. Test real iOS and Android devices, venue Wi-Fi, DNS, firewall and relay outages. Record machine, OS, media fixtures, versions and observed output. No production support claim should be inferred from a unit test or a mockup.
 
@@ -268,7 +270,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "description": "Grouped, collapsible preferences keep essential show controls in the workspace.",
   "layout": "settings", "navigation": ["Shared Catalog", "Appearance", "Queue Management", "Library Settings", "Video Downloads & Karaoke Nerds Cache", "Remote Queueing", "Audio Controls", "Singer Display", "Configuration Files"], "selected_navigation": "Audio Controls",
   "heading": "Audio Controls", "rows": ["Output Device | Explicit device or system default", "Playback Volume | 45%", "Pause Interval | 0 seconds", "Automatic bumper | Opt-in between songs", "Bumper theme | Soft Ambient", "Custom audio | up to 5 files"],
-  "side_heading": "Other groups", "side_rows": ["Appearance | Night / Day / System", "Queue | Rotation, approval, singer limit", "Library | Ordered filename templates", "Singer Display | Logo and next singers"],
+  "side_heading": "Other groups", "side_rows": ["Appearance | Night / Day / System", "Queue | Rotation, approval, singer limit", "Library | Ordered filename templates", "Singer Display | Lyric backdrop, logo, next singers"],
   "footer_heading": "Preferences", "footer_rows": ["Cancel", "Save preferences"],
   "detail": "Automatic bumper is opt-in and waits for karaoke silence on the selected output. Fades and physical-device verification remain planned."
 }
@@ -370,3 +372,35 @@ The separate embedded preview still uses system audio and requires internet; it 
 ### Application icon review
 
 The approved color preference for the current icon exploration is vivid purple `#601CE9`, cyan `#0EB7FF`, deep ink `#19102D` and cream `#FFFFF3`. This approves the palette, not a final mark. Review four original TPV lettermarks first, then a vintage grille microphone with volume waves and a darker headphones/faders refinement. Every direction includes light and dark editions; pink is a secondary alternate only. The earlier standalone V is no longer recommended. Previews and editable assets are linked from `docs/app-icon-options.md`; the packaged application still uses its default icon pending selection.
+
+```mockup
+{
+  "id": "D11",
+  "title": "Lyric backdrop preferences",
+  "status": "Current",
+  "description": "Choose the default background for new CDG conversions and future LRC playback.",
+  "layout": "settings",
+  "navigation": [
+    "Appearance",
+    "Library Settings",
+    "Singer Display",
+    "Audio Controls"
+  ],
+  "selected_navigation": "Singer Display",
+  "heading": "Singer Display",
+  "rows": [
+    "Lyric Backdrop | TPV Animated Backdrop (Version 3)",
+    "Other choices | Solid CDG Background / Custom Video",
+    "Custom video | Choose a local MP4",
+    "Animation audio | Silent; paired MP3 only",
+    "Applies to | New CDG imports after saving",
+    "LRC lyrics | Planned, not yet playable"
+  ],
+  "footer_heading": "Preferences",
+  "footer_rows": [
+    "Cancel",
+    "Save preferences"
+  ],
+  "detail": "The TPV animation is bundled and loops behind the original CDG lyrics. Reimport existing CDG conversions to change their backdrop; ordinary videos keep their own picture."
+}
+```

@@ -8,6 +8,7 @@ export default {
   npmRebuild: false,
   nodeGypRebuild: false,
   files: ['dist/**/*', 'package.json', 'THIRD-PARTY-LICENSES.txt', '!node_modules/**/*', '!**/*.map'],
+  extraResources: [{ from: 'assets/backdrops', to: 'backdrops', filter: ['tpv-karaoke-v3.mp4', 'README.md'] }],
   directories: { output: 'release' },
   publish: null,
   win: { target: ['nsis', 'zip'], signExecutable: false },

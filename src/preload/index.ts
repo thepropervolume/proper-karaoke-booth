@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('tpv', {
   cycleAccentColor: () => ipcRenderer.invoke('host:cycle-accent-color'),
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),
+  chooseLyricBackdrop: () => ipcRenderer.invoke('host:choose-lyric-backdrop'),
   clearDisplayLogo: () => ipcRenderer.invoke('host:clear-display-logo'),
   remote: {
     status: () => ipcRenderer.invoke('host:remote-status'),

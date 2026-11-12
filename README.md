@@ -1,10 +1,10 @@
 # The Proper Volume Karaoke
 
-Version **0.3.0**, a local-first desktop karaoke rehearsal application. Development updates use `0.x.y`; `1.0.0` is reserved for the approved official release. This is early development software, not yet ready to run a live show. Core local playback does not require an account or internet connection after installation; YouTube downloads require internet; saved songs play offline.
+Version **0.3.1**, a local-first desktop karaoke rehearsal application. Development updates use `0.x.y`; `1.0.0` is reserved for the approved official release. This is early development software, not yet ready to run a live show. Core local playback does not require an account or internet connection after installation; YouTube downloads require internet; saved songs play offline.
 
 ## Run or install
 
-Windows 0.3.0 candidate installer and ZIP have been built from application source `0e93179`; actual 0.3 installation and upgrade testing remain. The owner reports that the 0.2 installers worked, without specifying a platform. Linux 0.3 packaging is pending final build and macOS has not been built; 0.2 artifacts remain available. See [installation and packaging](docs/installation.md). Private configuration, media, yt-dlp and FFmpeg are not bundled.
+Windows and Linux 0.3.0 packages passed launch/restart checks and the Windows package passed real-folder import and public remote-session rehearsals. The 0.3.1 update adds the bundled default CDG backdrop; see [installation and packaging](docs/installation.md) for its build and verification status. Actual installation/upgrade and physical show checks remain. macOS has not been built. Private configuration, song media, yt-dlp and FFmpeg are not bundled; the default silent lyric backdrop is bundled.
 
 For development, prerequisites are Node.js and npm. Automated rehearsals have run on Linux and Windows with Electron 45; macOS and physical audio/display devices still need testing. Install dependencies once (internet required), then build and start:
 
@@ -37,6 +37,10 @@ If a source video moves, right-click the song and choose **Relink File…**, the
 Experimental **Remote Queueing** supports a separately opened local room; it requires a private IPv4 interface, a hostname resolving to it, and a certificate and private key trusted by Node and singers’ devices. In Preferences, open the room, create an invitation and share it privately. Closing the room revokes guest access. Separately, **Remote Sessions** in the left navigation can start an internet session using a host-chosen slug, copy its `queue.thepropervolume.com` link, and end the session. The internet relay deployment and public end-to-end test are pending; do not rely on it for a show yet. Hosts require separately provisioned private configuration; self-service accounts are not available. Local and internet connections use separate access scopes and the same host authority. For uncertain guest actions, check the outcome and explicitly retry the original action if offered; the app does not automatically resend it. Local phone trust, venue networks and actual internet-device testing remain open. See [relay integration](docs/internet-relay-integration-plan.md) and [remote host controls](docs/remote-host-controls.md).
 
 Choose an audio output in **Preferences → Audio Controls**, or use the system default. Changing the output pauses an active song. The player mutes and pauses on a reported device change, then requires deliberate resume; real device unplugging and OS-level rerouting still need physical verification. If the singer display closes or disconnects during playback, the host is warned and can reopen it before resuming. Disconnecting a display previously used by the singer window may conservatively pause playback even after the window has moved elsewhere. Playback errors are reported to the host, including a suggestion to check the file or codec. Other MP4 codecs may not be playable even though the container is `.mp4`.
+
+## CDG Lyric Backdrop
+
+New MP3 + CDG and single-pair ZIP imports use **TPV Animated Backdrop (Version 3)** by default. Open **Preferences → Singer Display → Lyric Backdrop** to choose the bundled animation, **Solid CDG Background**, or a custom local MP4. Save before importing. The animation loops silently; the paired MP3 supplies the audio. Existing converted CDG songs need reimporting to change their background. Ordinary videos keep their own picture. Future LRC playback will use the same preference; LRC playback is not implemented yet. See [CDG import](docs/cdg-import.md) and [asset provenance](assets/backdrops/README.md).
 
 ## Preferences
 

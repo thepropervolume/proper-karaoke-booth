@@ -89,37 +89,122 @@ export async function extractCdgZip(selected: string, directory: string, signal:
   } finally { zip.close(); }
 }
 
-/** A child process, never a shell. Cancellation waits for exit before deleting its files. */
-export function convertCdg(audio: string, graphics: string, output: string, signal: AbortSignal, progress: (seconds: number) => void): Promise<void> {
-  checkAbort(signal);
-  return new Promise((resolve, reject) => {
-    const child = spawn('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-n', '-protocol_whitelist', 'file,pipe', '-f', 'cdg', '-i', graphics, '-protocol_whitelist', 'file,pipe', '-f', 'mp3', '-i', audio,
-      '-map', '0:v:0', '-map', '1:a:0', '-vf', 'fps=25,scale=600:432:flags=neighbor,format=yuv420p,tpad=stop_mode=clone:stop_duration=7200',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-    let spawnError = false, timedOut = false, buffer = '';
-    const abort = () => { child.kill('SIGKILL'); };
-    const timer = setTimeout(() => { timedOut = true; abort(); }, 30 * 60 * 1000);
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) abort();
-    child.stdout.on('data', chunk => {
-      buffer = (buffer + String(chunk)).slice(-4096);
-      let end: number;
-      while ((end = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-        if (line.startsWith('out_time_us=')) { const seconds = Number(line.slice(12)) / 1e6; if (Number.isFinite(seconds) && seconds >= 0) progress(seconds); }
+/**
+ * Derive an indexed alpha mask, never a chroma key. Three mask packets represent
+ * each original packet: two grayscale palettes then the unchanged drawing opcode.
+ * FFmpeg owns tile/XOR/scroll decoding for both streams, so colors and mask share
+ * the same pixel-index semantics. Mask timestamps are compressed by three later.
+ */
+async function writeCdgAlphaMask(source: string, destination: string, signal: AbortSignal, created: (identity: { dev: number; ino: number }) => void): Promise<void> {
+  const input = await open(source, 'r');
+  let output: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    const info = await input.stat();
+    if (!info.isFile() || !info.size || info.size > CDG_LIMIT || info.size % 24) throw new Error('CDG data must contain complete 24-byte packets within the import limit.');
+    output = await open(destination, 'wx', 0o600);
+    const identity = await output.stat(); created({ dev: identity.dev, ino: identity.ino });
+    const pendingAlpha = Array<number>(16).fill(255), activeAlpha = Array<number>(16).fill(0);
+    let background = 0;
+    const sourceBuffer = Buffer.alloc(24 * 1024), expanded = Buffer.alloc(24 * 1024 * 3);
+    let consumed = 0;
+    while (consumed < info.size) {
+      checkAbort(signal);
+      const { bytesRead } = await input.read(sourceBuffer, 0, Math.min(sourceBuffer.length, info.size - consumed), consumed);
+      if (!bytesRead || bytesRead % 24) throw new Error('CDG data changed while preparing the backdrop.');
+      for (let offset = 0; offset < bytesRead; offset += 24) {
+        const packet = sourceBuffer.subarray(offset, offset + 24), instruction = packet[1] & 63;
+        const recognized = (packet[0] & 63) === 9;
+        if (recognized && instruction === 1 && !(packet[5] & 15)) background = packet[4] & 15;
+        if (recognized && instruction === 28) for (let i = 0; i < 16; i++) pendingAlpha[i] = 255 - ((packet[4 + i] & 63) << 2);
+        if (recognized && (instruction === 30 || instruction === 31)) {
+          const first = instruction === 30 ? 0 : 8;
+          for (let i = first; i < first + 8; i++) activeAlpha[i] = pendingAlpha[i];
+        }
+        const base = offset * 3;
+        expanded.fill(0, base, base + 72);
+        for (let half = 0; half < 2; half++) {
+          const mask = expanded.subarray(base + half * 24, base + (half + 1) * 24);
+          mask[0] = 9; mask[1] = 30 + half;
+          for (let i = 0; i < 8; i++) {
+            const index = half * 8 + i, level = index === background ? 0 : Math.round(activeAlpha[index] / 17);
+            const color = level * 0x111;
+            mask[4 + 2 * i] = color >> 6; mask[5 + 2 * i] = color & 63;
+          }
+        }
+        if (recognized && ![28, 30, 31].includes(instruction)) packet.copy(expanded, base + 48);
+        else expanded[base + 48] = 9; // Command 9 / instruction 0 emits an unchanged frame.
       }
+      const length = bytesRead * 3;
+      let written = 0;
+      while (written < length) { checkAbort(signal); written += (await output.write(expanded, written, length - written)).bytesWritten; }
+      consumed += bytesRead;
+    }
+    const after = await input.stat();
+    if (after.size !== info.size || after.mtimeMs !== info.mtimeMs || after.ctimeMs !== info.ctimeMs) throw new Error('CDG data changed while preparing the backdrop.');
+  } finally { await output?.close(); await input.close(); }
+}
+
+/** A child process, never a shell. Cancellation waits for exit before deleting its files. */
+export async function convertCdg(audio: string, graphics: string, output: string, signal: AbortSignal, progress: (seconds: number) => void, backdropPath?: string): Promise<void> {
+  checkAbort(signal);
+  const maskPath = `${output}.alpha.cdg`;
+  let maskIdentity: { dev: number; ino: number } | undefined;
+  try {
+    if (backdropPath) {
+      try { const backdrop = await lstat(backdropPath); if (!backdrop.isFile() || !backdrop.size) throw new Error(); }
+      catch { throw new Error('The selected lyric backdrop is unavailable. Choose another backdrop or disable it in Preferences, then retry the import.'); }
+      await writeCdgAlphaMask(graphics, maskPath, signal, identity => { maskIdentity = identity; });
+    }
+    checkAbort(signal);
+    const inputs = ['-hide_banner', '-nostdin', '-v', 'error', '-n', '-protocol_whitelist', 'file,pipe', '-f', 'cdg', '-i', graphics, '-protocol_whitelist', 'file,pipe', '-f', 'mp3', '-i', audio];
+    const plain = ['-map', '0:v:0', '-map', '1:a:0', '-vf', 'fps=25,scale=600:432:flags=neighbor,format=yuv420p,tpad=stop_mode=clone:stop_duration=7200'];
+    const composite = [
+      '-protocol_whitelist', 'file,pipe', '-f', 'cdg', '-i', maskPath,
+      '-protocol_whitelist', 'file,pipe', '-stream_loop', '-1', '-f', 'mov', '-i', backdropPath ?? '',
+      '-filter_complex',
+      '[0:v]fps=25:start_time=0,format=rgb24,scale=1000:720:flags=neighbor,setsar=1,tpad=stop_mode=clone:stop_duration=7200[colors];' +
+      "[2:v]select='eq(mod(n,3),2)',setpts=PTS/3-2/(900*TB),fps=25:start_time=0,format=gray," +
+      'drawbox=x=0:y=0:w=iw:h=12:color=black:t=fill,drawbox=x=0:y=ih-12:w=iw:h=12:color=black:t=fill,' +
+      'drawbox=x=0:y=0:w=6:h=ih:color=black:t=fill,drawbox=x=iw-6:y=0:w=6:h=ih:color=black:t=fill,' +
+      'scale=1000:720:flags=neighbor,setsar=1,tpad=stop_mode=clone:stop_duration=7200[mask];' +
+      '[colors][mask]alphamerge[lyrics];' +
+      '[3:v]setpts=PTS-STARTPTS,fps=25,scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,setsar=1[backdrop];' +
+      '[backdrop][lyrics]overlay=x=(W-w)/2:y=(H-h)/2:format=auto,format=yuv420p[video]',
+      '-map', '[video]', '-map', '1:a:0',
+    ];
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('ffmpeg', [...inputs, ...(backdropPath ? composite : plain),
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+      let spawnError = false, timedOut = false, buffer = '';
+      const abort = () => { child.kill('SIGKILL'); };
+      const timer = setTimeout(() => { timedOut = true; abort(); }, 30 * 60 * 1000);
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+      child.stdout.on('data', chunk => {
+        buffer = (buffer + String(chunk)).slice(-4096);
+        let end: number;
+        while ((end = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+          if (line.startsWith('out_time_us=')) { const seconds = Number(line.slice(12)) / 1e6; if (Number.isFinite(seconds) && seconds >= 0) progress(seconds); }
+        }
+      });
+      child.stderr.resume();
+      child.on('error', () => { spawnError = true; });
+      child.on('close', code => {
+        clearTimeout(timer); signal.removeEventListener('abort', abort);
+        if (signal.aborted) reject(new Error('Import cancelled.'));
+        else if (spawnError) reject(new Error('FFmpeg was not found. Install an FFmpeg build with CD Graphics, H.264 and AAC support and add it to PATH.'));
+        else if (timedOut) reject(new Error('Conversion exceeded 30 minutes.'));
+        else if (code !== 0) reject(new Error(backdropPath ? 'FFmpeg could not render this CDG pair with the selected backdrop. Check the pair and backdrop video, or disable the backdrop in Preferences and retry.' : 'FFmpeg could not decode this pair. Check that the audio and CDG are valid and matching.'));
+        else resolve();
+      });
     });
-    child.stderr.resume();
-    child.on('error', () => { spawnError = true; });
-    child.on('close', code => {
-      clearTimeout(timer); signal.removeEventListener('abort', abort);
-      if (signal.aborted) reject(new Error('Import cancelled.'));
-      else if (spawnError) reject(new Error('FFmpeg was not found. Install an FFmpeg build with CD Graphics, H.264 and AAC support and add it to PATH.'));
-      else if (timedOut) reject(new Error('Conversion exceeded 30 minutes.'));
-      else if (code !== 0) reject(new Error('FFmpeg could not decode this pair. Check that the audio and CDG are valid and matching.'));
-      else resolve();
-    });
-  });
+  } finally {
+    if (maskIdentity) {
+      const current = await lstat(maskPath).catch(() => null);
+      if (current?.isFile() && !current.isSymbolicLink() && current.dev === maskIdentity.dev && current.ino === maskIdentity.ino) await rm(maskPath, { force: true });
+    }
+  }
 }
 
 export class CdgImport {
@@ -129,16 +214,16 @@ export class CdgImport {
   constructor(private readonly root: string, private readonly commit: (path: string, fingerprint: string, metadataPath: string) => 'imported' | 'duplicate') {}
   snapshot(): CdgProgress | null { return this.progress && { ...this.progress }; }
   active(): boolean { return !!this.controller; }
-  start(selected: string): CdgProgress {
+  start(selected: string, backdropPath?: string): CdgProgress {
     if (this.controller) throw new Error('A CD+G import is already in progress.');
     this.controller = new AbortController();
     this.progress = { id: randomUUID(), phase: 'preparing', name: basename(selected), seconds: 0, message: '' };
-    this.completion = this.run(selected, this.controller);
+    this.completion = this.run(selected, this.controller, backdropPath);
     return this.snapshot()!;
   }
   cancel(id: string): boolean { if (!this.controller || this.progress?.id !== id) return false; this.controller.abort(); return true; }
   async shutdown(): Promise<void> { this.controller?.abort(); await this.completion; }
-  private async run(selected: string, controller: AbortController): Promise<void> {
+  private async run(selected: string, controller: AbortController, backdropPath?: string): Promise<void> {
     const progress = this.progress!; let directory: string | null = null, retain = false;
     let directoryIdentity: { dev: number; ino: number } | null = null;
     let canonicalRoot = '';
@@ -160,7 +245,7 @@ export class CdgImport {
       if (!info.size || info.size % 24 !== 0) throw new Error('CDG data must contain complete 24-byte packets.');
       checkAbort(controller.signal); progress.phase = 'converting';
       const temporary = join(directory, 'converting.mp4');
-      await convertCdg(audio, graphics, temporary, controller.signal, seconds => { progress.seconds = seconds; });
+      await convertCdg(audio, graphics, temporary, controller.signal, seconds => { progress.seconds = seconds; }, backdropPath);
       checkAbort(controller.signal); progress.phase = 'importing';
       const path = join(directory, 'track.mp4'); await rename(temporary, path);
       const fingerprint = await hashImportFile(path, controller.signal); checkAbort(controller.signal);

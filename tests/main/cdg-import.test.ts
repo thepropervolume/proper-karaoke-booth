@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { crc32 } from 'node:zlib';
-import { CdgImport, extractCdgZip, resolveCdgPair } from '../../src/main/cdg-import';
+import { CdgImport, convertCdg, extractCdgZip, resolveCdgPair } from '../../src/main/cdg-import';
 
 function zip(entries: { name: string; data: Buffer; flags?: number; checksum?: number }[]): Buffer {
   const locals: Buffer[] = [], central: Buffer[] = []; let offset = 0;
@@ -105,5 +105,104 @@ test('cleanup refuses a replaced managed directory for both retained and duplica
       assert.equal(job.snapshot()?.phase, 'completed', job.snapshot()?.message); assert.match(job.snapshot()!.message, /Temporary files could not be removed/);
       assert.equal(await readFile(join(victim, 'audio.mp3'), 'utf8'), 'preserve audio'); assert.equal(await readFile(join(victim, 'lyrics.cdg'), 'utf8'), 'preserve graphics');
     }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+
+// Identical RGB colors at different palette indexes are deliberate: a chroma
+// key would erase the black foreground along with the black screen background.
+function indexedGraphics(): Buffer {
+  const data = Buffer.alloc(24 * 600);
+  for (let i = 0; i < 600; i++) data[i * 24] = 9;
+  const packet = (index: number, instruction: number, payload: number[]) => {
+    data[index * 24 + 1] = instruction; Buffer.from(payload).copy(data, index * 24 + 4);
+  };
+  const colors = [0x000, 0x000, 0xfff, 0xfff, 0x000, 0x000, 0x000, 0x000];
+  packet(0, 30, colors.flatMap(color => [color >> 6, color & 63]));
+  packet(1, 1, [0, 0]);
+  packet(2, 6, [0, 1, 5, 10, ...Array(12).fill(63)]);
+  packet(3, 6, [0, 2, 5, 20, ...Array(12).fill(63)]);
+  // A new, differently colored background near a 25 fps rounding boundary must
+  // disappear without masking black lyrics or leaving a one-frame solid flash.
+  packet(6, 1, [3, 0]);
+  packet(7, 6, [3, 1, 5, 10, ...Array(12).fill(63)]);
+  packet(8, 6, [3, 2, 5, 20, ...Array(12).fill(63)]);
+  packet(18, 38, [0, 3, 5, 10, ...Array(12).fill(63)]);
+  packet(30, 38, [0, 3, 5, 10, ...Array(12).fill(63)]);
+  const fadeBlack = Array(16).fill(0); fadeBlack[1] = 63;
+  packet(150, 28, fadeBlack); // Pending alpha does not apply until palette load.
+  packet(180, 30, colors.flatMap(color => [color >> 6, color & 63]));
+  packet(240, 28, Array(16).fill(0));
+  packet(241, 30, colors.flatMap(color => [color >> 6, color & 63]));
+  // Coarse scrolling is decoded by FFmpeg for RGB and the indexed mask.
+  packet(300, 24, [3, 0x10, 0]);
+  return data;
+}
+const ffmpeg = (args: string[]) => {
+  const result = spawnSync('ffmpeg', ['-hide_banner', '-v', 'error', ...args], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(result.status, 0, result.stderr?.toString()); return result.stdout;
+};
+
+test('a looping CDG backdrop preserves same-RGB black lyrics, timing, XOR, latched alpha, scroll and MP3-only audio', { skip: !hasFfmpeg }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cdg-backdrop-'));
+  try {
+    const audio = join(dir, 'song.mp3'), cdg = join(dir, 'song.cdg'), backdrop = join(dir, 'backdrop.mp4'), output = join(dir, 'rendered.mp4');
+    ffmpeg(['-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:a', 'libmp3lame', audio]);
+    ffmpeg(['-f', 'lavfi', '-i', 'color=red:s=1280x720:r=25:d=0.5', '-f', 'lavfi', '-i', 'color=blue:s=1280x720:r=25:d=0.5', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1',
+      '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[video]', '-map', '[video]', '-map', '2:a', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', backdrop]);
+    const originalGraphics = indexedGraphics(); await writeFile(cdg, originalGraphics); const originalAudio = await readFile(audio), originalBackdrop = await readFile(backdrop);
+    await convertCdg(audio, cdg, output, new AbortController().signal, () => {}, backdrop);
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,width,height:format=duration', '-of', 'json', output], { windowsHide: true });
+    assert.equal(probe.status, 0); const metadata = JSON.parse(probe.stdout.toString());
+    assert.equal(metadata.streams.filter((stream: { codec_type: string }) => stream.codec_type === 'audio').length, 1);
+    assert.equal(metadata.streams[0].width, 1280); assert.equal(metadata.streams[0].height, 720);
+    assert.ok(Math.abs(Number(metadata.format.duration) - 2) < 0.15);
+    const pixel = (frame: Buffer, x: number, y: number) => [...frame.subarray((y * 1280 + x) * 3, (y * 1280 + x) * 3 + 3)];
+    for (const seconds of [0, 0.04, 0.08, 0.4, 0.56, 0.72, 1.4]) {
+      const frame = ffmpeg(['-ss', String(seconds), '-i', output, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1']);
+      const background = pixel(frame, 100, 100), behindLyrics = pixel(frame, 800, 400);
+      assert.ok(background[seconds > 0.5 && seconds < 1 ? 2 : 0] > 220, `backdrop loop at ${seconds}: ${background}`);
+      assert.ok(behindLyrics[seconds > 0.5 && seconds < 1 ? 2 : 0] > 220, `no opaque screen at ${seconds}: ${behindLyrics}`);
+      const shift = seconds >= 1 ? 20 : 0;
+      const blackLyric = pixel(frame, 350 + shift, 210);
+      if (seconds === 0.08) assert.ok(blackLyric.every(component => component > 225), 'XOR changed the palette index to white');
+      else if (seconds === 0.72) assert.ok(blackLyric[2] > 220 && blackLyric[0] < 25, 'latched transparent lyric reveals backdrop');
+      else assert.ok(blackLyric.every(component => component < 25), `black lyric survives at ${seconds}`);
+      assert.ok(pixel(frame, 550 + shift, 210).every(component => component > 225), `white lyric survives at ${seconds}`);
+    }
+    const pcm = ffmpeg(['-ss', '0.5', '-i', output, '-t', '0.5', '-vn', '-ac', '1', '-ar', '44100', '-f', 'f32le', 'pipe:1']);
+    let crossings = 0;
+    for (let offset = 4; offset < pcm.length; offset += 4) if ((pcm.readFloatLE(offset) >= 0) !== (pcm.readFloatLE(offset - 4) >= 0)) crossings++;
+    assert.ok(Math.abs(crossings - 440) < 6, `expected MP3 440Hz, not backdrop 880Hz: ${crossings}`);
+    assert.deepEqual(await readFile(cdg), originalGraphics); assert.deepEqual(await readFile(audio), originalAudio); assert.deepEqual(await readFile(backdrop), originalBackdrop);
+    assert.equal((await readdir(dir)).includes('rendered.mp4.alpha.cdg'), false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('an unavailable backdrop fails with a recovery path and never commits a song', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cdg-backdrop-missing-'));
+  try {
+    const audio = join(dir, 'song.mp3'), cdg = join(dir, 'song.cdg'); await writeFile(audio, 'audio'); await writeFile(cdg, graphics);
+    let committed = false;
+    const job = new CdgImport(join(dir, 'managed'), () => { committed = true; return 'imported'; });
+    job.start(cdg, join(dir, 'missing.mp4')); while (job.active()) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(committed, false); assert.equal(job.snapshot()?.phase, 'failed'); assert.match(job.snapshot()?.message ?? '', /backdrop is unavailable.*Preferences.*retry/);
+    assert.deepEqual(await readdir(join(dir, 'managed')), []);
+    assert.deepEqual(await readFile(cdg), graphics);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+
+test('cancelling a running backdrop conversion waits for FFmpeg and removes its private mask', { skip: !hasFfmpeg }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cdg-backdrop-cancel-'));
+  try {
+    const audio = join(dir, 'song.mp3'), cdg = join(dir, 'song.cdg'), backdrop = join(dir, 'backdrop.mp4'), output = join(dir, 'rendered.mp4');
+    ffmpeg(['-f', 'lavfi', '-i', 'sine=frequency=440:duration=10', '-c:a', 'libmp3lame', audio]);
+    ffmpeg(['-f', 'lavfi', '-i', 'color=green:s=320x180:r=25:d=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', backdrop]);
+    const source = indexedGraphics(); await writeFile(cdg, source);
+    const controller = new AbortController(); let observedProgress = false;
+    await assert.rejects(convertCdg(audio, cdg, output, controller.signal, () => { observedProgress = true; controller.abort(); }, backdrop), /Import cancelled/);
+    assert.equal(observedProgress, true); assert.equal((await readdir(dir)).includes('rendered.mp4.alpha.cdg'), false);
+    assert.deepEqual(await readFile(cdg), source);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
