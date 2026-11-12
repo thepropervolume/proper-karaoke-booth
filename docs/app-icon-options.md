@@ -1,31 +1,58 @@
 # Application icon options
 
-Prepared 12 November 2026 for The Proper Volume Karaoke Booth. These are **design options**, with no final selection yet. The application name and packaged icon have not changed.
+Updated 12 November 2026. These are **design options**, with no final selection or installed-icon change. The application name remains The Proper Volume Karaoke Booth.
 
-The earlier bright headphones-and-faders concept is retained as a reference. All three directions use the project's cream, purple, pink and blue palette, with a strong mark instead of small lettering. They include three accent editions; the interface's accent-color button does not automatically change the installed application icon.
+The current direction is **multiple bold TPV lettermarks first**, using the owner's preferred palette: vivid purple `#601CE9`, cyan `#0EB7FF`, deep purple ink `#19102D` and cream `#FFFFF3`. That color preference does not approve a particular icon shape. Every direction has both a light and a dark edition; dark editions lead the review because the earlier headphones option felt too pale. Pink remains an optional alternate edition and is not the primary palette.
 
-![Three application icon directions](../design/app-icon-options/2026-11-12/comparison.png)
+## Four TPV directions
 
-| Option | Direction | Why choose it | Tradeoff |
+The TPV paths and compositions are original. KaraFun was a category reference for a strong, compact lettermark; its K mark and letter geometry were not reused.
+
+![Four TPV lettermark directions in dark and light editions](../design/app-icon-options/2026-11-12-tpv/tpv-lettermarks.png)
+
+| Option | Direction | Reason to choose it | Tradeoff |
 | --- | --- | --- | --- |
-| **1. In the Mix** | Headphones surrounding mixer faders | Continues the earlier favorite, with a brighter tile and heavier small-size details. Recommended for continuity with the existing KJ direction. | Three faders make it busier at 16 pixels than the other directions. |
-| **2. Open Mic** | Diagonal microphone with sound marks | The most immediately recognizable karaoke symbol. Its handle, grille and sound accents keep the palette lively. | A microphone is a familiar category symbol rather than a unique brand initial. |
-| **3. Volume V** | A bold V with a play triangle | A distinctive mark for The Proper Volume, with the clearest overall silhouette at small sizes. | It needs the application name beside it to communicate karaoke explicitly. |
+| **1. Solid TPV** | Three bold original block letters | The clearest literal TPV reading. Recommended starting point when recognition matters most. | A compact wordmark is less abstract than a single monogram shape. |
+| **2. Roof TPV** | A broad T over P and V | A more compact, distinctive composition. Recommended alongside Solid TPV for the next comparison. | The stacked reading needs a moment more at the smallest sizes. |
+| **3. Cutout TPV** | Reversed letters inside one solid badge | Strong contrast and a connected overall shape in either theme. | Its inner badge adds another frame. This is a new TPV option, not the rejected standalone V. |
+| **4. Step TPV** | T, P and V on a diagonal | A more energetic arrangement that fills the tile vertically. | The reading order is less immediate than Solid TPV. |
 
-## Small-size and contrast review
+## Vintage microphone and headphones alternatives
 
-The comparison below shows actual 16-, 32- and 64-pixel PNGs against light and dark surfaces, followed by enlarged pixel samples. The 16- and 24-pixel headphones use heavier controls; the microphone omits its grille at those sizes. The V retains its simple geometry. This is visual review of the exports, not a claim that Windows taskbar, Linux desktop or macOS integration has been tested.
+The requested microphone direction now uses an upright vintage grille, a supporting yoke and stand, and a speaker with volume waves. The headphones direction keeps the earlier faders idea while adding a much stronger dark edition. Both use the same primary palette and both include light and dark versions.
 
-![Icon size and desktop contrast review](../design/app-icon-options/2026-11-12/size-review.png)
+![All six directions with paired dark and light editions](../design/app-icon-options/2026-11-12-tpv/all-directions.png)
 
-Editable purple-edition sources are maintained with this document:
+| Option | Direction | Reason to choose it | Tradeoff |
+| --- | --- | --- | --- |
+| **5. Vintage Volume** | Vintage microphone with volume symbols | The clearest karaoke reference, with the requested older microphone styling. | Grille and volume detail must simplify at 16 pixels. |
+| **6. In the Mix** | Headphones surrounding mixer faders | Continues the earlier favorite with stronger contrast and an ink-tile edition. | More internal detail than the TPV directions. |
 
-- [In the Mix](../design/app-icon-options/2026-11-12/01-in-the-mix.svg) and its [small-size source](../design/app-icon-options/2026-11-12/01-in-the-mix-small.svg).
-- [Open Mic](../design/app-icon-options/2026-11-12/02-open-mic.svg) and its [small-size source](../design/app-icon-options/2026-11-12/02-open-mic-small.svg).
-- [Volume V](../design/app-icon-options/2026-11-12/03-volume-v.svg) and its [small-size source](../design/app-icon-options/2026-11-12/03-volume-v-small.svg).
+## Small sizes and alternate accents
 
-## Export package and next step
+The review shows actual 16-, 32- and 64-pixel exports against their theme backgrounds, followed by enlarged 16-pixel samples. The micro versions use deliberate pixel-grid letterforms or simplified microphone/fader details. Light TPV micro exports use darker letter colors to maintain recognition. These are visual export checks, not claims that taskbar or dock integration has been verified in the installed app.
 
-The accompanying review ZIP contains all three concepts in purple, blue and pink editions. Each edition has editable SVG, small-size SVG, PNGs at 16, 24, 32, 48, 64, 128, 256, 512 and 1024 pixels, and a Windows ICO containing sizes 16 through 256. The assets were drawn as native SVG to preserve the existing brand geometry and control small-size rendering; no raster-generation service was used.
+![Small-size review of all six directions](../design/app-icon-options/2026-11-12-tpv/size-review.png)
 
-After a direction is selected, use its ICO for Windows and its PNGs for Linux, produce and verify the macOS icon package on a Mac, and check taskbar, Start menu, desktop shortcuts and light/dark docks in the actual installed application. Add platform-specific optical adjustments if those checks reveal a problem. Unselected explorations must not become the release icon accidentally.
+All six directions also have blue-led and optional pink editions, each in light and dark. The app's interface accent button does not automatically change the installed application icon.
+
+![All accent and theme editions](../design/app-icon-options/2026-11-12-tpv/accent-variations.png)
+
+## Editable primary sources
+
+| Direction | Dark edition | Light edition |
+| --- | --- | --- |
+| Solid TPV | [SVG](../design/app-icon-options/2026-11-12-tpv/01-solid-tpv-dark.svg) | [SVG](../design/app-icon-options/2026-11-12-tpv/01-solid-tpv-light.svg) |
+| Roof TPV | [SVG](../design/app-icon-options/2026-11-12-tpv/02-roof-tpv-dark.svg) | [SVG](../design/app-icon-options/2026-11-12-tpv/02-roof-tpv-light.svg) |
+| Cutout TPV | [SVG](../design/app-icon-options/2026-11-12-tpv/03-cutout-tpv-dark.svg) | [SVG](../design/app-icon-options/2026-11-12-tpv/03-cutout-tpv-light.svg) |
+| Step TPV | [SVG](../design/app-icon-options/2026-11-12-tpv/04-step-tpv-dark.svg) | [SVG](../design/app-icon-options/2026-11-12-tpv/04-step-tpv-light.svg) |
+| Vintage Volume | [SVG](../design/app-icon-options/2026-11-12-tpv/05-vintage-volume-dark.svg) | [SVG](../design/app-icon-options/2026-11-12-tpv/05-vintage-volume-light.svg) |
+| In the Mix | [SVG](../design/app-icon-options/2026-11-12-tpv/06-in-the-mix-dark.svg) | [SVG](../design/app-icon-options/2026-11-12-tpv/06-in-the-mix-light.svg) |
+
+Each source has a corresponding `-small.svg` in the same directory. The accompanying review ZIP contains all **36** direction/theme/palette editions: six directions, two themes and three palettes. Each edition includes editable SVG, micro SVG, PNGs at 16, 24, 32, 48, 64, 128, 256, 512 and 1024 pixels, and a Windows ICO with sizes 16 through 256. Native vector construction was used to control letter geometry and small-size rendering; no raster-generation service was used.
+
+After a direction is selected, wire its ICO into Windows packaging, use its PNGs for Linux, produce the macOS icon package on a Mac, and check actual Start menu, taskbar, desktop and light/dark dock behavior. No option is a release icon yet.
+
+## Earlier review retained as history
+
+The [earlier comparison](../design/app-icon-options/2026-11-12/comparison.png), [earlier size review](../design/app-icon-options/2026-11-12/size-review.png) and their editable sources remain available. The earlier **standalone Volume V is rejected** and must not be used as the current recommendation. The original headphones and modern-microphone sketches remain historical references; the current alternatives above apply the later theme, microphone and color feedback.
