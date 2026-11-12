@@ -179,7 +179,7 @@ async function startYouTubeDownload(versionId: string) {
     if (!youtubeDownloads || config !== youtubeDownloadConfig) {
       youtubeDownloads = new YouTubeDownloads(directory, executable, asset => {
         const current = state.versions.find(item => item.id === asset.versionId);
-        if (shuttingDown || current?.source?.videoId !== asset.videoId) throw new Error('The video selection changed before download finished.');
+        if (shuttingDown || current?.source?.videoId !== asset.videoId || !isVersionAllowed(state,asset.versionId)) throw new Error('The video selection changed or is no longer available under the show policy.');
         const previous = store.media(asset.versionId);
         const active = state.requests.find(request => request.id === state.playback?.requestId);
         if (previous && active?.versionId === asset.versionId) throw new Error('Stop the performance before replacing its video.');
@@ -698,9 +698,10 @@ else {
     const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now());
     if(!planned.result.ok)return planned.result;
     store.save(planned.state);state=planned.state;
-    try{syncQueuedDownloads();}catch{return {...planned.result,notice:'Queued successfully. Use Download Video / Retry if its download does not appear.'};}
+    let notice:string|undefined;
+    try{syncQueuedDownloads();}catch{notice='Queued successfully. Use Download Video / Retry if its download does not appear.';}
     try{broadcast();}catch{/* A committed request remains successful even if a view closes. */}
-    return planned.result;
+    return {...planned.result,...(notice?{notice}:{})};
   });
   ipcMain.handle('host:add-youtube', async (event, input: unknown) => {
     guardHost(event.sender.id);
