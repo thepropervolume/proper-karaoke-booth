@@ -295,7 +295,8 @@ def settings_dialog(c, item, p):
 def panels(c, item, p, product, actions):
     x, y, w, h = 110, 130, 1076, 475
     rect(c, x, y, w, h, p['background'], 8)
-    top_bar(c, x, y + h - 44, w, p, 'PLANNED HOST WORKSPACE', product, actions)
+    workspace = 'PLANNED HOST WORKSPACE' if item['status'] == 'Planned' else 'EXPERIMENTAL HOST WORKSPACE' if item['status'] == 'Partial' else 'HOST WORKSPACE'
+    top_bar(c, x, y + h - 44, w, p, workspace, product, actions)
     line(c, item['heading'], x + 28, y + h - 83, 'TPVBold', 21, p['text'])
     line(c, item['toolbar'], x + 28, y + h - 106, size=12, fill=p['muted'])
     left_w = 660

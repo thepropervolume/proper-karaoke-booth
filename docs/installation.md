@@ -1,16 +1,16 @@
 # Installing The Proper Volume Karaoke Booth
 
-The current development candidate is **0.3.0**. The target for the approved official release is **1.0.0**. Each delivered app update will have a version in the app and package filenames; small commits delivered together may share a version.
+The current development version is **0.3.0**. The target for the approved official release is **1.0.0**. Each delivered app update will have a version in the app and package filenames; small commits delivered together may share a version.
 
 ## Available packages
 
 | Platform | Package | Current verification |
 | --- | --- | --- |
-| Windows 64-bit | Assisted installer (`windows-x64-setup.exe`) and extractable ZIP (`win-x64.zip`) | 0.3.0 candidate built from application source `0e93179`. Actual 0.3 installation and upgrade testing remain. The owner reports the earlier 0.2 installers worked; platform was not specified. |
-| Linux 64-bit | AppImage (`linux-x86_64.AppImage`) and Debian (`linux-amd64.deb`) | 0.2 packages were built and passed isolated checks; the 0.3 final build is pending. Linux installation and show hardware remain unverified. |
+| Windows 64-bit | Assisted installer (`windows-x64-setup.exe`) and extractable ZIP (`win-x64.zip`) | Final 0.3.0 built from application source `7730814`, including bounded import recovery. Packaged launch/version/restart, real-folder import and public remote workflow passed. Actual 0.3 installation and upgrade testing remain. The owner reports the earlier 0.2 installers worked; platform was not specified. |
+| Linux 64-bit | AppImage (`linux-x86_64.AppImage`) and Debian (`linux-amd64.deb`) | Final 0.3 packages built from `f1e7836`, which contains the same app plus server changes. Final AppImage launch/restart/persistence and 76 targeted checks passed. Linux installation and show hardware remain unverified. |
 | macOS Intel and Apple silicon | `.dmg` and ZIP build targets | Must be built and verified on a Mac. No macOS package claimed yet. |
 
-Generated files live in the repository's `release` folder and are not committed to Git. Windows development packages are **unsigned** and currently use Electron's default app icon. Windows may identify them as an unrecognized publisher. Only use packages from a trusted project build. Three [icon options](app-icon-options.md) are available for review, but none has been selected; official distribution still needs an approved icon and platform signing.
+Generated files live in the repository's `release` folder and are not committed to Git. Windows development packages are **unsigned** and currently use Electron's default app icon. Windows may identify them as an unrecognized publisher. Only use packages from a trusted project build. The current [icon variations](app-icon-options.md) are available for review, but none has been selected; official distribution still needs an approved icon and platform signing.
 
 ## Windows
 
@@ -67,3 +67,7 @@ Windows packages contain the final application at `f60e073`; Linux packages use 
 ## Before 1.0.0
 
 The release checklist still includes 0.3 installation, upgrade and uninstall tests on each supported operating system; code signing and macOS notarization; an approved application icon; backup/restore compatibility; and actual codecs, audio outputs, external displays, disconnect/reconnect, and recovery checks. A generated installer does not establish those checks as complete.
+
+## Current verification scope
+
+The final Windows package imported all 237 MP4s from the reported folder into a disposable show, and searched the real shared catalog before dispatching an actual yt-dlp download when queued. The public remote rehearsal used isolated host/browser sessions and synthetic media; no real show was modified and no playback started. Linux used a private virtual display and test-only root flags, leaving shipping defaults unchanged. Neither package has undergone a new real-user 0.3 installation or physical hardware check.

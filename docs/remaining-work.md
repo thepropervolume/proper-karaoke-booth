@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 11 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: reliable show operation and a playable streaming service first. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 12 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: reliable show operation and a playable streaming service first. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
 ## Current foundation
 
@@ -24,7 +24,9 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Investigate Party Tyme and Karaoke Cloud Pro vendor access, account compatibility and complete costs; evaluate each additional service against the owner's under-$20/month per-service target.
 - [ ] Add provider-specific login/logout, connection state, credential redaction, subscription eligibility and clear renewal/outage errors.
 - [ ] Keep app billing and each provider subscription separate; do not assume one grants another.
-- [ ] Provide a unified search that preserves provider and exact-version identity; avoid silently substituting a different recording.
+- [x] Unify local and Karaoke Nerds search in Song Library, preserving exact recording identity, host edits, filters and offline local results.
+- [x] Queue a catalog recording with singer selection in one host-authority operation; approved requests dispatch serial yt-dlp acquisition without autoplay.
+- [ ] Extend unified discovery to approved paid providers when access is granted.
 - [ ] Make eligible streaming results requestable and queueable with singer selection and normal rotation rules.
 - [ ] Route eligible provider playback to the singer display and selected audio output with stage/play/pause/stop/skip and safe transition handling.
 - [ ] Handle expired links, network failure, provider unavailability, rate limits, ads and unsupported or region-blocked recordings without consuming a singer's turn.
@@ -103,7 +105,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Add seek, elapsed/remaining time and acknowledged resume checkpoints; verify audio/sync on real hardware separately.
 - [ ] Add pitch/key and tempo controls with per-song and per-singer defaults and reset.
 - [ ] Support separate lead and backing vocal controls only when the source provides compatible stems or multiplex audio.
-- [ ] Add automatic intermission/bumper scheduling, transitions and fade controls; current bumper playback is manual.
+- [x] Add opt-in automatic bumper music after completion/Skip, with saved theme, display-silence acknowledgement and safe stop before karaoke.
+- [ ] Verify audible bumper routing on show hardware and add fades, separate volume and richer intermission policies.
 - [ ] Verify the inter-song pause interval on physical show hardware for finish, skip and restart.
 - [ ] Add configurable idle, now-playing and next-up singer-display screens, and test layouts/fullscreen across monitors.
 - [ ] Add keyboard-only, screen-reader, high-contrast and text-scaling accessibility coverage.
@@ -114,7 +117,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Enforce Host, Co-host, Moderator, Singer and Audience permissions at the service boundary.
 - [ ] Add persistent profiles with name, email, favorites, playlists, private host notes and access level; allow self-editing except notes and access level.
 - [ ] Add role management and moderation audit history.
-- [ ] Build a secure internet relay with authentication, authorization, rate limits and reconnect behavior while keeping the local host authoritative.
+- [x] Deploy the experimental authenticated MySQL-backed internet relay with role-limited singer operations, bounded requests, rate limits and same-generation recovery.
+- [ ] Complete production load/abuse testing, real-phone/venue checks, owner provisioning and broader account/privacy administration.
 - [ ] Test existing local-network singer access with real phones, certificate trust, venue DNS/firewalls and network interruptions.
 - [ ] Connect the native singer preview to the real service with secure credentials, admission, browsing, requests and withdrawal.
 - [ ] Test native Android/iOS devices, lifecycle, secure storage, certificate validation and uncertain request outcomes.
@@ -134,3 +138,17 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Prepare a release checklist covering backups, migration/rollback, real-hardware tests, privacy and provider/venue terms.
 
 Provider notes: [provider research](provider-research.md), [Sunfly operator](sunfly-account-status.md), [Stingray operator](stingray-catalog.md), and [Karaoke Nerds catalog](karaokenerds-catalog.md). Current automated tests and prior muted rehearsals are useful evidence, but they do not replace real hardware, real accounts or production verification.
+
+## 0.3.0 verification follow-up
+
+- [x] Owner reports the 0.2.0 installers ran successfully; exact platforms were not specified.
+- [x] Provide four TPV lettermarks plus vintage microphone/volume and darker headphones options, all with light/dark editions in the preferred palette; final selection is pending.
+- [x] Rehearse nested directory import in the actual Windows package and fingerprint one selected Dropbox MP4.
+- [x] Reproduce the all-file changed error and add bounded complete-hash retries; final packaged app imported all 237 actual MP4s into a disposable library with zero failures.
+- [ ] Confirm the owner’s normal installed-session re-import and further investigate transient Windows/cloud metadata behavior if it recurs.
+- [x] Add simple custom-slug remote-session controls and bounded singer transport with same-ID uncertain-action recovery.
+- [x] Deploy the MySQL relay and verify public packaged-host/browser operations, lost-reply receipt recovery, brief poll outage, End/restart fencing and daily backup/restore.
+- [x] Build and smoke final Windows/Linux 0.3.0 packages after import/recovery fixes; keep 0.2 rollback artifacts.
+- [ ] Verify real 0.3 installation/upgrade/removal and physical show hardware; macOS remains unbuilt.
+
+The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing/icon selection, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release.
