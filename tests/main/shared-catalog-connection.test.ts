@@ -24,6 +24,47 @@ function deferred<T>() {
   let resolve!:(value:T)=>void;
   return {promise:new Promise<T>(done=>{resolve=done;}),resolve:(value:T)=>resolve(value)};
 }
+
+test('a new installation can search the public service without reading or embedding a private configuration',async()=>fixture(async root=>{
+  let privateReads=0,offline=false;
+  const createPublic=(cacheFile:string)=>new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:async input=>{
+    if(offline)throw new Error('offline');return json(String(input).endsWith('/status')?serviceStatus:searchPage);
+  }});
+  const connection=new SharedCatalogConnection(join(root,'cache.json'),()=>{throw Error('private factory must not run');},async()=>{privateReads++;throw Error('no private config');},createPublic);
+  assert.equal((await connection.publicSearch('Song')).status,'ready');
+  const status=await connection.publicStatus();assert.equal(status.status,'ready');assert.equal(status.connectionMode,'public');
+  assert.equal(privateReads,0);
+  offline=true;
+  const restarted=new SharedCatalogConnection(join(root,'cache.json'),undefined,undefined,createPublic);
+  const cached=await restarted.publicSearch('Song');assert.equal(cached.status,'ready');if(cached.status==='ready')assert.equal(cached.source,'offline-cache');
+  assert.equal((await restarted.publicSearch('new query')).status,'unavailable');
+}));
+
+test('public replies are fenced when an explicitly selected private configuration is invalid',async()=>fixture(async root=>{
+  const started=deferred<void>(),reply=deferred<Response>();
+  const connection=new SharedCatalogConnection(join(root,'cache.json'),undefined,async()=>{throw Error('bad private configuration');},cacheFile=>new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:async()=>{started.resolve();return reply.promise;}}));
+  const pending=connection.publicSearch('Song');await started.promise;
+  assert.equal((await connection.search(join(root,'explicit.json'),'Song')).status,'configuration-error');
+  reply.resolve(json(searchPage));assert.equal((await pending).status,'unavailable');
+}));
+
+test('switching to public scope prevents an older private read from reinstalling credentials',async()=>fixture(async root=>{
+  const read=deferred<{baseUrl:string;token:string}>();let privateCalls=0;
+  const connection=new SharedCatalogConnection(join(root,'cache.json'),()=>{privateCalls++;throw Error('old client');},()=>read.promise,
+    cacheFile=>new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:async()=>json(searchPage)}));
+  const pending=connection.search(join(root,'private.json'),'Song');
+  assert.equal((await connection.publicSearch('Song')).status,'ready');
+  read.resolve({baseUrl,token});assert.equal((await pending).status,'unavailable');assert.equal(privateCalls,0);
+}));
+
+test('an unsaved public status check cannot replace an active private search authority',async()=>fixture(async root=>{
+  const started=deferred<void>(),reply=deferred<Response>();
+  const connection=new SharedCatalogConnection(join(root,'cache.json'),(config,cacheFile)=>new SharedCatalogClient({...config,cacheFile,fetch:async()=>{started.resolve();return reply.promise;}}),
+    async()=>({baseUrl,token}),cacheFile=>new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:async()=>new Response(null,{status:403})}));
+  const pending=connection.search(join(root,'private.json'),'Song');await started.promise;
+  assert.equal((await connection.publicStatus(false)).status,'forbidden');
+  reply.resolve(json(searchPage));assert.equal((await pending).status,'ready');
+}));
 test('catalog settings upgrade defaults and private config parsing reject secrets in URLs or unrelated files', async () => {
   const root = await mkdtemp(join(tmpdir(),'shared-config-'));
   try {

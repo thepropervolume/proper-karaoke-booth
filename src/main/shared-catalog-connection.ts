@@ -5,7 +5,9 @@ import { isAbsolute } from 'node:path';
 import { SharedCatalogClient } from './shared-catalog-client';
 import type { LocalCatalogResult } from './karaokenerds-local-browser';
 
-export type CatalogConnectionStatus = { status: string; source?: 'remote' | 'cache'; lastSuccess?: number | null; lastAttempt?: number | null;
+export const PUBLIC_CATALOG_ORIGIN = 'https://apps.thepropervolume.com';
+
+export type CatalogConnectionStatus = { status: string; source?: 'remote' | 'cache'; connectionMode?: 'public' | 'private'; lastSuccess?: number | null; lastAttempt?: number | null;
   fetchedAt?: number; stale?: boolean; recordCount?: number; searchableCount?: number; revision?: string | null; cachePersisted?: boolean };
 type PrivateConfig = { baseUrl: string; token: string };
 type ActiveConnection = { client: SharedCatalogClient; epoch: number };
@@ -48,7 +50,16 @@ export class SharedCatalogConnection {
   private installedRead = 0;
   constructor(private readonly cacheFile: string,
     private readonly create: (config: PrivateConfig, cacheFile: string) => SharedCatalogClient = (config, cacheFile) => new SharedCatalogClient({...config,cacheFile}),
-    private readonly readConfig: (path: string) => Promise<PrivateConfig> = readSharedCatalogConfig) {}
+    private readonly readConfig: (path: string) => Promise<PrivateConfig> = readSharedCatalogConfig,
+    private readonly createPublic: (cacheFile: string) => SharedCatalogClient = cacheFile => new SharedCatalogClient({baseUrl:PUBLIC_CATALOG_ORIGIN,public:true,cacheFile})) {}
+  private connectPublic(): ActiveConnection {
+    if (this.activePath !== '@public') { this.activePath = '@public'; ++this.activeEpoch; }
+    if (!this.client || this.fingerprint !== '@public') {
+      this.client = this.createPublic(this.cacheFile + '.public'); this.fingerprint = '@public';
+    }
+    this.installedRead = ++this.readSequence;
+    return {client:this.client,epoch:this.activeEpoch};
+  }
   private async connect(path: string): Promise<ActiveConnection> {
     if (path !== this.activePath) { this.activePath = path; ++this.activeEpoch; }
     const epoch = this.activeEpoch, sequence = ++this.readSequence;
@@ -66,6 +77,32 @@ export class SharedCatalogConnection {
   }
   private current(connection: ActiveConnection): boolean {
     return connection.epoch === this.activeEpoch && connection.client === this.client;
+  }
+  /** Installers use this explicit token-free authority when no private config exists. */
+  async publicStatus(active = true): Promise<CatalogConnectionStatus> {
+    try {
+      const connection = active ? this.connectPublic() : null;
+      const result = await (connection?.client ?? this.createPublic(this.cacheFile + '.public.status')).status();
+      if (connection && !this.current(connection)) return {status:'unavailable'};
+      if (result.status !== 'ready') return {status:result.status,connectionMode:'public'};
+      return {status:'ready',connectionMode:'public',source:result.source,lastSuccess:result.lastSuccess,lastAttempt:result.lastAttempt,
+        fetchedAt:result.fetchedAt,stale:result.stale,recordCount:result.recordCount,searchableCount:result.searchableCount,revision:result.revision,cachePersisted:result.cachePersisted};
+    } catch { return {status:'unavailable',connectionMode:'public'}; }
+  }
+  async publicSearch(query: unknown): Promise<LocalCatalogResult> {
+    if (typeof query !== 'string' || query.trim().length < 2 || query.length > 200 || /[\x00-\x1f\x7f]/.test(query)) throw new Error('Enter at least two characters, up to 200.');
+    try {
+      const connection = this.connectPublic(), result = await connection.client.search({query:query.trim(),limit:50});
+      if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
+      return this.projectSearch(result);
+    } catch { return {status:'unavailable',tracks:[],limited:false,lastSuccess:null}; }
+  }
+  private projectSearch(result: Awaited<ReturnType<SharedCatalogClient['search']>>): LocalCatalogResult {
+    if (result.status !== 'ready') return {status:result.status,tracks:[],limited:false,lastSuccess:null};
+    return {status:'ready',tracks:result.items.map(item => ({id:item.youtubeId,artist:item.artist,title:item.title,
+      brand:item.brandSlug || item.brandCode || null,...(item.brandSlug ? {brandSlug:item.brandSlug} : {}),youtubeId:item.youtubeId})),
+      limited:result.nextCursor !== null,lastSuccess:result.lastSuccess,source:result.source === 'cache' ? 'offline-cache' : 'shared',
+      fetchedAt:result.fetchedAt,stale:result.stale,revision:result.revision,cachePersisted:result.cachePersisted};
   }
   async status(path: string, active = true): Promise<CatalogConnectionStatus> {
     try {
@@ -88,11 +125,7 @@ export class SharedCatalogConnection {
       if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
       const result = await connection.client.search({query:query.trim(),limit:50});
       if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
-      if (result.status !== 'ready') return {status:result.status,tracks:[],limited:false,lastSuccess:null};
-      return {status:'ready',tracks:result.items.map(item => ({id:item.youtubeId,artist:item.artist,title:item.title,
-        brand:item.brandSlug || item.brandCode || null,...(item.brandSlug ? {brandSlug:item.brandSlug} : {}),youtubeId:item.youtubeId})),
-        limited:result.nextCursor !== null,lastSuccess:result.lastSuccess,source:result.source === 'cache' ? 'offline-cache' : 'shared',
-        fetchedAt:result.fetchedAt,stale:result.stale,revision:result.revision,cachePersisted:result.cachePersisted};
+      return this.projectSearch(result);
     } catch (error) { return {status:error instanceof SupersededConnection ? 'unavailable' : 'configuration-error',tracks:[],limited:false,lastSuccess:null}; }
   }
 }

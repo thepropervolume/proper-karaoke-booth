@@ -142,19 +142,25 @@ class QueryCache {
 
 export class SharedCatalogClient {
   private readonly baseUrl: string;
-  private readonly token: string;
+  private readonly token: string | null;
+  private readonly routePrefix: string;
   private readonly cache: QueryCache;
   private readonly fetcher: FetchFn;
   private readonly timeoutMs: number;
   private readonly now: () => number;
   private accessDenied: 'unauthorized' | 'forbidden' | null = null;
   private authorizationEpoch = 0;
-  constructor(options: { baseUrl: string; token: string; cacheFile: string; fetch?: FetchFn; timeoutMs?: number; now?: () => number }) {
+  constructor(options: { baseUrl: string; token?: string; public?: boolean; cacheFile: string; fetch?: FetchFn; timeoutMs?: number; now?: () => number }) {
     try {
       const url = new URL(options.baseUrl);
-      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || options.baseUrl.length > 2048 || !TOKEN.test(options.token) || !isAbsolute(options.cacheFile) || /[\x00-\x1f\x7f]/.test(options.cacheFile) || (options.timeoutMs !== undefined && (!Number.isInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 60000))) throw new Error();
-      this.baseUrl = url.href.replace(/\/+$/, ''); this.token = options.token; this.now = options.now ?? Date.now;
-      this.cache = new QueryCache(options.cacheFile, digest(JSON.stringify([this.baseUrl, options.token])), this.now);
+      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || options.baseUrl.length > 2048 ||
+          (options.public === true ? options.token !== undefined : typeof options.token !== 'string' || !TOKEN.test(options.token)) ||
+          (options.public !== undefined && typeof options.public !== 'boolean') || !isAbsolute(options.cacheFile) || /[\x00-\x1f\x7f]/.test(options.cacheFile) || (options.timeoutMs !== undefined && (!Number.isInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 60000))) throw new Error();
+      this.baseUrl = url.href.replace(/\/+$/, ''); this.token = options.public === true ? null : options.token!; this.now = options.now ?? Date.now;
+      this.routePrefix = options.public === true ? '/v1/catalog/public' : '/v1/catalog';
+      // Keep the established private scope format; public caches cannot inherit
+      // entries belonging to a private authority, or contain a bundled token.
+      this.cache = new QueryCache(options.cacheFile, digest(JSON.stringify(this.token === null ? ['public',this.baseUrl] : [this.baseUrl,this.token])), this.now);
       this.fetcher = options.fetch ?? fetch; this.timeoutMs = options.timeoutMs ?? 10000;
     } catch { throw new Error('Invalid shared catalog configuration.'); }
   }
@@ -165,10 +171,10 @@ export class SharedCatalogClient {
     const values = { q: input.query.trim(), artist: input.artist ?? '', brand: input.brandSlug ?? '', cursor: input.cursor ?? null, limit: input.limit ?? 50 };
     const params = new URLSearchParams({ q: values.q, limit: String(values.limit) });
     if (values.artist) params.set('artist', values.artist); if (values.brand) params.set('brand', values.brand); if (values.cursor) params.set('cursor', values.cursor);
-    return this.request('search', digest(JSON.stringify(values)), '/v1/catalog/tracks?' + params, value => page(value, values.limit)) as Promise<SharedCatalogSearchResult>;
+    return this.request('search', digest(JSON.stringify(values)), this.routePrefix + '/tracks?' + params, value => page(value, values.limit)) as Promise<SharedCatalogSearchResult>;
   }
   status(): Promise<SharedCatalogStatusResult> {
-    return this.request('status', digest('status'), '/v1/catalog/status', status) as Promise<SharedCatalogStatusResult>;
+    return this.request('status', digest('status'), this.routePrefix + '/status', status) as Promise<SharedCatalogStatusResult>;
   }
   private async request(kind: Kind, key: string, path: string, parse: (value: unknown) => Page | ServiceStatus | null): Promise<Ready<Page | ServiceStatus> | Failure> {
     const authorizationEpoch = this.authorizationEpoch;
@@ -178,7 +184,7 @@ export class SharedCatalogClient {
     const work = (async (): Promise<{ status: 'ok'; value: Page | ServiceStatus } | Failure> => {
       let received = false;
       try {
-        const response = await this.fetcher(this.baseUrl + path, { method: 'GET', headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' }, redirect: 'error', credentials: 'omit', cache: 'no-store', signal: controller.signal });
+        const response = await this.fetcher(this.baseUrl + path, { method: 'GET', headers: { ...(this.token === null ? {} : {Authorization: `Bearer ${this.token}`}), Accept: 'application/json' }, redirect: 'error', credentials: 'omit', cache: 'no-store', signal: controller.signal });
         received = true;
         if (expired) { void response.body?.cancel().catch(() => {}); return { status: 'timed-out' }; }
         if (response.status !== 200) {

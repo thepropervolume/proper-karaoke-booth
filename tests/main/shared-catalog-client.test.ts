@@ -19,6 +19,33 @@ async function fixture(run: (folder: string) => Promise<void>) {
   finally { assert.equal(dirname(await realpath(folder)), base); await rm(folder, { recursive: true, force: true }); }
 }
 
+test('public catalog requests use the token-free public route and keep durable scoped offline queries', async () => fixture(async folder => {
+  let offline = false;
+  const options = {baseUrl,public:true,cacheFile:join(folder,'public.json'),now:()=>now,fetch:async (input:RequestInfo | URL, init?:RequestInit) => {
+    const url = new URL(String(input)); assert.ok(url.pathname.startsWith('/v1/catalog/public/'));
+    assert.equal((init?.headers as Record<string,string>).Authorization,undefined);
+    assert.equal(init?.credentials,'omit');assert.equal(init?.redirect,'error');
+    if (offline) throw new Error('offline');
+    return json(url.pathname.endsWith('/status') ? {...meta,recordCount:1,searchableCount:1} : body());
+  }};
+  const publicClient = new SharedCatalogClient(options);
+  assert.deepEqual(ready(await publicClient.search({query:'Nada'})).items,[track]);
+  assert.equal((await publicClient.status()).status,'ready');
+  offline=true;
+  const restarted = new SharedCatalogClient(options);
+  assert.equal(ready(await restarted.search({query:'Nada'})).source,'cache');
+  assert.equal((await restarted.search({query:'never searched'})).status,'unavailable');
+}));
+
+test('public mode cannot carry a private credential or reuse the private cache authority', async () => fixture(async folder => {
+  const cacheFile = join(folder,'authority.json');
+  assert.throws(()=>new SharedCatalogClient({baseUrl,public:true,token,cacheFile}),/Invalid shared catalog/);
+  assert.throws(()=>new SharedCatalogClient({baseUrl,cacheFile}),/Invalid shared catalog/);
+  ready(await new SharedCatalogClient({baseUrl,token,cacheFile,fetch:async()=>json(body())}).search({query:'Nada'}));
+  const publicClient = new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:async()=>{throw new Error('offline');}});
+  assert.equal((await publicClient.search({query:'Nada'})).status,'unavailable');
+}));
+
 test('HTTPS configuration and searches are validated before network or secret-bearing errors', async () => fixture(async folder => {
   const cacheFile = join(folder, 'cache.json'); let calls = 0;
   for (const override of [{ baseUrl: 'http://127.0.0.1:1234' }, { baseUrl: 'https://user:password@example.test' }, { baseUrl: baseUrl + '?token=secret' }, { token: token + '\n' }, { cacheFile: 'relative' }]) {
