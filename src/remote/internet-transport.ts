@@ -1,5 +1,6 @@
 import { JoinRevisionConflict, type GuestTransport } from './client';
 import { INTERNET_QUEUE_ORIGIN, validateSessionSlug } from './internet-session-control';
+import { parseGuestAdmission, parseGuestCatalog, parseGuestJoin, parseGuestOutcome, parseGuestOutcomeLookup, parseGuestSnapshot } from './guest-response';
 
 export type InternetSingerRoom = { roomId: string; generation: string; slug: string; expiresAt: number; online: boolean };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -46,7 +47,7 @@ export function internetGuestTransport(room: InternetSingerRoom, options: { fetc
   if (!UUID.test(room.roomId) || !UUID.test(room.generation) || validateSessionSlug(room.slug)) throw new Error('Invalid session.');
   const base = `${INTERNET_QUEUE_ORIGIN}/v1/relay/rooms/${room.roomId}/${room.generation}/guest/`;
   let ended = false;
-  const post = async <T,>(operation: string, payload: unknown, session?: string): Promise<T> => {
+  const post = async <T,>(operation: string, payload: unknown, parse: (value: unknown) => T, session?: string): Promise<T> => {
     if (ended || room.expiresAt <= Date.now()) throw new InternetSessionEnded();
     const body = JSON.stringify(payload);
     if (new TextEncoder().encode(body).byteLength > 8192 || session !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(session)) throw new Error('Invalid singer request.');
@@ -61,23 +62,23 @@ export function internetGuestTransport(room: InternetSingerRoom, options: { fetc
       if (!response.ok) {
         if (operation === 'join' && response.status === 409) {
           const value = await json(response, 8192);
-          if (record(value) && value.error === 'REVISION_CONFLICT') throw new JoinRevisionConflict();
+          if (record(value) && Object.keys(value).length === 1 && value.error === 'REVISION_CONFLICT') throw new JoinRevisionConflict();
         } else void response.body?.cancel().catch(() => {});
         throw new Error('The show could not confirm this request.');
       }
-      return await json(response, 2 * 1024 * 1024) as T;
+      return parse(await json(response, 2 * 1024 * 1024));
     }, 20000);
   };
   return {
-    admission: () => post('admission', {}),
-    join: (_invitation, joinId, resumeSecret, name, expectedRevision) => post('join', { joinId, resumeSecret, name, expectedRevision }),
-    resume: resumeSecret => post('resume', { resumeSecret }),
-    snapshot: session => post('snapshot', {}, session),
-    catalog: (session, offset, limit) => post('catalog', { offset, limit }, session),
-    submit: (session, command) => post('request', { command }, session),
-    withdraw: (session, command) => post('withdraw', { command }, session),
-    setAvailability: (session, command) => post('availability', { command }, session),
-    submitMissing: (session, command) => post('missing-request', { command }, session),
-    outcome: (session, commandId) => post('outcome', { commandId }, session),
+    admission: () => post('admission', {}, parseGuestAdmission),
+    join: (_invitation, joinId, resumeSecret, name, expectedRevision) => post('join', { joinId, resumeSecret, name, expectedRevision }, parseGuestJoin),
+    resume: resumeSecret => post('resume', { resumeSecret }, parseGuestJoin),
+    snapshot: session => post('snapshot', {}, parseGuestSnapshot, session),
+    catalog: (session, offset, limit) => post('catalog', { offset, limit }, value => parseGuestCatalog(value, offset, limit), session),
+    submit: (session, command) => post('request', { command }, parseGuestOutcome, session),
+    withdraw: (session, command) => post('withdraw', { command }, parseGuestOutcome, session),
+    setAvailability: (session, command) => post('availability', { command }, parseGuestOutcome, session),
+    submitMissing: (session, command) => post('missing-request', { command }, parseGuestOutcome, session),
+    outcome: (session, commandId) => post('outcome', { commandId }, parseGuestOutcomeLookup, session),
   };
 }
