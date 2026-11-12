@@ -27,14 +27,14 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
   };
   return <section aria-label="Karaoke Nerds catalog">
     <h2>YouTube & Karaoke Nerds</h2>
-    <p className="muted">Add a recording to download it permanently with yt-dlp. Once saved, it plays like a local song through your selected output, including offline. Choose the download folder in Preferences. One video downloads at a time; other added songs can be downloaded from the library menu.</p>
+    <p className="muted">Search directly in Song Library to choose a singer and queue a Karaoke Nerds recording. Requesting it schedules a permanent yt-dlp download; saved videos play through your selected output, including offline. This page also lets you save a manual YouTube link to the library. Choose the download folder in Preferences.</p>
     <form className="request-form" onSubmit={event => { event.preventDefault(); void add({url,title,artist}); }}>
       <label>YouTube video link<input aria-label="YouTube video link" value={url} maxLength={2048} onChange={e=>setUrl(e.target.value)} required /></label>
       <label>Song title<input aria-label="YouTube song title" value={title} maxLength={500} onChange={e=>setTitle(e.target.value)} required /></label>
       <label>Artist<input aria-label="YouTube artist" value={artist} maxLength={500} onChange={e=>setArtist(e.target.value)} /></label>
       <button type="submit" disabled={busy || !url.trim() || !title.trim()}>Add YouTube to Library</button>
     </form>
-    <p className="muted">Search the configured shared catalog or saved local snapshot. Add a recording to your library to queue it; Preview opens the separate, manually controlled player.</p>
+    <p className="muted">Search the configured shared catalog or saved local snapshot. Add to Library saves a recording for later; queue it from Song Library when ready to download. Preview opens the separate, manually controlled player.</p>
     <form className="library-toolbar" onSubmit={event => void submit(event)}>
       <label>Artist or song title<input type="search" value={query} maxLength={200} disabled={busy} onChange={event => { setQuery(event.target.value); setResult(null); }} /></label>
       <button type="submit" disabled={busy || query.trim().length < 2}>{busy ? 'Searching…' : 'Search catalog'}</button>

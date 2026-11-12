@@ -62,6 +62,8 @@ try {
   let host = await launch();
   const added = await host.evaluate(()=>window.tpv.addYouTube({url:'https://youtu.be/abcdefghijk',title:'Cache Smoke',artist:'Synthetic Artist'}));
   assert.equal(added.ok, true, added.notice || added.error); assert.ok(added.versionId);
+  const afterAdd=await host.evaluate(()=>window.tpv.youtubeDownloads.status());
+  assert.equal(afterAdd.job,null,'Adding metadata alone must not start a download');assert.equal(afterAdd.preparing,false);
   assert.equal((await host.evaluate(()=>window.tpv.getState())).playback, null, 'Adding/downloading must not play automatically');
   await host.evaluate(async versionId=>{
     for(const command of [{type:'addSinger',singer:{id:'cache-singer',name:'Cache Singer'}},
@@ -77,7 +79,8 @@ try {
   assert.equal(state.playback,null,'Download completion must not start playback');
   assert.equal(state.versions.length,1); assert.deepEqual(state.versions[0].source,{provider:'youtube',videoId:'abcdefghijk'});
   assert.equal(state.stagedRequestId,'cache-request');
-  await host.getByRole('listbox',{name:'Songs'}).getByText('YouTube · Saved locally',{exact:false}).waitFor();
+  await host.getByRole('listbox',{name:'Songs'}).getByText('Saved locally',{exact:false}).waitFor();
+  await host.getByRole('listbox',{name:'Songs'}).getByText('YouTube',{exact:true}).waitFor();
   const row=host.getByRole('listbox',{name:'Songs'}).getByRole('option').first();
   await row.click({button:'right'}); assert.equal(await host.getByRole('menuitem',{name:'Show in Files...',exact:true}).isEnabled(),true); await host.keyboard.press('Escape');
   const directory=join(cache,'youtube','Synthetic Artist'), file=join(directory,'Synthetic Artist - Cache Smoke.mp4');
