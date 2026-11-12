@@ -4,7 +4,7 @@ Updated 12 November 2026 from the current checkout. This is the working checklis
 
 ## Current foundation
 
-The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, and choose settings and limited shortcuts. The host has implemented shared catalog connection/preferences and offline query-cache support, with a legacy local-catalog fallback when unconfigured. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
+The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, change settings and configure common action shortcuts through the grouped editor. The host has implemented shared catalog connection/preferences and offline query-cache support, with public read-only shared discovery on fresh installs and a legacy local-catalog mode when shared discovery is disabled. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
 
 ## Priority 0 — streaming and catalog
 
@@ -36,7 +36,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Package/test yt-dlp and FFmpeg installation, upgrades and all supported operating systems.
 - [x] Deploy the dedicated shared MySQL catalog search service behind HTTPS and verify server backup/scratch restore using the recovered raw snapshot.
 - [ ] Finish production monitoring, recovery/rotation operations and real desktop end-to-end verification; deployed search is not a working daily-refresh pipeline.
-- [ ] Replace per-request full-snapshot catalog scans with indexed reads and load-test concurrent clients; current service reads are serialized and not a production throughput guarantee.
+- [ ] Replace full-snapshot refresh reads with indexed queries and load-test concurrent clients. A 30-second coalesced projection cache now avoids rebuilding the snapshot per request; this is partial progress, not a production throughput guarantee.
 - [x] Recover and seed the 64,261-record raw Karaoke Nerds snapshot without a new feed request; expose valid unique recordings including unmapped brands.
 - [x] Implement desktop shared HTTPS configuration/preferences and scoped offline query caching (100 entries/20 MiB).
 - [x] Verify live Windows HTTPS status/search against the deployed service and durable offline reuse after a simulated connection failure; the legacy local default snapshot remains absent.
@@ -65,7 +65,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Add versioned SQLite migrations (current schema v2) with upgrade, interrupted-write and rollback tests.
 - [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
-- [ ] Add comprehensive end-to-end coverage for queue, transport, import, shortcuts, device loss and display recovery.
+- [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
 - [x] Build Linux x64 AppImage and Debian packages, verify dependency metadata and payload, and pass final AppImage launch/restart under an isolated virtual display.
 - [ ] Verify Linux desktop installation, upgrade/removal, sandbox behavior and show hardware; build and test macOS on a Mac. Package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
 
@@ -93,9 +93,9 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Verify the existing standard, rotation and library layouts at small and large window sizes and keep critical controls visible.
 - [x] Validate and persist the implemented settings in editable JSON with defaults and error messages.
 - [ ] Extend settings coverage and migration/recovery guidance as remaining features are implemented.
-- [ ] Extend the keybindings text file to every actionable command, including conflict detection, reset and updated tooltip hints.
+- [ ] Extend the registered shortcut actions to every remaining specialized command. Multiple bindings, the grouped editor, conflict detection, saved reset and tooltip hints are implemented.
 - [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
-- [ ] Add a CLI for application actions through one authenticated local authority with structured output and stable exit codes; do not introduce another SQLite writer.
+- [ ] Complete general CLI actions through the existing authenticated local authority. Initial source provides structured capability/state/settings/shortcut reads and queued settings navigation with stable exit codes; the actual Windows app and compiled CLI passed a private-profile rehearsal. Mutation control and distributed wrapper/package verification remain pending. Do not introduce another SQLite writer.
 
 ## Priority 1 — playback and display
 
@@ -142,7 +142,9 @@ Provider notes: [provider research](provider-research.md), [Sunfly operator](sun
 ## 0.3.0 verification follow-up
 
 - [x] Owner reports the 0.2.0 installers ran successfully; exact platforms were not specified.
-- [x] Provide four TPV lettermarks plus vintage microphone/volume and darker headphones options, all with light/dark editions in the preferred palette; final selection is pending.
+- [x] Provide four TPV lettermarks plus vintage microphone/volume and darker headphones options, all with light/dark editions in the preferred palette; later vintage/cursive exploration led to the approved Velvet Script selection.
+- [x] Generate the selected Velvet Script dark/light masters, Windows ICO, macOS ICNS, Linux PNGs, web and mobile assets; wire them into the next pre-release packaging and desktop windows. All 66 generated hashes and the Windows executable resource check passed. Previously built installers remain unchanged.
+- [ ] Verify the approved icon in the next complete platform packages and on native Start menu/taskbar, launcher and Dock surfaces.
 - [x] Rehearse nested directory import in the actual Windows package and fingerprint one selected Dropbox MP4.
 - [x] Reproduce the all-file changed error and add bounded complete-hash retries; final packaged app imported all 237 actual MP4s into a disposable library with zero failures.
 - [ ] Confirm the owner’s normal installed-session re-import and further investigate transient Windows/cloud metadata behavior if it recurs.
@@ -151,10 +153,23 @@ Provider notes: [provider research](provider-research.md), [Sunfly operator](sun
 - [x] Build and smoke final Windows/Linux 0.3.0 packages after import/recovery fixes; keep 0.2 rollback artifacts.
 - [ ] Verify real 0.3 installation/upgrade/removal and physical show hardware; macOS remains unbuilt.
 
-The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing/icon selection, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release.
+The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing and native icon verification, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release.
 
 ## 0.3.1 default lyric backdrop
 
 - [x] Bundle the owner-selected TPV Version 3 animation as a silent full-duration default for new CDG imports, with custom/solid choices in Singer Display preferences. Existing converted songs require reimporting.
 - [ ] Implement timed LRC import and playback using the same default backdrop preference; verify lyric timing, seek, pause/resume and accessibility.
 - [ ] Verify real-producer CDG lyric/background composition and synchronization on physical show hardware.
+
+## 0.4.0 Requested Workspace Improvements
+
+- [x] Player F/Shift+F fullscreen; Ctrl/Cmd/Alt+Comma preferences; Ctrl/Cmd+Slash and F1 shortcut help; same-profile launcher --settings/--keybindings.
+- [x] Wide grouped shortcut editor with multiple bindings, capture, conflicts, disabled bindings, persisted reset and JSON editing. Specialized actions still need full coverage.
+- [x] Repeated known metadata fields and arbitrary ignored custom placeholders; all six supplied formats accepted.
+- [x] Play opens the saved or nearest non-host singer display and waits for readiness; Previous restarts the same performance.
+- [x] Public catalog discovery fixes missing private configuration on fresh installs; actual new Linux package verification remains part of release checks.
+- [x] Shared 1–10-heart host ratings in search/queue/On Stage with isolated MySQL, per-voter credentials, explicit replacement/clear and public aggregates.
+- [ ] Remote singer voting, verified account ownership and cross-device profiles.
+- [x] Larger/bolder sidebar, bottom Host Workspace links, Sources with YouTube/Karaoke Nerds/services, native File Import/Backup and View Appearance/Accent/Layout, iconized CDG import, wider preferences and larger section titles.
+- [x] Verify the initial local API against the actual Windows app and compiled CLI: reads, settings/shortcut navigation, lifecycle credentials, disable/quit cleanup and persistence without autoplay.
+- [ ] Complete authenticated API/CLI mutation control, events, pagination and the remaining app capabilities. The initial off-by-default read/navigation subset passed actual Windows app and compiled CLI checks; distributed wrapper/package verification remains pending.

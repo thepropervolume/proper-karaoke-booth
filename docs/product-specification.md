@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 12 November 2026. **Application milestone:** 0.3.1 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
+**Revision:** 12 November 2026. **Application milestone:** 0.4.0 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -14,15 +14,15 @@ The Proper Volume Karaoke is intended to be a dependable, local-first karaoke ho
 
 The host computer is the single authority for show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. Companion interfaces must never become a second playback or queue authority. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
 
-**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback and a separate manually started preview. **Planned:** the full native companion apps, general local API, complete access-control model, paid karaoke providers and paid subscriptions. The app is not yet validated as a live-show replacement.
+**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started preview, and the initial authenticated local API/CLI for reads and settings navigation. **Planned:** the full native companion apps, complete general local API, complete access-control model, paid karaoke providers and paid subscriptions. The app is not yet validated as a live-show replacement.
 
 ### Development versions and installers
 
-Version each delivered application update using semantic 0.x.y versions and include it in the host interface, installer filename and completion report. Reserve 1.0.0 for the approved official release. Several focused commits delivered together may share one version. At 0.3.0, Windows x64 installer/ZIP and Linux x64 AppImage/Debian packages have built and passed isolated packaged checks. The owner reports successful 0.2 installer use without specifying platforms. Actual 0.3 install/upgrade/uninstall and physical show checks remain. Linux x64 AppImage and Debian packages have built, with explicit runtime dependencies and payload checks; the final AppImage passed isolated virtual-display launch/restart checks. Actual desktop installation and hardware checks remain. macOS Intel and Apple silicon DMG/ZIP require a Mac build and verification. Packages exclude private configuration, media, yt-dlp, FFmpeg and LibreOffice, and preserve the established app-data directory. Windows packages are unsigned and use the default Electron icon; signing, notarization and the final icon remain release work. See the installation guide for actual artifact status.
+Version each delivered application update using semantic 0.x.y versions and include it in the host interface, installer filename and completion report. Reserve 1.0.0 for the approved official release. Several focused commits delivered together may share one version. At 0.3.0, Windows x64 installer/ZIP and Linux x64 AppImage/Debian packages have built and passed isolated packaged checks. The owner reports successful 0.2 installer use without specifying platforms. Actual 0.3 install/upgrade/uninstall and physical show checks remain. Linux x64 AppImage and Debian packages have built, with explicit runtime dependencies and payload checks; the final AppImage passed isolated virtual-display launch/restart checks. Actual desktop installation and hardware checks remain. macOS Intel and Apple silicon DMG/ZIP require a Mac build and verification. Packages exclude private configuration, media, yt-dlp, FFmpeg and LibreOffice, and preserve the established app-data directory. Existing Windows packages are unsigned and use the default Electron icon. The owner-selected Velvet Script identity is configured for the next pre-release; all 66 generated branding hashes and the Windows executable resource check passed; signing, notarization and native icon verification remain release work. See the installation guide for actual artifact status.
 
 ## 2. People, interfaces and navigation
 
-**Available:** the host workspace has Library, Requests, Singers, Playlists and Remote Sessions navigation; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is available from the host workspace. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile directory contains an **offline native singer preview** using synthetic data; it cannot join a show, send real requests or store credentials.
+**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is in the File menu. File → Import provides video-file, custom-directory and CDG/ZIP actions alongside the library icons. View offers Appearance, Choose Accent Color and Layout menus. Sources groups Karaoke Nerds, the Custom YouTube Video Importer and pending Third-Party Services. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile directory contains an **offline native singer preview** using synthetic data; it cannot join a show, send real requests or store credentials.
 
 **Planned:** distinct KJ remote, delegated staff queue workspace, expanded singer web and native clients, and account/billing screens. A KJ remote emphasizes transport, while queue staff moderate and organize future turns without playback or output controls. The singer experience provides discovery, own requests and a safe public view of the show. A singer display is presentation-only and never exposes host controls, private notes, file paths or account information. Native clients are not assumed to inherit browser security properties; their authentication, certificate handling, secure storage, background behavior and reconnection require separate testing.
 
@@ -36,9 +36,9 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Available:** the main screen has a library, visible singer rotation, import controls, current/staged status and a persistent Play/Pause, Stop, Skip and volume area. A song is selectable without playback. Double-click or Enter opens an Add to Queue dialog for an existing singer or a new singer name; submitting adds a request rather than starting a song. The contextual menu offers Add to Queue, Add to Playlist, Edit Metadata, Relink File and Show in Files. Queue rows are selectable and Delete removes an eligible request; an active performance is protected. Search is accessible from both host and singer windows.
 
-**Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Appearance, Library Settings, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` currently configures only Search and Play/Pause, including default Ctrl+F or Meta+F and Space. Keyboard shortcuts do not steal ordinary text entry.
+**Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Appearance, Library Settings, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
 
-**Planned:** complete settings coverage, migrations and helpful error recovery; layout variants including a genuinely compact single-screen show; user-configurable shortcuts for every actionable command, full default listings, collision detection and reset; and a global action/command interface. Appearance changes must not interrupt a show. Confirm skip and other show-interrupting actions; routine pause, volume and valid queue edits should not require repeated confirmation. Undo of eligible queue edits is a proposed feature, with any expiry and conflict behavior to be specified.
+**Planned:** complete settings coverage, migrations and helpful error recovery; layout variants including a genuinely compact single-screen show; complete shortcut coverage for remaining specialized actions; and a global action/command interface. Appearance changes must not interrupt a show. Confirm skip and other show-interrupting actions; routine pause, volume and valid queue edits should not require repeated confirmation. Undo of eligible queue edits is a proposed feature, with any expiry and conflict behavior to be specified.
 
 ## 4. Library, import and metadata
 
@@ -74,13 +74,13 @@ Authenticated local singers may withdraw their own pending or accepted request. 
 
 **Available:** Play/Pause stages the next eligible request when needed and starts or pauses/resumes the performance. Stop returns the current request to the queue; confirmed Skip consumes the active turn. Playback has a generation identity, checkpoints position and restarts paused after an interrupted session. Start and resume are deliberate host actions. On a reported output-device or display loss the application pauses and asks the host to resolve the issue; actual hardware behavior still needs testing.
 
-**Available:** the host chooses an audio output or the operating-system default and can adjust global volume. The singer window is assigned to a monitor; hosts can toggle fullscreen or set the next-open fullscreen preference. Optional singer-display settings show upcoming names and a custom PNG/JPEG logo. The configured inter-song pause interval is 0–300 seconds after completion or confirmed skip; staging may occur while the clock runs, the deadline persists across restart, and the host still starts the next song. A zero interval is the default.
+**Available:** the host chooses an audio output or the operating-system default and can adjust global volume. Play automatically opens a ready singer window on the saved connected monitor, otherwise the closest non-host monitor, otherwise the host screen. Explicit Singer Display still offers a chooser; hosts can toggle fullscreen or set the next-open fullscreen preference. Optional singer-display settings show upcoming names and a custom PNG/JPEG logo. The configured inter-song pause interval is 0–300 seconds after completion or confirmed skip; staging may occur while the clock runs, the deadline persists across restart, and the host still starts the next song. A zero interval is the default.
 
 The singer video is bounded to the full window viewport (maximum 100vh/100vw) with aspect ratio preserved and no vertical scrolling. Landscape, 4:3 and portrait sources use letterboxing/pillarboxing as needed. Branding, caption and next-singer information overlay the viewport instead of adding height. The separate embedded preview uses its own bounded layout and retains visible native controls.
 
 **Experimental:** bumper music requires a ready singer display and an explicitly selected output; system default is not accepted. Three generated instrumental themes and up to five custom audio files are available. Audio Controls saves an opt-in automatic-between-songs checkbox and selected theme; its default is off. Successful natural completion or confirmed Skip arms an intermission only after the current singer display acknowledges karaoke silence. The host can also start/stop music manually. Karaoke start/resume waits for acknowledged bumper stop. Stop, pause, launch, changed settings and output recovery never automatically start music; loss or change of output cancels automation. The pause interval remains a minimum gap before the host may start the next song. Tracks may continue through the bumper list until stopped or karaoke starts. Physical audible routing and device-loss verification remain required; muted integration tests do not prove what a mixer receives.
 
-**Available:** the bottom timeline shows elapsed/remaining time, supports dragging or keyboard scrubbing and ten-second rewind/forward. Seeking preserves play/pause state and saves acknowledged positions; stale-generation events are rejected. It supports local MP4s (including converted CDG) and downloaded YouTube videos through that same local player. Real-hardware synchronization and recovery remain unverified.
+**Available:** the bottom timeline shows elapsed/remaining time, supports dragging or keyboard scrubbing and ten-second rewind/forward. Seeking preserves play/pause state and saves acknowledged positions; stale-generation events are rejected. It supports local MP4s (including converted CDG) and downloaded YouTube videos through that same local player. Previous restarts the current generation from zero and resumes a paused performance without consuming a turn. Per-range verified file handles reject observed source replacement and pause the same performance with a recovery path. Real-hardware synchronization and recovery remain unverified.
 
 **Planned:** further recovery verification, key and tempo with per-song and per-singer settings, independent lead/backing vocals only where stems or compatible multiplex data exist, richer intermission scheduling, separate filler volume and fades, and richer waiting/ready/playing/paused/error output screens. The earlier proposed filler fade values of 1.5 seconds in and 1.0 second out are design candidates, not implemented or hardware-verified defaults. Never overlap two audible karaoke streams; pause alone must not automatically start filler. No source MP4 or CDG text is reflowed, translated or restyled unless a separate licensed renderer expressly supports it.
 
@@ -130,19 +130,19 @@ Planned age policies may set separate profanity, sexual-content, violence and su
 
 Logical entities include Song, exact SongVersion and LocalAsset; Show/Party, Singer, ShowSinger, Request and QueueItem; Playback generation, position and outcome; command result/receipt and show event; preferences and approved provider references. Future entities include profiles, per-version preferences, attendance, invitations, notification preferences, group performances, provider entitlements and billing/device grants. Do not infer a persistent profile from a guest session or a catalog entitlement from a favorite.
 
-**Planned general API and CLI:** every supported application action should be available through one authenticated local authority and a documented command-line client, not a second SQLite writer. Offer capability discovery, effective preferences, shows/parties, users and own libraries, catalog/import, playback, outputs, providers, policy, commands and events as permissions permit. Default the general API off; use authenticated loopback with scoped, revocable tokens. LAN binding requires explicit opt-in and authenticated TLS. Publish versioned OpenAPI/event schemas, pagination, stable IDs, structured errors and CLI help/exit codes. Protect file paths, billing data and secrets. Local API and CLI work independently of any cloud relay and are **not implemented** today.
+**Planned general API and CLI:** every supported application action should be available through one authenticated local authority and a documented command-line client, not a second SQLite writer. Offer capability discovery, effective preferences, shows/parties, users and own libraries, catalog/import, playback, outputs, providers, policy, commands and events as permissions permit. Default the general API off; use authenticated loopback with scoped, revocable tokens. LAN binding requires explicit opt-in and authenticated TLS. Publish versioned OpenAPI/event schemas, pagination, stable IDs, structured errors and CLI help/exit codes. Protect file paths, billing data and secrets. The initial source subset is implemented independently of the cloud relay: an off-by-default authenticated loopback API reads capabilities, state, settings and shortcuts, and queues Preferences/Keyboard Shortcuts navigation. The actual Windows app and compiled CLI passed a private-profile integration rehearsal for default-disabled startup, enabling, authenticated reads, settings/shortcut navigation, restart token rotation, stale-token denial and disable/quit cleanup without autoplay. Full mutation control, events, pagination and role-scoped operations remain planned; distributed wrapper/package verification is pending.
 
 For every mutation, validate role, show/epoch, expected revision, item state and active policy. Persist the original result with the command ID before replying; reject reused IDs with different content. Stale clients refresh a filtered snapshot; an unknown result is queried rather than replayed blindly. Generation identifiers protect playback from late events. Nonstructural high-frequency controls need sequencing so old slider updates cannot overwrite newer state.
 
-The proposed versioned resource families are `/v1/capabilities`, `/v1/preferences`, `/v1/parties`, `/v1/users`, `/v1/users/{id}/library`, `/v1/catalog`, `/v1/playback`, `/v1/outputs`, `/v1/providers`, `/v1/policies`, `/v1/commands` and `/v1/events`. Exact routes and compatibility guarantees are a design proposal, not a live endpoint. Capability discovery should report supported versions, commands, bounds, role scopes and required local confirmations. Provider credentials and local paths require appropriately restricted owner scopes. Authenticated event subscriptions must be revoked with their token and resume from a fresh authorized state.
+Beyond the initial `/v1/capabilities`, `/v1/state`, `/v1/settings`, `/v1/shortcuts` and navigation-only `/v1/actions` source routes, the proposed resource families include `/v1/preferences`, `/v1/parties`, `/v1/users`, `/v1/users/{id}/library`, `/v1/catalog`, `/v1/playback`, `/v1/outputs`, `/v1/providers`, `/v1/policies`, `/v1/commands` and `/v1/events`. Those broader resource families and their compatibility guarantees remain design proposals, not implemented mutation endpoints. Capability discovery should report supported versions, commands, bounds, role scopes and required local confirmations. Provider credentials and local paths require appropriately restricted owner scopes. Authenticated event subscriptions must be revoked with their token and resume from a fresh authorized state.
 
 ## 12. Providers and commercial access
 
 **Experimental shared metadata catalog:** Karaoke Nerds permits its community feed to be called approximately once per day and cached. The recovered initial JSON snapshot contains 64,261 records and now seeds a dedicated MySQL 8 catalog on Linode III. All 64,261 valid, unambiguous YouTube identities are searchable, including brands without a verified page slug. Preserve upstream brand codes; never invent a slug or producer code. The original SQLite catalog, mappings and last-attempt/success history have not been recovered. Those timestamps and retirement state remain unknown. The read-only HTTPS service has passed server-side authentication, pagination, backup and separate-schema restoration checks; live Windows HTTPS status and a cross-field artist/title search passed, and a new client instance recovered the saved search with network access disabled. No feed call was made during this recovery.
 
-**Experimental unified host discovery:** ordinary Song Library search keeps local matches immediately and adds debounced Karaoke Nerds results by artist/title. Exact YouTube IDs merge with existing host-edited library entries; different recordings remain distinct. A catalog failure does not erase local matches, and saved offline matches show their age. Service badges show YouTube in place of a local DJ/brand code. Double-click, Enter or Add to Queue opens singer selection; an unknown recording and its request are saved through the single host authority, and approved accepted/staged requests dispatch a serial yt-dlp download immediately. Pending manual moderation waits for approval. Downloading does not start playback, discard a turn or replace a selected version. Progress, waiting-job cancellation and explicit failed-job retries are available. A metadata-only manual link addition remains optional. The separate manually started internet preview remains outside the queue and selected output, and must not overlap karaoke or bumper audio. No paid-provider subscription is connected.
+**Experimental unified host discovery:** Fresh installs use bounded anonymous read-only `/v1/catalog/public/status` and `/tracks` endpoints on the shared service without shipping any credential. Optional private profiles retain separate authorities/caches; invalid selected files are not silently bypassed.  ordinary Song Library search keeps local matches immediately and adds debounced Karaoke Nerds results by artist/title. Exact YouTube IDs merge with existing host-edited library entries; different recordings remain distinct. A catalog failure does not erase local matches, and saved offline matches show their age. Service badges show YouTube in place of a local DJ/brand code. Double-click, Enter or Add to Queue opens singer selection; an unknown recording and its request are saved through the single host authority, and approved accepted/staged requests dispatch a serial yt-dlp download immediately. Pending manual moderation waits for approval. Downloading does not start playback, discard a turn or replace a selected version. Progress, waiting-job cancellation and explicit failed-job retries are available. A metadata-only manual link addition remains optional. The separate manually started internet preview remains outside the queue and selected output, and must not overlap karaoke or bumper audio. No paid-provider subscription is connected.
 
-**Central catalog deployment and desktop connection:** use the isolated MySQL 8 schema on Linode III behind the authenticated HTTPS service at `apps.thepropervolume.com`. MySQL and the reader bind to loopback; dedicated reader, writer, migration and backup accounts are separate from website accounts. Daily private backups and an actual scratch-schema restore are verified. The desktop uses a scoped reader token in a separate private JSON file, selected through Shared Karaoke Nerds Catalog in Preferences; database and provider credentials never reach renderers or singers. Choosing or checking a draft configuration does not change saved searches. Up to 100 validated query/status cache entries, bounded to 20 MiB, support previously saved searches after restart during transient outages. Authentication denial invalidates that scope; malformed replies never fall back to stale data. Display offline/stale status and failed cache persistence. Local-only use remains available. The host show database stays local SQLite. Automatic upstream refresh is disabled, with no provider credential or activation gate installed. Retire every legacy refresher and verify/import real attempt history before one central updater can enforce the durable minimum 24-hour interval. A read-only seed does not establish refresh authority.
+**Central catalog deployment and desktop connection:** use the isolated MySQL 8 schema on Linode III behind the authenticated HTTPS service at `apps.thepropervolume.com`. MySQL and the reader bind to loopback; dedicated reader, writer, migration and backup accounts are separate from website accounts. Daily private backups and an actual scratch-schema restore are verified. Fresh desktop installations use the public read-only catalog without a reader file. A provisioned or explicitly selected private JSON profile uses its scoped reader token instead; database and provider credentials never reach renderers or singers. Choosing or checking a draft configuration does not change saved searches. Up to 100 validated query/status cache entries, bounded to 20 MiB, support previously saved searches after restart during transient outages. Authentication denial invalidates that scope; malformed replies never fall back to stale data. Display offline/stale status and failed cache persistence. Local-only use remains available. The host show database stays local SQLite. Automatic upstream refresh is disabled, with no provider credential or activation gate installed. Retire every legacy refresher and verify/import real attempt history before one central updater can enforce the durable minimum 24-hour interval. A read-only seed does not establish refresh authority.
 
 The community feed supplies metadata and YouTube watch links, not directly downloadable video files. Its brand value is an internal lookup and join key; cache paths use the corresponding verified brand-page slug. Its `Created` value must not be assumed to be a video's publication date. Individual YouTube downloads are connected to the host catalog and library through yt-dlp, with progress, cancellation and persistent media attachment to the same version. Complete H.264/AAC MP4s are verified and published without overwrite; exact-ID ownership sidecars enable hash-checked reuse. Cancellation waits for child-process termination before safe cleanup, retaining uncertain staging. Batch selection, publication-date verification and production deployment remain separate work. A metadata API key does not itself establish rights to download or cache the linked media.
 
@@ -176,7 +176,7 @@ The current implementation, tests and host/singer help should be reviewed whenev
 
 ## 15. Interface mockup specification
 
-This section is the editable source for the generated Night and Day mockup deck. Each `mockup` block describes a screen; the generator draws both themes from the same content. These are design representations, not screenshots. A **Current** badge denotes a screen in the desktop or local singer application; **Partial** includes current behavior plus clearly identified future ideas; **Planned** is not shipped. The native mobile app is an offline preview, and Internet queueing is not yet available. The examples below are fictional and do not imply licensed catalog access.
+This section is the editable source for the generated Night and Day mockup deck. Each `mockup` block describes a screen; the generator draws both themes from the same content. These are design representations, not screenshots. A **Current** badge denotes a screen in the desktop or local singer application; **Partial** includes current behavior plus clearly identified future ideas; **Planned** is not shipped. The native mobile app is an offline preview. The experimental internet relay is deployed and public browser rehearsals passed; physical-phone, venue-network and long-show checks remain. The examples below are fictional and do not imply licensed catalog access.
 
 Maintain the accepted desktop structure: a host workspace and persistent player, a clear singer rotation, uncomplicated singer display, and paired Night and Day designs. Source video and lyric colors are not recolored. Tooltips appear immediately and include assigned shortcuts when available. Host-only and singer-facing data remain separate.
 
@@ -195,141 +195,432 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
 
 ```mockup
 {
-  "id": "D01", "title": "Desktop host", "status": "Current",
+  "id": "D01",
+  "title": "Desktop host",
+  "status": "Current",
   "description": "Library, singer rotation and persistent transport remain visible in one workspace.",
   "layout": "desktop",
-  "navigation": ["Back up show", "Library", "Karaoke Nerds", "Requests", "Singers", "Playlists", "Remote Sessions"], "selected_navigation": "Library",
-  "heading": "Song Library", "toolbar": "Search title, artist, filename or code     Sort     Filter",
-  "import_actions": [{"icon": "importVideo", "label": "Import Video File"}, {"icon": "importFolder", "label": "Import Custom Directory"}],
-  "rows": ["Popular | Nada Surf | PVOL-002", "Example Song | Sample Artist | YouTube", "Another Example | Demo Band", "A Song for Tonight | Sample Artist"],
-  "side_heading": "Singer Rotation", "side_rows": ["ON STAGE | Alex - Popular", "NEXT | Casey - Example Song", "THEN | Jordan - Another Example", "Drag waiting rows or right-click to edit"],
-  "footer_heading": "Now Playing", "footer_rows": ["Alex | Popular", "01:20 / 03:45 | Seek | -10s / +10s | Volume 45%"], "transport_icons": ["playPause", "stop", "skip"],
-  "detail": "Palette cycles blue, pink and purple. Search, Singer Display, Fullscreen and Preferences are icons. Double-click a song to choose a singer and add it to the queue."
+  "navigation": [
+    "Library",
+    "Playlists",
+    "Sources"
+  ],
+  "selected_navigation": "Library",
+  "heading": "Song Library",
+  "toolbar": "Search title, artist, filename or code     Sort     Filter",
+  "import_actions": [
+    {
+      "icon": "importVideo",
+      "label": "Import Video File"
+    },
+    {
+      "icon": "importFolder",
+      "label": "Import Custom Directory"
+    },
+    {
+      "icon": "importCdg",
+      "label": "Import CD+G / ZIP"
+    }
+  ],
+  "rows": [
+    "Popular | Nada Surf | PVOL-002 | 8.2/10 hearts",
+    "Example Song | Sample Artist | YouTube | 9.0/10 hearts",
+    "Another Example | Sample Artist",
+    "A Song for Tonight | Sample Artist"
+  ],
+  "side_heading": "Singer Rotation",
+  "side_rows": [
+    "ON STAGE | Alex - Popular",
+    "NEXT | Casey - Example Song",
+    "THEN | Jordan - Another Example",
+    "Drag waiting rows or right-click to edit"
+  ],
+  "footer_heading": "Now Playing",
+  "footer_rows": [
+    "Alex | Popular",
+    "01:20 / 03:45 | Seek | -10s / +10s | Volume 45%"
+  ],
+  "transport_icons": [
+    "previous",
+    "playPause",
+    "stop",
+    "skip"
+  ],
+  "detail": "File offers Import and Back up show. View offers Appearance, Accent Color and Layout. Play opens the saved singer display; Previous restarts the same song. Host-only links stay at the bottom.",
+  "host_navigation": [
+    "Requests",
+    "Singers",
+    "Remote Sessions"
+  ]
 }
 ```
 
 ```mockup
 {
-  "id": "Q01", "title": "Requests and rotation", "status": "Partial",
+  "id": "Q01",
+  "title": "Requests and rotation",
+  "status": "Partial",
   "description": "Host moderation and the singer rotation, with advanced staff actions reserved for later work.",
   "layout": "desktop",
-  "navigation": ["Back up show", "Library", "Karaoke Nerds", "Requests", "Singers", "Playlists", "Remote Sessions"], "selected_navigation": "Requests",
-  "heading": "Requests", "toolbar": "Pending requests       Request history",
-  "rows": ["Casey | Example Song | Accept / Reject", "Jordan | Another Example | Accepted", "Alex | A Song for Tonight | Withdrawn", "Sam | Example Song | Removed"],
-  "side_heading": "Singer Rotation", "side_rows": ["ON STAGE | Alex", "1 | Casey", "2 | Jordan", "Delete removes focused waiting request"],
-  "footer_heading": "Transport", "footer_rows": ["Singer limit: 3 future requests", "Rotation: fair singer turns"], "transport_icons": ["playPause", "stop", "skip"],
-  "detail": "Current: drag reorder, edit track/singer, timed absence and return. Staged songs stay locked. Duets and audit history remain planned."
+  "navigation": [
+    "Library",
+    "Playlists",
+    "Sources"
+  ],
+  "selected_navigation": "Requests",
+  "heading": "Requests",
+  "toolbar": "Pending requests       Request history",
+  "rows": [
+    "Casey | Example Song | Accept / Reject",
+    "Jordan | Another Example | Accepted",
+    "Alex | A Song for Tonight | Withdrawn",
+    "Sam | Example Song | Removed"
+  ],
+  "side_heading": "Singer Rotation",
+  "side_rows": [
+    "ON STAGE | Alex",
+    "1 | Casey",
+    "2 | Jordan",
+    "Delete removes focused waiting request"
+  ],
+  "footer_heading": "Transport",
+  "footer_rows": [
+    "Singer limit: 3 future requests",
+    "Rotation: fair singer turns"
+  ],
+  "transport_icons": [
+    "previous",
+    "playPause",
+    "stop",
+    "skip"
+  ],
+  "detail": "Current: drag reorder, edit track/singer, timed absence and return. Staged songs stay locked. Duets and audit history remain planned.",
+  "host_navigation": [
+    "Requests",
+    "Singers",
+    "Remote Sessions"
+  ]
 }
 ```
 
 ```mockup
 {
-  "id": "K01", "title": "Host and staff companions", "status": "Planned",
+  "id": "K01",
+  "title": "Host and staff companions",
+  "status": "Planned",
   "description": "Future staff surfaces for authorized transport and request moderation.",
-  "layout": "phones", "phone_titles": ["Host companion", "Staff moderation"],
-  "phone_subtitles": ["Current show", "Requests waiting"],
-  "phone_rows": [["Alex | Popular", "Next: Casey", "Play/Pause", "Stop / Skip", "Audio controls"], ["Casey | Example Song", "Accept / Reject", "Jordan | Another Example", "Singer notes | staff only", "Rotation status"]],
+  "layout": "phones",
+  "phone_titles": [
+    "Host companion",
+    "Staff moderation"
+  ],
+  "phone_subtitles": [
+    "Current show",
+    "Requests waiting"
+  ],
+  "phone_rows": [
+    [
+      "Alex | Popular",
+      "Next: Casey",
+      "Play/Pause",
+      "Stop / Skip",
+      "Audio controls"
+    ],
+    [
+      "Casey | Example Song",
+      "Accept / Reject",
+      "Jordan | Another Example",
+      "Singer notes | staff only",
+      "Rotation status"
+    ]
+  ],
   "detail": "The full Host, Co-host and Moderator roles and these companion apps are not implemented."
 }
 ```
 
 ```mockup
 {
-  "id": "S01", "title": "Singer join and request", "status": "Partial",
-  "description": "The current experimental LAN browser joins by name and sends requests; the native app is an offline preview.",
-  "layout": "phones", "phone_titles": ["Join the show", "Request a song"],
-  "phone_subtitles": ["Private invitation", "Browse loaded songs"],
-  "phone_rows": [["Your name", "Casey", "Join the show", "Access lasts for this page", "Ask host for a new link after reload"], ["Search songs", "Popular | Nada Surf", "Request", "Can't find a song?", "Send title and artist to host"]],
-  "detail": "LAN access requires an explicitly opened room, trusted HTTPS certificate and matching local DNS. Internet and persistent accounts remain planned."
+  "id": "S01",
+  "title": "Singer join and request",
+  "status": "Partial",
+  "description": "The browser joins local or internet sessions by name and sends requests; the native app remains an offline preview.",
+  "layout": "phones",
+  "phone_titles": [
+    "Join the show",
+    "Request a song"
+  ],
+  "phone_subtitles": [
+    "Host shared link",
+    "Browse loaded songs"
+  ],
+  "phone_rows": [
+    [
+      "Your name",
+      "Casey",
+      "Join the show",
+      "Access lasts for this page",
+      "Ask host for help after reload"
+    ],
+    [
+      "Search songs",
+      "Popular | Nada Surf",
+      "Request",
+      "Can't find a song?",
+      "Send title and artist to host"
+    ]
+  ],
+  "detail": "Local invitations require trusted venue HTTPS and DNS; internet sessions use the host’s queue.thepropervolume.com link. Persistent accounts and live native joining remain planned."
 }
 ```
 
 ```mockup
 {
-  "id": "S02", "title": "Singer discovery and queue", "status": "Partial",
+  "id": "S02",
+  "title": "Singer discovery and queue",
+  "status": "Partial",
   "description": "A singer sees their own request status and can withdraw eligible requests.",
-  "layout": "phones", "phone_titles": ["Song library", "Your requests"],
-  "phone_subtitles": ["Loaded songs", "Live status"],
-  "phone_rows": [["Search loaded songs", "Example Song | Sample Artist", "Request", "Load more songs", "Ask for a missing song"], ["Example Song | Accepted", "Withdraw", "Another Example | Staged", "Staged turns stay locked", "Away 1-60 min / Return now"]],
+  "layout": "phones",
+  "phone_titles": [
+    "Song library",
+    "Your requests"
+  ],
+  "phone_subtitles": [
+    "Loaded songs",
+    "Live status"
+  ],
+  "phone_rows": [
+    [
+      "Search loaded songs",
+      "Example Song | Sample Artist",
+      "Request",
+      "Load more songs",
+      "Ask for a missing song"
+    ],
+    [
+      "Example Song | Accepted",
+      "Withdraw",
+      "Another Example | Staged",
+      "Staged turns stay locked",
+      "Away 1-60 min / Return now"
+    ]
+  ],
   "detail": "Current: statuses, withdrawal and own timed availability. One future request while away. Planned: wait estimates and notifications."
 }
 ```
 
 ```mockup
 {
-  "id": "O01", "title": "Singer display", "status": "Current",
+  "id": "O01",
+  "title": "Singer display",
+  "status": "Current",
   "description": "Presentation-only output keeps the karaoke video prominent and leaves source colors unchanged.",
-  "layout": "display", "display_title": "SINGER VIDEO", "display_subtitle": "Lyrics and video appear here", "display_next": "Coming up: Casey  /  Jordan",
+  "layout": "display",
+  "display_title": "SINGER VIDEO",
+  "display_subtitle": "Lyrics and video appear here",
+  "display_next": "Coming up: Casey  /  Jordan",
   "detail": "Video fits the viewport without cropping or scrolling; captions and branding overlay it. Monitor hot-plug still needs verification."
 }
 ```
 
 ```mockup
 {
-  "id": "D08", "title": "Preferences and audio controls", "status": "Partial",
+  "id": "D08",
+  "title": "Preferences and audio controls",
+  "status": "Partial",
   "description": "Grouped, collapsible preferences keep essential show controls in the workspace.",
-  "layout": "settings", "navigation": ["Shared Catalog", "Appearance", "Queue Management", "Library Settings", "Video Downloads & Karaoke Nerds Cache", "Remote Queueing", "Audio Controls", "Singer Display", "Configuration Files"], "selected_navigation": "Audio Controls",
-  "heading": "Audio Controls", "rows": ["Output Device | Explicit device or system default", "Playback Volume | 45%", "Pause Interval | 0 seconds", "Automatic bumper | Opt-in between songs", "Bumper theme | Soft Ambient", "Custom audio | up to 5 files"],
-  "side_heading": "Other groups", "side_rows": ["Appearance | Night / Day / System", "Queue | Rotation, approval, singer limit", "Library | Ordered filename templates", "Singer Display | Lyric backdrop, logo, next singers"],
-  "footer_heading": "Preferences", "footer_rows": ["Cancel", "Save preferences"],
+  "layout": "settings",
+  "navigation": [
+    "Shared Catalog",
+    "Appearance",
+    "Queue Management",
+    "Library Settings",
+    "Video Downloads & Karaoke Nerds Cache",
+    "Remote Queueing",
+    "Audio Controls",
+    "Singer Display",
+    "Keyboard Shortcuts",
+    "Configuration Files"
+  ],
+  "selected_navigation": "Audio Controls",
+  "heading": "Audio Controls",
+  "rows": [
+    "Output Device | Explicit device or system default",
+    "Playback Volume | 45%",
+    "Pause Interval | 0 seconds",
+    "Automatic bumper | Opt-in between songs",
+    "Bumper theme | Soft Ambient",
+    "Custom audio | up to 5 files"
+  ],
+  "side_heading": "Other groups",
+  "side_rows": [
+    "Appearance | Theme, accent and layout",
+    "Queue | Rotation, approval, singer limit",
+    "Keyboard Shortcuts | Multiple bindings, capture and reset",
+    "Singer Display | Lyric backdrop, logo, next singers"
+  ],
+  "footer_heading": "Preferences",
+  "footer_rows": [
+    "Cancel",
+    "Save preferences"
+  ],
   "detail": "Automatic bumper is opt-in and waits for karaoke silence on the selected output. Fades and physical-device verification remain planned."
 }
 ```
 
 ```mockup
 {
-  "id": "B01", "title": "Account and billing", "status": "Planned",
+  "id": "B01",
+  "title": "Account and billing",
+  "status": "Planned",
   "description": "Future host or venue subscriptions; singers participate without a required paid subscription.",
-  "layout": "panels", "heading": "Account and billing", "toolbar": "Future account and service settings",
-  "rows": ["Host or venue account | Sign in and manage account", "Subscription | Plan, renewal and payment settings", "Provider access | Separate catalog entitlements", "Devices and offline access | Subject to provider terms"],
-  "side_heading": "Singer participation", "side_rows": ["Join a show without purchasing a subscription", "Optional profile and personal lists", "Review privacy and account controls"],
-  "footer_heading": "Release gate", "footer_rows": ["Billing, accounts and paid providers are not implemented"],
+  "layout": "panels",
+  "heading": "Account and billing",
+  "toolbar": "Future account and service settings",
+  "rows": [
+    "Host or venue account | Sign in and manage account",
+    "Subscription | Plan, renewal and payment settings",
+    "Provider access | Separate catalog entitlements",
+    "Devices and offline access | Subject to provider terms"
+  ],
+  "side_heading": "Singer participation",
+  "side_rows": [
+    "Join a show without purchasing a subscription",
+    "Optional profile and personal lists",
+    "Review privacy and account controls"
+  ],
+  "footer_heading": "Release gate",
+  "footer_rows": [
+    "Billing, accounts and paid providers are not implemented"
+  ],
   "detail": "Pricing, purchases, external provider access and entitlement models require separate product decisions."
 }
 ```
 
 ```mockup
 {
-  "id": "P01", "title": "Song availability and age policy", "status": "Planned",
+  "id": "P01",
+  "title": "Song availability and age policy",
+  "status": "Planned",
   "description": "Future host-facing controls for policy, visibility and age-appropriate catalog access.",
-  "layout": "panels", "heading": "Song availability", "toolbar": "Show policy   /   Audience settings",
-  "rows": ["Allowed songs | Select available versions", "Excluded songs | Hide selected versions", "Age restricted show | Apply content rules", "Unrated or uncertain | Review before allowing"],
-  "side_heading": "Guest catalog", "side_rows": ["Only policy-eligible songs appear", "Apply policy on direct requests", "Keep host-only notes private"],
-  "footer_heading": "Policy", "footer_rows": ["Domain filtering exists; a complete host policy interface is planned"],
+  "layout": "panels",
+  "heading": "Song availability",
+  "toolbar": "Show policy   /   Audience settings",
+  "rows": [
+    "Allowed songs | Select available versions",
+    "Excluded songs | Hide selected versions",
+    "Age restricted show | Apply content rules",
+    "Unrated or uncertain | Review before allowing"
+  ],
+  "side_heading": "Guest catalog",
+  "side_rows": [
+    "Only policy-eligible songs appear",
+    "Apply policy on direct requests",
+    "Keep host-only notes private"
+  ],
+  "footer_heading": "Policy",
+  "footer_rows": [
+    "Domain filtering exists; a complete host policy interface is planned"
+  ],
   "detail": "The preview describes the intended interface; existing policy rules do not constitute full moderation or account permissions."
 }
 ```
 
 ```mockup
 {
-  "id": "A01", "title": "Local control API", "status": "Planned",
-  "description": "Future optional local API and CLI share the host's single authoritative show state.",
-  "layout": "panels", "heading": "Local control", "toolbar": "API access and integrations",
-  "rows": ["Local API | Disabled until explicitly enabled", "Access tokens | Scoped and revocable", "Command line | Actions and status", "Diagnostics | Avoid private paths and notes"],
-  "side_heading": "Authority", "side_rows": ["No second database writer", "Authenticate every operation", "Persist results before acknowledgement"],
-  "footer_heading": "Not yet available", "footer_rows": ["The existing LAN singer service is not a general local API"],
-  "detail": "A complete API, CLI, role model and integration credentials are not implemented."
+  "id": "A01",
+  "title": "Local control API",
+  "status": "Partial",
+  "description": "Initial authenticated read and settings-navigation API/CLI passed a Windows app rehearsal; complete show control remains planned.",
+  "layout": "panels",
+  "heading": "Local control",
+  "toolbar": "API access and integrations",
+  "rows": [
+    "Local API | Disabled until explicitly enabled",
+    "Read | Capabilities, state, settings and shortcuts",
+    "Navigate | Preferences and Keyboard Shortcuts",
+    "Credentials | Owner-only, rotated each start"
+  ],
+  "side_heading": "Authority",
+  "side_rows": [
+    "No second database writer",
+    "Authenticate every API operation",
+    "Single host authority"
+  ],
+  "footer_heading": "Planned Control",
+  "footer_rows": [
+    "Playback, queue and provider mutations",
+    "Events, pagination and user-scoped tokens"
+  ],
+  "detail": "The actual Windows app and compiled CLI passed private-profile read/navigation and lifecycle checks. Distributed wrapper/package verification is pending; full mutations and broader permissions are not implemented."
 }
 ```
 
 ```mockup
 {
-  "id": "S06", "title": "Singer library and planning", "status": "Planned",
+  "id": "S06",
+  "title": "Singer library and planning",
+  "status": "Planned",
   "description": "Future personal favorites and early song lists do not reserve a live turn.",
-  "layout": "phones", "phone_titles": ["My songs", "Plan for a show"],
-  "phone_subtitles": ["Favorites and memory", "A list is not a request"],
-  "phone_rows": [["Favorites", "Example Song | Sample Artist", "Remembered key | future", "Playlists", "Private singer preferences"], ["Friday song ideas", "Another Example", "A Song for Tonight", "Request after joining", "No queue turn is reserved"]],
+  "layout": "phones",
+  "phone_titles": [
+    "My songs",
+    "Plan for a show"
+  ],
+  "phone_subtitles": [
+    "Favorites and memory",
+    "A list is not a request"
+  ],
+  "phone_rows": [
+    [
+      "Favorites",
+      "Example Song | Sample Artist",
+      "Remembered key | future",
+      "Playlists",
+      "Private singer preferences"
+    ],
+    [
+      "Friday song ideas",
+      "Another Example",
+      "A Song for Tonight",
+      "Request after joining",
+      "No queue turn is reserved"
+    ]
+  ],
   "detail": "The current desktop has host-managed playlists and history. Personal accounts, favorites, remembered settings and prearrival lists remain planned."
 }
 ```
 
 ```mockup
 {
-  "id": "S08", "title": "Duet and group invitations", "status": "Planned",
+  "id": "S08",
+  "title": "Duet and group invitations",
+  "status": "Planned",
   "description": "Future group invitations require an explicit response and create one shared performance.",
-  "layout": "phones", "phone_titles": ["Invite a singer", "Respond to invitation"],
-  "phone_subtitles": ["One shared song", "Your choice"],
-  "phone_rows": [["Example Song", "Lead singer: Casey", "Invite Jordan", "Waiting for response", "Cancel invitation"], ["Casey invited you", "Example Song", "Accept", "Decline", "No turn until confirmed"]],
+  "layout": "phones",
+  "phone_titles": [
+    "Invite a singer",
+    "Respond to invitation"
+  ],
+  "phone_subtitles": [
+    "One shared song",
+    "Your choice"
+  ],
+  "phone_rows": [
+    [
+      "Example Song",
+      "Lead singer: Casey",
+      "Invite Jordan",
+      "Waiting for response",
+      "Cancel invitation"
+    ],
+    [
+      "Casey invited you",
+      "Example Song",
+      "Accept",
+      "Decline",
+      "No turn until confirmed"
+    ]
+  ],
   "detail": "Duets, group identities, acceptance and group-turn scheduling are not implemented."
 }
 ```
@@ -345,33 +636,74 @@ The separate embedded preview still uses system audio and requires internet; it 
 
 ```mockup
 {
-  "id": "D09", "title": "Shared catalog connection", "status": "Partial",
-  "description": "Host-only catalog discovery uses a scoped service connection, with freshness shown honestly.",
-  "layout": "settings", "navigation": ["Shared Catalog", "Appearance", "Queue Management", "Audio Controls"], "selected_navigation": "Shared Catalog",
-  "heading": "Shared Karaoke Nerds Catalog", "rows": ["Use shared catalog | Enabled when configured", "Choose configuration | Private client JSON", "Check connection | Separate from saving", "Catalog freshness | Unknown until verified"],
-  "side_heading": "Offline behavior", "side_rows": ["Previously saved searches | Available after restart", "New searches | Connection required", "Authentication rejected | Replace client configuration"],
-  "footer_heading": "Preferences", "footer_rows": ["Cancel", "Save preferences"],
+  "id": "D09",
+  "title": "Shared catalog connection",
+  "status": "Partial",
+  "description": "Host discovery uses public read-only search by default or an optional private profile; freshness remains explicit.",
+  "layout": "settings",
+  "navigation": [
+    "Shared Catalog",
+    "Appearance",
+    "Queue Management",
+    "Audio Controls"
+  ],
+  "selected_navigation": "Shared Catalog",
+  "heading": "Shared Karaoke Nerds Catalog",
+  "rows": [
+    "Use shared catalog | Public read-only default",
+    "Choose configuration | Optional private profile",
+    "Check connection | Separate from saving",
+    "Catalog freshness | Unknown until verified"
+  ],
+  "side_heading": "Offline behavior",
+  "side_rows": [
+    "Previously saved searches | Available after restart",
+    "New searches | Connection required",
+    "Authentication rejected | Replace client configuration"
+  ],
+  "footer_heading": "Preferences",
+  "footer_rows": [
+    "Cancel",
+    "Save preferences"
+  ],
   "detail": "Illustrative connection state. No database or provider keys enter the interface. Feed refresh is disabled pending verified retirement and cooldown history."
 }
 ```
 
-
 ```mockup
 {
- "id":"D10", "title":"Internet singer session", "status":"Partial",
- "description":"Start a hosted singer session with an editable short address and a public join link.",
- "layout":"panels", "heading":"Remote Sessions", "toolbar":"Internet singer requests at queue.thepropervolume.com",
- "rows":["Session name | proper-volume", "Start Session | Explicit host action", "Singer link | queue.thepropervolume.com/proper-volume", "Copy Link | Share with your guests", "End Session | Revoke internet access"],
- "side_heading":"Connected Singers", "side_rows":["Casey | Joined", "Jordan | Joined", "Remove Access | Revoke current session"],
- "footer_heading":"Anyone with this link can join", "footer_rows":["Keep the booth running", "Local queue remains authoritative"],
- "detail":"Illustrative session. Temporary network loss keeps the same receipt scope; End or replacement invalidates its generation. Accounts, paid providers and physical-device verification remain separate."
+  "id": "D10",
+  "title": "Internet singer session",
+  "status": "Partial",
+  "description": "Start a hosted singer session with an editable short address and a public join link.",
+  "layout": "panels",
+  "heading": "Remote Sessions",
+  "toolbar": "Internet singer requests at queue.thepropervolume.com",
+  "rows": [
+    "Session name | proper-volume",
+    "Start Session | Explicit host action",
+    "Singer link | queue.thepropervolume.com/proper-volume",
+    "Copy Link | Share with your guests",
+    "End Session | Revoke internet access"
+  ],
+  "side_heading": "Connected Singers",
+  "side_rows": [
+    "Casey | Joined",
+    "Jordan | Joined",
+    "Remove Access | Revoke current session"
+  ],
+  "footer_heading": "Anyone with this link can join",
+  "footer_rows": [
+    "Keep the booth running",
+    "Local queue remains authoritative"
+  ],
+  "detail": "Illustrative session. Temporary network loss keeps the same receipt scope; End or replacement invalidates its generation. Accounts, paid providers and physical-device verification remain separate."
 }
 ```
 
-
 ### Application icon review
 
-The approved color preference for the current icon exploration is vivid purple `#601CE9`, cyan `#0EB7FF`, deep ink `#19102D` and cream `#FFFFF3`. This approves the palette, not a final mark. Review four original TPV lettermarks first, then a vintage grille microphone with volume waves and a darker headphones/faders refinement. Every direction includes light and dark editions; pink is a secondary alternate only. The earlier standalone V is no longer recommended. Previews and editable assets are linked from `docs/app-icon-options.md`; the packaged application still uses its default icon pending selection.
+The owner selected **Velvet Script (option 1 in the later vintage/cursive exploration)** for the next pre-release: an angled vintage capsule microphone, cyan sound arcs and Lobster script lettering. This is distinct from the older block-letter option 1. Its approved palette is vivid purple `#601CE9`, cyan `#0EB7FF`, deep ink `#19102D` and cream `#FFFFF3`. Dark is the installed identity, with matching light versions. The committed `assets/branding` masters and reproducible exports cover Windows ICO/NSIS, macOS ICNS, Linux PNGs, web favicons, horizontal TPV/full-name wordmarks and mobile/adaptive icons. Package targets and Host/Singer Display windows reference these assets; host-selected display logos remain independent. Previously generated installers retain the default Electron icon until rebuilt. Native package integration and actual taskbar/launcher/Dock appearance require platform verification. See `docs/app-icon-options.md` and `assets/branding/README.md`. The earlier standalone V and older alternatives remain historical only.
 
 ```mockup
 {
@@ -397,12 +729,81 @@ The approved color preference for the current icon exploration is vivid purple `
     "LRC lyrics | Planned, not yet playable"
   ],
   "side_heading": "Related Settings",
-  "side_rows": ["Logo and next singers | Separate display choices"],
+  "side_rows": [
+    "Logo and next singers | Separate display choices"
+  ],
   "footer_heading": "Preferences",
   "footer_rows": [
     "Cancel",
     "Save preferences"
   ],
   "detail": "The TPV animation is bundled and loops behind the original CDG lyrics. Reimport existing CDG conversions to change their backdrop; ordinary videos keep their own picture."
+}
+```
+
+## Shared Heart Ratings and Current Host Controls
+
+**Available in 0.4.0:** exact recordings can receive 1–10-heart host ratings through a separate authenticated service backed by its own MySQL schema. Search, queue and On Stage controls show aggregate average/count and the active host vote. One current vote per provisioned host voter and recording is replaced or cleared explicitly; public lookup never exposes identities or own votes. Reader credentials cannot write. No token, database credential, media path or private note is published in a rating response. YouTube IDs remain case-sensitive; local MP4 fingerprints identify exact assets, so separately converted CDG backdrops currently produce distinct rating identities. Guest/singer account ownership and remote self-service voting remain planned.
+
+The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.md`. Source-based Windows regressions and live QA-only service tests cover public catalog discovery, host voting, restart persistence, permissions, menu routing, template saving, transport readiness and shortcut capture. Physical display/audio/phone and native installation checks remain separate.
+
+```mockup
+{
+  "id": "D12",
+  "title": "Keyboard shortcut editor",
+  "status": "Current",
+  "description": "Wide grouped shortcut editing with multiple bindings, conflicts and immediate saved reset.",
+  "layout": "panels",
+  "toolbar": "Click a binding to record a replacement; Add assigns another shortcut.",
+  "heading": "Application",
+  "rows": [
+    "Search Song Library | Ctrl+F, Cmd+F",
+    "Open Preferences | Ctrl+Comma, Cmd+Comma, Alt+Comma",
+    "Keyboard Shortcuts | Ctrl+Slash, Cmd+Slash, F1"
+  ],
+  "side_heading": "Playback and Queue",
+  "side_rows": [
+    "Play/Pause | Spacebar",
+    "Player Fullscreen | F, Shift+F",
+    "Previous | Unassigned",
+    "Remove Waiting Request | Delete, queue only"
+  ],
+  "footer_heading": "Customization",
+  "footer_rows": [
+    "Reset to Defaults | Restore and save all defaults",
+    "Edit custom shortcuts | Open keybindings.json"
+  ],
+  "detail": "Save Shortcuts applies the draft independently from other preferences. Printable custom bindings do not steal text entry, and shortcut capture does not trigger app actions."
+}
+```
+
+```mockup
+{
+  "id": "D13",
+  "title": "Song sources",
+  "status": "Partial",
+  "description": "Karaoke Nerds, manual YouTube links and approved-provider connection status in one place.",
+  "layout": "panels",
+  "toolbar": "Sources | Karaoke Nerds, Custom YouTube Video Importer and Third-Party Services",
+  "heading": "Karaoke Nerds",
+  "rows": [
+    "Search | Artist and title",
+    "Public shared catalog | No private config needed",
+    "Saved searches | Offline results show their age",
+    "Choose a version | Request in ordinary Song Library"
+  ],
+  "side_heading": "YouTube Video Importer",
+  "side_rows": [
+    "Video link | Exact YouTube recording",
+    "Artist and title | Host supplied metadata",
+    "Add to Library | Save metadata only",
+    "Queue or Download | Permanent yt-dlp acquisition"
+  ],
+  "footer_heading": "Third-Party Services",
+  "footer_rows": [
+    "KaraFun and Party Tyme | Playback access pending",
+    "Sunfly and Stingray | Developer access pending"
+  ],
+  "detail": "Provider statuses are not connected subscriptions. Downloaded videos use normal local playback; shared heart ratings describe exact recordings."
 }
 ```

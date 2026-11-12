@@ -72,8 +72,10 @@ def load(path: Path) -> tuple[dict, list[dict], str]:
                 raise ValueError(f"Screen {item['id']} must define its headings and rows.")
             if item['layout'] in ('desktop', 'settings') and (not isinstance(item.get('navigation'), list) or not all(isinstance(row, str) for row in item['navigation'])):
                 raise ValueError(f"Screen {item['id']} must define navigation.")
-        if 'import_actions' in item and (not isinstance(item['import_actions'], list) or len(item['import_actions']) != 2 or not all(isinstance(action, dict) and action.get('icon') in ('importVideo', 'importFolder') and isinstance(action.get('label'), str) and action['label'].strip() for action in item['import_actions'])):
-            raise ValueError(f"Screen {item['id']} needs two valid import actions.")
+        if 'import_actions' in item and (not isinstance(item['import_actions'], list) or len(item['import_actions']) not in (2, 3) or not all(isinstance(action, dict) and action.get('icon') in ('importVideo', 'importFolder', 'importCdg') and isinstance(action.get('label'), str) and action['label'].strip() for action in item['import_actions'])):
+            raise ValueError(f"Screen {item['id']} needs two or three valid import actions.")
+        if 'host_navigation' in item and (not isinstance(item['host_navigation'], list) or len(item['host_navigation']) > 4 or not all(isinstance(entry, str) and entry.strip() for entry in item['host_navigation'])):
+            raise ValueError(f"Screen {item['id']} needs valid host navigation labels.")
         if item['layout'] == 'settings' and (len(item['footer_rows']) < 2 or item.get('selected_navigation') not in item['navigation']):
             raise ValueError(f"Screen {item['id']} needs two footer actions and a selected section.")
         if item['layout'] == 'panels' and not isinstance(item.get('toolbar'), str):
@@ -142,6 +144,12 @@ def icon(c, kind, x, y, p):
     elif kind == 'skip':
         shape = c.beginPath(); shape.moveTo(x + 9, y + 8); shape.lineTo(x + 9, y + 20); shape.lineTo(x + 20, y + 14); shape.close()
         c.drawPath(shape, stroke=0, fill=1); c.rect(x + 23, y + 8, 2, 12, stroke=0, fill=1)
+    elif kind == 'previous':
+        shape = c.beginPath(); shape.moveTo(x + 25, y + 8); shape.lineTo(x + 25, y + 20); shape.lineTo(x + 14, y + 14); shape.close()
+        c.drawPath(shape, stroke=0, fill=1); c.rect(x + 9, y + 8, 2, 12, stroke=0, fill=1)
+    elif kind == 'importCdg':
+        c.circle(x + 17, y + 14, 9, stroke=1, fill=0); c.circle(x + 17, y + 14, 2, stroke=1, fill=0)
+        c.line(x + 22, y + 8, x + 29, y + 8); c.line(x + 25.5, y + 4.5, x + 25.5, y + 11.5)
     elif kind == 'importVideo':
         c.roundRect(x + 5, y + 8, 17, 12, 2, stroke=1, fill=0)
         c.line(x + 22, y + 17, x + 28, y + 20); c.line(x + 28, y + 20, x + 28, y + 8); c.line(x + 28, y + 8, x + 22, y + 11)
@@ -179,7 +187,7 @@ def page_heading(c, meta, item, theme, page):
 def top_bar(c, x, y, w, p, title, product, actions):
     rect(c, x, y, w, 44, p['panel'])
     rect(c, x + 17, y + 11, 22, 22, p['accent'], 5)
-    line(c, 'V', x + 23, y + 16, 'TPVBold', 10, p['background'])
+    line(c, 'TPV', x + 19, y + 17, 'TPVBold', 7, p['background'])
     line(c, product.upper(), x + 49, y + 25, 'TPVBold', 10, p['text'])
     line(c, title, x + 49, y + 11, size=9, fill=p['muted'])
     for index, name in enumerate(actions):
@@ -210,16 +218,21 @@ def desktop(c, item, p, product, actions, settings=False):
         selected = entry == item.get('selected_navigation')
         if selected:
             rect(c, x + 10, ny - 7, nav_w - 20, 30, p['card'], 5)
-        line(c, entry, x + 19, ny + 3, 'TPVBold' if selected else 'TPV', 11, p['accent'] if selected else p['muted'], nav_w - 36)
+        line(c, entry, x + 19, ny + 3, 'TPVBold', 12, p['accent'] if selected else p['muted'], nav_w - 36)
+    host_entries = item.get('host_navigation', [])
+    if host_entries:
+        line(c, 'HOST WORKSPACE', x + 18, y + 39 + len(host_entries) * 38, 'TPVBold', 10, p['muted'])
+        for index, entry in enumerate(host_entries):
+            line(c, entry, x + 19, y + 30 + (len(host_entries) - index - 1) * 38, 'TPVBold', 12, p['muted'], nav_w - 36)
     bx, bw = x + nav_w + 20, w - nav_w - 40
     bottom = 92
     main_w = int(bw * .59)
     divider(c, bx + main_w + 14, y + bottom, bx + main_w + 14, y + h - 45, p['line'])
     line(c, item['heading'], bx + 2, y + h - 80, 'TPVBold', 19, p['text'], main_w)
-    for index, action in enumerate(item.get('import_actions', [])):
-        action_x = bx + 173 + index * 163
+    import_actions = item.get('import_actions', [])
+    for index, action in enumerate(import_actions):
+        action_x = bx + main_w - len(import_actions) * 40 + index * 40
         icon(c, action['icon'], action_x, y + h - 90, p)
-        line(c, action['label'], action_x + 38, y + h - 79, size=8, fill=p['text'], max_width=122)
     rect(c, bx, y + h - 122, main_w, 30, p['card'], 5)
     line(c, item.get('toolbar', 'Settings and controls'), bx + 11, y + h - 112, size=10, fill=p['muted'], max_width=main_w - 20)
     for index, entry in enumerate(item.get('rows', [])[:5]):
@@ -234,7 +247,7 @@ def desktop(c, item, p, product, actions, settings=False):
     if footer: line(c, footer[0], bx, y + 37, 'TPVBold', 12, p['text'], 240)
     if item.get('transport_icons'):
         for index, name in enumerate(item['transport_icons']): icon(c, name, bx + 260 + index * 43, y + 26, p)
-        if len(footer) > 1: line(c, footer[1], bx + 423, y + 37, size=11, fill=p['text'], max_width=300)
+        if len(footer) > 1: line(c, footer[1], bx + max(423, 260 + len(item['transport_icons']) * 43 + 12), y + 37, size=11, fill=p['text'], max_width=300)
     else:
         for index, entry in enumerate(footer[1:3]): line(c, entry, bx + (index + 1) * 260, y + 37, size=12, fill=p['text'], max_width=245)
     divider(c, bx, y + 15, x + w - 34, y + 15, p['line'])

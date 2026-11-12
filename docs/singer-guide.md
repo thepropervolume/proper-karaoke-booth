@@ -1,6 +1,6 @@
-# Singer guide for development version 0.3.0
+# Singer guide for development version 0.4.0
 
-The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The internet relay deployment and public end-to-end testing are still pending, so do not depend on it for a show yet. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
+The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The experimental relay is deployed and public browser request/recovery rehearsals passed; physical-phone, venue-network and long-show checks remain. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
 
 ## Join from the venue network
 
@@ -10,7 +10,7 @@ Your invitation can be used by anyone who has it until it expires or the host re
 
 ## Join an internet session
 
-When the host offers an internet session, open their shared link, enter your name and browse or request songs from their published library. This path is being prepared and has not yet passed a public end-to-end test. If a request response is uncertain after a connection interruption, use the offered action to check its outcome; only then explicitly retry the original request if needed. The retry preserves its original ID and contents and is not sent automatically. Ask the host for help if the session has ended or your link no longer works.
+When the host offers an internet session, open their shared link, enter your name and browse or request songs from their published library. The host’s queue.thepropervolume.com link works over venue Wi-Fi or mobile internet. Public browser rehearsals passed; actual iOS/Android devices and venue networks still need checks. If a request response is uncertain after a connection interruption, use the offered action to check its outcome; only then explicitly retry the original request if needed. The retry preserves its original ID and contents and is not sent automatically. Ask the host for help if the session has ended or your link no longer works.
 
 ## Request an available song
 
@@ -25,14 +25,18 @@ When the host offers an internet session, open their shared link, enter your nam
 
 Tell the host the song title, your name and, if known, the artist. They can save it under **Can't Find a Song?** in the library. It appears in the host's **Unavailable Song Requests** list, but saving it does not add the recording to the library or put you in the rotation. The host can privately track whether a request is being reviewed, fulfilled or declined; that status is not shown on the singer page. The host needs an available recording before it can be requested for playback.
 
-Your singer name and request information are stored locally for the host’s show. A remote relay handles guest requests when an internet session is available; public service and device testing are pending. The host can create singer playlists and review performances completed or skipped since the history feature was added. Personal self-service, favorites and cross-device profiles are not yet available.
+Your singer name and request information are stored locally for the host’s show. A remote relay handles guest requests when an internet session is available; public browser service tests passed, while physical-device and venue-network checks remain. The host can create singer playlists and review performances completed or skipped since the history feature was added. Personal self-service, favorites and cross-device profiles are not yet available.
 
 ## Step away and return
 
-On the local singer page, choose 1–60 whole minutes under availability, or use the return action when back. The host can do this for you. While unavailable you can have one upcoming request; existing extras are retained but block additions. You become eligible at the saved return time in the normal FIFO/fair order, subject to host manual order and the staged song. Returning does not start playback. If already staged or singing, ask the host before stepping away. After an uncertain connection result, check the outcome before another change. See [availability rules](singer-availability.md).
+On the singer page, for either local or internet sessions, choose 1–60 whole minutes under availability, or use the return action when back. The host can do this for you. While unavailable you can have one upcoming request; existing extras are retained but block additions. You become eligible at the saved return time in the normal FIFO/fair order, subject to host manual order and the staged song. Returning does not start playback. If already staged or singing, ask the host before stepping away. After an uncertain connection result, check the outcome before another change. See [availability rules](singer-availability.md).
 
-The desktop installer includes the default silent lyric backdrop, but does not contain private catalog configuration, song media, yt-dlp or FFmpeg. Those are host setup requirements. A host catalog outage does not automatically remove already loaded songs or saved videos from the show. Development versions remain `0.x.y`; the approved official release will be `1.0.0`.
+The current desktop source includes the default silent lyric backdrop, but installers do not contain private catalog configuration, song media, yt-dlp or FFmpeg. Fresh 0.4.0 catalog discovery needs no private reader file. The host sets up media tools and separately provisioned remote/rating profiles where used; package verification for this update is still pending. A host catalog outage does not automatically remove already loaded songs or saved videos from the show. Development versions remain `0.x.y`; the approved official release will be `1.0.0`.
 
 ## CDG Lyrics and Backgrounds
 
 New CDG songs use the host’s TPV animated backdrop by default, with the original lyrics over the animation. The host can change the background before import. Your selected recording and song audio do not change. Existing converted songs may still show their earlier background. LRC lyric playback is planned.
+
+## Recording Heart Ratings
+
+The host can view a recording’s shared 1–10-heart score in library search and the queue and, with a provisioned rating profile, save one host vote for that exact recording. These hearts describe the recording and are separate from Clean/Explicit content restrictions or a singer performance score. Remote singer voting and account ownership are not implemented yet; ask the host if you want to discuss a recording’s quality.
