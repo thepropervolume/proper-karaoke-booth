@@ -1,6 +1,7 @@
 export type MetadataFormat = 'artist-title' | 'title-artist' | 'filename';
 type Field = 'artist' | 'title' | 'djCode' | 'trackNumber';
-type Part = { literal: string } | { field: Field };
+/** An unnamed field consumes an unused/custom placeholder without storing it. */
+type Part = { literal: string } | { field: Field | undefined };
 type Fields = Partial<Record<Field, string>>;
 
 export type ParsedMetadata = {
@@ -39,7 +40,8 @@ function compileTemplate(template: string): Part[] {
     throw new Error('Each template must be 1–512 characters, without surrounding whitespace or backslashes. Use / between folders.');
   // MP4 is the supported input format; templates may include or omit its extension.
   const pattern = template.replace(/\.mp4$/i, '');
-  const parts: Part[] = [], seen = new Set<Field>();
+  const parts: Part[] = [];
+  let hasTitle = false;
   let index = 0;
   while (index < pattern.length) {
     const open = pattern.indexOf('{', index);
@@ -55,13 +57,14 @@ function compileTemplate(template: string): Part[] {
     if (literal) parts.push({ literal });
     const close = pattern.indexOf('}', open + 1);
     if (close < 0) throw new Error('Unmatched brace in metadata template.');
-    const field = fieldName(pattern.slice(open + 1, close));
-    if (!field) throw new Error('Unknown metadata field in template.');
-    if (seen.has(field)) throw new Error(`Metadata field ${field} occurs more than once.`);
+    const name = pattern.slice(open + 1, close);
+    if (!name.trim() || /[{}\/\x00-\x1f\x7f]/.test(name)) throw new Error('Metadata placeholders need a nonempty name without braces, slashes or control characters.');
+    const field = fieldName(name);
     if (parts.length && 'field' in parts[parts.length - 1]) throw new Error('Metadata fields must be separated by a literal.');
-    seen.add(field); parts.push({ field }); index = close + 1;
+    hasTitle ||= field === 'title';
+    parts.push({ field }); index = close + 1;
   }
-  if (!seen.has('title')) throw new Error('Each template must include {title} or {trackName}.');
+  if (!hasTitle) throw new Error('Each template must include {title} or {trackName}.');
   if (template.startsWith('/') || template.endsWith('/') || template.includes('//'))
     throw new Error('Templates must describe complete path components separated by single slashes.');
   return parts;
@@ -77,11 +80,20 @@ export function validateMetadataTemplates(value: unknown): string[] {
 
 function matches(parts: Part[], input: string): { results: Fields[]; truncated: boolean } {
   const results: Fields[] = [];
+  const resultKeys = new Set<string>();
   let steps = 0, truncated = false;
   const visit = (partIndex: number, offset: number, fields: Fields): void => {
     if (results.length >= 2) return;
     if (++steps > 4096) { truncated = true; return; }
-    if (partIndex === parts.length) { if (offset === input.length) results.push(fields); return; }
+    if (partIndex === parts.length) {
+      if (offset === input.length) {
+        // Different splits of ignored variables must not hide a later distinct
+        // artist/title result by exhausting the two-result ambiguity limit.
+        const key = metadataKey(fields);
+        if (!resultKeys.has(key)) { resultKeys.add(key); results.push(fields); }
+      }
+      return;
+    }
     const part = parts[partIndex];
     if ('literal' in part) {
       if (input.startsWith(part.literal, offset)) visit(partIndex + 1, offset + part.literal.length, fields);
@@ -92,14 +104,23 @@ function matches(parts: Part[], input: string): { results: Fields[]; truncated: 
     let end = literal === null ? input.length : input.indexOf(literal, offset);
     while (end >= 0) {
       const captured = input.slice(offset, end).trim();
-      if (captured && !captured.includes('/') && (part.field !== 'trackNumber' || /^\d+$/.test(captured)))
-        visit(partIndex + 1, end, { ...fields, [part.field]: captured });
+      if (captured && !captured.includes('/') && (part.field !== 'trackNumber' || /^\d+$/.test(captured))) {
+        const previous = part.field ? fields[part.field] : undefined;
+        // Repeated known fields constrain the match rather than overwriting
+        // one another. Preserve the first spelling, ignoring case differences.
+        if (previous === undefined || previous.toLocaleLowerCase('en-US') === captured.toLocaleLowerCase('en-US'))
+          visit(partIndex + 1, end, part.field && previous === undefined ? { ...fields, [part.field]: captured } : fields);
+      }
       if (literal === null || results.length >= 2 || truncated) break;
       end = input.indexOf(literal, end + 1);
     }
   };
   visit(0, 0, {});
   return { results, truncated };
+}
+
+function metadataKey(fields: Fields): string {
+  return JSON.stringify([fields.title ?? '', fields.artist ?? '', fields.djCode ?? '', fields.trackNumber ?? '']);
 }
 
 /** Match against the path suffix; / or \\ in a source path both delimit folders.
@@ -112,7 +133,6 @@ export function metadataFromPath(path: string, templates: readonly string[], fal
   components.push(filename);
   let winner: { fields: Fields; template: string } | undefined;
   let ambiguous = false;
-  const key = (fields: Fields) => JSON.stringify([fields.title ?? '', fields.artist ?? '', fields.djCode ?? '', fields.trackNumber ?? '']);
   for (const template of templates) {
     const count = template.split('/').length;
     if (components.length < count) continue;
@@ -122,7 +142,7 @@ export function metadataFromPath(path: string, templates: readonly string[], fal
     if (match.truncated) ambiguous = true;
     for (const fields of match.results) {
       if (!winner) winner = { fields, template };
-      else if (key(fields) !== key(winner.fields)) ambiguous = true;
+      else if (metadataKey(fields) !== metadataKey(winner.fields)) ambiguous = true;
     }
   }
   if (!winner) return { ...metadataFromFilename(stem, fallback), matchedTemplate: null, ambiguous };
