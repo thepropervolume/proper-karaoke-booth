@@ -1,3 +1,4 @@
+import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Run after building: node scripts/singer-availability-smoke.mjs
 // Initializes a disposable show, closes it, then seeds synthetic history before reopening.
 import assert from 'node:assert/strict';
@@ -48,19 +49,19 @@ try {
   await row.getByRole('button', { name: 'Mark unavailable', exact: true }).click();
   await row.getByText('Unavailable · back in 1 min', { exact: true }).waitFor();
   await host.getByRole('button', { name: 'Stage next', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).stagedRequestId === 'b1');
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'b1');
   await row.getByRole('button', { name: 'Return now', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).singers.find(s => s.id === 'a').unavailableUntilMs === 0);
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).singers.find(s => s.id === 'a').unavailableUntilMs === 0);
   assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'b1');
   await host.getByRole('button', { name: 'Release staged song', exact: true }).click();
   await host.getByRole('button', { name: 'Stage next', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).stagedRequestId === 'a1');
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'a1');
   host.once('dialog', dialog => dialog.dismiss());
   await row.getByRole('button', { name: 'Mark unavailable', exact: true }).click();
   assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'a1');
   host.once('dialog', dialog => dialog.accept());
   await row.getByRole('button', { name: 'Mark unavailable', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).stagedRequestId === null);
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === null);
   let state = await host.evaluate(() => window.tpv.getState());
   const deadline = state.singers.find(s => s.id === 'a').unavailableUntilMs;
   assert.ok(deadline > Date.now());
@@ -85,7 +86,7 @@ try {
   await host.locator('[data-queue-list]').getByText('Unavailable · back in 1 min', { exact: true }).waitFor();
   await host.waitForFunction(() => Array.from(document.querySelectorAll('[data-queue-list] strong')).map(e => e.textContent).join(',') === 'Alex,Ben,Casey');
   await host.getByRole('button', { name: 'Stage next', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).stagedRequestId === 'a1');
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'a1');
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
   console.log('Singer absence, early return, staged confirmation, restart and timed queue reintegration passed.');
 } finally {

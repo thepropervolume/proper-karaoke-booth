@@ -1,3 +1,4 @@
+import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Run after building: node scripts/queue-edit-smoke.mjs
 // Initializes a disposable show, closes it, then seeds synthetic history before reopening.
 import assert from 'node:assert/strict';
@@ -45,7 +46,7 @@ try {
   let queue = host.locator('[data-queue-list]');
   await queue.getByText('Casey', { exact: true }).click();
   await host.getByRole('button', { name: 'Move up', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).manualQueueOrder?.[1] === 'c1');
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).manualQueueOrder?.[1] === 'c1');
   await host.waitForFunction(() => Array.from(document.querySelectorAll('[data-queue-list] strong')).map(e => e.textContent).join(',') === 'Alex,Casey,Ben');
   assert.deepEqual(await queue.locator('strong').allTextContents(), ['Alex', 'Casey', 'Ben']);
   await queue.getByText('Casey', { exact: true }).click({ button: 'right' });
@@ -55,7 +56,7 @@ try {
   await edit.getByLabel('Singer', { exact: true }).selectOption('b');
   await edit.getByLabel('Chosen track').selectOption('v2');
   await edit.getByRole('button', { name: 'Save request' }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).requests.find(r => r.id === 'c1').versionId === 'v2');
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).requests.find(r => r.id === 'c1').versionId === 'v2');
   let state = await host.evaluate(() => window.tpv.getState());
   assert.equal(state.requests.find(r => r.id === 'c1').singerId, 'b');
   assert.equal(state.requests.find(r => r.id === 'c1').round, 2);

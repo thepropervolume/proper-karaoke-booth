@@ -1,3 +1,4 @@
+import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Run with: node scripts/interaction-smoke.mjs <repository> <synthetic-mp4>
 // Requires a built application, platform-native Electron, playwright-core and a
 // synthetic H.264/AAC MP4 of at least 20 seconds (never a real song).
@@ -127,7 +128,7 @@ try {
   const songs = host.getByRole('listbox', { name: 'Songs' });
   // Search the actual filename extension, which is not part of the song metadata.
   const librarySearch = host.getByRole('searchbox', { name: 'Search library' });
-  await host.waitForFunction(async () => Object.values(await window.tpv.getLibraryFilenames()).some(name => name.endsWith('.mp4')));
+  await waitForHostCondition(host, async () => Object.values(await window.tpv.getLibraryFilenames()).some(name => name.endsWith('.mp4')));
   await librarySearch.fill('.mp4');
   await songs.getByRole('option').filter({ hasText: 'Popular' }).waitFor();
   await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('missing-artist');
@@ -207,7 +208,7 @@ try {
   await bumperPanel.getByRole('button', { name: 'Add audio (1/5)' }).waitFor();
   if (availableOutputs.length) {
     await bumperPanel.getByRole('button', { name: 'Play bumper' }).click();
-    await host.waitForFunction(async () => (await window.tpv.getBumpers()).status.status === 'playing');
+    await waitForHostCondition(host, async () => (await window.tpv.getBumpers()).status.status === 'playing');
   }
   await host.getByRole('button', { name: 'Cancel', exact: true }).click();
   // Change only the disposable imported file; the exact original remains in matchingFixture.

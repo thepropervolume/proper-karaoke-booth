@@ -1,3 +1,4 @@
+import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Run against an isolated built checkout. No user data or source media is touched.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -46,7 +47,7 @@ try {
   const review = host.getByRole('combobox', { name: 'Status for Missing Song, requested by Backup QA' });
   await review.waitFor(); assert.equal(await review.inputValue(), 'reviewing');
   await review.selectOption('fulfilled');
-  await host.waitForFunction(async () => (await window.tpv.getMissingSongReviews())[0]?.status === 'fulfilled');
+  await waitForHostCondition(host, async () => (await window.tpv.getMissingSongReviews())[0]?.status === 'fulfilled');
   await host.getByRole('button', { name: 'Back up show…' }).click();
   await host.getByRole('button', { name: 'Back up show…' }).click();
   await host.getByText(/Show backup saved/).waitFor();

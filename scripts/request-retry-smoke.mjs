@@ -1,3 +1,4 @@
+import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Isolated regression: request failure must not create duplicate singers on retry.
 // Run after building: node scripts/request-retry-smoke.mjs
 import assert from 'node:assert/strict';
@@ -43,7 +44,7 @@ try {
   const host = await app.firstWindow();
   await host.waitForFunction(() => !!window.tpv);
   await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
-  await host.waitForFunction(async () => (await window.tpv.getState()).versions.length === 1);
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 1);
   const row = host.getByRole('option', { name: /Synthetic Title/ });
   await row.dblclick();
   const dialog = host.getByRole('dialog', { name: 'Add to Queue' });
@@ -51,7 +52,7 @@ try {
   await dialog.getByLabel('New singer name').fill('Retry Singer');
   await dialog.getByRole('button', { name: 'Add to Queue' }).click();
   await dialog.getByRole('alert').getByText(/Synthetic request rejection/).waitFor();
-  await host.waitForFunction(async () => (await window.tpv.getState()).singers.some(s => s.name === 'Retry Singer'));
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).singers.some(s => s.name === 'Retry Singer'));
   const first = await host.evaluate(() => window.tpv.getState());
   const singers = first.singers.filter(s => s.name === 'Retry Singer');
   assert.equal(singers.length, 1);

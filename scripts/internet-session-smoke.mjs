@@ -1,3 +1,4 @@
+import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Deterministic full UI rehearsal. Public relay URLs are intercepted only inside
 // disposable test processes and routed to the loopback contract fixture below.
 // Run after building: node --import tsx scripts/internet-session-smoke.mjs <repo> <synthetic-mp4>
@@ -66,7 +67,7 @@ try {
   host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv?.internetSessions);
   assert.equal((await host.evaluate(() => window.tpv.internetSessions.status())).state, 'stopped'); assert.equal(relayDb.prepare('SELECT COUNT(*) AS count FROM relay_leases').get().count, 0);
   await host.evaluate(() => window.tpv.importFiles('files'));
-  await host.waitForFunction(async () => (await window.tpv.getState()).versions.length === 1);
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 1);
   await host.getByRole('button', { name: 'Remote Sessions', exact: true }).click();
   const slug = `qa-${randomBytes(5).toString('hex')}`;
   await host.getByLabel('Session address').fill(slug); await host.getByRole('button', { name: 'Start Session', exact: true }).click();
