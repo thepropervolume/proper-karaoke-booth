@@ -74,7 +74,8 @@ test('output loss stops the bumper and does not auto-resume when the output retu
   let starts = 0, stops = 0;
   const controller = new BumperController({ start: async () => { starts++; }, stop: async () => { stops++; } }, () => tracks);
   await controller.setOutputAvailable(true); await controller.start();
-  await controller.setOutputAvailable(false); await controller.setOutputAvailable(true);
+  assert.equal(controller.isOutputAvailable(), true);
+  await controller.setOutputAvailable(false); assert.equal(controller.isOutputAvailable(), false); await controller.setOutputAvailable(true);
   assert.equal(starts, 1); assert.equal(stops, 1); assert.equal(controller.getState().status, 'stopped');
 });
 

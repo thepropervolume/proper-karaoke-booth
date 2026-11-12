@@ -40,3 +40,15 @@ test('accent color defaults for older settings, cycles and persists, and rejects
     assert.equal(readFileSync(path, 'utf8'), before);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('automatic bumper is opt-in for old settings and the chosen track persists', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-bumper-settings-'));
+  try {
+    const path = join(directory, 'settings.json');
+    writeFileSync(path, JSON.stringify({ appearance: 'day' }));
+    const old = readSettings(path);
+    assert.equal(old.autoBumper, false); assert.equal(old.autoBumperTrackId, 'builtin-ambient');
+    writeSettings(path, { ...old, autoBumper: true, autoBumperTrackId: 'custom-track-id' });
+    assert.equal(readSettings(path).autoBumper, true); assert.equal(readSettings(path).autoBumperTrackId, 'custom-track-id');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});

@@ -107,7 +107,8 @@ export function SettingsDialog({ value, path, shortcutsPath, onSave, onClose }: 
             <p className="muted">Controls song and bumper volume. Changes apply when you save.</p>
             <label>Pause Interval (seconds)<input type="number" min="0" max="300" step="1" value={draft.pauseIntervalSeconds} onChange={event => setDraft({ ...draft, pauseIntervalSeconds: Number(event.target.value) })} /></label>
             <p className="muted">Wait this long after a song ends or is skipped before starting the next. The host still presses Play; 0 disables the interval.</p>
-            <BumperControls />
+            <BumperControls autoBumper={draft.autoBumper} autoBumperTrackId={draft.autoBumperTrackId}
+              onAutoChange={(autoBumper, autoBumperTrackId) => setDraft({ ...draft, autoBumper, autoBumperTrackId })} />
           </div>
         </details>
         <details className="settings-group">

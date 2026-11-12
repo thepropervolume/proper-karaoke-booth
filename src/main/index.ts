@@ -39,6 +39,7 @@ import { YouTubeAudioGate } from './youtube-audio-gate';
 import { YouTubeDownloads } from './youtube-download';
 import { QueuedVideoDownloads } from './queued-video-downloads';
 import { catalogRequest } from '../domain/catalog-request';
+import { AutomaticBumper } from './automatic-bumper';
 import { resolveYtDlpExecutable } from './youtube-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
@@ -140,6 +141,18 @@ function syncQueuedDownloads(): void {
   queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state,request.versionId))
     .map(request=>request.versionId).filter(id=>state.versions.find(version=>version.id===id)?.source?.provider==='youtube' && (!store.media(id) || !existsSync(store.media(id)!.path))));
 }
+function automaticBumperEligible(): boolean {
+  return !!settings?.autoBumper && !shuttingDown && !state.playback && !playbackTransition && displayReady && !!bumper &&
+    !!settings.audioOutputId && settings.audioOutputId !== 'default' && bumper.isOutputAvailable() && !youtubeAudioGate.playbackBlocked() &&
+    [...builtInBumpers,...(bumperCatalog?.forPlayback() ?? [])].some(track=>track.id===settings.autoBumperTrackId);
+}
+const automaticBumper = new AutomaticBumper(automaticBumperEligible, stillEligible => youtubeAudioGate.startBumper(async()=>{
+  if(!stillEligible() || !bumper)return false;
+  bumperError='';
+  const started=await bumper.start(settings.autoBumperTrackId);
+  if(started&&!stillEligible())await bumper.stop();
+  return started&&stillEligible();
+}),message=>{bumperError=message;publishBumper();});
 async function startYouTubeDownload(versionId: string) {
   if (shuttingDown || preparingDownload) throw new Error('A video download is being prepared. Try again shortly.');
   const version = state.versions.find(item => item.id === versionId);
@@ -193,7 +206,7 @@ function guardHost(id: number): void { if (!senderIsHost(id)) throw new Error('O
 function bumperInfo() {
   return { tracks: [...builtInBumpers.map(({ id, name }) => ({ id, name, builtIn: true })), ...(bumperCatalog?.list() ?? []).map(track => ({ ...track, builtIn: false }))],
     status: bumper?.getState() ?? { status: 'stopped', trackId: null, generation: null },
-    outputReady: !!bumper && displayReady && !!settings.audioOutputId && settings.audioOutputId !== 'default',
+    outputReady: !!bumper && bumper.isOutputAvailable() && displayReady && !!settings.audioOutputId && settings.audioOutputId !== 'default',
     karaokeActive: !!state.playback || playbackTransition, error: bumperError };
 }
 function publishBumper(): void { if (host && !host.isDestroyed()) host.webContents.send('host:bumper-state', bumperInfo()); }
@@ -227,6 +240,7 @@ function publishDisplay(): void {
   display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume });
 }
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
+  const previousGeneration = state.playback?.generationId;
   const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
     expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings, Date.now());
   let history: HistoryEntry | undefined;
@@ -244,6 +258,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   state = result.state;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) verifiedPlayback = null;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
+  if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) automaticBumper.arm(previousGeneration);
   if (result.outcome.ok && ['request','accept','editRequest','moveRequest','promoteRequest','removeRequest','rejectRequest','setPolicy'].includes(command.type)) syncQueuedDownloads();
   broadcast();
   return result.outcome;
@@ -321,7 +336,7 @@ async function createDisplay(): Promise<void> {
   display.on('closed', () => {
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
-    bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
+    automaticBumper.cancel(); bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
     if (pauseForOutputLoss()) warnDisplayLoss(); publishBumper();
   });
   void display.loadFile(join(uiRoot, 'display/index.html'));
@@ -384,6 +399,7 @@ async function executeHostCommand(command: Command): Promise<{ ok: boolean; erro
   const initial = playable(command);
   if (initial) return { ok: false, error: initial };
   if (command.type === 'start' || command.type === 'resume') {
+    automaticBumper.cancel();
     playbackTransition = true; publishBumper();
     try {
       const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
@@ -707,11 +723,14 @@ else {
     const proposed = parseSettings(value);
     return settingsUpdates.run(async () => {
       const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
+      const disablingAutomaticBumper=settings.autoBumper && !proposed.autoBumper;
+      if(changingOutput || proposed.autoBumper !== settings.autoBumper || proposed.autoBumperTrackId !== settings.autoBumperTrackId) automaticBumper.cancel();
       if (changingOutput && playbackTransition) throw new Error('Wait for the current playback transition.');
       if (changingOutput) { playbackTransition = true; publishBumper(); }
       try {
         if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
         settings = writeSettings(settingsPath, proposed);
+        if(disablingAutomaticBumper && bumper?.getState().status !== 'stopped') await bumper?.stop();
         settingsCreated = false;
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
         publishDisplay();
@@ -787,7 +806,7 @@ else {
       publishBumper(); return bumperInfo();
     });
   });
-  ipcMain.handle('host:stop-bumper', async event => { guardHost(event.sender.id); if (bumper) await bumper.stop(); publishBumper(); return bumperInfo(); });
+  ipcMain.handle('host:stop-bumper', async event => { guardHost(event.sender.id); automaticBumper.cancel(); if (bumper) await bumper.stop(); publishBumper(); return bumperInfo(); });
   ipcMain.handle('host:import', async (event, kind: unknown) => {
     guardHost(event.sender.id);
     if (kind !== undefined && kind !== 'files' && kind !== 'folder') throw new Error('Invalid import type.');
@@ -814,6 +833,7 @@ else {
   ipcMain.on('display:bumper-ack', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) bumperOutput?.acknowledge(value); });
   ipcMain.on('display:bumper-devicechange', event => {
     if (!senderIsDisplay(event.sender.id) || !bumper) return;
+    automaticBumper.cancel();
     void bumper.setOutputAvailable(false).catch(error => { bumperError = String(error); }).finally(publishBumper);
   });
   ipcMain.on('display:bumper-event', (event, value: unknown) => {
@@ -844,6 +864,7 @@ else {
   });
   ipcMain.on('display:event', (event, value: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !isRecord(value)) return;
+    if(value.type==='silenced' && typeof value.generation==='string'){void automaticBumper.acknowledge(value.generation);return;}
     if(!state.playback || value.generation !== state.playback.generationId) return;
     if (value.type === 'timeline') {
       if (typeof value.position === 'number' && typeof value.duration === 'number' && typeof value.seekable === 'boolean' &&
@@ -895,6 +916,7 @@ function waitForImport(job: ImportJob): Promise<boolean> {
   });
 }
 app.on('before-quit', event => {
+  automaticBumper.close();
   shuttingDown = true; for (const check of mediaChecks) check.abort();
   const pendingImport = importJob?.snapshot();
   const importing = !!pendingImport && ['scanning', 'hashing', 'cancelling'].includes(pendingImport.phase);

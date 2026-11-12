@@ -25,6 +25,7 @@ export class BumperController {
   }
   private update(snapshot: BumperSnapshot): void { this.snapshot = snapshot; this.publish({ ...snapshot }); }
   getState(): BumperSnapshot { return { ...this.snapshot }; }
+  isOutputAvailable(): boolean { return this.outputAvailable; }
 
   /** Explicit host action. Never begins after output loss or while karaoke is active. */
   start(trackId?: string): Promise<boolean> {

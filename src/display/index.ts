@@ -112,9 +112,12 @@ window.tpvDisplay.subscribe(async (view) => {
     if (view.logo) logo.src = view.logo; else logo.removeAttribute('src');
   });
   if (!state) {
+    const previousGeneration = current?.generation;
     current = null;
     output.invalidate(video); video.removeAttribute('src'); video.load();
     waiting.hidden = false; caption.textContent = '';
+    // invalidate() mutes and pauses synchronously before this acknowledgement.
+    if (previousGeneration) window.tpvDisplay.event({ type: 'silenced', generation: previousGeneration });
     return;
   }
   const changed = !current || current.generation !== state.generation;

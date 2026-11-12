@@ -19,6 +19,10 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.throws(() => parseSettings({ autoApprove: 'false' }));
   assert.throws(() => parseSettings({ autoAprove: false }));
   assert.equal(parseSettings({}).audioOutputId, '');
+  assert.equal(parseSettings({}).autoBumper, false);
+  assert.equal(parseSettings({}).autoBumperTrackId, 'builtin-ambient');
+  assert.equal(parseSettings({ autoBumper: true, autoBumperTrackId: 'chosen-track' }).autoBumperTrackId, 'chosen-track');
+  for (const invalid of [{ autoBumper: 'yes' }, { autoBumperTrackId: '' }, { autoBumperTrackId: 'x'.repeat(129) }]) assert.throws(() => parseSettings(invalid));
   assert.equal(parseSettings({}).maxFutureRequestsPerSinger, 3);
   assert.equal(parseSettings({ maxFutureRequestsPerSinger: 0 }).maxFutureRequestsPerSinger, 0);
   assert.equal(parseSettings({ maxFutureRequestsPerSinger: 50 }).maxFutureRequestsPerSinger, 50);
