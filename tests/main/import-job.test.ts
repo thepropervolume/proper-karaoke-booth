@@ -147,6 +147,48 @@ test('per-file diagnostic classifies a read failure without exposing a private p
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('a transient changed file gets a fresh complete hash and is committed once', async () => {
+  const dir = fixture();
+  try {
+    const file = join(dir, 'song.mp4'); writeFileSync(file, 'complete fixture');
+    const expected = createHash('sha256').update('complete fixture').digest('hex');
+    let attempts = 0, commits = 0, committedHash = ''; const retries: number[] = [];
+    const job = new ImportJob((_path, hash) => { commits++; committedHash = hash; return { outcome: 'imported' }; },
+      progress => { if (progress.current?.retry) retries.push(progress.current.retry); },
+      async (path, signal, progress) => { if (++attempts === 1) throw new ImportFileError('changed'); return hashImportFile(path, signal, progress); });
+    job.start('files', [file]); const result = await job.wait(); assert.ok(result);
+    assert.equal(attempts, 2); assert.equal(commits, 1); assert.equal(committedHash, expected);
+    assert.equal(result.imported, 1); assert.equal(result.failed, 0); assert.ok(retries.includes(1));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a repeatedly changing file fails after two retries without committing', async () => {
+  let attempts = 0, commits = 0;
+  const job = new ImportJob(() => { commits++; return { outcome: 'imported' }; }, () => {},
+    async () => { attempts++; throw new ImportFileError('changed'); });
+  const started = job.start('files', [join(tmpdir(), 'changing.mp4')]); const result = await job.wait(); assert.ok(result);
+  assert.equal(attempts, 3); assert.equal(commits, 0); assert.equal(result.failed, 1);
+  assert.match(job.page(started.jobId).items[0].message ?? '', /changed while being imported/);
+});
+
+test('cancelling during the quiet period prevents retry and commit', async () => {
+  let attempts = 0, commits = 0, scheduled = false, job!: ImportJob;
+  job = new ImportJob(() => { commits++; return { outcome: 'imported' }; }, progress => {
+    if (progress.current?.retry === 1 && !scheduled) { scheduled = true; setTimeout(() => job.cancel(progress.jobId), 10); }
+  }, async () => { attempts++; throw new ImportFileError('changed'); });
+  const started = job.start('files', [join(tmpdir(), 'changing.mp4')]); const result = await job.wait(); assert.ok(result);
+  assert.equal(result.phase, 'cancelled'); assert.equal(result.cancelled, 1); assert.equal(attempts, 1); assert.equal(commits, 0);
+  assert.equal(job.page(started.jobId).items[0].outcome, 'cancelled');
+});
+
+test('permission failures are not retried', async () => {
+  let attempts = 0, commits = 0;
+  const job = new ImportJob(() => { commits++; return { outcome: 'imported' }; }, () => {},
+    async () => { attempts++; throw new ImportFileError('permission'); });
+  job.start('files', [join(tmpdir(), 'permission.mp4')]); const result = await job.wait(); assert.ok(result);
+  assert.equal(attempts, 1); assert.equal(commits, 0); assert.equal(result.failed, 1);
+});
+
 test('a file that changes during background hashing is rejected', async () => {
   const dir = fixture();
   try {

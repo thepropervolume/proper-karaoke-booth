@@ -76,6 +76,7 @@ export function ImportProgressView({ progress, page, error = '', cancelling = fa
     {progress.phase === 'completed' && progress.discovered === 0 && <p className="import-panel__hint">No MP4 videos were found. To import an MP3 + CDG pair or ZIP, use Import CD+G / ZIP.</p>}
     {progress.current && <div className="import-panel__current">
       <span className="import-panel__filename">{progress.current.name}</span>
+      {!!progress.current.retry && <span>File changed while reading. Retrying {progress.current.retry} of 2 with a full check.</span>}
       {progress.current.bytesTotal > 0 ? <progress aria-label={`Hashing ${progress.current.name}`} value={Math.min(progress.current.bytesRead, progress.current.bytesTotal)} max={progress.current.bytesTotal} /> : <progress aria-label={`${progress.phase === 'scanning' ? 'Scanning' : 'Preparing'} ${progress.current.name}`} />}
       {progress.phase !== 'scanning' && <span>{formatImportBytes(progress.current.bytesRead)}{progress.current.bytesTotal > 0 ? ` / ${formatImportBytes(progress.current.bytesTotal)}` : ''}</span>}
     </div>}

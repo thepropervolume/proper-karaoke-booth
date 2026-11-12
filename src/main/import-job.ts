@@ -8,6 +8,16 @@ type Candidate = { path: string; name: string; kind: 'file' | 'directory'; error
 /** Commit synchronously on the authority thread, persisting before returning. */
 export type ImportCommit = (path: string, fingerprint: string) => { outcome: 'imported' | 'duplicate'; needsReview?: boolean };
 type Hash = typeof hashImportFile;
+const changedRetryDelays = [100, 250] as const;
+function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new ImportCancelled()); return; }
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+    const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new ImportCancelled()); };
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}
 function failureMessage(error: unknown): string {
   if (!(error instanceof ImportFileError)) return 'The song could not be saved. Check available space and try again.';
   switch (error.reason) {
@@ -86,9 +96,21 @@ export class ImportJob {
         }
         state.phase = 'hashing'; state.current = { name: candidate.name, bytesRead: 0, bytesTotal: 0 }; this.changed();
         try {
-          const fingerprint = await this.hash(candidate.path, controller.signal, (bytesRead, bytesTotal) => {
-            if (!controller.signal.aborted && state.current) { state.current = { name: candidate.name, bytesRead, bytesTotal }; this.changed(); }
-          });
+          let fingerprint: string;
+          let retries = 0;
+          while (true) {
+            try {
+              fingerprint = await this.hash(candidate.path, controller.signal, (bytesRead, bytesTotal) => {
+                if (!controller.signal.aborted && state.current) { state.current = { ...state.current, bytesRead, bytesTotal }; this.changed(); }
+              });
+              break;
+            } catch (error) {
+              if (controller.signal.aborted || !(error instanceof ImportFileError) || error.reason !== 'changed' || retries >= changedRetryDelays.length) throw error;
+              const delay = changedRetryDelays[retries++];
+              state.current = { name: candidate.name, bytesRead: 0, bytesTotal: 0, retry: retries }; this.changed();
+              await waitForRetry(delay, controller.signal);
+            }
+          }
           if (controller.signal.aborted) throw new ImportCancelled();
           // Once an atomic commit begins, finish recording its actual result even if cancellation arrives.
           const committed = this.commit(candidate.path, fingerprint);

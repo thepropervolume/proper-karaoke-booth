@@ -55,3 +55,8 @@ test('folder scan explains skipped formats and cloud availability without invent
   const empty = render({ ...running, phase: 'completed', discovered: 0, processed: 0, imported: 0, duplicates: 0, needsReview: 0, current: null }, null);
   assert.match(empty, /No MP4 videos were found/); assert.match(empty, /Import CD\+G \/ ZIP/);
 });
+
+test('progress explains a changed-file retry and its full recheck', () => {
+  const html = render({ ...running, current: { name: 'song.mp4', bytesRead: 0, bytesTotal: 0, retry: 2 } }, null);
+  assert.match(html, /File changed while reading\. Retrying 2 of 2 with a full check\./);
+});
