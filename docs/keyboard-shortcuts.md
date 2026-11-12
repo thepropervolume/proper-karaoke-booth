@@ -1,14 +1,48 @@
-# Keyboard shortcuts
+# Keyboard Shortcuts
 
-The app creates `keybindings.json` in its user-data folder on first start. In Preferences, use **Configuration Files** to reveal it in the file manager or hover for its path. Edit it with a text editor and restart the app to apply changes. The complete set of configurable actions and their defaults is:
+Open **Preferences → Keyboard Shortcuts** to review or edit keyboard commands. The editor groups actions by Application, Playback, Singer Display, Library, Appearance and Layouts, with an action label beside its assigned keys.
+
+## Defaults
+
+| Action | Default shortcuts | Scope |
+| --- | --- | --- |
+| Search Song Library | Ctrl+F; Cmd+F | Host or player window |
+| Play/Pause | Spacebar | Host or player window, outside text entry |
+| Open Preferences | Ctrl+,; Cmd+,; Alt+, | Host or player window |
+| Open Keyboard Shortcuts | Ctrl+/; Cmd+/; F1 | Host or player window |
+| Toggle Fullscreen | F; Shift+F | Active player window only |
+| Remove Selected Queue Request | Delete | Focused queue only; eligible selected request |
+
+Other listed actions start unassigned. They include restart current song, stop, skip, seek backward/forward, open the singer display, all three import actions, backup, appearance/accent preferences and cycling, and the three workspace layouts. Assign keys to any of these in the editor. An action can have up to 16 alternate shortcuts. Each shortcut is one physical key plus optional Ctrl, Alt, Shift and Cmd/Meta modifiers; multi-step sequences are not supported.
+
+## Change and save bindings
+
+Click an existing key to replace it, or **+ Add** beside an action to assign another. Press the combination while its recording input is focused. Modifier-only presses are ignored. **Escape** cancels recording and **Tab** moves to Cancel Recording; those two keys can still be assigned through JSON. Recording consumes the event so it cannot also trigger playback or open another application section. Conflicts name both affected actions and leave the previous bindings intact.
+
+Use the **×** beside a binding to remove it. Removing all bindings disables keyboard activation for that action; the menu or button remains available. Press **Save Shortcuts** to persist the draft and apply it to running windows. Shortcut changes save separately from other preferences. Unsaved edits are labelled and discarded when the editor is closed. **Reset to Defaults** immediately saves and restores the defaults above.
+
+## Edit the JSON file
+
+**Edit custom shortcuts** opens `keybindings.json` in the default editor. This is the same file used by the settings interface, in the app's user-data directory. Saving in the interface writes every action, including empty arrays for unassigned commands. Close the app before directly changing the file, then restart to load the changes. A malformed file is retained for repair; startup reports the error and uses safe defaults rather than replacing the broken file.
+
+Bindings use DOM physical-key codes, not display labels. For example:
 
 ```json
 {
   "search": ["Control+KeyF", "Meta+KeyF"],
-  "playPause": ["Space"]
+  "playPause": ["Space"],
+  "preferences": ["Control+Comma", "Meta+Comma", "Alt+Comma"],
+  "keybindings": ["Control+Slash", "Meta+Slash", "F1"],
+  "toggleFullscreen": ["KeyF", "Shift+KeyF"],
+  "previous": ["Control+KeyR", "Meta+KeyR"],
+  "stop": []
 }
 ```
 
-Each action requires at least one binding; adding multiple strings provides alternatives. Use physical key codes `KeyA`–`KeyZ`, `Digit0`–`Digit9`, `F1`–`F12`, `Space`, `Enter`, `Escape`, or `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`. Prefix optional `Control`, `Alt`, `Shift`, or `Meta` modifiers, separated by `+`, for example `Control+Shift+KeyP`. Bindings must be unique across actions. Unknown actions, invalid keys, and conflicts are rejected. If the file is invalid, the app reports the error and uses defaults until it is corrected and the app is restarted; it does not overwrite the file.
+This is a partial example: omitted actions receive their defaults. Modifier order is normalized, and duplicate keys are rejected. Existing two-action files from older versions are supported. If an old explicit Search or Play/Pause binding uses a newly introduced default such as F or F1, the old binding wins and that conflicting new default is omitted; the editor shows the resulting configuration. Existing conflicts between explicit actions remain errors.
 
-Search opens the library even from the singer display or Preferences. Play/Pause starts the next eligible song when idle, or pauses/resumes an active performance. It does not capture keys while typing or operating a focused control in the host. Focus a waiting item in Singer Rotation and press **Delete** to remove it; the active performance cannot be removed this way. Delete is currently fixed, not configurable. Shortcuts are application-focused, not system-wide; other actions are not yet configurable.
+## Developer contract
+
+`src/domain/shortcuts.ts` owns the action registry, defaults, bounded validation, normalization, display labels and exact key matching. `SHORTCUT_ACTIONS` supplies `id`, `label`, `group` and `scope`; dispatch must honor the player-only fullscreen scope and preserve normal text editing. `bindingFromKeyInput` ignores unsupported/modifier-only codes. `parseShortcuts` clones arrays, validates missing/default and explicit/disabled actions, and rejects unknown actions or conflicting normalized combinations.
+
+`writeShortcuts` validates before writing a private temporary sibling and atomically replacing the file. Invalid edits retain the last working file; failed publication removes only the staged sibling. The main process owns saving, opening the file and broadcasting effective bindings. The renderer editor receives named callbacks and does not access the filesystem or arbitrary IPC.
