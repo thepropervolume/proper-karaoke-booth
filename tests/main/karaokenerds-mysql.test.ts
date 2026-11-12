@@ -112,7 +112,7 @@ test('MySQL 8 catalog import, daily gate, cross-connection lock and failure rete
     assert.deepEqual(await first.videoMetadata(), payload.videoMetadata);
     assert.deepEqual(await first.videoDates('abcdefghij1'), { uploadDate: '2025-01-01', releaseDate: null, source: 'yt-dlp', observedAt: 101 });
     assert.equal((await first.searchSnapshot()).revision, '1');
-    const reader = createMySqlCatalogReader(first);
+    const reader = createMySqlCatalogReader(first, { cacheTtlMs: 0 });
     const request = { query: 'Synthetic', artist: '', brandSlug: 'SyntheticBrand', cursor: null, limit: 1 };
     assert.equal((await reader.search(request)).items.length, 1);
     await first.saveBrandMapping({ slug: 'SyntheticBrand', name: 'Sýnthetic 🎤 Brand', upstreamBrand: 'SYN' }, 102, ['abcdefghij2']);

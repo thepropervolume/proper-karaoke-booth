@@ -16,10 +16,22 @@ test('binds only to loopback and closes its dependency once', async () => {
   try {
     const url = `http://127.0.0.1:${service.port}/v1/catalog/tracks`;
     assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(`http://127.0.0.1:${service.port}/v1/catalog/public/tracks`)).status, 404);
     assert.deepEqual(await (await fetch(url, { headers: { authorization: `Bearer ${token}` } })).json(), { items: [], nextCursor: null });
     await Promise.all([service.stop(), service.stop()]);
     assert.equal(closed, 1);
     await assert.rejects(fetch(url));
+  } finally { await service.stop(); }
+});
+
+test('public reads require explicit service opt-in and cannot receive a private authorization header', async () => {
+  const service = await startCatalogService({ port: 0, token, publicReadEnabled: true,
+    reader: { async search() { return { items: [], nextCursor: null }; } }, closeDependencies: async () => {} });
+  try {
+    const origin = `http://127.0.0.1:${service.port}`;
+    assert.equal((await fetch(`${origin}/v1/catalog/public/tracks`)).status, 200);
+    assert.equal((await fetch(`${origin}/v1/catalog/tracks`)).status, 401);
+    assert.equal((await fetch(`${origin}/v1/catalog/public/tracks`, { headers: { authorization: `Bearer ${token}` } })).status, 400);
   } finally { await service.stop(); }
 });
 

@@ -2,13 +2,13 @@ import { strict as assert } from 'node:assert';
 import { createServer, request } from 'node:http';
 import { once } from 'node:events';
 import { test } from 'node:test';
-import { createCatalogHttpHandler, type CatalogReader } from '../../src/catalog/karaokenerds-http';
+import { createCatalogHttpHandler, type CatalogReader, type CatalogHttpOptions } from '../../src/catalog/karaokenerds-http';
 
 const token = 'test-only-abcdefghijklmnopqrstuvwxyz-0123456789';
 const item = { artist: 'Example Artist', title: 'Example Song', brandSlug: 'ExampleBrand', youtubeId: 'abcDEF_123-', uploadDate: '2025-03-04' };
 
-async function withServer(reader: CatalogReader, run: (origin: string) => Promise<void>) {
-  const server = createServer(createCatalogHttpHandler({ token, reader }));
+async function withServer(reader: CatalogReader, run: (origin: string) => Promise<void>, options: Pick<CatalogHttpOptions, 'publicReadEnabled' | 'now'> = {}) {
+  const server = createServer(createCatalogHttpHandler({ token, reader, ...options }));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No test listener.');
@@ -112,4 +112,85 @@ test('returns a generic error for backend failures or malformed results without 
     const response = await fetch(`${origin}/v1/catalog/tracks`, { headers: { authorization: `Bearer ${token}` } });
     assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: 'Catalog unavailable' });
   });
+});
+
+test('anonymous public routes are disabled by default and never accept authorization headers', async () => {
+  let calls = 0;
+  const reader: CatalogReader = { async search() { calls++; return { items: [], nextCursor: null }; },
+    async status() { calls++; return { revision: '1', lastAttempt: null, lastSuccess: null, recordCount: 0, searchableCount: 0 }; } };
+  await withServer(reader, async origin => {
+    for (const path of ['status', 'tracks']) {
+      assert.equal((await fetch(`${origin}/v1/catalog/public/${path}`)).status, 404);
+      assert.equal((await fetch(`${origin}/v1/catalog/public/${path}`, { headers: { authorization: `Bearer ${token}` } })).status, 400);
+    }
+    assert.equal(calls, 0);
+  });
+  await withServer(reader, async origin => {
+    for (const authorization of ['', `Bearer ${token}`, 'Bearer wrong', 'Basic anything']) {
+      assert.equal((await fetch(`${origin}/v1/catalog/public/tracks`, { headers: { authorization } })).status, 400);
+      assert.equal((await fetch(`${origin}/v1/catalog/public/status`, { headers: { authorization } })).status, 400);
+    }
+    assert.equal(calls, 0);
+    assert.equal((await fetch(`${origin}/v1/catalog/tracks`)).status, 401);
+    assert.equal((await fetch(`${origin}/v1/catalog/status`)).status, 401);
+  }, { publicReadEnabled: true });
+});
+
+test('enabled public reads share private DTO validation and project no internal fields', async () => {
+  const metadata = { revision: '9', lastAttempt: null, lastSuccess: null };
+  const status = { ...metadata, recordCount: 4, searchableCount: 3 };
+  const requests: unknown[] = [];
+  await withServer({ async search(search) { requests.push(search); return {
+    items: [{ ...item, brandSlug: '', brandCode: 'UNKNOWN', privatePath: '/not-public' }], nextCursor: null,
+    metadata: { ...metadata, providerKey: 'not-public' },
+  }; }, async status() { return { ...status, providerKey: 'not-public' }; } }, async origin => {
+    const publicReply = await fetch(`${origin}/v1/catalog/public/tracks?q=Example&limit=2`);
+    const privateReply = await fetch(`${origin}/v1/catalog/tracks?q=Example&limit=2`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(publicReply.status, 200); assert.deepEqual(await publicReply.json(), await privateReply.json());
+    assert.deepEqual(requests, Array(2).fill({ query: 'Example', artist: '', brandSlug: '', cursor: null, limit: 2 }));
+    const response = await fetch(`${origin}/v1/catalog/public/status`);
+    assert.equal(response.status, 200); assert.deepEqual(await response.json(), status);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+  }, { publicReadEnabled: true });
+  await withServer({ async search() { return { items: [{ ...item, youtubeId: 'invalid' }], nextCursor: null }; } }, async origin => {
+    const response = await fetch(`${origin}/v1/catalog/public/tracks`);
+    assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: 'Catalog unavailable' });
+  }, { publicReadEnabled: true });
+});
+
+test('public endpoints accept exact GET routes only and reuse bounded query validation', async () => {
+  let calls = 0;
+  await withServer({ async search() { calls++; return { items: [], nextCursor: null }; } }, async origin => {
+    for (const method of ['POST', 'DELETE', 'OPTIONS', 'HEAD']) {
+      assert.equal((await fetch(`${origin}/v1/catalog/public/tracks`, { method })).status, 405);
+      assert.equal((await fetch(`${origin}/v1/catalog/public/status`, { method })).status, 405);
+    }
+    for (const suffix of ['/tracks?limit=101', '/tracks?limit=1&limit=2', '/tracks?token=secret',
+      '/tracks?cursor=invalid%2Fcursor', '/status?limit=1', '/status?']) {
+      assert.equal((await fetch(`${origin}/v1/catalog/public${suffix}`)).status, 400);
+    }
+    for (const suffix of ['/tracks/', '/status/', '/%74racks', '/tracks/extra']) {
+      assert.equal((await fetch(`${origin}/v1/catalog/public${suffix}`)).status, 401);
+    }
+    assert.equal(calls, 0);
+  }, { publicReadEnabled: true });
+});
+
+test('one IP-free public bucket bounds both routes while private reads remain unthrottled', async () => {
+  let now = 0, calls = 0;
+  await withServer({ async search() { calls++; return { items: [], nextCursor: null }; },
+    async status() { calls++; return { revision: '1', lastAttempt: null, lastSuccess: null, recordCount: 0, searchableCount: 0 }; } }, async origin => {
+    for (let index = 0; index < 60; index++)
+      assert.equal((await fetch(`${origin}/v1/catalog/public/${index % 2 ? 'tracks' : 'status'}`)).status, 200);
+    const exhausted = await fetch(`${origin}/v1/catalog/public/status`);
+    assert.equal(exhausted.status, 429); assert.equal(exhausted.headers.get('retry-after'), '1');
+    assert.equal(calls, 60);
+    assert.equal((await fetch(`${origin}/v1/catalog/tracks`, { headers: { authorization: `Bearer ${token}` } })).status, 200);
+    now = 500; assert.equal((await fetch(`${origin}/v1/catalog/public/tracks`)).status, 429);
+    now = 1000; assert.equal((await fetch(`${origin}/v1/catalog/public/status`)).status, 200);
+    assert.equal((await fetch(`${origin}/v1/catalog/public/tracks`)).status, 429);
+    now = 0; assert.equal((await fetch(`${origin}/v1/catalog/public/status`)).status, 429, 'clock rollback must not refill tokens');
+    now = 61_000; assert.equal((await fetch(`${origin}/v1/catalog/public/status`)).status, 200);
+    assert.equal(calls, 63);
+  }, { publicReadEnabled: true, now: () => now });
 });

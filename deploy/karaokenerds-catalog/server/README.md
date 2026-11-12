@@ -1,5 +1,20 @@
 # Shared Karaoke Nerds catalog server
 
+The optional public read routes are `GET /v1/catalog/public/status` and
+`GET /v1/catalog/public/tracks`, with the same projected response and search
+parameters as the private routes. Install `public-read.conf` as the documented
+systemd drop-in to enable them explicitly. New desktop installations can use
+these routes without a private reader configuration or any bundled token.
+Public routes reject every supplied Authorization header; existing private
+routes continue to require the existing reader credential. Public reads share
+a 60-request burst bucket refilling at one request per second. A coalesced,
+immutable projection is cached for at most 30 seconds; an expired cache never
+masks a failed database reload, and pagination remains tied to its revision.
+
+Ratings run in the separate service and schema documented in
+[`../../song-ratings/README.md`](../../song-ratings/README.md). The catalog
+reader remains SELECT-only and cannot provision voters or write ratings.
+
 These are deployment assets, not an installed service. They use a dedicated MySQL
 schema (`tpv_karaoke_catalog`), authenticated read-only loopback service on port
 8765, and exact-host HTTPS at `apps.thepropervolume.com`. Website schemas and

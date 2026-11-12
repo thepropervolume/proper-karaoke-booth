@@ -1,5 +1,6 @@
 /** Read-only catalog HTTP boundary. Importing this module opens no listener. */
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export type CatalogSearch = { query: string; artist: string; brandSlug: string; cursor: string | null; limit: number };
@@ -11,6 +12,7 @@ export type CatalogSearchResult = { items: readonly CatalogTrack[]; nextCursor: 
 /** Store implementations must parameterize all user-controlled query values. */
 export type CatalogReader = { search: (request: CatalogSearch) => Promise<CatalogSearchResult>; status?: () => Promise<CatalogStatus> };
 export type CatalogHttpHandler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
+export type CatalogHttpOptions = { token: string; reader: CatalogReader; publicReadEnabled?: boolean; now?: () => number };
 
 const TOKEN = /^[A-Za-z0-9._~-]{32,256}$/;
 const CURSOR = /^[A-Za-z0-9_-]{1,512}$/;
@@ -32,14 +34,15 @@ function validDate(value: unknown): value is string | null {
 function reply(response: ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body);
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(data),
-    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 401 ? { 'WWW-Authenticate': 'Bearer' } : {}) });
+    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 401 ? { 'WWW-Authenticate': 'Bearer' } : {}),
+    ...(status === 429 ? { 'Retry-After': '1' } : {}) });
   response.end(data);
 }
-function searchFromUrl(raw: string | undefined): CatalogSearch | null {
+function searchFromUrl(raw: string | undefined, route = '/v1/catalog/tracks'): CatalogSearch | null {
   if (!raw || raw.length > 2048 || !raw.startsWith('/') || raw.startsWith('//')) return null;
   let url: URL;
   try { url = new URL(raw, 'http://localhost'); } catch { return null; }
-  if (url.pathname !== '/v1/catalog/tracks' || url.hash) return null;
+  if (url.pathname !== route || url.hash) return null;
   const accepted = new Set(['q', 'artist', 'brand', 'cursor', 'limit']);
   for (const key of url.searchParams.keys()) if (!accepted.has(key) || url.searchParams.getAll(key).length !== 1) return null;
   const query = url.searchParams.get('q') ?? '', artist = url.searchParams.get('artist') ?? '', brandSlug = url.searchParams.get('brand') ?? '';
@@ -70,26 +73,49 @@ function projectStatus(input: CatalogStatus): CatalogStatus {
 }
 
 /**
- * Creates an authenticated handler. Deploy only behind a TLS terminator with
+ * Creates an authenticated handler with explicitly optional anonymous routes.
+ * Public reads share one bounded bucket; no client addresses are retained.
+ * Deploy only behind a TLS terminator with
  * transport protections and rate limiting; bearer tokens must not be logged.
  * The caller owns listener binding, token provisioning and lifecycle.
  */
-export function createCatalogHttpHandler(options: { token: string; reader: CatalogReader }): CatalogHttpHandler {
-  if (!TOKEN.test(options.token) || !options.reader || typeof options.reader.search !== 'function') throw new Error('Invalid catalog service configuration.');
+export function createCatalogHttpHandler(options: CatalogHttpOptions): CatalogHttpHandler {
+  if (!TOKEN.test(options.token) || !options.reader || typeof options.reader.search !== 'function' ||
+      (options.publicReadEnabled !== undefined && typeof options.publicReadEnabled !== 'boolean') ||
+      (options.now !== undefined && typeof options.now !== 'function')) throw new Error('Invalid catalog service configuration.');
   const tokenHash = createHash('sha256').update(options.token, 'utf8').digest();
+  const now = options.now ?? (() => Math.floor(performance.now()));
+  let publicTokens = 60, publicUpdated: number | undefined;
+  const publicReadAllowed = () => {
+    const current = now();
+    if (!Number.isFinite(current) || current < 0) throw new Error('Invalid clock.');
+    if (publicUpdated === undefined) publicUpdated = current;
+    publicTokens = Math.min(60, publicTokens + Math.max(0, current - publicUpdated) / 1000);
+    publicUpdated = Math.max(publicUpdated, current);
+    if (publicTokens < 1) return false;
+    publicTokens--; return true;
+  };
   return async (request, response) => {
     try {
       const authCount = request.rawHeaders.filter((_, index) => index % 2 === 0 && request.rawHeaders[index].toLowerCase() === 'authorization').length;
       const rawAuth = request.headers.authorization;
-      const match = typeof rawAuth === 'string' && rawAuth.match(/^Bearer ([A-Za-z0-9._~-]{32,256})$/);
-      const candidate = createHash('sha256').update(match ? match[1] : '', 'utf8').digest();
-      if (authCount !== 1 || !match || !timingSafeEqual(tokenHash, candidate)) { reply(response, 401, { error: 'Unauthorized' }); return; }
+      const path = request.url?.split('?', 1)[0];
+      const publicRoute = path === '/v1/catalog/public/status' || path === '/v1/catalog/public/tracks';
+      if (publicRoute) {
+        if (authCount !== 0 || rawAuth !== undefined) { reply(response, 400, { error: 'Invalid request' }); return; }
+        if (options.publicReadEnabled !== true) { reply(response, 404, { error: 'Not found' }); return; }
+      } else {
+        const match = typeof rawAuth === 'string' && rawAuth.match(/^Bearer ([A-Za-z0-9._~-]{32,256})$/);
+        const candidate = createHash('sha256').update(match ? match[1] : '', 'utf8').digest();
+        if (authCount !== 1 || !match || !timingSafeEqual(tokenHash, candidate)) { reply(response, 401, { error: 'Unauthorized' }); return; }
+      }
       if (request.method !== 'GET') { reply(response, 405, { error: 'Method not allowed' }); return; }
-      if (request.url === '/v1/catalog/status') {
+      if (publicRoute && !publicReadAllowed()) { reply(response, 429, { error: 'Too many requests' }); return; }
+      if (request.url === (publicRoute ? '/v1/catalog/public/status' : '/v1/catalog/status')) {
         if (typeof options.reader.status !== 'function') throw new Error('Catalog status is unavailable.');
         reply(response, 200, projectStatus(await options.reader.status())); return;
       }
-      const search = searchFromUrl(request.url);
+      const search = searchFromUrl(request.url, publicRoute ? '/v1/catalog/public/tracks' : '/v1/catalog/tracks');
       if (!search) { reply(response, 400, { error: 'Invalid request' }); return; }
       const result = await options.reader.search(search);
       if (!result || !Array.isArray(result.items) || result.items.length > search.limit ||

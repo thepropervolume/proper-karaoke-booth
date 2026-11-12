@@ -7,10 +7,12 @@ export type RunningCatalogService = { port: number; stop: () => Promise<void> };
 /** Does not listen until called; the service always binds to IPv4 loopback. */
 export async function startCatalogService(options: {
   port: number; token: string; reader: CatalogReader; closeDependencies: () => Promise<void>; onFailure?: () => void;
+  publicReadEnabled?: boolean; now?: () => number;
 }): Promise<RunningCatalogService> {
   if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535 || typeof options.closeDependencies !== 'function')
     throw new Error('Invalid catalog service configuration.');
-  const handler = createCatalogHttpHandler({ token: options.token, reader: options.reader });
+  const handler = createCatalogHttpHandler({ token: options.token, reader: options.reader,
+    publicReadEnabled: options.publicReadEnabled, now: options.now });
   const server: Server = createServer(handler);
   server.maxConnections = 32;
   server.headersTimeout = 10_000;

@@ -48,13 +48,15 @@ test('does not infer video slugs and excludes conflicting saved identities', asy
 });
 
 test('rejects stale, malformed and query-mismatched cursors rather than mixing snapshots', async () => {
-  let revision = '1';
-  const reader = createMySqlCatalogReader({ async searchSnapshot() { return { ...snapshot(), revision }; } });
+  let revision = '1', now = 0;
+  const reader = createMySqlCatalogReader({ async searchSnapshot() { return { ...snapshot(), revision }; } }, { now: () => now, cacheTtlMs: 100 });
   const first = await reader.search(request);
   assert.ok(first.nextCursor);
   await assert.rejects(reader.search({ ...request, cursor: first.nextCursor, query: 'different' }), /cursor/);
   await assert.rejects(reader.search({ ...request, cursor: '%%%invalid' }), /Invalid/);
   revision = '2';
+  assert.equal((await reader.search({ ...request, cursor: first.nextCursor })).metadata?.revision, '1');
+  now = 100;
   await assert.rejects(reader.search({ ...request, cursor: first.nextCursor }), /stale/);
 });
 
@@ -89,15 +91,59 @@ test('keeps the artist and title boundary compatible with the 500-character clie
   assert.equal((await reader.status()).searchableCount, 1);
 });
 
-test('validates limit and metadata, and serializes resource-heavy searches', async () => {
+test('validates inputs and coalesces concurrent resource-heavy snapshot reads', async () => {
   let release!: (value: CatalogReadSnapshot) => void;
-  const reader = createMySqlCatalogReader({ searchSnapshot: () => new Promise(resolve => { release = resolve; }) });
-  const pending = reader.search(request);
-  await assert.rejects(reader.search(request), /busy/);
-  await assert.rejects(reader.status(), /busy/);
-  release(snapshot()); await pending;
+  let calls = 0;
+  const reader = createMySqlCatalogReader({ searchSnapshot: () => { calls++; return new Promise(resolve => { release = resolve; }); } });
+  const pending = reader.search(request), other = reader.search(request), status = reader.status();
+  assert.equal(calls, 1);
+  release(snapshot());
+  const [one, two, metadata] = await Promise.all([pending, other, status]);
+  assert.deepEqual(one, two); assert.equal(metadata.searchableCount, 3);
+  await reader.search(request); assert.equal(calls, 1);
   await assert.rejects(reader.search({ ...request, limit: 101 }), /Invalid/);
   const invalid = snapshot(); invalid.brandMappings = [...invalid.brandMappings, invalid.brandMappings[0]];
   await assert.rejects(createMySqlCatalogReader({ async searchSnapshot() { return invalid; } }).search(request), /Ambiguous/);
   await assert.rejects(createMySqlCatalogReader({ async searchSnapshot() { return { ...snapshot(), lastAttempt: -1 }; } }).status(), /timestamp/);
+});
+
+test('cached public projections cannot be poisoned by a caller or later source-object mutation', async () => {
+  const data = snapshot(); let calls = 0;
+  const reader = createMySqlCatalogReader({ async searchSnapshot() { calls++; return data; } });
+  const first = await reader.search(request);
+  // Reflect reports failed writes in both CommonJS and strict ESM; direct
+  // assignment throws only in strict mode and otherwise fails silently.
+  assert.equal(Reflect.set(first.items[0], 'artist', 'poisoned'), false);
+  assert.equal(Reflect.set(first.metadata!, 'revision', 'poisoned'), false);
+  data.catalog.Items[1].Artist = 'mutated source';
+  assert.equal((await reader.search(request)).items[0].artist, 'A Artist');
+  assert.deepEqual((await reader.search({ ...request, query: 'mutated source' })).items, []);
+  assert.equal((await reader.status()).revision, '1'); assert.equal(calls, 1);
+});
+
+test('expired projections fail closed on refresh error and later recover without accepting old cursors', async () => {
+  let now = 0, revision = '1', failed = false, calls = 0;
+  const reader = createMySqlCatalogReader({ async searchSnapshot() {
+    calls++; if (failed) throw new Error('synthetic unavailable store'); return { ...snapshot(), revision };
+  } }, { now: () => now });
+  const first = await reader.search(request); assert.ok(first.nextCursor);
+  now = 29_999; failed = true;
+  assert.equal((await reader.status()).revision, '1'); assert.equal(calls, 1);
+  now = 30_000;
+  await assert.rejects(reader.status(), /unavailable/);
+  await assert.rejects(reader.search(request), /unavailable/);
+  assert.equal(calls, 3);
+  failed = false; revision = '2';
+  await assert.rejects(reader.search({ ...request, cursor: first.nextCursor }), /stale/);
+  assert.equal((await reader.status()).revision, '2'); assert.equal(calls, 4);
+});
+
+test('cache duration is bounded and optional zero TTL preserves immediate revision checks', async () => {
+  for (const cacheTtlMs of [-1, 60_001, Number.NaN])
+    assert.throws(() => createMySqlCatalogReader({ async searchSnapshot() { return snapshot(); } }, { cacheTtlMs }), /configuration/);
+  let revision = '1', calls = 0;
+  const reader = createMySqlCatalogReader({ async searchSnapshot() { calls++; return { ...snapshot(), revision }; } }, { cacheTtlMs: 0 });
+  const first = await reader.search(request); revision = '2';
+  await assert.rejects(reader.search({ ...request, cursor: first.nextCursor }), /stale/);
+  assert.equal(calls, 2);
 });

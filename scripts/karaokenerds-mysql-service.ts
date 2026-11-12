@@ -34,6 +34,7 @@ async function main(): Promise<void> {
     // Ensure the database is provisioned and initialized before opening a socket.
     await store.searchSnapshot();
     const service = await startCatalogService({ port: Number(rawPort), token, reader: createMySqlCatalogReader(store),
+      publicReadEnabled: process.env.TPV_KN_PUBLIC_READ_ENABLED === 'yes',
       closeDependencies: () => pool.end(), onFailure: () => { process.exitCode = 1; console.error('Catalog service stopped unexpectedly.'); } });
     started = true;
     console.log(`Catalog service listening on loopback port ${service.port}.`);

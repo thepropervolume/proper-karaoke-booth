@@ -1,5 +1,6 @@
 /** Read-only, snapshot-consistent catalog search adapter for the MySQL service. */
 import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import type { CommunityCatalog } from './karaokenerds';
 import type { CatalogMetadata, CatalogReader, CatalogSearch, CatalogStatus, CatalogTrack } from './karaokenerds-http';
 import { youtubeVideoId } from './karaokenerds-brand-map';
@@ -61,78 +62,94 @@ function cursor(revision: string, fingerprint: string, offset: number): string {
 }
 
 /**
- * Searches one database-consistent snapshot per request. Unmapped brands retain
- * their upstream code and an empty slug; conflicting identities are excluded.
- * A snapshot revision change invalidates a
- * cursor rather than silently skipping or repeating results. The snapshot
- * store must use a read-only repeatable-read transaction; no SQL is built
- * from search input. One in-flight search bounds memory on small hosts.
+ * Reuses one immutable, sorted public projection for at most 30 seconds. Reads
+ * arriving during a reload share the same consistent snapshot. Expired data is
+ * never a fallback for a failed refresh; cursors retain their snapshot revision.
  */
-export function createMySqlCatalogReader(store: CatalogSnapshotStore): CatalogReader & { status: () => Promise<CatalogStatus> } {
-  if (!store || typeof store.searchSnapshot !== 'function') throw new Error('Invalid catalog reader configuration.');
-  let busy = false;
-  async function read<T>(use: (tracks: CatalogTrack[], metadata: CatalogMetadata, recordCount: number) => T): Promise<T> {
-    if (busy) throw new Error('Catalog search is busy.');
-    busy = true;
-    try {
-      const snapshot = await store.searchSnapshot();
-      if (!snapshot || !snapshot.catalog || !Array.isArray(snapshot.catalog.Items) || !Array.isArray(snapshot.brandMappings) ||
-          !Array.isArray(snapshot.videoMetadata) || !Array.isArray(snapshot.videoDates) || typeof snapshot.revision !== 'string' ||
-          !REVISION.test(snapshot.revision)) throw new Error('Invalid catalog snapshot.');
-      const timestamp = (value: unknown) => value === null || Number.isSafeInteger(value) && (value as number) >= 0;
-      if (!timestamp(snapshot.lastAttempt) || !timestamp(snapshot.lastSuccess)) throw new Error('Invalid catalog timestamp.');
-      const metadata: CatalogMetadata = { revision: snapshot.revision, lastAttempt: snapshot.lastAttempt, lastSuccess: snapshot.lastSuccess };
-      const brands = new Map<string, string>(), slugs = new Set<string>();
-      for (const brand of snapshot.brandMappings) {
-        if (!brand || !cleanText(brand.upstreamBrand, 200) || !cleanSlug(brand.slug) || brands.has(brand.upstreamBrand) || slugs.has(brand.slug)) throw new Error('Ambiguous brand mapping.');
-        brands.set(brand.upstreamBrand, brand.slug); slugs.add(brand.slug);
-      }
-      const videos = new Map<string, string>();
-      for (const video of snapshot.videoMetadata) {
-        if (!video || typeof video.youtubeId !== 'string' || !VIDEO.test(video.youtubeId) || !cleanSlug(video.brandSlug) || videos.has(video.youtubeId)) throw new Error('Ambiguous video mapping.');
-        videos.set(video.youtubeId, video.brandSlug);
-      }
-      const dates = new Map<string, string | null>();
-      for (const date of snapshot.videoDates) {
-        if (!date || typeof date.youtubeId !== 'string' || !VIDEO.test(date.youtubeId) || dates.has(date.youtubeId)) throw new Error('Ambiguous video dates.');
-        dates.set(date.youtubeId, date.source === 'yt-dlp' ? dateOrNull(date.uploadDate) : null);
-      }
-      const counts = new Map<string, number>();
-      for (const item of snapshot.catalog.Items) {
-        const id = item && typeof item.Watch === 'string' ? youtubeVideoId(item.Watch) : null;
-        if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
-      }
-      const tracks: CatalogTrack[] = [];
-      for (const item of snapshot.catalog.Items) {
-        if (!item || !cleanText(item.Artist, 500) || !cleanText(item.Title, 500) || !cleanText(item.Brand, 200) || typeof item.Watch !== 'string') continue;
-        const id = youtubeVideoId(item.Watch), mappedBrand = brands.get(item.Brand);
-        if (!id || counts.get(id) !== 1) continue;
-        const mappedVideo = videos.get(id);
-        if (mappedVideo !== undefined && mappedVideo !== mappedBrand) continue;
-        // A brand code alone does not prove a video's verified directory slug.
-        const slug = mappedVideo === undefined ? '' : mappedVideo;
-        tracks.push({ artist: item.Artist, title: item.Title, brandSlug: slug, brandCode: item.Brand,
-          youtubeId: id, uploadDate: dates.get(id) ?? null });
-      }
-      return use(tracks, metadata, snapshot.catalog.Items.length);
-    } finally { busy = false; }
+export function createMySqlCatalogReader(store: CatalogSnapshotStore, options: { cacheTtlMs?: number; now?: () => number } = {}): CatalogReader & { status: () => Promise<CatalogStatus> } {
+  const ttl = options.cacheTtlMs ?? 30_000, now = options.now ?? (() => Math.floor(performance.now()));
+  if (!store || typeof store.searchSnapshot !== 'function' || !Number.isSafeInteger(ttl) || ttl < 0 || ttl > 60_000 || typeof now !== 'function')
+    throw new Error('Invalid catalog reader configuration.');
+  type IndexedTrack = Readonly<{ track: Readonly<CatalogTrack>; artist: string; title: string; brand: string; combined: string }>;
+  type Projection = Readonly<{ tracks: readonly IndexedTrack[]; metadata: Readonly<CatalogMetadata>; recordCount: number; expiresAt: number }>;
+  let cached: Projection | undefined, inFlight: Promise<Projection> | undefined;
+  function clock(): number {
+    const value = now();
+    if (!Number.isSafeInteger(value) || value < 0 || !Number.isSafeInteger(value + ttl)) throw new Error('Invalid catalog clock.');
+    return value;
+  }
+  function project(snapshot: CatalogReadSnapshot): Projection {
+    if (!snapshot || !snapshot.catalog || !Array.isArray(snapshot.catalog.Items) || !Array.isArray(snapshot.brandMappings) ||
+        !Array.isArray(snapshot.videoMetadata) || !Array.isArray(snapshot.videoDates) || typeof snapshot.revision !== 'string' ||
+        !REVISION.test(snapshot.revision)) throw new Error('Invalid catalog snapshot.');
+    const timestamp = (value: unknown) => value === null || Number.isSafeInteger(value) && (value as number) >= 0;
+    if (!timestamp(snapshot.lastAttempt) || !timestamp(snapshot.lastSuccess)) throw new Error('Invalid catalog timestamp.');
+    const metadata: CatalogMetadata = { revision: snapshot.revision, lastAttempt: snapshot.lastAttempt, lastSuccess: snapshot.lastSuccess };
+    const brands = new Map<string, string>(), slugs = new Set<string>();
+    for (const brand of snapshot.brandMappings) {
+      if (!brand || !cleanText(brand.upstreamBrand, 200) || !cleanSlug(brand.slug) || brands.has(brand.upstreamBrand) || slugs.has(brand.slug)) throw new Error('Ambiguous brand mapping.');
+      brands.set(brand.upstreamBrand, brand.slug); slugs.add(brand.slug);
+    }
+    const videos = new Map<string, string>();
+    for (const video of snapshot.videoMetadata) {
+      if (!video || typeof video.youtubeId !== 'string' || !VIDEO.test(video.youtubeId) || !cleanSlug(video.brandSlug) || videos.has(video.youtubeId)) throw new Error('Ambiguous video mapping.');
+      videos.set(video.youtubeId, video.brandSlug);
+    }
+    const dates = new Map<string, string | null>();
+    for (const date of snapshot.videoDates) {
+      if (!date || typeof date.youtubeId !== 'string' || !VIDEO.test(date.youtubeId) || dates.has(date.youtubeId)) throw new Error('Ambiguous video dates.');
+      dates.set(date.youtubeId, date.source === 'yt-dlp' ? dateOrNull(date.uploadDate) : null);
+    }
+    const counts = new Map<string, number>();
+    for (const item of snapshot.catalog.Items) {
+      const id = item && typeof item.Watch === 'string' ? youtubeVideoId(item.Watch) : null;
+      if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const tracks: CatalogTrack[] = [];
+    for (const item of snapshot.catalog.Items) {
+      if (!item || !cleanText(item.Artist, 500) || !cleanText(item.Title, 500) || !cleanText(item.Brand, 200) || typeof item.Watch !== 'string') continue;
+      const id = youtubeVideoId(item.Watch), mappedBrand = brands.get(item.Brand);
+      if (!id || counts.get(id) !== 1) continue;
+      const mappedVideo = videos.get(id);
+      if (mappedVideo !== undefined && mappedVideo !== mappedBrand) continue;
+      // A brand code alone does not prove a video's verified directory slug.
+      const slug = mappedVideo === undefined ? '' : mappedVideo;
+      tracks.push({ artist: item.Artist, title: item.Title, brandSlug: slug, brandCode: item.Brand,
+        youtubeId: id, uploadDate: dates.get(id) ?? null });
+    }
+    const indexed = tracks.map(track => {
+      const artist = norm(track.artist), title = norm(track.title);
+      return Object.freeze({ track: Object.freeze(track), artist, title, brand: norm(track.brandSlug), combined: `${artist} ${title}` });
+    });
+    indexed.sort((a, b) => cmp(a.artist, b.artist) || cmp(a.title, b.title) || cmp(a.track.brandSlug, b.track.brandSlug) || cmp(a.track.youtubeId, b.track.youtubeId));
+    return Object.freeze({ tracks: Object.freeze(indexed), metadata: Object.freeze(metadata), recordCount: snapshot.catalog.Items.length, expiresAt: clock() + ttl });
+  }
+  async function projection(): Promise<Projection> {
+    if (cached && clock() < cached.expiresAt) return cached;
+    if (inFlight) return inFlight;
+    cached = undefined;
+    const task = (async () => project(await store.searchSnapshot()))();
+    inFlight = task;
+    try { const value = await task; cached = value; return value; }
+    finally { if (inFlight === task) inFlight = undefined; }
   }
   return { async status() {
-    return read((tracks, metadata, recordCount) => ({ ...metadata, recordCount, searchableCount: tracks.length }));
+    const data = await projection();
+    return { ...data.metadata, recordCount: data.recordCount, searchableCount: data.tracks.length };
   }, async search(request) {
     validate(request);
-    return read((allTracks, metadata) => {
-      const fingerprint = criteria(request), offset = request.cursor === null ? 0 : readCursor(request.cursor, metadata.revision, fingerprint);
-      const q = norm(request.query), artist = norm(request.artist), brand = norm(request.brandSlug);
-      const terms = q ? q.split(' ') : [];
-      const tracks = allTracks.filter(item => {
-        const itemArtist = norm(item.artist), title = norm(item.title), combined = `${itemArtist} ${title}`;
-        return terms.every(term => combined.includes(term)) && (!artist || itemArtist === artist) && (!brand || norm(item.brandSlug) === brand);
-      });
-      tracks.sort((a, b) => cmp(norm(a.artist), norm(b.artist)) || cmp(norm(a.title), norm(b.title)) || cmp(a.brandSlug, b.brandSlug) || cmp(a.youtubeId, b.youtubeId));
-      if (offset > tracks.length) throw new Error('Catalog cursor is invalid or stale.');
-      const items = tracks.slice(offset, offset + request.limit), next = offset + items.length;
-      return { items, nextCursor: next < tracks.length ? cursor(metadata.revision, fingerprint, next) : null, metadata };
-    });
+    const data = await projection(), metadata = data.metadata;
+    const fingerprint = criteria(request), offset = request.cursor === null ? 0 : readCursor(request.cursor, metadata.revision, fingerprint);
+    const q = norm(request.query), artist = norm(request.artist), brand = norm(request.brandSlug), terms = q ? q.split(' ') : [];
+    const items: CatalogTrack[] = []; let matched = 0, more = false;
+    for (const item of data.tracks) {
+      if (!terms.every(term => item.combined.includes(term)) || artist && item.artist !== artist || brand && item.brand !== brand) continue;
+      if (matched++ < offset) continue;
+      if (items.length < request.limit) items.push(item.track);
+      else { more = true; break; }
+    }
+    if (offset > matched) throw new Error('Catalog cursor is invalid or stale.');
+    const next = offset + items.length;
+    return { items, nextCursor: more ? cursor(metadata.revision, fingerprint, next) : null, metadata };
   } };
 }
