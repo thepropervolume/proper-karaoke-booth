@@ -30,6 +30,7 @@ try {
   const installedElectron = JSON.parse(await readFile(join(repo, 'node_modules/electron/package.json'), 'utf8')).version;
   await mkdir(join(stage, 'dist'), { recursive: true });
   await cp(join(repo, 'assets/backdrops'), join(stage, 'assets/backdrops'), { recursive: true, errorOnExist: true, force: false });
+  await cp(join(repo, 'assets/branding'), join(stage, 'assets/branding'), { recursive: true, errorOnExist: true, force: false });
   await viteBuild({ root: repo, build: { outDir: join(stage, 'dist/ui'), emptyOutDir: true } });
   await Promise.all(['main', 'preload'].map(entry => bundle({
     entryPoints: [join(repo, `src/${entry}/index.ts`)], outfile: join(stage, `dist/${entry}/index.cjs`),
@@ -60,6 +61,11 @@ try {
   const config = { ...configuration,
     electronVersion: installedElectron,
     directories: { app: stage, output: join(repo, 'release') },
+    win: { ...configuration.win, icon: join(stage, configuration.win.icon) },
+    linux: { ...configuration.linux, icon: join(stage, configuration.linux.icon) },
+    mac: { ...configuration.mac, icon: join(stage, configuration.mac.icon) },
+    nsis: { ...configuration.nsis, installerIcon: join(stage, configuration.nsis.installerIcon),
+      uninstallerIcon: join(stage, configuration.nsis.uninstallerIcon), installerHeaderIcon: join(stage, configuration.nsis.installerHeaderIcon) },
     extraResources: configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
     // A multi-architecture build must download each matching Electron runtime.
     // Reusing the host runtime would silently mislabel (for example) an arm64 Mac.

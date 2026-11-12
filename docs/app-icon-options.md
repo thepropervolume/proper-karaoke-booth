@@ -1,8 +1,14 @@
 # Application icon options
 
-Updated 12 November 2026. These are **design options**, with no final selection or installed-icon change. The application name remains The Proper Volume Karaoke Booth.
+Updated 12 November 2026. The owner has selected **Velvet Script, option 1 from the later vintage/cursive exploration**, for the next pre-release. This is the angled vintage microphone with cyan sound arcs and Lobster script lettering; it is distinct from the older block-letter option 1 below. The application name remains The Proper Volume Karaoke Booth.
 
-The current direction is **multiple bold TPV lettermarks first**, using the owner's preferred palette: vivid purple `#601CE9`, cyan `#0EB7FF`, deep purple ink `#19102D` and cream `#FFFFF3`. That color preference does not approve a particular icon shape. Every direction has both a light and a dark edition; dark editions lead the review because the earlier headphones option felt too pale. Pink remains an optional alternate edition and is not the primary palette.
+The approved palette is vivid purple `#601CE9`, cyan `#0EB7FF`, deep purple ink `#19102D` and cream `#FFFFF3`. The dark edition is the installed application identity, with matching light assets available. The earlier lettermarks below are retained as exploration history.
+
+## Selected Pre-release Identity
+
+![Approved Velvet Script microphone](../assets/branding/png/dark/icon-256.png)
+
+The approved [asset set and reproduction instructions](../assets/branding/README.md) include scalable icons, horizontal TPV logos, full-name wordmarks, Windows ICO, macOS ICNS, Linux PNGs, web favicons and mobile/adaptive icons. The Windows executable, NSIS installer/uninstaller, Linux launcher, macOS package targets, Host and Singer Display windows, and mobile preview configuration now reference these assets. Existing custom singer-display logos remain independent. These changes apply to the next build; already-generated installers retain their previous icon. Actual platform package checks remain required.
 
 ## Four TPV directions
 
@@ -51,7 +57,7 @@ All six directions also have blue-led and optional pink editions, each in light 
 
 Each source has a corresponding `-small.svg` in the same directory. The accompanying review ZIP contains all **36** direction/theme/palette editions: six directions, two themes and three palettes. Each edition includes editable SVG, micro SVG, PNGs at 16, 24, 32, 48, 64, 128, 256, 512 and 1024 pixels, and a Windows ICO with sizes 16 through 256. Native vector construction was used to control letter geometry and small-size rendering; no raster-generation service was used.
 
-After a direction is selected, wire its ICO into Windows packaging, use its PNGs for Linux, produce the macOS icon package on a Mac, and check actual Start menu, taskbar, desktop and light/dark dock behavior. No option is a release icon yet.
+The options above are historical alternatives. Velvet Script is selected for pre-release; actual Start menu, taskbar, desktop and light/dark Dock behavior still need verification on each target system.
 
 ## Earlier review retained as history
 

@@ -5,7 +5,12 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "ios": { "supportsTablet": true },
-    "android": { "permissions": [] }
+    "android": {
+      "permissions": [],
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#19102D" }
+    },
+    "web": { "favicon": "./assets/favicon.png" }
   }
 }

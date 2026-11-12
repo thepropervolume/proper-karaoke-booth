@@ -8,10 +8,13 @@ export default {
   npmRebuild: false,
   nodeGypRebuild: false,
   files: ['dist/**/*', 'package.json', 'THIRD-PARTY-LICENSES.txt', '!node_modules/**/*', '!**/*.map'],
-  extraResources: [{ from: 'assets/backdrops', to: 'backdrops', filter: ['tpv-karaoke-v3.mp4', 'README.md'] }],
+  extraResources: [
+    { from: 'assets/backdrops', to: 'backdrops', filter: ['tpv-karaoke-v3.mp4', 'README.md'] },
+    { from: 'assets/branding', to: 'branding', filter: ['app.ico', 'app.png', 'icon-dark.svg', 'icon-light.svg', 'logo-dark.svg', 'logo-light.svg', 'wordmark-dark.svg', 'wordmark-light.svg', 'logo-dark.png', 'logo-light.png', 'wordmark-dark.png', 'wordmark-light.png', 'LICENSE-Lobster.txt', 'README.md'] },
+  ],
   directories: { output: 'release' },
   publish: null,
-  win: { target: ['nsis', 'zip'], signExecutable: false },
+  win: { target: ['nsis', 'zip'], icon: 'assets/branding/app.ico', signExecutable: false },
   nsis: {
     oneClick: false,
     perMachine: false,
@@ -20,12 +23,15 @@ export default {
     runAfterFinish: false,
     createDesktopShortcut: false,
     createStartMenuShortcut: true,
+    installerIcon: 'assets/branding/app.ico',
+    uninstallerIcon: 'assets/branding/app.ico',
+    installerHeaderIcon: 'assets/branding/app.ico',
     deleteAppDataOnUninstall: false,
     artifactName: 'Proper-Karaoke-Booth-${version}-windows-${arch}-setup.${ext}',
   },
-  linux: { target: ['AppImage', 'deb'], category: 'AudioVideo', maintainer: 'The Proper Volume' },
+  linux: { target: ['AppImage', 'deb'], icon: 'assets/branding/linux', category: 'AudioVideo', maintainer: 'The Proper Volume' },
   // Retain builder 26's defaults and include Electron's directly linked libraries.
   deb: { depends: ['libgtk-3-0 | libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils',
     'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0', 'libgbm1', 'libasound2 | libasound2t64', 'libdrm2', 'libx11-xcb1'] },
-  mac: { target: ['dmg', 'zip'], category: 'public.app-category.music', hardenedRuntime: true, identity: null },
+  mac: { target: ['dmg', 'zip'], icon: 'assets/branding/app.icns', category: 'public.app-category.music', hardenedRuntime: true, identity: null },
 };
