@@ -1,10 +1,12 @@
 # Local control API and CLI foundation
 
-This is the initial adapter-based foundation in `src/control`. The current desktop source connects read/navigation adapters and provides **Preferences → Local API and CLI**, disabled by default. Save the explicit enable preference to start the listener. The actual Windows app and compiled CLI passed a private-profile rehearsal; distributed wrapper/package verification is pending. Constructing the server without `enabled: true` also leaves it disabled: no listener or discovery file is created. API startup failures must not interrupt the show.
+This is the initial adapter-based foundation in `src/control`. The current desktop source connects read/navigation adapters and provides **Preferences → Local API and CLI**, disabled by default. Save the explicit enable preference to start the listener. The actual Windows and Linux 0.4.0 packages and bundled wrappers passed private-profile rehearsals. Constructing the server without `enabled: true` also leaves it disabled: no listener or discovery file is created. API startup failures must not interrupt the show.
 
 The implemented foundation exposes bounded reads and optional desktop navigation only. It does not claim general playback, queue, import, provider, rating, user, or database control. It never opens SQLite or establishes a second show writer. Future mutations must delegate to the existing authenticated main-process authority and advertise only implemented capabilities.
 
 ## Routes and adapter
+
+The [OpenAPI 3.1 contract](local-control-openapi.yaml) describes these current routes, owner-discovery authentication, exact capability/navigation/settings/shortcut response shapes, safe errors and limits. The internal host-state snapshot is intentionally opaque until a versioned public state schema is introduced. No planned mutation routes are advertised as live.
 
 | Method and route | Behavior |
 | --- | --- |
@@ -53,7 +55,7 @@ npx tsx src/control/entry.ts --profile-dir /path/to/app-profile settings
 npx tsx src/control/entry.ts --profile-dir /path/to/app-profile open settings
 ```
 
-The entry is bundled as a standalone CLI with esbuild. Distributed wrapper and package-resource integration is wired in source, but actual wrapper/package verification remains pending. It reads the owner-only discovery file, checks the advertised API identity/capabilities and uses that authority. It never opens the show database. `--discovery /path/to/control-api.json` is an alternative to `--profile-dir`; neither flag accepts a token value.
+The entry is bundled as a standalone CLI with esbuild. The actual Windows `tpv-karaoke.cmd` and Linux `tpv-karaoke` packaged wrappers passed, reusing the included Electron runtime without a separate Node installation. It reads the owner-only discovery file, checks the advertised API identity/capabilities and uses that authority. It never opens the show database. `--discovery /path/to/control-api.json` is an alternative to `--profile-dir`; neither flag accepts a token value.
 
 Commands are `status`, `capabilities`, `state`, `settings`, `shortcuts`, `open settings`, and `open keybindings`. `--settings` and `--keybindings` are navigation aliases requiring the enabled API. `settings --include-private-paths` explicitly asks for private setting paths. JSON is the default output; errors are structured JSON on stderr. `--help` reads no discovery or credential file.
 
@@ -73,6 +75,10 @@ Without a selector, the CLI uses the established profile name `proper-karaoke-bo
 
 The focused Windows run passed 29 tests with one POSIX symlink skip. It covers default-disabled behavior, native owner-only protection and broadened-permission rejection, discovery profile/PID binding and asynchronous replacement/junction races, strict Host/Origin/auth handling, cumulative response budgeting and path redaction, action allowlists, body/header limits, adapter errors, retained hung callbacks across stop/restart, truthful publication status, client identity checks, CLI exit codes, and a compiled standalone Node CLI against the real loopback adapter. Independent reviewers reproduced and then confirmed the cleanup, directory-junction, staged-file, lease and cumulative-budget fixes. Tests use synthetic adapters and private temporary profiles.
 
-Before release, verify the distributed CLI wrappers/packages and app-to-CLI behavior on other supported operating systems. Actual Windows source-app shutdown and navigation passed the rehearsal below. Full control, provider operations, event subscriptions, pagination, user-scoped tokens and remote use remain unimplemented.
+Windows and Linux packaged wrapper behavior, shutdown and navigation passed the rehearsals below. macOS still needs app-to-CLI checks. Full control, provider operations, event subscriptions, pagination, user-scoped tokens and remote use remain unimplemented.
 
 The actual Windows app and compiled CLI passed a private-profile rehearsal: default-disabled behavior, Preferences enable/save, native owner-only discovery, all read commands, both navigation actions, restart token rotation, stale-token denial, singer persistence without autoplay, disable and quit cleanup. This is app-source verification; distributed wrapper/package verification is recorded separately in the installation guide.
+
+The Windows 0.4.0 package passed the same rehearsal through its real `tpv-karaoke.cmd` wrapper and Electron runtime, with no external Node dependency. Both direct desktop navigation flags focused the same running profile while the API was disabled; cold `--settings` also opened Preferences without autoplay.
+
+Linux 0.4.0 AppImage and Debian artifacts had their hashes verified locally. The extracted AppRun passed launch, public-catalog access and private-profile restart. Its LF/0755 wrapper passed with Node absent from PATH: API enable/reads/navigation/disable/quit, same-instance `--settings`/`--keybindings` while the API was off, and cold wrapper `--settings`. All 76 targeted POSIX checks passed without skips. The rehearsal used root/Xvfb and test-only sandbox/GPU flags; it does not establish normal-user desktop sandbox behavior, installation, physical show hardware or CDG conversion on Linux.

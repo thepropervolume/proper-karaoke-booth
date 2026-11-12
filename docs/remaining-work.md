@@ -95,7 +95,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Extend settings coverage and migration/recovery guidance as remaining features are implemented.
 - [ ] Extend the registered shortcut actions to every remaining specialized command. Multiple bindings, the grouped editor, conflict detection, saved reset and tooltip hints are implemented.
 - [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
-- [ ] Complete general CLI actions through the existing authenticated local authority. Initial source provides structured capability/state/settings/shortcut reads and queued settings navigation with stable exit codes; the actual Windows app and compiled CLI passed a private-profile rehearsal. Mutation control and distributed wrapper/package verification remain pending. Do not introduce another SQLite writer.
+- [ ] Complete general CLI actions through the existing authenticated local authority. Initial source provides structured capability/state/settings/shortcut reads and queued settings navigation with stable exit codes; the actual Windows app and compiled CLI passed a private-profile rehearsal. Mutation control remains planned; Windows and Linux bundled-wrapper/package checks passed. Do not introduce another SQLite writer.
 
 ## Priority 1 — playback and display
 
@@ -133,7 +133,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Keep this checklist, [handoff](handoff.md), [host README](../README.md), [singer guide](singer-guide.md) and developer/operator guides synchronized with implemented behavior and tested limits.
 - [x] Reconcile the [Karaoke Nerds operator guide](karaokenerds-catalog.md) with deployed shared search, private desktop connection, offline query cache and refresh recovery limits.
 - [ ] Regenerate the Word specification from [product specification](product-specification.md) and visually verify it; the existing Word edition is outdated.
-- [ ] Regenerate and visually verify the mockup PDF from the Markdown source when requirements or screens change.
+- [x] Regenerate the 0.4.0 37-page Night/Day mockup PDF from Markdown and visually verify every page; repeat whenever requirements or screens change.
 - [ ] Complete platform install/update/uninstall, signing/icon and distribution checks; private catalog configuration and media tools remain separately provisioned. Keep delivery versions 0.x.y until approved 1.0.0.
 - [ ] Prepare a release checklist covering backups, migration/rollback, real-hardware tests, privacy and provider/venue terms.
 
@@ -167,9 +167,20 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [x] Wide grouped shortcut editor with multiple bindings, capture, conflicts, disabled bindings, persisted reset and JSON editing. Specialized actions still need full coverage.
 - [x] Repeated known metadata fields and arbitrary ignored custom placeholders; all six supplied formats accepted.
 - [x] Play opens the saved or nearest non-host singer display and waits for readiness; Previous restarts the same performance.
-- [x] Public catalog discovery fixes missing private configuration on fresh installs; actual new Linux package verification remains part of release checks.
+- [x] Public catalog discovery fixes missing private configuration on fresh installs; the actual Linux 0.4 package passed public catalog search without a reader configuration.
 - [x] Shared 1–10-heart host ratings in search/queue/On Stage with isolated MySQL, per-voter credentials, explicit replacement/clear and public aggregates.
 - [ ] Remote singer voting, verified account ownership and cross-device profiles.
 - [x] Larger/bolder sidebar, bottom Host Workspace links, Sources with YouTube/Karaoke Nerds/services, native File Import/Backup and View Appearance/Accent/Layout, iconized CDG import, wider preferences and larger section titles.
 - [x] Verify the initial local API against the actual Windows app and compiled CLI: reads, settings/shortcut navigation, lifecycle credentials, disable/quit cleanup and persistence without autoplay.
-- [ ] Complete authenticated API/CLI mutation control, events, pagination and the remaining app capabilities. The initial off-by-default read/navigation subset passed actual Windows app and compiled CLI checks; distributed wrapper/package verification remains pending.
+- [ ] Complete authenticated API/CLI mutation control, events, pagination and the remaining app capabilities. The initial off-by-default read/navigation subset passed actual Windows app and compiled CLI checks; Windows and Linux bundled-wrapper/package checks passed.
+
+## 0.4.0 Audited Correctness and Delivery
+
+- [x] Preserve native text editing when an assigned custom shortcut overlaps Select All, clipboard, undo/redo or caret movement; actual Ctrl+A regression passed.
+- [x] Merge dirty preference patches against the latest serialized settings; stale volume saves no longer overwrite a newer accent.
+- [x] Serve media from an identity-checked open handle; observed file replacement pauses with explicit recovery.
+- [x] Verify saved video bytes on explicit Retry and repair corrupt cache entries safely; require Stop for an active recording and never autoplay.
+- [x] Verify Windows installer/ZIP payloads and Linux AppImage/Debian payloads from frozen runtime source `0e90733`, with receipts and checksums.
+- [x] Verify packaged CLI read/navigation, explicit enablement, per-start credentials, API-off desktop flags and restart without autoplay on Windows and isolated Linux.
+- [ ] Finish general authenticated mutations, events, pagination and specialized CLI action coverage; initial capabilities explicitly report partial control.
+- [ ] Complete native desktop installation, upgrade/removal, macOS and physical show validation.

@@ -1,0 +1,422 @@
+openapi: 3.1.0
+info:
+  title: The Proper Volume Local Control API
+  version: 0.4.0
+  description: |
+    Initial owner-only read/navigation API. Disabled by default; enable and save
+    Preferences > Local API and CLI in the desktop app. This contract documents
+    current routes only. Playback, queue mutations, imports, SQL, generic IPC,
+    remote users and full application control are not implemented here.
+
+    Read control-api.json from the selected canonical app profile, never from a
+    shared or untrusted location. The file must belong to the current user with
+    owner-only permissions (POSIX 0600; protected owner+SYSTEM ACL on Windows).
+    It contains the literal host 127.0.0.1, ephemeral port, per-start bearer token,
+    PID, instanceId and profileId. Check the PID is active and bind every response
+    to the same instance/profile/PID headers and JSON identity. Never print or
+    place the token on a command line. Credential file contents are not API data.
+
+    Host must exactly match 127.0.0.1:<discovered port>. Origin and Sec-Fetch-Site
+    headers are rejected; there is no browser CORS, cookie authentication, proxy
+    trust or DNS hostname binding. Duplicate Host/Authorization headers are
+    rejected. Do not send bodies with GET requests. Oversized/malformed HTTP
+    headers can receive an empty parser-level HTTP 400 before JSON handling.
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Loopback only; the displayed port default is an example, not a fixed service port.
+    variables:
+      port:
+        default: '49152'
+        description: Replace with the port in the current owner's protected discovery file.
+security:
+  - OwnerBearer: []
+x-tpv-discovery:
+  filename: control-api.json
+  profile: Canonical desktop user-data directory; CLI selectors must match this profile.
+  tokenLifetime: One running API instance; rotated after stop/restart.
+  responseBinding: x-tpv-control-instance, x-tpv-control-profile, x-tpv-control-pid and JSON instance must match discovery.
+x-tpv-default-limits:
+  headerBytes: 8192
+  requestBytes: 2048
+  responseBytes: 2097152
+  concurrent: 4
+  deadlineMs: 5000
+  note: Timed-out adapter work retains its lease; stop/restart cannot discard an unsettled lease.
+paths:
+  /v1/capabilities:
+    get:
+      operationId: readCapabilities
+      summary: Read the implemented capabilities without invoking show adapters.
+      responses:
+        '200':
+          description: Current API identity, reads, optional navigation actions and limits.
+          headers:
+            x-tpv-control-instance: {$ref: '#/components/headers/InstanceId'}
+            x-tpv-control-profile: {$ref: '#/components/headers/ProfileId'}
+            x-tpv-control-pid: {$ref: '#/components/headers/HostPid'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CapabilitiesResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/Busy'}
+        default: {$ref: '#/components/responses/ControlFailure'}
+  /v1/state:
+    get:
+      operationId: readHostState
+      summary: Read the current authorized host show snapshot.
+      description: No database writer is created; the main-process authority supplies this snapshot.
+      responses:
+        '200':
+          description: Bounded current host snapshot; no stable public schema for its internal fields is promised yet.
+          headers:
+            x-tpv-control-instance: {$ref: '#/components/headers/InstanceId'}
+            x-tpv-control-profile: {$ref: '#/components/headers/ProfileId'}
+            x-tpv-control-pid: {$ref: '#/components/headers/HostPid'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StateResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/Busy'}
+        default: {$ref: '#/components/responses/ControlFailure'}
+  /v1/settings:
+    get:
+      operationId: readSettings
+      summary: Read settings, redacting private paths by default.
+      description: This route does not change settings and never reads credential-file contents.
+      parameters:
+        - name: includePrivatePaths
+          in: query
+          required: false
+          description: Explicit owner request to retain configuration, custom backdrop, cache and executable paths. May occur only once; other query parameters are rejected.
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: Validated settings projection and the names of nonempty paths that were blanked.
+          headers:
+            x-tpv-control-instance: {$ref: '#/components/headers/InstanceId'}
+            x-tpv-control-profile: {$ref: '#/components/headers/ProfileId'}
+            x-tpv-control-pid: {$ref: '#/components/headers/HostPid'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SettingsResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/Busy'}
+        default: {$ref: '#/components/responses/ControlFailure'}
+  /v1/shortcuts:
+    get:
+      operationId: readShortcuts
+      summary: Read effective default and customized shortcut bindings.
+      description: Empty action arrays mean unassigned. Shortcut modification is not exposed by this API.
+      responses:
+        '200':
+          description: Effective bindings, with canonical modifier ordering and conflict validation.
+          headers:
+            x-tpv-control-instance: {$ref: '#/components/headers/InstanceId'}
+            x-tpv-control-profile: {$ref: '#/components/headers/ProfileId'}
+            x-tpv-control-pid: {$ref: '#/components/headers/HostPid'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ShortcutsResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/Busy'}
+        default: {$ref: '#/components/responses/ControlFailure'}
+  /v1/actions:
+    post:
+      operationId: openDesktopPreferences
+      summary: Invoke an advertised settings or keybindings navigation callback.
+      description: |
+        Consult capabilities.actions first. Only these two named actions are
+        allowed; no arbitrary command or additional body property is accepted.
+        The body must be uncompressed application/json, within requestBytes.
+        Success confirms callback completion, not that a window has painted.
+        An uncertain reply is not automatically replayed.
+      parameters:
+        - name: Content-Encoding
+          in: header
+          required: false
+          schema: {type: string, enum: [identity]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NavigationAction'}
+      responses:
+        '200':
+          description: The available named callback completed.
+          headers:
+            x-tpv-control-instance: {$ref: '#/components/headers/InstanceId'}
+            x-tpv-control-profile: {$ref: '#/components/headers/ProfileId'}
+            x-tpv-control-pid: {$ref: '#/components/headers/HostPid'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NavigationResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/BodyTooLarge'}
+        '429': {$ref: '#/components/responses/Busy'}
+        '501': {$ref: '#/components/responses/Unsupported'}
+        default: {$ref: '#/components/responses/ControlFailure'}
+components:
+  securitySchemes:
+    OwnerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Per-start 43-character base64url token from protected discovery.
+  headers:
+    InstanceId:
+      description: Must equal the discovered running instanceId.
+      schema: {type: string, pattern: '^[a-f0-9]{32}$'}
+    ProfileId:
+      description: Must equal the discovered hash of the canonical profile directory.
+      schema: {type: string, pattern: '^[a-f0-9]{64}$'}
+    HostPid:
+      description: Must equal the discovered active host PID, represented as a decimal header string.
+      schema: {type: string, pattern: '^[1-9][0-9]*$'}
+  responses:
+    Unauthorized:
+      description: HTTP 401; missing, duplicate or invalid bearer authorization. There is no anonymous fallback.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Forbidden:
+      description: HTTP 403; non-loopback peer, invalid or duplicate Host, Origin, or Sec-Fetch-Site.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Busy:
+      description: HTTP 429; concurrent-request leases are occupied, including unsettled timed-out work.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    BodyTooLarge:
+      description: HTTP 413; declared or received navigation body exceeds requestBytes.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Unsupported:
+      description: HTTP 501; a recognized navigation callback is not supplied by this host.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    ControlFailure:
+      description: |
+        Safe JSON errors: HTTP 400 invalid-request, 404 not-found, 405 method-not-allowed,
+        500 adapter-failed, 503 unavailable/response-too-large, or 504 timed-out.
+        Parser-level malformed/oversized headers can instead produce an empty 400.
+        No adapter stack trace, credential or request contents are returned.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    Instance:
+      type: object
+      additionalProperties: false
+      required: [pid, instanceId, profileId]
+      properties:
+        pid: {type: integer, minimum: 1}
+        instanceId: {type: string, pattern: '^[a-f0-9]{32}$'}
+        profileId: {type: string, pattern: '^[a-f0-9]{64}$'}
+    SuccessIdentity:
+      type: object
+      required: [ok, instance]
+      properties:
+        ok: {const: true}
+        instance: {$ref: '#/components/schemas/Instance'}
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, error]
+      properties:
+        ok: {const: false}
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [unauthorized, request-denied, invalid-request, not-found, method-not-allowed, body-too-large, busy, timed-out, unsupported, adapter-failed, response-too-large, unavailable]
+            message: {type: string}
+    Capabilities:
+      type: object
+      additionalProperties: false
+      required: [apiVersion, applicationVersion, reads, actions, limits, completeApplicationControl]
+      properties:
+        apiVersion: {const: 1}
+        applicationVersion: {type: string}
+        reads:
+          type: array
+          uniqueItems: true
+          minItems: 4
+          maxItems: 4
+          items: {type: string, enum: [capabilities, state, settings, shortcuts]}
+        actions:
+          type: object
+          additionalProperties: false
+          required: [settings, keybindings]
+          properties:
+            settings: {type: boolean}
+            keybindings: {type: boolean}
+        limits:
+          type: object
+          additionalProperties: false
+          required: [requestBytes, responseBytes, concurrent, deadlineMs]
+          properties:
+            requestBytes: {type: integer, minimum: 64, maximum: 65536, default: 2048}
+            responseBytes: {type: integer, minimum: 256, maximum: 8388608, default: 2097152}
+            concurrent: {type: integer, minimum: 1, maximum: 16, default: 4}
+            deadlineMs: {type: integer, minimum: 20, maximum: 60000, default: 5000}
+        completeApplicationControl: {const: false}
+    NavigationAction:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action: {type: string, enum: [settings, keybindings]}
+    NavigationResult:
+      type: object
+      additionalProperties: false
+      required: [action, opened]
+      properties:
+        action: {type: string, enum: [settings, keybindings]}
+        opened: {const: true}
+    LocalPath:
+      type: string
+      maxLength: 4096
+      description: Empty means default/unset or redacted. Otherwise the application validates a local absolute path; file contents are never returned.
+    SelectionList:
+      type: array
+      maxItems: 500
+      description: Trimmed nonempty brand/artist names; case-insensitive duplicates are rejected by the application.
+      items: {type: string, minLength: 1, maxLength: 200}
+    Settings:
+      type: object
+      additionalProperties: false
+      description: Current settings fields. The five private path fields may be blanked by projection, independently of their saved mode.
+      required: [appearance, accentColor, autoApprove, localControlEnabled, rotationMode, maxFutureRequestsPerSinger, layout, metadataFormat, metadataTemplates, masterVolume, audioOutputId, autoBumper, autoBumperTrackId, showNextSingers, showDisplayLogo, singerDisplayFullscreen, lyricBackdrop, lyricBackdropFile, pauseIntervalSeconds, karaokeNerdsCacheDirectory, ytDlpExecutable, sharedCatalogEnabled, sharedCatalogConfigFile, ratingProfileConfigFile, karaokeNerdsAutoCache, karaokeNerdsBrands, karaokeNerdsArtists]
+      properties:
+        appearance: {type: string, enum: [system, night, day]}
+        accentColor: {type: string, enum: [blue, pink, purple]}
+        autoApprove: {type: boolean}
+        localControlEnabled: {type: boolean, default: false}
+        rotationMode: {type: string, enum: [singer, fifo]}
+        maxFutureRequestsPerSinger: {type: integer, minimum: 0, maximum: 50}
+        layout: {type: string, enum: [standard, rotation, library]}
+        metadataFormat: {type: string, enum: [artist-title, title-artist, filename]}
+        metadataTemplates:
+          type: array
+          maxItems: 32
+          description: Ordered validated filename/folder templates; the app validates placeholder grammar and literal separators.
+          items: {type: string, minLength: 1, maxLength: 512}
+        masterVolume: {type: number, minimum: 0, maximum: 1}
+        audioOutputId: {type: string, maxLength: 1024}
+        autoBumper: {type: boolean}
+        autoBumperTrackId: {type: string, minLength: 1, maxLength: 128}
+        showNextSingers: {type: boolean}
+        showDisplayLogo: {type: boolean}
+        singerDisplayFullscreen: {type: boolean}
+        lyricBackdrop: {type: string, enum: [default, none, custom]}
+        lyricBackdropFile: {$ref: '#/components/schemas/LocalPath'}
+        pauseIntervalSeconds: {type: integer, minimum: 0, maximum: 300}
+        karaokeNerdsCacheDirectory: {$ref: '#/components/schemas/LocalPath'}
+        ytDlpExecutable: {$ref: '#/components/schemas/LocalPath'}
+        sharedCatalogEnabled: {type: boolean}
+        sharedCatalogConfigFile: {$ref: '#/components/schemas/LocalPath'}
+        ratingProfileConfigFile: {$ref: '#/components/schemas/LocalPath'}
+        karaokeNerdsAutoCache: {type: boolean}
+        karaokeNerdsBrands: {$ref: '#/components/schemas/SelectionList'}
+        karaokeNerdsArtists: {$ref: '#/components/schemas/SelectionList'}
+    SettingsProjection:
+      type: object
+      additionalProperties: false
+      required: [settings, redactedFields]
+      properties:
+        settings: {$ref: '#/components/schemas/Settings'}
+        redactedFields:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [sharedCatalogConfigFile, ratingProfileConfigFile, lyricBackdropFile, karaokeNerdsCacheDirectory, ytDlpExecutable]}
+    Bindings:
+      type: array
+      maxItems: 16
+      uniqueItems: true
+      description: Canonical Control+Alt+Shift+Meta ordering with physical key code; empty disables an action. The app also checks conflicts across actions.
+      items:
+        type: string
+        maxLength: 128
+        pattern: '^(Control\+)?(Alt\+)?(Shift\+)?(Meta\+)?(Key[A-Z]|Digit[0-9]|F([1-9]|1[0-9]|2[0-4])|Space|Enter|Escape|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Arrow(Up|Down|Left|Right)|Comma|Period|Slash|Backslash|Semicolon|Quote|Backquote|BracketLeft|BracketRight|Minus|Equal|Numpad([0-9]|Add|Subtract|Multiply|Divide|Decimal|Enter))$'
+    Shortcuts:
+      type: object
+      additionalProperties: false
+      required: [search, preferences, keybindings, backupShow, playPause, previous, stop, skip, seekBackward, seekForward, removeRequest, singerDisplay, toggleFullscreen, importVideo, importDirectory, importCdg, appearance, accentColor, cycleAppearance, cycleAccent, layoutStandard, layoutRotation, layoutLibrary]
+      properties:
+        search: {$ref: '#/components/schemas/Bindings'}
+        preferences: {$ref: '#/components/schemas/Bindings'}
+        keybindings: {$ref: '#/components/schemas/Bindings'}
+        backupShow: {$ref: '#/components/schemas/Bindings'}
+        playPause: {$ref: '#/components/schemas/Bindings'}
+        previous: {$ref: '#/components/schemas/Bindings'}
+        stop: {$ref: '#/components/schemas/Bindings'}
+        skip: {$ref: '#/components/schemas/Bindings'}
+        seekBackward: {$ref: '#/components/schemas/Bindings'}
+        seekForward: {$ref: '#/components/schemas/Bindings'}
+        removeRequest: {$ref: '#/components/schemas/Bindings'}
+        singerDisplay: {$ref: '#/components/schemas/Bindings'}
+        toggleFullscreen: {$ref: '#/components/schemas/Bindings'}
+        importVideo: {$ref: '#/components/schemas/Bindings'}
+        importDirectory: {$ref: '#/components/schemas/Bindings'}
+        importCdg: {$ref: '#/components/schemas/Bindings'}
+        appearance: {$ref: '#/components/schemas/Bindings'}
+        accentColor: {$ref: '#/components/schemas/Bindings'}
+        cycleAppearance: {$ref: '#/components/schemas/Bindings'}
+        cycleAccent: {$ref: '#/components/schemas/Bindings'}
+        layoutStandard: {$ref: '#/components/schemas/Bindings'}
+        layoutRotation: {$ref: '#/components/schemas/Bindings'}
+        layoutLibrary: {$ref: '#/components/schemas/Bindings'}
+    CapabilitiesResponse:
+      allOf:
+        - {$ref: '#/components/schemas/SuccessIdentity'}
+        - type: object
+          required: [result]
+          properties:
+            result: {$ref: '#/components/schemas/Capabilities'}
+      unevaluatedProperties: false
+    StateResponse:
+      allOf:
+        - {$ref: '#/components/schemas/SuccessIdentity'}
+        - type: object
+          required: [result]
+          properties:
+            result:
+              type: object
+              additionalProperties: true
+              description: Current authorized main-process ShowState snapshot. Its internal fields are deliberately opaque in this initial public contract; a versioned/paginated state schema is future work.
+      unevaluatedProperties: false
+    SettingsResponse:
+      allOf:
+        - {$ref: '#/components/schemas/SuccessIdentity'}
+        - type: object
+          required: [result]
+          properties:
+            result: {$ref: '#/components/schemas/SettingsProjection'}
+      unevaluatedProperties: false
+    ShortcutsResponse:
+      allOf:
+        - {$ref: '#/components/schemas/SuccessIdentity'}
+        - type: object
+          required: [result]
+          properties:
+            result: {$ref: '#/components/schemas/Shortcuts'}
+      unevaluatedProperties: false
+    NavigationResponse:
+      allOf:
+        - {$ref: '#/components/schemas/SuccessIdentity'}
+        - type: object
+          required: [result]
+          properties:
+            result: {$ref: '#/components/schemas/NavigationResult'}
+      unevaluatedProperties: false
