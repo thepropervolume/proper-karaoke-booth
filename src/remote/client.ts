@@ -17,8 +17,19 @@ export type GuestTransport = {
 };
 
 export type GuestView = { joined: boolean; snapshot: GuestSnapshot | null; songs: Song[]; nextOffset: number | null; busy: boolean;
-  message: string; uncertain: boolean; joinUncertain: boolean };
+  message: string; uncertain: boolean; retryAvailable: boolean; joinUncertain: boolean };
 type PendingJoin = { name: string; id: string; secret: string; revision: number };
+type PendingRequest =
+  | { kind: 'song'; command: Parameters<GuestTransport['submit']>[1] }
+  | { kind: 'withdraw'; command: Parameters<GuestTransport['withdraw']>[1] }
+  | { kind: 'availability'; command: Parameters<NonNullable<GuestTransport['setAvailability']>>[1] }
+  | { kind: 'missing'; command: Parameters<GuestTransport['submitMissing']>[1] };
+function validOutcome(value: unknown): value is Outcome {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  return Number.isSafeInteger(result.revision) && (result.revision as number) >= 0 &&
+    (result.ok === true || (result.ok === false && typeof result.code === 'string' && !!result.code && typeof result.message === 'string'));
+}
 /** A specifically identified, rolled-back admission conflict; no guest was created. */
 export class JoinRevisionConflict extends Error {}
 
@@ -26,11 +37,11 @@ export class JoinRevisionConflict extends Error {}
 export class SingerClient {
   private invitation: string;
   private session = '';
+  private singerId = '';
   private resumeSecret = '';
   private pendingJoin: PendingJoin | null = null;
-  private pendingRequest: string | null = null;
-  private pendingKind: 'song' | 'missing' | 'withdraw' | 'availability' | null = null;
-  private view: GuestView = { joined: false, snapshot: null, songs: [], nextOffset: null, busy: false, message: '', uncertain: false, joinUncertain: false };
+  private pendingRequest: PendingRequest | null = null;
+  private view: GuestView = { joined: false, snapshot: null, songs: [], nextOffset: null, busy: false, message: '', uncertain: false, retryAvailable: false, joinUncertain: false };
   constructor(private transport: GuestTransport, invitation: string, private random: () => string = randomSecret) { this.invitation = invitation; }
   private emit(listener: (view: GuestView) => void, changes: Partial<GuestView>): void {
     this.view = { ...this.view, ...changes }; listener(this.state());
@@ -50,7 +61,8 @@ export class SingerClient {
       }
       const pending = this.pendingJoin;
       const joined = await this.transport.join(this.invitation, pending.id, pending.secret, pending.name, pending.revision);
-      this.session = joined.session; this.resumeSecret = pending.secret;
+      if (typeof joined.session !== 'string' || !joined.session || typeof joined.singerId !== 'string' || !joined.singerId) throw new Error('Invalid singer identity.');
+      this.session = joined.session; this.singerId = joined.singerId; this.resumeSecret = pending.secret;
       this.invitation = ''; this.pendingJoin = null;
       this.emit(listener, { joined: true, joinUncertain: false });
       await this.loadSnapshot(listener);
@@ -63,6 +75,7 @@ export class SingerClient {
   }
   private async loadSnapshot(listener: (view: GuestView) => void): Promise<void> {
     const snapshot = await this.transport.snapshot(this.session);
+    if (!snapshot || snapshot.singerId !== this.singerId) throw new Error('Singer identity changed.');
     this.emit(listener, { snapshot, songs: snapshot.catalog, nextOffset: snapshot.catalogNextOffset, message: '' });
   }
   async refresh(listener: (view: GuestView) => void): Promise<void> {
@@ -75,7 +88,11 @@ export class SingerClient {
   async reconnect(listener: (view: GuestView) => void): Promise<void> {
     if (!this.resumeSecret || this.view.busy) return;
     this.emit(listener, { busy: true });
-    try { this.session = (await this.transport.resume(this.resumeSecret)).session; await this.loadSnapshot(listener); }
+    try {
+      const resumed = await this.transport.resume(this.resumeSecret);
+      if (typeof resumed.session !== 'string' || !resumed.session || resumed.singerId !== this.singerId) throw new Error('Singer identity changed.');
+      this.session = resumed.session; await this.loadSnapshot(listener);
+    }
     catch { this.emit(listener, { message: 'Could not reconnect. The show may be offline or access may have expired.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
@@ -92,67 +109,73 @@ export class SingerClient {
   async request(versionId: string, listener: (view: GuestView) => void): Promise<void> {
     const snapshot = this.view.snapshot;
     if (!this.session || !snapshot || this.view.busy || this.pendingRequest || !this.view.songs.some(song => song.id === versionId)) return;
-    const commandId = this.random(); this.pendingRequest = commandId; this.pendingKind = 'song';
-    this.emit(listener, { busy: true, message: '' });
-    try {
-      const result = await this.transport.submit(this.session, { commandId, showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, versionId });
-      this.pendingRequest = null; this.pendingKind = null;
-      await this.afterOutcome(result, listener, 'song');
-    } catch { this.emit(listener, { uncertain: true, message: 'The request may have been received. Check its outcome before requesting another song.' }); }
-    finally { this.emit(listener, { busy: false }); }
+    this.pendingRequest = { kind: 'song', command: { commandId: this.random(), showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, versionId } };
+    await this.sendPending(listener);
   }
   async withdraw(requestId: string, listener: (view: GuestView) => void): Promise<void> {
     const snapshot = this.view.snapshot;
     if (!this.session || !snapshot || this.view.busy || this.pendingRequest || !snapshot.requests.some(item => item.id === requestId && ['pending', 'accepted'].includes(item.status))) return;
-    const commandId = this.random(); this.pendingRequest = commandId; this.pendingKind = 'withdraw';
-    this.emit(listener, { busy: true, message: '' });
-    try {
-      const result = await this.transport.withdraw(this.session, { commandId, showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, requestId });
-      this.pendingRequest = null; this.pendingKind = null;
-      await this.afterOutcome(result, listener, 'withdraw');
-    } catch { this.emit(listener, { uncertain: true, message: 'Withdrawal may have been received. Check its outcome before making another request.' }); }
-    finally { this.emit(listener, { busy: false }); }
+    this.pendingRequest = { kind: 'withdraw', command: { commandId: this.random(), showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, requestId } };
+    await this.sendPending(listener);
   }
   async setAvailability(minutes: number, listener: (view: GuestView) => void): Promise<void> {
     const snapshot = this.view.snapshot;
     if (!this.session || !snapshot || this.view.busy || this.pendingRequest) return;
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 60) { this.emit(listener, { message: 'Choose a whole number of minutes from 0 to 60.' }); return; }
     if (!this.transport.setAvailability) { this.emit(listener, { message: 'Availability controls are unavailable on this connection.' }); return; }
-    const commandId = this.random(); this.pendingRequest = commandId; this.pendingKind = 'availability';
-    this.emit(listener, { busy: true, message: '' });
-    try {
-      const result = await this.transport.setAvailability(this.session, { commandId, showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, minutes });
-      this.pendingRequest = null; this.pendingKind = null;
-      await this.afterOutcome(result, listener, 'availability');
-    } catch { this.emit(listener, { uncertain: true, message: 'Availability may have been updated. Check its outcome before making another change.' }); }
-    finally { this.emit(listener, { busy: false }); }
+    this.pendingRequest = { kind: 'availability', command: { commandId: this.random(), showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, minutes } };
+    await this.sendPending(listener);
   }
   /** Missing songs go to the host's request list, not the performance rotation. */
   async requestMissing(title: string, artist: string, listener: (view: GuestView) => void): Promise<void> {
     if (!this.session || !this.view.snapshot || this.view.busy || this.pendingRequest) return;
     const cleanTitle = title.trim(), cleanArtist = artist.trim();
     if (!cleanTitle || cleanTitle.length > 200 || cleanArtist.length > 200) { this.emit(listener, { message: 'Enter a title and keep each field within 200 characters.' }); return; }
-    const commandId = this.random(); this.pendingRequest = commandId; this.pendingKind = 'missing';
-    this.emit(listener, { busy: true, message: '' });
+    this.pendingRequest = { kind: 'missing', command: { commandId: this.random(), title: cleanTitle, artist: cleanArtist } };
+    await this.sendPending(listener);
+  }
+  /** Explicit user retry uses the exact original command, never a new ID or revision. */
+  async retryPending(listener: (view: GuestView) => void): Promise<void> {
+    if (!this.view.uncertain || !this.view.retryAvailable || !this.pendingRequest || !this.session || this.view.busy) return;
+    await this.sendPending(listener);
+  }
+  private async sendPending(listener: (view: GuestView) => void): Promise<void> {
+    const pending = this.pendingRequest;
+    if (!pending || !this.session || this.view.busy) return;
+    this.emit(listener, { busy: true, message: '', retryAvailable: false });
     try {
-      const result = await this.transport.submitMissing(this.session, { commandId, title: cleanTitle, artist: cleanArtist });
-      this.pendingRequest = null; this.pendingKind = null;
-      await this.afterOutcome(result, listener, 'missing');
-    } catch { this.emit(listener, { uncertain: true, message: 'The request may have been received. Check its outcome before requesting another song.' }); }
-    finally { this.emit(listener, { busy: false }); }
+      let result: Outcome;
+      if (pending.kind === 'song') result = await this.transport.submit(this.session, { ...pending.command });
+      else if (pending.kind === 'withdraw') result = await this.transport.withdraw(this.session, { ...pending.command });
+      else if (pending.kind === 'availability') {
+        if (!this.transport.setAvailability) throw new Error('Availability controls are unavailable.');
+        result = await this.transport.setAvailability(this.session, { ...pending.command });
+      } else result = await this.transport.submitMissing(this.session, { ...pending.command });
+      // Even a malformed success response is outcome-unknown; do not lose the ID.
+      if (!validOutcome(result)) throw new Error('Invalid request outcome.');
+      this.pendingRequest = null;
+      await this.afterOutcome(result, listener, pending.kind);
+    } catch {
+      const subject = pending.kind === 'withdraw' ? 'Withdrawal' : pending.kind === 'availability' ? 'Availability' : 'The request';
+      this.emit(listener, { uncertain: true, message: `${subject} may have been received. Check its outcome before making another request.` });
+    } finally { this.emit(listener, { busy: false }); }
   }
   async checkOutcome(listener: (view: GuestView) => void): Promise<void> {
     if (!this.session || !this.pendingRequest || this.view.busy) return;
     this.emit(listener, { busy: true });
     try {
-      const result = await this.transport.outcome(this.session, this.pendingRequest);
-      if (!result) this.emit(listener, { message: 'The result is not available yet. Check again before sending another request.' });
-      else { const kind = this.pendingKind ?? 'song'; this.pendingRequest = null; this.pendingKind = null; await this.afterOutcome(result, listener, kind); }
+      const result = await this.transport.outcome(this.session, this.pendingRequest.command.commandId);
+      if (result === null) this.emit(listener, { retryAvailable: true, message: 'No outcome is available yet. You can check again or retry the original action safely.' });
+      else {
+        if (!validOutcome(result)) throw new Error('Invalid request outcome.');
+        const kind = this.pendingRequest.kind; this.pendingRequest = null;
+        await this.afterOutcome(result, listener, kind);
+      }
     } catch { this.emit(listener, { message: 'Could not check the request. Reconnect and try again.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
   private async afterOutcome(result: Outcome, listener: (view: GuestView) => void, kind: 'song' | 'missing' | 'withdraw' | 'availability'): Promise<void> {
-    this.emit(listener, { uncertain: false });
+    this.emit(listener, { uncertain: false, retryAvailable: false });
     const success = kind === 'availability' ? 'Availability updated.' : kind === 'missing' ? 'Missing-song request sent to the host.' : kind === 'withdraw' ? 'Request withdrawn.' : 'Request received.';
     try { await this.loadSnapshot(listener); }
     catch { this.emit(listener, { message: result.ok ? `${success} Refresh when connected for status.` : `${result.message} Refresh when connected.` }); return; }

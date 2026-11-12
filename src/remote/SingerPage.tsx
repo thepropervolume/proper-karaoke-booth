@@ -32,7 +32,9 @@ export function SingerPage({ client }: { client: SingerClient }) {
         <button disabled={view.busy} onClick={() => void client.refresh(setView)}>Refresh</button>
         <button disabled={view.busy} onClick={() => void client.reconnect(setView)}>Reconnect</button></div>
       {view.uncertain && <section className="singer-warning"><p>A previous request may have been received. Check its outcome before making another request.</p>
-        <button disabled={view.busy} onClick={() => void client.checkOutcome(setView)}>Check request outcome</button></section>}
+        <button disabled={view.busy} onClick={() => void client.checkOutcome(setView)}>Check request outcome</button>
+        {view.retryAvailable && <><p>No outcome was found. You can retry the original action with its existing request ID.</p>
+          <button disabled={view.busy} onClick={() => void client.retryPending(setView)}>Retry original action</button></>}</section>}
       {view.snapshot && <>
         <section><h2>Your availability</h2>
           <p>{(view.snapshot.unavailableUntilMs ?? 0) > (view.snapshot.serverNowMs ?? Date.now()) ? `Unavailable · return in about ${Math.ceil(((view.snapshot.unavailableUntilMs ?? 0) - (view.snapshot.serverNowMs ?? Date.now())) / 60000)} min at last refresh.` : 'Available for your turn.'} You can keep one upcoming request while unavailable; existing requests stay saved. Your turn rejoins automatically when the time expires, and the host starts playback.</p>
