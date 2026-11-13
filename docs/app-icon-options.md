@@ -1,14 +1,14 @@
 # Application icon options
 
-Updated 12 November 2026. The owner has selected **Velvet Script, option 1 from the later vintage/cursive exploration**, for the next pre-release. This is the angled vintage microphone with cyan sound arcs and Lobster script lettering; it is distinct from the older block-letter option 1 below. The application name remains The Proper Volume Karaoke Booth.
+Updated 13 November 2026. The owner has selected the supplied **Microphone Play** reference (`mic-play`) as the provisional identity for the next pre-release. The vintage microphone and play outline supersede the 12 November Velvet Script selection. The application name remains The Proper Volume Karaoke Booth.
 
-The approved palette is vivid purple `#601CE9`, cyan `#0EB7FF`, deep purple ink `#19102D` and cream `#FFFFF3`. The dark edition is the installed application identity, with matching light assets available. The earlier lettermarks below are retained as exploration history.
+The reference palette is orange `#F68713`, pink `#ED0D63`, navy `#131457` and gray `#E9E9E9`, with dark and light editions required. The app icon must contain **no visible text**. The full logo reads **TPV / KARAOKE BOOTH**, correcting the reference's extra E. Earlier concepts and palettes below remain exploration history.
 
 ## Selected Pre-release Identity
 
-![Approved Velvet Script microphone](../assets/branding/png/dark/icon-256.png)
+The maintained [asset set and reproduction instructions](../assets/branding/README.md) cover SVG masters, logos and wordmarks, Windows ICO, macOS ICNS, Linux PNGs, web favicons and mobile/adaptive icons. The Microphone Play masters, native exports and installer artwork are being prepared; verification of those exports and new packages is pending. Do not treat an existing generated icon preview as evidence that the replacement has been verified.
 
-The approved [asset set and reproduction instructions](../assets/branding/README.md) include scalable icons, horizontal TPV logos, full-name wordmarks, Windows ICO, macOS ICNS, Linux PNGs, web favicons and mobile/adaptive icons. The Windows executable, NSIS installer/uninstaller, Linux launcher, macOS package targets, Host and Singer Display windows, and mobile preview configuration now reference these assets. Existing custom singer-display logos remain independent. These changes apply to the next build; already-generated installers retain their previous icon. Actual platform package checks remain required.
+The desktop packaging and runtime already use the shared branding paths for the executable, installer, launcher, Host and Singer Display windows; the mobile preview has corresponding icon paths. Existing custom singer-display logos remain independent. Already-generated installers retain their prior identity. Exporting an ICNS or configuring a macOS target does not establish a native Mac build.
 
 ## Four TPV directions
 
@@ -57,7 +57,7 @@ All six directions also have blue-led and optional pink editions, each in light 
 
 Each source has a corresponding `-small.svg` in the same directory. The accompanying review ZIP contains all **36** direction/theme/palette editions: six directions, two themes and three palettes. Each edition includes editable SVG, micro SVG, PNGs at 16, 24, 32, 48, 64, 128, 256, 512 and 1024 pixels, and a Windows ICO with sizes 16 through 256. Native vector construction was used to control letter geometry and small-size rendering; no raster-generation service was used.
 
-The options above are historical alternatives. Velvet Script is selected for pre-release; actual Start menu, taskbar, desktop and light/dark Dock behavior still need verification on each target system.
+The options above are historical alternatives. Velvet Script was selected on 12 November from a later vintage/cursive review, then superseded by Microphone Play on 13 November. Its Lobster lettering and purple/cyan palette are historical, not instructions for the new mark. Retain the existing sources and licenses. Actual Start menu, taskbar, desktop and light/dark Dock behavior for the new identity still need verification on each target system.
 
 ## Earlier review retained as history
 
