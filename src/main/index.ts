@@ -31,7 +31,8 @@ import { createLanHostProvider } from './remote-provider';
 import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { InternetQueueClient } from './internet-queue-client';
 import { createSingerStaticHandler } from './remote-static';
-import { fingerprintMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
+import { fingerprintMedia, mediaIdentityMatches, verifyAndRelinkMedia, type MediaIdentity } from './media-verification';
+import { startPolicyError } from './playback-policy';
 import { openVerifiedMediaFile, VerifiedMediaFileError } from './verified-media-file';
 import { cachedVideoIdentityMatches, inspectCachedVideo, sameStoredMedia } from './cached-video-integrity';
 import { mediaErrorDetail } from './media-error-message';
@@ -502,6 +503,8 @@ function hostPlayPause(): Promise<TransportResult> {
     }
     const generation = state.playback?.generationId ?? null;
     const stagedId = state.stagedRequestId;
+    const policyError = startPolicyError(state, { type: generation ? 'resume' : 'start' }, stagedId);
+    if (policyError) return { ok: false, error: policyError };
     await ensureSingerDisplayReady();
     if (generation ? state.playback?.generationId !== generation || state.playback.status !== 'paused' : !!state.playback || state.stagedRequestId !== stagedId)
       return { ok: false, error: 'The selected track changed while opening the player. Review the queue and press Play again.' };
@@ -564,6 +567,8 @@ function playable(command: Command): string | null {
 async function executeHostCommand(command: Command, transportOwned = false): Promise<{ ok: boolean; error?: string }> {
   if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'pause', 'stop', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
     return { ok: false, error: 'Wait for the current playback transition to finish.' };
+  const initialPolicyError = startPolicyError(state, command);
+  if (initialPolicyError) return { ok: false, error: initialPolicyError };
   if (command.type === 'start' || command.type === 'resume') {
     const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
     const version = state.versions.find(item => item.id === state.requests.find(request => request.id === requestId)?.versionId);
@@ -598,11 +603,13 @@ async function executeHostCommand(command: Command, transportOwned = false): Pro
       } catch { return { ok: false, error: 'The song file could not be verified. Check its location or relink the original file.' }; }
       finally { mediaChecks.delete(check); }
       if (shuttingDown || !await mediaIdentityMatches(media.path, sourceIdentity)) return { ok: false, error: 'The song file changed during verification. Check or relink the original file.' };
+      const policyBeforeBumper = startPolicyError(state, command, requestId);
+      if (policyBeforeBumper) return { ok: false, error: policyBeforeBumper };
       await bumper?.karaokeStarting();
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
       const stillMatches = await mediaIdentityMatches(media.path, sourceIdentity);
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
-      const reason = playable(command);
+      const reason = startPolicyError(state, command, requestId) || playable(command);
       const currentMedia = versionId && store.media(versionId);
       if (reason || !currentMedia || currentMedia.path !== media.path || currentMedia.fingerprint !== media.fingerprint || !stillMatches) {
         if (!state.playback) bumper?.karaokeEnded();
@@ -881,15 +888,12 @@ else {
       const path = selection.filePaths[0];
       if (extname(path).toLowerCase() !== '.mp4') throw new Error('Choose the original MP4 video file.');
       const check = new AbortController(); mediaChecks.add(check);
-      let checked: Awaited<ReturnType<typeof fingerprintMedia>>;
-      try { checked = await fingerprintMedia(path, check.signal); }
-      catch { throw new Error('The selected file could not be verified. Choose a readable original MP4.'); }
+      try {
+        await verifyAndRelinkMedia(path, original.fingerprint, check.signal,
+          () => !shuttingDown && !playbackTransition && activeVersion() !== versionId && isVersionAllowed(state, versionId),
+          () => store.relinkMedia(original, path));
+      }
       finally { mediaChecks.delete(check); }
-      if (checked.fingerprint !== original.fingerprint) throw new Error('The selected file does not match the original recording. No link was changed.');
-      const stillMatches = await mediaIdentityMatches(path, checked.identity);
-      if (shuttingDown || playbackTransition || activeVersion() === versionId || !isVersionAllowed(state, versionId) || !stillMatches)
-        throw new Error('The song or selected file changed while relinking. Try again after playback stops.');
-      if (!store.relinkMedia(original, path)) throw new Error('The source link changed while relinking. Try again.');
       return { ok: true };
     } finally { relinking = false; }
   });

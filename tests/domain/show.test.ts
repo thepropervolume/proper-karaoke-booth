@@ -122,13 +122,30 @@ test('roles and policies are enforced at request, staging and start boundaries',
   assert.equal(s.send({ type: 'request', requestId: 'bad', singerId: 'b', versionId: 'v1' }, { role: 'singer', id: 'a' }).outcome.ok, false);
   accept(s, 'a1', 'a', 'v2'); s.ok({ type: 'stage' });
   s.ok({ type: 'setPolicy', policy: { ageRestricted: true, includeVersionIds: null, excludeVersionIds: [] } });
-  assert.equal(s.get().stagedRequestId, null);
+  assert.equal(s.get().stagedRequestId, 'a1');
+  assert.equal(s.get().requests.find(r => r.id === 'a1')?.status, 'staged');
   assert.deepEqual(visibleVersions(s.get()).map(v => v.id), ['v1']);
   assert.equal(s.send({ type: 'request', requestId: 'bad2', singerId: 'a', versionId: 'v2' }).outcome.ok, false);
+  const locked = s.send({ type: 'stage' });
+  assert.equal(locked.outcome.ok ? '' : locked.outcome.code, 'LOCKED');
+  const start = s.send({ type: 'start', generationId: 'g1' });
+  assert.equal(start.outcome.ok ? '' : start.outcome.code, 'NOT_AVAILABLE');
+  assert.equal(s.get().stagedRequestId, 'a1');
+  assert.equal(s.get().playback, null);
+  s.ok({ type: 'release' });
+  assert.equal(s.get().requests.find(r => r.id === 'a1')?.status, 'accepted');
   assert.equal(s.send({ type: 'stage' }).outcome.ok, false);
-  assert.equal(s.send({ type: 'start', generationId: 'g1' }).outcome.ok, false);
   s.ok({ type: 'setPolicy', policy: { ageRestricted: true, includeVersionIds: ['v1'], excludeVersionIds: ['v1'] } });
   assert.deepEqual(visibleVersions(s.get()), []);
+});
+
+test('a policy change does not interrupt active playback', () => {
+  const s = setup(); library(s); accept(s, 'a1', 'a');
+  s.ok({ type: 'stage' }); s.ok({ type: 'start', generationId: 'g1' });
+  s.ok({ type: 'setPolicy', policy: { ageRestricted: false, includeVersionIds: null, excludeVersionIds: ['v1'] } });
+  assert.equal(s.get().playback?.generationId, 'g1');
+  assert.equal(s.get().playback?.status, 'playing');
+  assert.equal(s.get().requests.find(r => r.id === 'a1')?.status, 'playing');
 });
 
 

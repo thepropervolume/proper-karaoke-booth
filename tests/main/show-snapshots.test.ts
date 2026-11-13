@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { migrateShowSchema } from '../../src/main/schema-migrations';
 import { createShowSnapshot, restoreShowSnapshotToNewFile, SnapshotCleanupError } from '../../src/main/show-snapshots';
 import { Store } from '../../src/main/store';
-import { createInitialState } from '../../src/domain';
+import { applyCommand, createInitialState, type Command, type ShowState } from '../../src/domain';
 
 test('a live WAL-backed show can be backed up and restored to a separate database', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpv-backup-')), live = join(dir, 'live.sqlite'), snapshot = join(dir, 'backup.sqlite'), restored = join(dir, 'restored.sqlite');
@@ -37,6 +37,45 @@ test('a live WAL-backed show can be backed up and restored to a separate databas
     } finally { copy.close(); }
     assert.equal(JSON.parse((db.prepare('SELECT value FROM show_state').get() as { value: string }).value).revision, 5);
     assert.ok(!readdirSync(dir).some(name => name.startsWith('.tpv-snapshot-')));
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('backup and restore preserve an ineligible staged request without permitting playback', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-backup-staged-'));
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateShowSchema(db);
+    let state = createInitialState('show-00001', 'epoch-0001');
+    let sequence = 0;
+    const send = (command: Command) => {
+      const result = applyCommand(state, { commandId: `cmd-${++sequence}`, showId: state.showId, hostEpoch: state.hostEpoch,
+        expectedRevision: state.revision, actor: { role: 'host', id: 'host' }, command }, { autoApprove: false, rotationMode: 'singer' });
+      state = result.state;
+      return result.outcome;
+    };
+    assert.equal(send({ type: 'addSinger', singer: { id: 's1', name: 'Alice' } }).ok, true);
+    assert.equal(send({ type: 'addVersion', version: { id: 'v1', title: 'Song', artist: 'Artist', rating: 'unrated' } }).ok, true);
+    assert.equal(send({ type: 'request', requestId: 'r1', singerId: 's1', versionId: 'v1' }).ok, true);
+    assert.equal(send({ type: 'accept', requestId: 'r1' }).ok, true);
+    assert.equal(send({ type: 'promoteRequest', requestId: 'r1' }).ok, true);
+    assert.equal(send({ type: 'stage' }).ok, true);
+    assert.equal(send({ type: 'setPolicy', policy: { ageRestricted: true, includeVersionIds: null, excludeVersionIds: [] } }).ok, true);
+    assert.equal(state.stagedRequestId, 'r1');
+    assert.equal(state.promotedRequestId, null);
+    db.prepare('INSERT INTO show_state VALUES (1, ?)').run(JSON.stringify(state));
+    const snapshot = join(dir, 'backup.sqlite'), restored = join(dir, 'restored.sqlite');
+    await createShowSnapshot(db, snapshot);
+    await restoreShowSnapshotToNewFile(snapshot, restored);
+    const copy = new Store<ShowState>(restored);
+    try { state = copy.load()!; } finally { copy.close(); }
+    assert.equal(state.stagedRequestId, 'r1');
+    assert.equal(state.requests[0].status, 'staged');
+    const start = send({ type: 'start', generationId: 'g1' });
+    assert.equal(start.ok ? '' : start.code, 'NOT_AVAILABLE');
+    assert.equal(state.playback, null);
+    assert.equal(send({ type: 'release' }).ok, true);
+    assert.equal(state.stagedRequestId, null);
+    assert.equal(state.requests[0].status, 'accepted');
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 

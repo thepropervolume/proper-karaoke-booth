@@ -357,8 +357,8 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       state.policy = { ageRestricted: p.ageRestricted, includeVersionIds: p.includeVersionIds === null ? null : [...p.includeVersionIds], excludeVersionIds: [...p.excludeVersionIds] };
       const promoted = state.requests.find(r => r.id === state.promotedRequestId);
       if (promoted && !isVersionAllowed(state, promoted.versionId)) state.promotedRequestId = null;
-      const staged = state.requests.find(r => r.id === state.stagedRequestId && r.status === 'staged');
-      if (staged && !isVersionAllowed(state, staged.versionId)) { staged.status = 'accepted'; state.stagedRequestId = null; }
+      // A staged request remains locked even when it becomes ineligible. Start
+      // checks the current policy; only the host may release or replace it.
       break;
     }
     default: reject('INVALID', 'Unknown command');
