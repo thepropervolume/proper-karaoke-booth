@@ -975,6 +975,15 @@ else {
       return providerCatalog.status();
     } finally { choosingProviderProfile = false; }
   });
+  ipcMain.handle('host:provider-catalog-clear-profile', async (event, provider: unknown) => {
+    guardHost(event.sender.id);
+    if (!isProviderCatalogId(provider)) throw new Error('Choose a provider.');
+    await settingsUpdates.run(() => {
+      settings = writeSettings(settingsPath, { ...settings, providerCatalogProfiles: { ...settings.providerCatalogProfiles, [provider]: '' } });
+      host?.webContents.send('host:settings', settings);
+    });
+    return providerCatalog.status();
+  });
   ipcMain.handle('host:choose-catalog-config', async event => {
     guardHost(event.sender.id); if (!host || shuttingDown) return null;
     const selected = await dialog.showOpenDialog(host, {title:'Choose private shared catalog configuration',properties:['openFile'],filters:[{name:'Catalog client configuration',extensions:['json']}]});

@@ -90,12 +90,12 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <summary>Karaoke Services</summary>
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.providerCatalogEnabled} onChange={event => setDraft({ ...draft, providerCatalogEnabled: event.target.checked })} /> Search service catalogs in Song Library</label>
-            <p>KaraFun and Party Tyme use their public catalog metadata. No paid account is needed for those searches. Configure provider-issued Stingray and Sunfly profiles in Sources.</p>
+            <p>KaraFun and Party Tyme offer public catalog search. Sunfly Store offers public title/SKU search; artist search is not verified. These searches need no paid account. Sources also accepts developer profiles for Stingray and the separate Sunfly partner catalog.</p>
             <p className="muted">Search-only matches show the service name and cannot be queued or played in the booth yet. Existing subscription linking and playback remain separate work.</p>
             <ul aria-label="Karaoke service availability">
               <li>KaraFun — Public catalog search; playback pending</li>
               <li>Party Tyme — Public catalog search; playback pending</li>
-              <li>Sunfly — Catalog access requires a provider profile; playback pending</li>
+              <li>Sunfly Store — Public title/SKU search; optional developer catalog profile; playback pending</li>
               <li>Stingray — Catalog access requires a provider profile; playback pending</li>
             </ul>
           </div>

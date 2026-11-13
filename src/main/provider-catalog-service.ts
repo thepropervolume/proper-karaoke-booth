@@ -4,6 +4,7 @@ import type { Settings } from '../domain/settings';
 import { KaraFunCatalogClient } from './karafun-catalog-client';
 import { searchPartyTymeCatalog } from './partytyme-catalog-client';
 import { getPartnerCatalogStatus, searchPartnerCatalog } from './partner-catalog-adapters';
+import { searchSunflyStoreCatalog } from './sunfly-store-catalog-client';
 
 type Scope = Pick<Settings, 'providerCatalogEnabled' | 'providerCatalogProfiles'> & { policy: Policy };
 type Dependencies = {
@@ -11,8 +12,8 @@ type Dependencies = {
   status?: (provider: 'sunfly' | 'stingray', file: string | undefined) => Promise<ProviderCatalogStatus>;
 };
 const publicCatalog = new KaraFunCatalogClient();
-const catalogSearch = (provider: ProviderCatalogId, file: string | undefined, query: string) => provider === 'karafun' ? publicCatalog.search(query) : provider === 'partytyme' ? searchPartyTymeCatalog(file, query) : searchPartnerCatalog(provider, file, query);
-const publicStatus = (provider: ProviderCatalogId): ProviderCatalogStatus => ({ provider, label: PROVIDER_CATALOG_LABELS[provider], configured: true, searchAvailable: true, playbackAvailable: false, message: 'Public catalog metadata. No account needed for search. Subscription playback is not connected.' });
+const catalogSearch = (provider: ProviderCatalogId, file: string | undefined, query: string) => provider === 'karafun' ? publicCatalog.search(query) : provider === 'partytyme' ? searchPartyTymeCatalog(file, query) : provider === 'sunfly' && !file ? searchSunflyStoreCatalog(query) : searchPartnerCatalog(provider, file, query);
+const publicStatus = (provider: ProviderCatalogId): ProviderCatalogStatus => ({ provider, label: provider === 'sunfly' ? 'Sunfly Store' : PROVIDER_CATALOG_LABELS[provider], configured: true, searchAvailable: true, playbackAvailable: false, catalogMode: 'public', message: provider === 'sunfly' ? 'Public store title/SKU search. Artist search is not verified. Store IDs differ from streaming IDs. No account needed; playback is pending.' : 'Public catalog metadata. No account needed for search. Subscription playback is not connected.' });
 const blocked = (scope: Scope) => !scope.providerCatalogEnabled || scope.policy.ageRestricted || scope.policy.includeVersionIds !== null;
 const scopeKey = (scope: Scope) => JSON.stringify([scope.providerCatalogEnabled, scope.providerCatalogProfiles, scope.policy]);
 const failure = (provider: ProviderCatalogId, message: string): ProviderCatalogSearchResult => ({ provider, label: PROVIDER_CATALOG_LABELS[provider], status: 'unavailable', songs: [], message });
@@ -25,7 +26,7 @@ export class ProviderCatalogService {
   constructor(private readonly current: () => Scope, private readonly deps: Dependencies = {}) {}
   async status(): Promise<ProviderCatalogStatus[]> {
     const scope = this.current();
-    const values = await Promise.all(PROVIDER_CATALOG_IDS.map(provider => provider === 'karafun' || provider === 'partytyme' ? publicStatus(provider) : (this.deps.status ?? getPartnerCatalogStatus)(provider, scope.providerCatalogProfiles[provider] || undefined)));
+    const values = await Promise.all(PROVIDER_CATALOG_IDS.map(async provider => provider === 'karafun' || provider === 'partytyme' || provider === 'sunfly' && !scope.providerCatalogProfiles.sunfly ? publicStatus(provider) : { ...await (this.deps.status ?? getPartnerCatalogStatus)(provider, scope.providerCatalogProfiles[provider] || undefined), catalogMode: 'developer' as const }));
     return values.map(value => scope.providerCatalogEnabled ? value : { ...value, searchAvailable: false, message: 'Service catalog search is disabled in Preferences.' });
   }
   async search(query: unknown): Promise<ProviderCatalogSearchResult[]> {
@@ -53,6 +54,7 @@ export class ProviderCatalogService {
       if (u.protocol !== 'https:' || u.username || u.password || u.port || u.search || u.hash) return false;
       if (provider === 'partytyme') return u.hostname === 'www.partytyme.com' && u.pathname === '/Party_Tyme_Pro_update.htm';
       if (provider === 'karafun') return u.hostname === 'www.karafun.com' && (u.pathname.startsWith('/karaoke/') || u.pathname === '/web/search');
+      if (provider === 'sunfly') return u.hostname === 'www.sunflykaraoke.com' && /^\/(?:karaoke|custom-discs)\/[a-z0-9%_-]+\/[a-z0-9%_-]+\/$/i.test(u.pathname) && !/%2f|%5c|%2e/i.test(u.pathname);
       return false;
     } catch { return false; }
   }

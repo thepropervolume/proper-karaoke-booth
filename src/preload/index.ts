@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('tpv', {
   getProviderCatalogStatus: () => ipcRenderer.invoke('host:provider-catalog-status'),
   searchProviderCatalog: (query: string) => ipcRenderer.invoke('host:provider-catalog-search', query),
   chooseProviderCatalogProfile: (provider: string) => ipcRenderer.invoke('host:provider-catalog-choose-profile', provider),
+  clearProviderCatalogProfile: (provider: string) => ipcRenderer.invoke('host:provider-catalog-clear-profile', provider),
   openProviderCatalogSong: (input: unknown) => ipcRenderer.invoke('host:provider-catalog-open', input),
   ratingKeys: (versionIds: string[]) => ipcRenderer.invoke('host:rating-keys', versionIds),
   lookupSongRatings: (keys: string[]) => ipcRenderer.invoke('host:rating-lookup', keys),

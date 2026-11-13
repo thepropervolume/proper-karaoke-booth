@@ -6,11 +6,11 @@ export const PROVIDER_CATALOG_LABELS: Record<ProviderCatalogId, string> = {
 };
 export type ProviderCatalogSong = {
   provider: ProviderCatalogId; id: string; title: string; artist: string | null;
-  explicit?: boolean | null; durationSeconds: number | null; language: string | null; webUrl: string | null; playbackAvailable: false;
+  providerSku?: string | null; explicit?: boolean | null; durationSeconds: number | null; language: string | null; webUrl: string | null; playbackAvailable: false;
 };
 export type ProviderCatalogStatus = {
   provider: ProviderCatalogId; label: string; configured: boolean; searchAvailable: boolean;
-  playbackAvailable: false; message: string;
+  playbackAvailable: false; message: string; catalogMode?: 'public' | 'developer';
 };
 export type ProviderCatalogSearchStatus = 'ok' | 'not-configured' | 'unauthorized' | 'rate-limited' |
   'unavailable' | 'invalid-response' | 'timed-out' | 'invalid-input';

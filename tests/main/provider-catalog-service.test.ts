@@ -6,6 +6,22 @@ import { createInitialState } from '../../src/domain';
 import { PROVIDER_CATALOG_LABELS, type ProviderCatalogId, type ProviderCatalogSearchResult } from '../../src/domain/provider-catalog';
 const result = (provider: ProviderCatalogId, webUrl: string | null = null): ProviderCatalogSearchResult => ({ provider, label: PROVIDER_CATALOG_LABELS[provider], status: 'ok', message: 'Search only', songs: [{ provider, id: '1', title: 'Song', artist: 'Artist', durationSeconds: null, language: null, webUrl, playbackAvailable: false }] });
 const scope = () => ({ ...structuredClone(DEFAULT_SETTINGS), policy: createInitialState('s', 'h').policy });
+test('Sunfly defaults to public store metadata and explicit developer profiles never silently fall back', async () => {
+  const state = scope(), calls: string[] = [];
+  const service = new ProviderCatalogService(() => state, { status: async (provider, path) => {
+    calls.push(`${provider}:${path || ''}`);
+    return { provider, label: PROVIDER_CATALOG_LABELS[provider], configured: false, searchAvailable: false, playbackAvailable: false, message: 'Developer profile unavailable' };
+  } });
+  const publicValues = await service.status();
+  assert.equal(publicValues.find(s => s.provider === 'sunfly')?.label, 'Sunfly Store');
+  assert.equal(publicValues.find(s => s.provider === 'sunfly')?.catalogMode, 'public');
+  assert.deepEqual(calls, ['stingray:']);
+  state.providerCatalogProfiles.sunfly = '/explicit/private/key'; calls.length = 0;
+  const privateValues = await service.status();
+  assert.equal(privateValues.find(s => s.provider === 'sunfly')?.searchAvailable, false);
+  assert.equal(privateValues.find(s => s.provider === 'sunfly')?.catalogMode, 'developer');
+  assert.ok(calls.includes('sunfly:/explicit/private/key'));
+});
 test('strict show policies and disabled discovery stop provider calls at the service boundary', async () => {
   const state = scope(); let calls = 0;
   const service = new ProviderCatalogService(() => state, { search: async provider => { calls++; return result(provider); } });

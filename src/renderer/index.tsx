@@ -90,6 +90,7 @@ declare global {
       getProviderCatalogStatus: () => Promise<ProviderCatalogStatus[]>;
       searchProviderCatalog: (query: string) => Promise<ProviderCatalogSearchResult[]>;
       chooseProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
+      clearProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
       openProviderCatalogSong: (input: { provider: ProviderCatalogId; id: string }) => Promise<void>;
       ratingKeys: (ids: string[]) => Promise<Record<string, RecordingKey>>;
       lookupSongRatings: (keys: RecordingKey[]) => Promise<SongRatingsLookup>;
