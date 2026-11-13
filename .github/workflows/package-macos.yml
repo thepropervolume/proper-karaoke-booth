@@ -54,6 +54,7 @@ jobs:
           path: |
             release/Proper-Karaoke-Booth-*-mac-*.dmg
             release/Proper-Karaoke-Booth-*-mac-*.zip
+            release/Proper-Karaoke-Booth-*-mac-*.blockmap
             release/Proper-Karaoke-Booth-*-mac-build.json
             release/Proper-Karaoke-Booth-*-mac-verification.json
             release/Proper-Karaoke-Booth-*-mac-SHA256SUMS.txt
