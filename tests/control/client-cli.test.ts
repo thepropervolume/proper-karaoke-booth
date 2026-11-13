@@ -25,12 +25,12 @@ test('CLI discovers one profile, returns JSON snapshots and uses only advertised
     const invoke=async(args:string[])=>{let out='',err='';const code=await runControlCli(['--profile-dir',profile,...args],{access:fixtureAccess,out:s=>{out+=s;},err:s=>{err+=s;}});return{code,out,err};};
     const status=await invoke(['status']);assert.equal(status.code,0);assert.equal(JSON.parse(status.out).status,'ready');assert.equal(status.err,'');assert.ok(!status.out.includes(d.token));
     const state=await invoke(['state']);assert.equal(state.code,0);assert.equal(JSON.parse(state.out).result.showId,'qa-show');
-    const settings=await invoke(['settings']);assert.equal(settings.code,0);assert.equal(JSON.parse(settings.out).result.settings.sharedCatalogConfigFile,'');
-    const explicit=await invoke(['settings','--include-private-paths']);assert.equal(JSON.parse(explicit.out).result.settings.sharedCatalogConfigFile,'/private/catalog.json');
+    const settings=await invoke(['settings']);assert.equal(settings.code,0);assert.equal(JSON.parse(settings.out).result.settings.sharedCatalogConfigFile,'');assert.equal(JSON.parse(settings.out).result.settings.providerCatalogProfiles.sunfly,'');assert.doesNotMatch(settings.out,/sunfly\.key/);
+    const explicit=await invoke(['settings','--include-private-paths']);assert.equal(JSON.parse(explicit.out).result.settings.sharedCatalogConfigFile,'/private/catalog.json');assert.equal(JSON.parse(explicit.out).result.settings.providerCatalogProfiles.sunfly,'/private/sunfly.key');
     assert.equal((await invoke(['shortcuts'])).code,0);
     assert.equal((await invoke(['open','settings'])).code,0);assert.equal((await invoke(['--settings'])).code,0);assert.equal(opened,2);
     const unsupported=await invoke(['open','keybindings']);assert.equal(unsupported.code,CONTROL_CLI_EXIT.unsupported);assert.equal(JSON.parse(unsupported.err).error.code,'unsupported');
-  },{adapter:{getState:()=>({showId:'qa-show'}),getSettings:()=>({...DEFAULT_SETTINGS,sharedCatalogConfigFile:'/private/catalog.json'}),getShortcuts:()=>DEFAULT_SHORTCUTS,openSettings:()=>{opened++;}}});
+  },{adapter:{getState:()=>({showId:'qa-show'}),getSettings:()=>({...DEFAULT_SETTINGS,sharedCatalogConfigFile:'/private/catalog.json',providerCatalogProfiles:{...DEFAULT_SETTINGS.providerCatalogProfiles,sunfly:'/private/sunfly.key'}}),getShortcuts:()=>DEFAULT_SHORTCUTS,openSettings:()=>{opened++;}}});
 });
 
 test('dead-PID discovery never causes an HTTP request and has a stable not-running exit',async()=>serverFixture(async(_server,_d,profile)=>{

@@ -9,6 +9,17 @@ test('settings expose useful values while private paths require an explicit owne
   assert.equal(controlSettings(value,true).settings.ratingProfileConfigFile,'/private/voter.json');assert.equal(value.ratingProfileConfigFile,'/private/voter.json');
   assert.throws(()=>controlSettings({...value,password:'do-not-return'}));
 });
+test('nested provider profile paths are private by default and projection never mutates host settings',()=>{
+  const paths={karafun:'/private/kf.json',partytyme:'/private/pt.json',sunfly:'/private/sunfly.key',stingray:'/private/stingray.json'};
+  const value={...DEFAULT_SETTINGS,providerCatalogProfiles:paths};
+  const normal=controlSettings(value);
+  assert.deepEqual(normal.settings.providerCatalogProfiles,{karafun:'',partytyme:'',sunfly:'',stingray:''});
+  assert.ok(Object.keys(paths).every(key=>normal.redactedFields.includes(`providerCatalogProfiles.${key}`)));
+  assert.doesNotMatch(JSON.stringify(normal),/\/private\//);
+  const explicit=controlSettings(value,true);assert.deepEqual(explicit.settings.providerCatalogProfiles,paths);
+  explicit.settings.providerCatalogProfiles.sunfly='/changed';
+  assert.equal(value.providerCatalogProfiles.sunfly,'/private/sunfly.key');
+});
 test('adapter output redacts credential fields and bounds depth, cycles and bytes',()=>{
   const text=controlJson({state:{showId:'qa',token:'never-return',password:'never-return',apiKey:'never-return'},revision:3});
   assert.doesNotMatch(text,/never-return/);assert.equal(JSON.parse(text).revision,3);

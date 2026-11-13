@@ -1,4 +1,5 @@
 import { parseSettings } from '../domain/settings';
+import { PROVIDER_CATALOG_IDS } from '../domain/provider-catalog';
 
 export const CONTROL_API_VERSION = 1;
 export const CONTROL_DISCOVERY_NAME = 'control-api.json';
@@ -23,6 +24,9 @@ const privateSettings = ['sharedCatalogConfigFile','ratingProfileConfigFile','ly
 export function controlSettings(value:unknown, includePrivatePaths=false):{settings:ReturnType<typeof parseSettings>;redactedFields:string[]} {
   const settings=parseSettings(value),redactedFields:string[]=[];
   if(!includePrivatePaths)for(const key of privateSettings)if(settings[key]){settings[key]='';redactedFields.push(key);}
+  if(!includePrivatePaths)for(const provider of PROVIDER_CATALOG_IDS)if(settings.providerCatalogProfiles[provider]){
+    settings.providerCatalogProfiles[provider]='';redactedFields.push(`providerCatalogProfiles.${provider}`);
+  }
   return {settings,redactedFields};
 }
 

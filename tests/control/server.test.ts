@@ -38,7 +38,9 @@ test('settings paths require explicit projection and only registered navigation 
   await serverFixture(async(_server,d)=>{
     const settings=await httpControl(d,'/v1/settings');assert.equal(settings.status,200);
     assert.equal((settings.body as {result:{settings:{ratingProfileConfigFile:string}}}).result.settings.ratingProfileConfigFile,'');
+    assert.doesNotMatch(JSON.stringify(settings.body),/stingray\.json/);
     const explicit=await httpControl(d,'/v1/settings?includePrivatePaths=true');
+    assert.match(JSON.stringify(explicit.body),/stingray\.json/);
     assert.equal((explicit.body as {result:{settings:{ratingProfileConfigFile:string}}}).result.settings.ratingProfileConfigFile,'/private/voter.json');
     const capabilities=await httpControl(d,'/v1/capabilities');
     assert.deepEqual((capabilities.body as {result:{actions:unknown}}).result.actions,{settings:true,keybindings:false});
@@ -48,7 +50,7 @@ test('settings paths require explicit projection and only registered navigation 
     assert.equal((await post({action:'settings'})).status,200);assert.equal(opened,1);
     assert.equal((await httpControl(d,'/v1/settings?includePrivatePaths=true&includePrivatePaths=false')).status,400);
     assert.equal((await httpControl(d,'/v1/shortcuts')).status,200);
-  },{adapter:{getState:()=>({}),getSettings:()=>({...DEFAULT_SETTINGS,ratingProfileConfigFile:'/private/voter.json'}),getShortcuts:()=>DEFAULT_SHORTCUTS,openSettings:()=>{opened++;}}});
+  },{adapter:{getState:()=>({}),getSettings:()=>({...DEFAULT_SETTINGS,ratingProfileConfigFile:'/private/voter.json',providerCatalogProfiles:{...DEFAULT_SETTINGS.providerCatalogProfiles,stingray:'/private/stingray.json'}}),getShortcuts:()=>DEFAULT_SHORTCUTS,openSettings:()=>{opened++;}}});
 });
 
 test('body/header limits and adapter failures produce safe errors without executing arbitrary work',async()=>{
