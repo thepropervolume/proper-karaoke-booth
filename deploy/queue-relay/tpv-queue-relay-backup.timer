@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily private backup of TPV relay lease metadata
+
+[Timer]
+OnCalendar=*-*-* 06:45:00 UTC
+Persistent=yes
+AccuracySec=1min
+Unit=tpv-queue-relay-backup.service
+
+[Install]
+WantedBy=timers.target

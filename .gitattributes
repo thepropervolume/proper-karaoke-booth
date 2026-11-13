@@ -1,0 +1,5 @@
+assets/cli/tpv-karaoke text eol=lf
+assets/branding/**/*.svg text eol=lf
+assets/branding/*.svg text eol=lf
+assets/branding/manifest.json text eol=lf
+assets/branding/installer.nsh text eol=lf

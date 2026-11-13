@@ -1,0 +1,8 @@
+{
+  "selectedOn": "2026-11-13",
+  "identity": "mic-play",
+  "ownerReferenceSha256": "7a9b29c67242bbe3b748e4f558dc0e8a831d49ac4cb3d3e4c604c2af5dba57bd",
+  "source": "Owner-supplied reference; immutable JPEG retained.",
+  "preparation": "Self-contained contour-based SVG reproduction, preserving original palette and lettering. Corrected caption BOOTHE to BOOTH; app-icon masters exclude all lettering. Dark mark has a narrow contrast keyline; dark lettering is white. No external fonts or raster images in SVG.",
+  "historicalIdentity": "design/branding-history/2026-11-12-velvet-script"
+}

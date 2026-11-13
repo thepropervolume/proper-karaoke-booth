@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily private backup of TPV shared song ratings
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 UTC
+Persistent=yes
+AccuracySec=1min
+Unit=tpv-song-ratings-backup.service
+
+[Install]
+WantedBy=timers.target

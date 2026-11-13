@@ -1,0 +1,55 @@
+[Unit]
+Description=TPV shared song ratings API
+After=mysql.service
+Requires=mysql.service
+ConditionPathExists=/etc/tpv-song-ratings/managed.json
+StartLimitIntervalSec=60
+StartLimitBurst=8
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=tpv-song-ratings
+Group=tpv-song-ratings
+UMask=0077
+WorkingDirectory=/opt/tpv-song-ratings
+RuntimeDirectory=tpv-song-ratings
+RuntimeDirectoryMode=0700
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/tpv-song-ratings/production.env
+Environment=TPV_RATINGS_MYSQL_USER=tpv_sr_runtime
+Environment=TPV_RATINGS_MYSQL_PASSWORD_FILE=/run/tpv-song-ratings/mysql.password
+Environment=TPV_RATINGS_PORT=8767
+LoadCredential=mysql.password:/etc/tpv-song-ratings/runtime.password
+# systemd credential mounts can use 0440; the application requires owner-only files.
+ExecStartPre=/usr/bin/install -m0400 %d/mysql.password /run/tpv-song-ratings/mysql.password
+ExecStart=/opt/tpv-song-ratings/node /opt/tpv-song-ratings/song-ratings-service.cjs
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LimitNOFILE=256
+TasksMax=64
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

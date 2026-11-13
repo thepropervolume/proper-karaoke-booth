@@ -1,0 +1,21 @@
+# Permanent YouTube download engine
+
+`YouTubeDownloads` invokes a host-selected absolute yt-dlp executable without a shell. It downloads one exact video ID at a time into an isolated sibling staging directory. External configuration/plugins, playlists and simulation are disabled. The format selection prefers H.264 video plus AAC audio in MP4, with FFmpeg merging when needed. Child output remains private; only bounded percentage/status messages reach the host UI.
+
+The engine requires an exact ID confirmation from yt-dlp, validates the MP4 header and full SHA-256, and publishes a complete file and ownership sidecar using exclusive hard links. The destination filesystem must support hard links. It never overwrites existing files. Mapped brand results use `BASE/karaokenerds/Brands/BRAND_SLUG/ARTIST/ARTIST - TITLE.mp4`; ordinary YouTube links use `BASE/youtube/ARTIST/ARTIST - TITLE.mp4`. Unsafe/reserved filename characters are normalized. If the ordinary filename is occupied by another or unowned recording, a video-ID suffix is tried; if both names are occupied, the job fails for review.
+
+The adjacent `.mp4.tpv.json` sidecar records provider, exact video ID and fingerprint. A fresh engine can reuse a saved video only when the sidecar matches and the complete fingerprint is verified. Keep the sidecar with its video. An unowned legacy MP4 is not assumed to be the same recording. Metadata edits do not rename an already attached video. Moving the configured base affects new downloads; it does not move existing files.
+
+The existing Store authority attaches media to the same Version ID. No second database writer, extra queue request or automatic playback is introduced. Complete files remain on disk if persistence throws because the transaction result might be uncertain. A failure between video and sidecar publication can leave a complete unowned file for review; it is preserved, never overwritten or automatically deleted. An interrupted process may leave staging files. Database backups do not include these files.
+
+Cancellation stops the yt-dlp/FFmpeg process tree before staging is removed. If termination cannot be confirmed, staging is retained with a cleanup-needed status. Cleanup verifies directory identity and canonical parents and does not recursively follow directories. This reduces substitution risk but does not promise protection against all same-user races. Completed files are permanent; shutdown and cancellation do not delete them. The job is bounded to 30 minutes and the accepted completed MP4 to 2 GiB. Source limits, network failures and yt-dlp format/runtime changes can still prevent downloads.
+
+Tests use an injected worker for exact identity, collisions, hash-based reuse, malformed output, cancellation, late cancellation, uncertain commits and junction substitution. A real child-process test checks descendant termination. An actual download of the owner's Nada Surf – Amateur video produced H.264 1920×1080/AAC (246.55 seconds); a fresh engine reused it with zero network calls. This verifies that recording and installed tools, not every YouTube video, operating system or physical mixer.
+
+The host workflow is described in [YouTube playback](youtube-streaming.md). Automatic brand/artist batch downloads and production packaging of yt-dlp/FFmpeg remain separate work.
+
+Reference: [yt-dlp upstream documentation](https://github.com/yt-dlp/yt-dlp#usage-and-options).
+
+## Queue-time acquisition in 0.3.0
+
+Adding a YouTube link saves metadata. Committing an approved request dispatches its video immediately to a serial download queue; pending moderation waits for approval. Several singers choosing the same recording share its saved media. Reordering waiting requests updates pending download priority. Completed files remain on the host drive; download completion never starts playback. The host can retry failures or cancel a waiting/active job from download progress. A normal failure does not discard the singer request or repeatedly retry on every state update. Uncertain process cleanup pauses further automatic downloads for review. Accepted/staged requests with missing media are reconciled on restart. All library additions and request validation occur through the host authority before acquisition begins; no second SQLite writer is introduced.

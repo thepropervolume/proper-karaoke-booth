@@ -1,0 +1,63 @@
+[Unit]
+Description=TPV remote singer session relay
+After=network.target mysql.service
+Requires=mysql.service
+ConditionPathExists=/etc/tpv-queue-relay/owners.json
+ConditionPathExists=/etc/tpv-queue-relay/db-managed.json
+StartLimitIntervalSec=60
+StartLimitBurst=8
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=tpv-queue-relay
+Group=tpv-queue-relay
+UMask=0077
+WorkingDirectory=/opt/tpv-queue-relay
+RuntimeDirectory=tpv-queue-relay
+RuntimeDirectoryMode=0700
+Environment=NODE_ENV=production
+Environment=TPV_QUEUE_PORT=8766
+Environment=TPV_QUEUE_PUBLIC_ORIGIN=https://queue.thepropervolume.com
+Environment=TPV_QUEUE_MYSQL_SOCKET=/run/mysqld/mysqld.sock
+Environment=TPV_QUEUE_MYSQL_DATABASE=tpv_queue_relay
+Environment=TPV_QUEUE_MYSQL_USER=tpv_queue_runtime
+Environment=TPV_QUEUE_MYSQL_PASSWORD_FILE=/run/tpv-queue-relay/mysql.password
+Environment=TPV_QUEUE_WEB_ROOT=/opt/tpv-queue-relay/web
+Environment=TPV_QUEUE_OWNERS_FILE=/run/tpv-queue-relay/owners.json
+Environment=TPV_QUEUE_TRUST_PROXY=yes
+LoadCredential=owners.json:/etc/tpv-queue-relay/owners.json
+LoadCredential=mysql.password:/etc/tpv-queue-relay/runtime.password
+# Credential mounts can use 0440; the application requires owner-only files.
+ExecStartPre=/usr/bin/install -m0400 %d/owners.json /run/tpv-queue-relay/owners.json
+ExecStartPre=/usr/bin/install -m0400 %d/mysql.password /run/tpv-queue-relay/mysql.password
+ExecStart=/opt/tpv-queue-relay/node /opt/tpv-queue-relay/queue-relay.cjs
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LimitNOFILE=512
+TasksMax=64
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

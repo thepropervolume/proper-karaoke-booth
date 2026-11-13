@@ -1,0 +1,22 @@
+# REVIEW TEMPLATE ONLY. Install only after paths, grants, sandboxing, and restore tests are reviewed.
+[Unit]
+Description=The Proper Volume karaoke catalog %i backup
+After=mysql.service
+Requires=mysql.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/tpv-catalog-backup %i
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/backups/tpv-karaoke-catalog /run/lock/tpv-karaoke-catalog
+IOSchedulingClass=idle

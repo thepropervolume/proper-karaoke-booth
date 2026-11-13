@@ -1,0 +1,18 @@
+# Experimental Stingray catalog operator
+
+The operator implements the documented [v1 device login and song-search API](https://karaoke-api-doc.stingray.com/api/v1/) for a provider-approved backend. The explicit CLI diagnostics below remain available. Version 0.4.2 also reuses this backend flow for host-only metadata search in Song Library and Sources after selecting an issued developer profile. The desktop adapter is fixture-tested and the Windows 0.4.2 frontend is packaged/installed, but live partner access remains unverified. Linux 0.4.2 package checks are still in progress. See [provider catalog setup and limits](provider-catalog-search.md). Neither path connects the singer display, playback or queue. A successful device login or search does not prove a user's subscription can be linked, a given video can be played, or commercial/venue rights have been granted. Partner pricing is not established.
+
+Stingray supplies developer credentials by arrangement. Its v1 OpenAPI documents `POST /v1/login-device` with `X-API-KEY`, and `GET /v1/search-songs` with the API key and Bearer session token. The client retains the token only in memory and emits only song ID, title, artist and duration. It does not return media URLs or assets. It limits searches to 3–40 characters and pages to at most 100 songs, with a minimum 100 ms between searches. For public events confirm the account, territory and service terms with Stingray. The provider's [integration guidance](https://karaoke-api-doc.stingray.com/docs/introduction/design-guidelines/) prohibits offline asset storage; future playback must honor usage logging and its other rules.
+
+Create a private UTF-8 JSON file on the server with **only** `apiKey`, `deviceId`, `languageCode` (`en` or `fr`), and two-letter uppercase `countryCode` properties. Use a dedicated provider-issued key and a stable device identifier permitted by your agreement. On Linux/macOS, the file must be owned by the current user and mode `0600` (or otherwise have no group/other permissions); symlinks are rejected. On Windows, use a private directory and restrict its ACL to your Windows account; the operator cannot verify Windows ACLs. Never put credentials into the repository, command arguments, logs, desktop renderer, or singer clients.
+
+Set `TPV_STINGRAY_CONFIG_FILE` to the absolute path of that private JSON file, then explicitly run either command from the checkout:
+
+```text
+node --import tsx scripts/stingray-catalog.ts status
+node --import tsx scripts/stingray-catalog.ts search
+```
+
+For `search`, also set `TPV_STINGRAY_SEARCH` to a phrase of 3–40 characters. Output is JSON with a classified status and, on successful search, the minimal metadata. No token or signed media URL is printed. `--help` makes no request. The commands exit 0 on success; invalid input exits 2, unauthorized 3, throttled 4, network/timeout 5, invalid provider response 6, and invalid configuration 7. There are no automatic retries.
+
+The [getting-started guide](https://karaoke-api-doc.stingray.com/docs/introduction/getting-started/) separately describes a client-ID/client-secret OAuth `deviceLogin` service. The repository includes a fixture-tested read-only credential inspector for that flow, but it is not wired to this v1 API-key operator or the desktop catalog adapter; ask Stingray which credentials and login flow apply to the partner account. No real Stingray credentials or live searches have been tested. Schema assumptions and pricing must be confirmed before representing this provider as connected. The desktop search projects at most 20 matches and cannot queue or play them.
