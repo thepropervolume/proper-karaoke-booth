@@ -69,7 +69,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
 - [x] Build Linux x64 AppImage and Debian packages, verify dependency metadata and payload, and pass final AppImage launch/restart under an isolated virtual display.
-- [ ] Verify Linux desktop installation, upgrade/removal, sandbox behavior and show hardware; build and test macOS on a Mac. Package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
+- [ ] Verify Linux desktop installation, upgrade/removal, sandbox behavior and show hardware; complete Mac Finder installation, Intel runtime, Dock appearance and physical show checks after the 0.4.4 native build/arm64 launch rehearsal. Package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
 
 ## Priority 1 — host, queue and library
 
@@ -153,7 +153,7 @@ Provider notes: [provider research](provider-research.md), [Sunfly operator](sun
 - [x] Add simple custom-slug remote-session controls and bounded singer transport with same-ID uncertain-action recovery.
 - [x] Deploy the MySQL relay and verify public packaged-host/browser operations, lost-reply receipt recovery, brief poll outage, End/restart fencing and daily backup/restore.
 - [x] Build and smoke final Windows/Linux 0.3.0 packages after import/recovery fixes; keep 0.2 rollback artifacts.
-- [ ] Verify real 0.3 installation/upgrade/removal and physical show hardware; macOS remains unbuilt.
+- [ ] Verify real 0.3 installation/upgrade/removal and physical show hardware; macOS was unbuilt at the 0.3 milestone; native 0.4.4 package/arm64 launch evidence is listed below.
 
 The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing, remaining native icon surfaces, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release. Windows 0.4.1 package/installed resources and Start menu references are now verified below.
 
@@ -234,4 +234,17 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [x] Verify exact Sunfly Store SKU/ID/title; Windows enriched the artist, while the Linode detail-page HTTP 403 produced the explicitly tested Unknown artist fallback. Do not infer credits or bypass the denial.
 - [x] Keep search-only records out of playback/queue, redact private profile paths by default and retain credential files when clearing their selection.
 - [ ] Obtain real Stingray/developer-provider access, verify Sunfly artist search/coverage and connect approved subscription playback.
-- [ ] Verify physical show output, real-user Linux installation/sandbox, signing and native macOS.
+- [ ] Verify physical show output, real-user Linux installation/sandbox, publisher signing/notarization and remaining Mac installation/runtime checks.
+
+## 0.4.4 macOS Packages
+
+- [x] Build separate arm64/x64 DMG and ZIP packages from clean frozen source `340eca7` on macOS 27.0.1 Apple silicon; retain receipts and SHA256 checksums.
+- [x] Pass 735 tests with eight platform/environment skips and zero failures, type checking and all 69 branding hashes.
+- [x] Verify both architectures, ad-hoc signatures, ICNS/backdrop/CLI assets and matching ZIP/read-only mounted-DMG payloads.
+- [x] Launch/restart the native arm64 app with a muted disposable profile; verify singer persistence without autoplay, Day/Night logos, minimum-width controls and bundled CLI help without external Node.
+- [x] Move the Mac CLI launcher into sealed Resources/control and make CI fail on errors piped to logs.
+- [ ] Test Intel runtime, Finder installation/upgrade/removal, native Dock appearance, Gatekeeper approval and full Mac app-to-CLI lifecycle/navigation.
+- [ ] Verify Mac physical audio/display devices and external yt-dlp/FFmpeg discovery/conversion; add an explicit FFmpeg path choice if needed.
+- [ ] Configure Apple Developer ID signing/notarization for public distribution. Current signatures are ad-hoc integrity signatures only.
+
+Windows/Linux latest delivered packages and the installed PC remain 0.4.3; this Mac packaging update does not establish a new Windows/Linux build or paid-provider playback.

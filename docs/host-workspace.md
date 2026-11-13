@@ -1,6 +1,6 @@
 # Host Workspace
 
-Version 0.4.3 adds public Sunfly Store title/SKU search to the provider metadata workspace. Windows 0.4.3 is installed and verified, and Linux AppImage/Debian package checks passed. The update preserves the selected microphone/play identity, existing show/settings and normal local playback. Physical show, real-user Linux installation and macOS checks remain open.
+Version 0.4.3 adds public Sunfly Store title/SKU search to the provider metadata workspace. Windows 0.4.3 is installed and verified, and Linux AppImage/Debian package checks passed. The update preserves the selected microphone/play identity, existing show/settings and normal local playback. Version 0.4.4 adds macOS DMG/ZIP packages; native Apple silicon launch/restart, branding and CLI help passed on macOS 27.0.1. Intel packages received static checks only. Windows/Linux and this PC remain at 0.4.3. Mac Finder installation, Gatekeeper approval, physical show hardware and real-user Linux installation remain open. See [installation](installation.md).
 
 ## Navigation and Menus
 

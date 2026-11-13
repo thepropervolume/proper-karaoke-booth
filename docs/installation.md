@@ -1,6 +1,6 @@
 # Installing The Proper Volume Karaoke Booth
 
-The current development version is **0.4.3**. Windows installer/ZIP, the actual Windows upgrade, and Linux AppImage/Debian packages passed the checks below. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
+The current macOS development version is **0.4.4**; Windows/Linux packages and this PC remain at **0.4.3**. Windows installer/ZIP, the actual Windows upgrade, Linux AppImage/Debian packages, and the native macOS checks passed the platform-specific checks below. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
 
 ## Available packages
 
@@ -8,7 +8,8 @@ The current development version is **0.4.3**. Windows installer/ZIP, the actual 
 | --- | --- | --- |
 | Windows 64-bit | Assisted installer and extractable ZIP | 0.4.3 from `d14bfb2`; installed upgrade, three public metadata sources, exact Store SKU/artist, file retention, CLI privacy, policy, no-autoplay and payload checks passed. Seven original show/configuration hashes preserved. |
 | Linux 64-bit | AppImage and Debian | 0.4.3 from verified `d14bfb2` archive; 52 focused tests, payload/branding and actual public search/CLI/profile-clear checks passed. Linode product-detail HTTP 403 produces explicit unknown artist; identity and safe fallback passed. Non-root desktop, installation and hardware remain unverified. |
-| macOS Intel and Apple silicon | `.dmg` and ZIP build targets | Must be built and verified on a Mac. No macOS package claimed yet. |
+| macOS Apple silicon | 0.4.4 `.dmg` and ZIP | Built from `340eca7` on macOS 27.0.1; signatures, payloads, native launch/restart, Day/Night branding and CLI help passed. Finder installation and physical show hardware remain unverified. |
+| macOS Intel | 0.4.4 `.dmg` and ZIP | Same source; signatures, architecture and DMG/ZIP payload checks passed. The x64 app was not launched on the ARM runner. |
 
 Generated files live in the repository's `release` folder and are not committed to Git. Windows development packages are **unsigned**. Version 0.4.1 uses the owner-selected [Microphone Play](app-icon-options.md) identity: the original navy microphone on a white rounded tile is the default installed icon, with no visible text. Matching light/dark masters and exports are retained; the full logo reads **TPV / KARAOKE BOOTH**. All 69 generated hashes, both ICO/ICNS sets and actual Windows icon resources passed verification. Assisted NSIS setup includes proportional 150×57 header and 164×314 sidebar artwork in 24-bit BMP files. Earlier installers retain their previous identity, including 0.4.0 Velvet Script. Windows may identify unsigned packages as an unrecognized publisher. Only use packages from a trusted project build. Native macOS/Linux desktop appearance, physical show behavior and platform signing remain release gates.
 
@@ -41,6 +42,24 @@ sudo apt install ./Proper-Karaoke-Booth-0.4.3-linux-amd64.deb
 
 Run the app as your regular desktop user. Some distributions require AppImage/FUSE support libraries. The app's established profile is normally `~/.config/proper-karaoke-booth`, respecting the desktop's configuration location. Keep private catalog configuration and media separate from the downloaded package. Linux audio outputs, codecs, desktop launch, upgrade and removal still need verification on the intended show computer.
 
+## macOS
+
+For the macOS 27 Apple silicon build, use `Proper-Karaoke-Booth-0.4.4-mac-arm64.dmg`. The separate `Proper-Karaoke-Booth-0.4.4-mac-x64.dmg` is for Intel Macs; its runtime has not been tested on Intel hardware. The declared runtime minimum is macOS 13, but native launch was verified only on **macOS 27.0.1 (26A434), Apple silicon**.
+
+Back up an existing show and close the app normally before replacing it. Open the DMG and drag **proper-karaoke-booth.app** to **Applications**, then eject the disk image and launch the copy in Applications. Alternatively, extract the matching `Proper-Karaoke-Booth-0.4.4-mac-arm64.zip` or `-mac-x64.zip`, keep the `.app` bundle intact and move it to Applications. The established profile is normally `~/Library/Application Support/proper-karaoke-booth`; moving or replacing the application is separate from that profile. An explicit startup profile is still honored.
+
+These development bundles use **ad-hoc integrity signing**, not Apple Developer ID certification, and are **not notarized**. Gatekeeper may prevent first launch. For a trusted project build, consult [Apple's first-launch guidance](https://support.apple.com/en-us/102445). No Gatekeeper approval or Finder installation/upgrade/removal test is claimed.
+
+The app, selected text-free microphone/play ICNS, CLI and silent TPV backdrop are bundled. `yt-dlp` and FFmpeg must be installed separately. Finder-launched applications may not inherit Homebrew's PATH; an absolute yt-dlp executable can be selected in Preferences. CDG conversion currently relies on finding FFmpeg through PATH and has no separate FFmpeg executable picker. Mac media conversion and physical audio/output/display behavior remain unverified.
+
+### 0.4.4 Mac Verification
+
+[GitHub Actions run 43528558467](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/43528558467) built frozen source `340eca77ce7618dc62dfa506cfeb82daf22d6e08` on the standard `xcode-27` ARM runner. The full suite passed **735 tests, with eight platform/environment skips and zero failures**; type checking and all 69 branding hashes passed. Both architecture bundles passed deep/strict ad-hoc signature checks, Mach-O architecture/metadata checks, icon/backdrop/CLI checks, read-only mounted-DMG verification and matching ZIP payload checks.
+
+The native arm64 app opened with a disposable muted profile, retained a synthetic singer after restart, stayed stopped, displayed both theme logos correctly and kept minimum-width controls visible. Its bundled wrapper returned help with Node absent from PATH. Intel received static validation only. Full Mac app-to-CLI API lifecycle, native Dock appearance, installation/upgrade/removal, Gatekeeper approval and physical show hardware remain open.
+
+The `release` folder contains separate arm64/x64 DMG and ZIP packages and their four `.blockmap` companions, plus `Proper-Karaoke-Booth-0.4.4-mac-build.json`, `-mac-verification.json` and `-mac-SHA256SUMS.txt`. These generated artifacts are excluded from Git. The successful workflow retains its installer artifact for 14 days. Windows/Linux packages were not rebuilt for 0.4.4, and this Windows installation remains 0.4.3.
+
 ## Building packages
 
 Use a clean checkout with a supported Node.js installation and the committed lockfile:
@@ -56,7 +75,7 @@ On Linux, use `npm run package:linux` for x64 AppImage and `.deb` packages. On a
 
 The manually dispatched **Package macOS development build** GitHub Actions workflow uses the standard `xcode-27` Apple silicon runner and checks the actual OS version before building. It uses the committed lockfile, runs source tests and branding checks, builds both architectures, and verifies DMG/ZIP payloads. Native launch checks use empty, muted disposable profiles. Intel payload checks on that runner do not establish Intel runtime compatibility. It never publishes a GitHub Release or changes a real show profile. Verified artifacts are retained for 14 days; download them before expiry.
 
-Version 0.4.4 changes the Mac bundles from disabled signing to **ad-hoc integrity signing** and declares macOS 13 as the runtime minimum for Electron 45. The receipt retains `signed: false` to indicate there is no publisher certificate, and records `codeSigning: "ad-hoc"` and `notarized: false` separately. Deep/strict signature verification must pass before a Mac build receipt is issued. This does not establish Apple Developer ID certification or Gatekeeper approval. The Unix CLI launcher is sealed as `Contents/Resources/control/tpv-karaoke` inside the app; loose executable scripts in `Contents` prevent valid bundle signing. Native package and installation evidence is recorded separately below after a successful build.
+Version 0.4.4 changes the Mac bundles from disabled signing to **ad-hoc integrity signing** and declares macOS 13 as the runtime minimum for Electron 45. The receipt retains `signed: false` to indicate there is no publisher certificate, and records `codeSigning: "ad-hoc"` and `notarized: false` separately. Deep/strict signature verification must pass before a Mac build receipt is issued. This does not establish Apple Developer ID certification or Gatekeeper approval. The Unix CLI launcher is sealed as `Contents/Resources/control/tpv-karaoke` inside the app; loose executable scripts in `Contents` prevent valid bundle signing. Native package evidence and remaining installation checks are recorded in the macOS section above.
 
 Packaging type-checks the source, builds into a temporary directory, and copies only bundled app assets, the package manifest and generated dependency license notices. The silent default TPV lyric-backdrop video is copied to `resources/backdrops` outside `app.asar` so FFmpeg can read it; do not copy a user’s private video folder into the package. It does not clean the `dist` folder used by a running development app. Platform targets are defined in `electron-builder.config.mjs`; dependencies are pinned by `package-lock.json`. The build writes a JSON receipt with the source revision, dirty status, runtime/builder versions, and SHA-256 hashes, plus a `SHA256SUMS.txt` file next to the packages. These make builds traceable; package timestamps mean two builds are not guaranteed to be byte-identical.
 
@@ -90,7 +109,7 @@ New CDG imports use the bundled TPV Version 3 animation by default. Configure **
 
 Windows installs include `tpv-karaoke.cmd` beside the application executable. Use **Preferences → Local API and CLI → Show CLI Tool** to locate it. Enable that preference and save before using `status`, `capabilities`, `state`, `settings`, `shortcuts`, or `open settings` / `open keybindings`. No separate Node installation is required. The direct wrapper flags `--settings` and `--keybindings` also launch/focus the desktop while the API is disabled.
 
-An installed/extracted Linux package includes the executable `tpv-karaoke` wrapper beside `proper-karaoke-booth`. To use an AppImage's bundled wrapper, extract it to a persistent folder with `./Proper-Karaoke-Booth-0.4.3-linux-x86_64.AppImage --appimage-extract` and run `./squashfs-root/tpv-karaoke --help`; keep the entire extracted folder together. The wrapper is not installed into the shell PATH automatically. macOS wrapper layout is configured but remains unbuilt. See [API/CLI commands and limits](local-control-api.md).
+An installed/extracted Linux package includes the executable `tpv-karaoke` wrapper beside `proper-karaoke-booth`. To use an AppImage's bundled wrapper, extract it to a persistent folder with `./Proper-Karaoke-Booth-0.4.3-linux-x86_64.AppImage --appimage-extract` and run `./squashfs-root/tpv-karaoke --help`; keep the entire extracted folder together. The wrapper is not installed into the shell PATH automatically. The macOS 0.4.4 wrapper is inside the app at `Contents/Resources/control/tpv-karaoke`; its help command passed without external Node. Full Mac API lifecycle/navigation checks remain open. See [API/CLI commands and limits](local-control-api.md).
 
 Historical Windows 0.4.0 receipts identify source `0e90733`, with `sourceRevisionChangedDuringBuild: false`. Their dirty flag records only the three pre-existing untracked deployment drafts, which packaging excludes. Version 0.4.0 full tests passed 679 checks with seven platform/environment skips; source UI/shortcut/ratings rehearsals and actual Windows packaged checks passed. Those muted synthetic checks did not verify installer execution, physical audio/displays or native desktop launcher surfaces.
 

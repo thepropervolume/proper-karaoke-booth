@@ -1,4 +1,4 @@
-# Singer Guide for Development Version 0.4.3
+# Singer Guide for Development Version 0.4.4
 
 The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The experimental relay is deployed and public browser request/recovery rehearsals passed; physical-phone, venue-network and long-show checks remain. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
 
@@ -7,6 +7,8 @@ Version 0.4.2 also lets the host search public KaraFun/Party Tyme metadata and c
 The 0.4.3 development build adds host-only Sunfly Store title/SF-SKU results without a developer key. They are limited store-product metadata, not the full streaming catalog, and cannot be requested or played in the booth. Artist search is unverified and a missing artist stays unknown. Windows 0.4.3 is installed and verified; Linux 0.4.3 package checks passed. These host-only results remain unavailable for singer requests until playable-provider integration exists.
 
 The identity introduced in 0.4.1 uses an orange/pink vintage microphone with a play outline and no lettering in the app icon. Older installed versions may show the previous icon. The host can still choose a separate singer-display logo, and the TPV lyric-backdrop video remains the same.
+
+Version 0.4.4 adds Mac development packages without changing singer request behavior. The Apple silicon app passed a muted launch/restart rehearsal on macOS 27.0.1; this does not establish physical-show readiness. Windows/Linux hosts remain at 0.4.3. Ask the host which installed build is in use.
 
 ## Join from the venue network
 
