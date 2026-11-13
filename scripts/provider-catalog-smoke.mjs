@@ -5,6 +5,8 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 const repo = await realpath(resolve('.')), require = createRequire(join(repo, 'package.json'));
 const { _electron: electron } = require('playwright-core');
 if (process.argv.length < 3 || process.argv.length > 4) throw Error('Usage: node scripts/provider-catalog-smoke.mjs <executable> [screenshots-directory]');
@@ -41,6 +43,17 @@ try {
   await page.evaluate(() => window.tpv.saveSettings({ providerCatalogEnabled: false }));
   assert.ok((await page.evaluate(() => window.tpv.searchProviderCatalog('Radiohead'))).every(r => r.songs.length === 0));
   await page.evaluate(() => window.tpv.saveSettings({ providerCatalogEnabled: true }));
+  const fakeProfiles = { karafun: '', partytyme: '', sunfly: join(canonicalProfile, 'private-sunfly.key'), stingray: join(canonicalProfile, 'private-stingray.json') };
+  await page.evaluate(profiles => window.tpv.saveSettings({ localControlEnabled: true, providerCatalogProfiles: profiles }), fakeProfiles);
+  const cli = await app.evaluate(({ app }) => ({ executable: process.execPath, bundle: require('node:path').join(require('node:path').dirname(app.getAppPath()), 'control', 'cli.cjs') }));
+  const runCli = async (extra = []) => JSON.parse((await promisify(execFile)(cli.executable, [cli.bundle, '--profile-dir', canonicalProfile, 'settings', ...extra], { env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, timeout: 15_000 })).stdout);
+  const normal = await runCli();
+  assert.deepEqual(normal.result.settings.providerCatalogProfiles, { karafun: '', partytyme: '', sunfly: '', stingray: '' });
+  assert.ok(normal.result.redactedFields.includes('providerCatalogProfiles.sunfly'));
+  const explicit = await runCli(['--include-private-paths']);
+  assert.deepEqual(explicit.result.settings.providerCatalogProfiles, fakeProfiles);
+  assert.deepEqual((await page.evaluate(() => window.tpv.getSettings())).settings.providerCatalogProfiles, fakeProfiles);
+  await page.evaluate(() => window.tpv.saveSettings({ localControlEnabled: false }));
   // Policy editing is not an exposed host command. Restore a private policy
   // fixture only while its app is closed, as in the existing policy rehearsal.
   await app.close(); app = undefined;
@@ -55,7 +68,7 @@ try {
   page = await app.firstWindow(); await page.waitForFunction(() => !!window.tpv);
   assert.ok((await page.evaluate(() => window.tpv.searchProviderCatalog('Radiohead'))).every(r => r.songs.length === 0));
   assert.equal((await page.evaluate(() => window.tpv.getState())).playback, null);
-  console.log(`PASS: packaged ${identity.version} live public KaraFun/Party Tyme library search, unconfigured partner status, no queue/play promotion, toggle and policy guard; empty private show stays stopped.`);
+  console.log(`PASS: packaged ${identity.version} live public KaraFun/Party Tyme library search, unconfigured partner status, no queue/play promotion, toggle, policy guard and actual CLI private-path redaction/explicit opt-in; empty private show stays stopped.`);
 } finally {
   if (app) await app.close();
   const actual = await realpath(temp);
