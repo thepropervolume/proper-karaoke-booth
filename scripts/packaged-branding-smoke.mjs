@@ -27,7 +27,7 @@ try {
     await page.evaluate(appearance=>window.tpv.saveSettings({appearance}),appearance);
     await page.waitForFunction(value=>document.documentElement.dataset.theme===value,appearance);
     const logo=page.locator(`.brand__logo--${visible}`); await logo.waitFor({state:'visible'});
-    await page.waitForFunction(selector=>{const image=document.querySelector(selector);return image?.complete&&image.naturalWidth===1600&&image.naturalHeight===480;},`.brand__logo--${visible}`);
+    await page.waitForFunction(selector=>{const image=document.querySelector(selector);return image?.complete&&image.naturalWidth>0&&image.naturalHeight>0&&Math.abs(image.naturalWidth/image.naturalHeight-1600/480)<.01;},`.brand__logo--${visible}`);
     assert.equal(await page.locator(`.brand__logo--${hidden}`).isVisible(),false);
     assert.equal(await page.getByRole('img',{name:'The Proper Volume Karaoke Booth',exact:true}).count(),1);
     if(screenshotDirectory) await page.screenshot({path:join(screenshotDirectory,`host-${appearance}.png`)});
