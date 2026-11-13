@@ -36,6 +36,18 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.throws(() => parseSettings({ audioOutputId: 'x'.repeat(1025) }));
 });
 
+test('provider search settings migrate old files and keep secrets outside settings', () => {
+  const settings = parseSettings({});
+  assert.equal(settings.providerCatalogEnabled, true);
+  assert.deepEqual(settings.providerCatalogProfiles, { karafun: '', partytyme: '', sunfly: '', stingray: '' });
+  const profiles = { ...settings.providerCatalogProfiles, stingray: '/private/stingray.json' };
+  const saved = parseSettings({ providerCatalogEnabled: false, providerCatalogProfiles: profiles });
+  profiles.stingray = '/later'; assert.equal(saved.providerCatalogProfiles.stingray, '/private/stingray.json');
+  assert.equal(saved.providerCatalogEnabled, false);
+  for (const value of [false, {}, { ...profiles, surprise: 'secret' }, { ...profiles, sunfly: 'relative/file' }, { ...profiles, sunfly: 'bad\npath' }]) assert.throws(() => parseSettings({ providerCatalogProfiles: value }));
+  assert.throws(() => parseSettings({ providerCatalogEnabled: 'yes' }));
+});
+
 test('auto approval and queue modes determine staging while preserving the locked song', () => {
   let state = createInitialState('show', 'epoch');
   let n = 0;

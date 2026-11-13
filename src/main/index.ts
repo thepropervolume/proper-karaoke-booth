@@ -60,6 +60,8 @@ import { resolveYtDlpExecutable } from './youtube-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
 import { applicationUserData } from './user-data-path';
+import { ProviderCatalogService } from './provider-catalog-service';
+import { isProviderCatalogId } from '../domain/provider-catalog';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -81,6 +83,8 @@ function ratingsConnection(): SongRatingsConnection {
 }
 let state: ShowState;
 let settings: Settings;
+const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, policy: state.policy }));
+let choosingProviderProfile = false;
 const settingsUpdates = new SettingsUpdateQueue();
 let settingsPath: string;
 let settingsCreated = false;
@@ -948,6 +952,29 @@ else {
     return { ok: true };
   });
   ipcMain.handle('host:app-version', event => { guardHost(event.sender.id); return app.getVersion(); });
+  ipcMain.handle('host:provider-catalog-status', event => { guardHost(event.sender.id); return providerCatalog.status(); });
+  ipcMain.handle('host:provider-catalog-search', (event, query: unknown) => { guardHost(event.sender.id); return providerCatalog.search(query); });
+  ipcMain.handle('host:provider-catalog-open', async (event, input: unknown) => {
+    guardHost(event.sender.id);
+    if (!input || typeof input !== 'object' || !isProviderCatalogId((input as any).provider) || typeof (input as any).id !== 'string') throw new Error('Choose a current provider search result.');
+    const value = providerCatalog.url((input as any).provider, (input as any).id);
+    if (!value) throw new Error('Search again to open an available official provider page.');
+    await shell.openExternal(value);
+  });
+  ipcMain.handle('host:provider-catalog-choose-profile', async (event, provider: unknown) => {
+    guardHost(event.sender.id);
+    if (!isProviderCatalogId(provider) || (provider !== 'sunfly' && provider !== 'stingray')) throw new Error('Public catalogs do not need a credential file.');
+    if (!host || shuttingDown || choosingProviderProfile) return providerCatalog.status();
+    choosingProviderProfile = true;
+    try {
+      const chosen = await dialog.showOpenDialog(host, { title: `Choose Private ${provider === 'stingray' ? 'Stingray Developer JSON' : 'Sunfly Access Key'} Profile`, properties: ['openFile'] });
+      if (!chosen.canceled && chosen.filePaths[0] && !shuttingDown) await settingsUpdates.run(() => {
+        settings = writeSettings(settingsPath, { ...settings, providerCatalogProfiles: { ...settings.providerCatalogProfiles, [provider]: chosen.filePaths[0] } });
+        host?.webContents.send('host:settings', settings);
+      });
+      return providerCatalog.status();
+    } finally { choosingProviderProfile = false; }
+  });
   ipcMain.handle('host:choose-catalog-config', async event => {
     guardHost(event.sender.id); if (!host || shuttingDown) return null;
     const selected = await dialog.showOpenDialog(host, {title:'Choose private shared catalog configuration',properties:['openFile'],filters:[{name:'Catalog client configuration',extensions:['json']}]});
