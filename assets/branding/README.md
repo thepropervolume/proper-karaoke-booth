@@ -61,25 +61,29 @@ branding allowlist, not the complete design archive.
 
 Application identity does not replace a host-selected singer-display logo or the
 TPV lyric-backdrop video. Changing the UI accent does not change the installed icon.
-Previously built installers are unchanged. Verification of the new identity's
-exports, installer artwork and actual packages is pending. Check the next actual
-package's icons, Start menu/taskbar, Linux launcher, and macOS Dock on their
-respective systems. A configured target or an exported ICNS is not a native Mac
-build or a verified Dock result.
+Older installers are unchanged. Windows 0.4.1 app/setup/uninstaller resources
+contain all nine approved icon images. The actual upgrade on this PC, Start menu
+and uninstall icon references, and private-profile Day/Night host logos passed
+verification. Linux 0.4.1 AppImage/Debian payloads, all ten default light PNGs,
+packaged Day/Night logos and favicon also passed; the actual extracted AppRun
+passed isolated launch/restart checks. Check remaining native taskbar/launcher/Dock
+surfaces on their respective systems. A configured
+target or an exported ICNS is not a native Mac build or a verified Dock result.
 
 ## Verification
 
 ```sh
 node scripts/verify-brand-assets.mjs
 node scripts/verify-brand-assets.mjs --windows-resource-check
+node scripts/verify-brand-assets.mjs --executable /path/to/windows/executable.exe
+node scripts/packaged-branding-smoke.mjs /path/to/packaged/executable
 ```
 
 The first command checks generated hashes, PNG dimensions, ICO/ICNS frames and
 package/mobile references. The optional Windows check uses the packager's actual
 resource editor on a temporary Electron executable copy and reads back all nine
 embedded images. It never launches the app or writes its show profile. Both
-checks passed on 13 November for Microphone Play: 69 generated hashes, both ICO/ICNS sets, text-free vector icon masters, BMP dimensions and all nine icon sizes after Windows resource editing. Actual package/installation results are recorded in the installation guide. Also check native installer artwork, mobile opacity and the adaptive
-safe zone, and confirm the generated host favicon matches the chosen mark.
+checks passed on 13 November for Microphone Play: 69 generated hashes, both ICO/ICNS sets, text-free vector icon masters, 150×57/164×314 24-bit BMP dimensions and all nine icon sizes after Windows resource editing. The executable check also read all nine exact images from the packaged and installed app, setup and uninstaller. The private-profile branding smoke verifies loaded Day/Night logos, accessible names, minimum-width header fit and no autoplay. Actual package/installation results and the protected pre-upgrade backup are recorded in the installation guide. Mobile opacity and adaptive safe-zone checks pass; native mobile appearance remains unverified.
 
 Historical verification on 12 November 2026 covered Velvet Script: generated
 hashes, independent Pillow decoding, platform containers, mobile opacity and

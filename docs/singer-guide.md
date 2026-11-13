@@ -1,8 +1,8 @@
-# Singer guide for development version 0.4.0
+# Singer guide for development version 0.4.1
 
 The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The experimental relay is deployed and public browser request/recovery rehearsals passed; physical-phone, venue-network and long-show checks remain. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
 
-The next branding update uses an orange/pink vintage microphone with a play outline and no lettering in the app icon. Older installed versions may show the previous icon. The host can still choose a separate singer-display logo, and the TPV lyric-backdrop video remains the same.
+Version 0.4.1 uses an orange/pink vintage microphone with a play outline and no lettering in the app icon. Older installed versions may show the previous icon. The host can still choose a separate singer-display logo, and the TPV lyric-backdrop video remains the same.
 
 ## Join from the venue network
 
@@ -33,7 +33,7 @@ Your singer name and request information are stored locally for the host’s sho
 
 On the singer page, for either local or internet sessions, choose 1–60 whole minutes under availability, or use the return action when back. The host can do this for you. While unavailable you can have one upcoming request; existing extras are retained but block additions. You become eligible at the saved return time in the normal FIFO/fair order, subject to host manual order and the staged song. Returning does not start playback. If already staged or singing, ask the host before stepping away. After an uncertain connection result, check the outcome before another change. See [availability rules](singer-availability.md).
 
-The current desktop source includes the default silent lyric backdrop, but installers do not contain private catalog configuration, song media, yt-dlp or FFmpeg. Fresh 0.4.0 catalog discovery needs no private reader file. The host sets up media tools and separately provisioned remote/rating profiles where used; package verification for this update is still pending. A host catalog outage does not automatically remove already loaded songs or saved videos from the show. Development versions remain `0.x.y`; the approved official release will be `1.0.0`.
+The current desktop source includes the default silent lyric backdrop, but installers do not contain private catalog configuration, song media, yt-dlp or FFmpeg. Fresh 0.4.1 catalog discovery needs no private reader file. The host sets up media tools and separately provisioned remote/rating profiles where used. Windows and Linux 0.4.1 packages passed isolated checks; physical show and phone checks remain. A host catalog outage does not automatically remove already loaded songs or saved videos from the show. Development versions remain `0.x.y`; the approved official release will be `1.0.0`.
 
 ## CDG Lyrics and Backgrounds
 

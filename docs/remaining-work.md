@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 12 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: reliable show operation and a playable streaming service first. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 13 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: reliable show operation and a playable streaming service first. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
 ## Current foundation
 
@@ -153,7 +153,7 @@ Provider notes: [provider research](provider-research.md), [Sunfly operator](sun
 - [x] Build and smoke final Windows/Linux 0.3.0 packages after import/recovery fixes; keep 0.2 rollback artifacts.
 - [ ] Verify real 0.3 installation/upgrade/removal and physical show hardware; macOS remains unbuilt.
 
-The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing and native icon verification, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release.
+The import’s original transient metadata cause is not proven. Remote accounts, broader roles, paid providers, final signing, remaining native icon surfaces, actual phones and show hardware remain unfinished; passing rehearsals do not imply a finished 1.0 release. Windows 0.4.1 package/installed resources and Start menu references are now verified below.
 
 ## 0.3.1 default lyric backdrop
 
@@ -184,3 +184,17 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [x] Verify packaged CLI read/navigation, explicit enablement, per-start credentials, API-off desktop flags and restart without autoplay on Windows and isolated Linux.
 - [ ] Finish general authenticated mutations, events, pagination and specialized CLI action coverage; initial capabilities explicitly report partial control.
 - [ ] Complete native desktop installation, upgrade/removal, macOS and physical show validation.
+
+## 0.4.1 Selected Desktop Branding
+
+- [x] Prepare the owner-selected Microphone Play mark with no text on the app icon; preserve the reference and previous masters.
+- [x] Export matching light/dark SVG/PNG, Windows ICO, macOS ICNS, Linux and web/mobile assets with reproducible hashes.
+- [x] Add assisted-installer welcome/sidebar/header branding and theme-selected host logos.
+- [x] Verify Windows 0.4.1 installer/ZIP and actual 0.2.0→0.4.1 upgrade on this PC, preserving show/configuration bytes after a private backup. All nine app/setup/uninstaller icon images, Start menu/uninstall icon references and installed Day/Night host logos passed.
+- [x] Integrate the laptop's staged-policy lock, relink and retired-bumper-event fixes; Windows safety-base verification passed 685 tests with seven skips, type checking/build and a muted policy-lock rehearsal.
+- [x] Complete Linux 0.4.1 AppImage/Debian package verification from frozen `24f5f15`: matching payloads, 115 targeted passes without failures/skips, 69 branding hashes, all ten default light PNGs, packaged logos/favicon and extracted AppRun/catalog/CLI/API/staged-policy rehearsals. Non-root desktop and physical hardware remain unverified.
+- [x] Regenerate the 0.4.1 Markdown-based mockup PDF with the selected logo and visually review all 37 pages.
+- [ ] Regenerate and visually verify Word when the required bundled renderer is available; the current Word edition remains outdated.
+- [x] Restore existing catalog/queue/ratings services left stopped by unattended MySQL maintenance, without changing code, schema, credentials, provider configuration or website behavior.
+- [ ] Review and apply a separately proposed service-recovery prevention change; the current proposal remains unapplied.
+- [ ] Verify native macOS packaging/Dock and physical Windows/Linux desktop behavior before 1.0.0.

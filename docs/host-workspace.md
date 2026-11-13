@@ -1,6 +1,6 @@
 # Host Workspace
 
-Version 0.4.0 brings the library, transport, preferences and source controls into one workspace. It remains a development rehearsal build; physical audio/display and installation checks still apply.
+Version 0.4.1 retains the unified library, transport, preferences and source controls and adds the selected microphone/play identity. The app icon has no text; the host header follows Day/Night appearance with the full TPV / KARAOKE BOOTH logo. Windows upgrade and isolated Windows/Linux package checks passed. It remains a development rehearsal build; physical audio/display, Linux installation and broader removal checks still apply.
 
 ## Navigation and Menus
 
@@ -53,7 +53,7 @@ These navigation flags are implemented independently of the API. The initial aut
 
 ## Initial Local API and CLI
 
-Enable **Preferences → Local API and CLI → Enable Local API and CLI**, then save. The API binds only to this computer and publishes a private per-start credential. **Check Local API** reports readiness; **Show CLI Tool** locates the CLI wrapper. Source packaging wiring provides `tpv-karaoke.cmd` for Windows and `tpv-karaoke` for installed/extracted Linux packages. These wrappers reuse the app runtime, so a separate Node installation is unnecessary. Windows and Linux 0.4 bundled-wrapper verification passed. Earlier versions may not include these wrappers. AppImage helper/extraction and macOS packaging require their release-specific instructions and verification.
+Enable **Preferences → Local API and CLI → Enable Local API and CLI**, then save. The API binds only to this computer and publishes a private per-start credential. **Check Local API** reports readiness; **Show CLI Tool** locates the CLI wrapper. Source packaging wiring provides `tpv-karaoke.cmd` for Windows and `tpv-karaoke` for installed/extracted Linux packages. These wrappers reuse the app runtime, so a separate Node installation is unnecessary. Windows and Linux 0.4.1 bundled-wrapper verification passed. Earlier versions may not include these wrappers. AppImage helper/extraction and macOS packaging require their release-specific instructions and verification.
 
 ```text
 tpv-karaoke.cmd status

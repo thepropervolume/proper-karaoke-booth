@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 12 November 2026. **Application milestone:** 0.4.1 isolated development candidate; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
+**Revision:** 13 November 2026. **Application milestone:** 0.4.1 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -18,13 +18,17 @@ The host computer is the single authority for show state, queue rules and playba
 
 ### Development versions and installers
 
-Version each delivered application update using semantic 0.x.y versions and include it in the host interface, installer filename and completion report. Reserve 1.0.0 for the approved official release. Several focused commits delivered together may share one version. Windows 0.4.0 installer/ZIP built from application source `0e90733`; actual packaged version/restart, bundled CLI/API lifecycle, desktop navigation flags, default/custom/solid lyric backdrop and CDG checks passed. Linux 0.4.0 AppImage/Debian payload checks, extracted AppRun launch/restart, public catalog search and bundled CLI/navigation passed under a private virtual display; normal desktop sandbox, actual installation and hardware remain unverified. The owner reports successful earlier 0.2 installer use without specifying platforms. Current-release installation, upgrade/removal and physical show checks remain. macOS Intel and Apple silicon DMG/ZIP require a Mac build and verification. Packages exclude private configuration, song media, yt-dlp, FFmpeg and LibreOffice, and preserve the established app-data directory. Windows packages are unsigned. The selected Velvet Script identity is packaged; all 66 branding asset hashes and the nine embedded icon sizes in the actual Windows executable passed read-back verification. Signing, notarization and native launcher/taskbar/Dock appearance remain release work. See the installation guide for receipts and platform limits.
+Version each delivered application update using semantic 0.x.y versions and include it in the host interface, installer filename and completion report. Reserve 1.0.0 for the approved official release. Several focused commits delivered together may share one version. Version 0.4.1 Windows installer/ZIP and Linux AppImage/Debian packages use frozen runtime source `24f5f15`, including the owner-selected Microphone Play identity, a text-free icon, full host logo and assisted-installer artwork. All 69 generated asset hashes passed. Actual Windows app/setup/uninstaller resources match all nine approved icon frames; this PC upgraded from 0.2.0 to 0.4.1 with original show/settings bytes preserved after a private backup. Installed Day/Night logos and Start menu/uninstall icon references passed. Linux verified both payloads, default light launcher icons, Day/Night logos, extracted AppRun launch/restart, public catalog, bundled CLI/API lifecycle and policy-lock behavior; 115 targeted checks passed. Linux used a private virtual display and test-only root flags, leaving shipping sandbox defaults unchanged. Real-user Linux installation, upgrade/removal and desktop sandbox remain unverified. The Windows safety-base suite passed 685 tests with seven platform/environment skips. Earlier 0.4.0 packages used Velvet Script; their separately documented playback/backdrop checks remain historical evidence. macOS Intel and Apple silicon DMG/ZIP still require a Mac build and verification. Packages exclude private configuration, song media, yt-dlp, FFmpeg and LibreOffice, and preserve the established app-data directory. Windows packages are unsigned. Signing, notarization, uninstallation, remaining native desktop surfaces and physical show checks remain release work. See the installation guide for receipts and platform limits.
 
 ## 2. People, interfaces and navigation
 
 **Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is in the File menu. File → Import provides video-file, custom-directory and CDG/ZIP actions alongside the library icons. View offers Appearance, Choose Accent Color and Layout menus. Sources groups Karaoke Nerds, the Custom YouTube Video Importer and pending Third-Party Services. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile directory contains an **offline native singer preview** using synthetic data; it cannot join a show, send real requests or store credentials.
 
 **Planned:** distinct KJ remote, delegated staff queue workspace, expanded singer web and native clients, and account/billing screens. A KJ remote emphasizes transport, while queue staff moderate and organize future turns without playback or output controls. The singer experience provides discovery, own requests and a safe public view of the show. A singer display is presentation-only and never exposes host controls, private notes, file paths or account information. Native clients are not assumed to inherit browser security properties; their authentication, certificate handling, secure storage, background behavior and reconnection require separate testing.
+
+### Selected Desktop Identity
+
+On 13 November 2026 the owner selected the supplied orange/pink/navy vintage microphone and open play outline, called Microphone Play in the asset manifest (`mic-play`). This supersedes Velvet Script. The installed application icon has **no visible lettering**. Full horizontal and stacked logos read **TPV / KARAOKE BOOTH**, correcting the extra E in the reference. The reference and previous master set are retained as provenance/history. Self-contained SVG masters produce light/dark icons, ICO, ICNS, Linux PNGs, favicon/mobile assets and assisted-installer header/sidebar bitmaps. The default installed icon uses the reference navy mark on a white rounded tile; the dark edition adds a contrast keyline. The host header uses the matching full logo. Actual installation and native platform verification are recorded separately from asset export; an ICNS file is not a Mac build.
 
 ### Visual and interaction principles
 
@@ -185,10 +189,44 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "product": "THE PROPER VOLUME",
   "deck_title": "Karaoke interface mockups",
   "deck_subtitle": "Current screens and planned experiences | Night and Day",
-  "host_actions": ["palette", "search", "display", "fullscreen", "settings"],
+  "host_actions": [
+    "palette",
+    "search",
+    "display",
+    "fullscreen",
+    "settings"
+  ],
   "themes": {
-    "Night": { "background": "#090f1b", "panel": "#101b2b", "card": "#1a293d", "line": "#34455b", "text": "#f3f7fc", "muted": "#a8bad0", "accent": "#13bbef", "selected": "#153b54" },
-    "Day": { "background": "#f4f7fb", "panel": "#ffffff", "card": "#e9f0f7", "line": "#c4d1df", "text": "#17283d", "muted": "#51657a", "accent": "#007fae", "selected": "#d7eef9" }
+    "Night": {
+      "background": "#090f1b",
+      "panel": "#101b2b",
+      "card": "#1a293d",
+      "line": "#34455b",
+      "text": "#f3f7fc",
+      "muted": "#a8bad0",
+      "accent": "#13bbef",
+      "selected": "#153b54"
+    },
+    "Day": {
+      "background": "#f4f7fb",
+      "panel": "#ffffff",
+      "card": "#e9f0f7",
+      "line": "#c4d1df",
+      "text": "#17283d",
+      "muted": "#51657a",
+      "accent": "#007fae",
+      "selected": "#d7eef9"
+    }
+  },
+  "brand_logos": {
+    "Night": {
+      "path": "../assets/branding/logo-dark.png",
+      "sha256": "575cf6e956e335e2c6be2de5538aa07ec90fa6bfb916daaaa1a875cb890e4437"
+    },
+    "Day": {
+      "path": "../assets/branding/logo-light.png",
+      "sha256": "086e8b5794933534ae9238f55b943faf41fea9218c8d81bafa1f395fc0e3ad44"
+    }
   }
 }
 ```

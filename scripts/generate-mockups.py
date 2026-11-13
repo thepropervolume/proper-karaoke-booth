@@ -2,7 +2,7 @@
 """Render the product Markdown's mockup blocks as a Night/Day vector PDF.
 
 Usage: python scripts/generate-mockups.py --source docs/product-specification.md --output /path/to/mockups.pdf
-No screen content or palette is read from any other document.
+Screen content and palette come from Markdown; optional local logo references are bound by SHA256.
 """
 from __future__ import annotations
 
@@ -51,6 +51,19 @@ def load(path: Path) -> tuple[dict, list[dict], str]:
     for palette in meta['themes'].values():
         if not isinstance(palette, dict) or not all(isinstance(palette.get(key), str) and re.fullmatch(r'#[0-9a-fA-F]{6}', palette[key]) for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')):
             raise ValueError('Each theme must define valid six-digit color values.')
+    logos = meta.get('brand_logos')
+    if logos is not None:
+        if not isinstance(logos, dict) or set(logos) != {'Night', 'Day'}:
+            raise ValueError('Brand logos must define Night and Day.')
+        root = (path.resolve().parent.parent / 'assets' / 'branding').resolve()
+        for theme, entry in logos.items():
+            if not isinstance(entry, dict) or set(entry) != {'path', 'sha256'} or not isinstance(entry['path'], str) or not isinstance(entry['sha256'], str):
+                raise ValueError('Each brand logo needs a local path and SHA256.')
+            target = (path.resolve().parent / entry['path']).resolve()
+            if target.parent != root or target.name not in ('logo-dark.png', 'logo-light.png') or not target.is_file():
+                raise ValueError('Brand logos must use local approved logo PNGs.')
+            if target.stat().st_size > 2 * 1024 * 1024 or hashlib.sha256(target.read_bytes()).hexdigest() != entry['sha256']:
+                raise ValueError('Brand logo does not match its Markdown SHA256.')
     ids = set()
     for item in screens:
         if not isinstance(item, dict):
@@ -227,10 +240,14 @@ def page_heading(c, meta, item, theme, page):
 
 def top_bar(c, x, y, w, p, title, product, actions):
     rect(c, x, y, w, 44, p['panel'])
-    rect(c, x + 17, y + 11, 22, 22, p['accent'], 5)
-    line(c, 'TPV', x + 19, y + 17, 'TPVBold', 7, p['background'])
-    line(c, product.upper(), x + 49, y + 25, 'TPVBold', 10, p['text'])
-    line(c, title, x + 49, y + 11, size=9, fill=p['muted'])
+    if p.get('_brand_logo'):
+        c.drawImage(p['_brand_logo'], x + 14, y + 3, width=150, height=38, preserveAspectRatio=True, anchor='c', mask='auto')
+        line(c, title, x + 182, y + 18, size=9, fill=p['muted'])
+    else:
+        rect(c, x + 17, y + 11, 22, 22, p['accent'], 5)
+        line(c, 'TPV', x + 19, y + 17, 'TPVBold', 7, p['background'])
+        line(c, product.upper(), x + 49, y + 25, 'TPVBold', 10, p['text'])
+        line(c, title, x + 49, y + 11, size=9, fill=p['muted'])
     for index, name in enumerate(actions):
         icon(c, name, x + w - (14 + len(actions) * 40) + index * 40, y + 8, p)
 
@@ -407,7 +424,9 @@ def generate(source: Path, output: Path):
     host_actions = meta.get('host_actions', ['search', 'display', 'fullscreen', 'settings'])
     for item in screens:
         for theme in ('Night', 'Day'):
-            palette = meta['themes'][theme]
+            palette = dict(meta['themes'][theme])
+            if meta.get('brand_logos'):
+                palette['_brand_logo'] = str((source.resolve().parent / meta['brand_logos'][theme]['path']).resolve())
             page_heading(c, meta, item, theme, page)
             if item['layout'] == 'desktop': desktop(c, item, palette, meta['product'], host_actions)
             elif item['layout'] == 'settings': settings_dialog(c, item, palette)

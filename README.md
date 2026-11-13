@@ -1,12 +1,12 @@
 # The Proper Volume Karaoke
 
-Version **0.4.0**, a local-first desktop karaoke rehearsal application. Development updates use `0.x.y`; `1.0.0` is reserved for the approved official release. This is early development software, not yet ready to run a live show. Core local playback does not require an account or internet connection after installation; YouTube downloads require internet; saved songs play offline.
+Version **0.4.1**, a local-first desktop karaoke rehearsal application. Development updates use `0.x.y`; `1.0.0` is reserved for the approved official release. This is early development software, not yet ready to run a live show. Core local playback does not require an account or internet connection after installation; YouTube downloads require internet; saved songs play offline.
 
-See the [0.4.0 host workspace guide](docs/host-workspace.md) for Sources, menus, editable shortcuts, automatic singer-display opening, Previous and shared heart ratings.
+See the [host workspace guide](docs/host-workspace.md) for Sources, menus, editable shortcuts, automatic singer-display opening, Previous and shared heart ratings.
 
 ## Run or install
 
-Windows 0.4.0 installer and ZIP have been built. The actual packaged app passed version/restart, default/custom/solid backdrop/CDG conversion, bundled CLI, API lifecycle and native settings-navigation checks. Linux 0.4.0 AppImage and Debian packages also passed packaged public-catalog, restart and bundled CLI checks under an isolated virtual display. macOS has not been built. See [installation and packaging](docs/installation.md). Actual installation/upgrade and physical show checks remain. Private configuration, song media, yt-dlp and FFmpeg are not bundled; the default silent lyric backdrop is bundled.
+Windows **0.4.1** installer and ZIP include the selected Microphone Play logo and text-free app icon. This PC was upgraded from 0.2.0 after a private backup; existing show and configuration bytes were preserved. Installed executable, uninstaller and shortcut icon references, plus Day/Night host logos, passed checks. Linux 0.4.1 AppImage and Debian packages passed payload, branding, catalog, restart, CLI and staged-policy checks under an isolated virtual display. macOS has not been built. See [installation and packaging](docs/installation.md). Physical show checks and broader platform install/removal tests remain. Private configuration, song media, yt-dlp and FFmpeg are not bundled; the default silent lyric backdrop is bundled.
 
 For development, prerequisites are Node.js and npm. Automated rehearsals have run on Linux and Windows with Electron 45; macOS and physical audio/display devices still need testing. Install dependencies once (internet required), then build and start:
 

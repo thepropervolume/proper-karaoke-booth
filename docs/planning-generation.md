@@ -30,3 +30,5 @@ python scripts/generate-specification.py --source docs/product-specification.md 
 ```
 
 The scripts fail on invalid or missing required mockup information. Do not treat a successful command as visual approval: render the Word document and PDF to page images and inspect every page for readability, spacing and accurate statuses. Run the documentation generator tests with `python -m unittest discover -s tests/docs`.
+
+The optional `brand_logos` entries in the Markdown theme bind the local Night/Day horizontal PNGs to exact SHA256 hashes. Update those hashes when the selected identity changes. The generator refuses an unexpected path, absent image or mismatched digest; all other screen text/palettes still come from the Markdown blocks.

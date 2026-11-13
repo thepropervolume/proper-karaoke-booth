@@ -6,9 +6,11 @@ The reference palette is orange `#F68713`, pink `#ED0D63`, navy `#131457` and gr
 
 ## Selected Pre-release Identity
 
-The maintained [asset set and reproduction instructions](../assets/branding/README.md) cover SVG masters, logos and wordmarks, Windows ICO, macOS ICNS, Linux PNGs, web favicons and mobile/adaptive icons. The Microphone Play masters, native exports and installer artwork are being prepared; verification of those exports and new packages is pending. Do not treat an existing generated icon preview as evidence that the replacement has been verified.
+The maintained [asset set and reproduction instructions](../assets/branding/README.md) cover SVG masters, logos and wordmarks, Windows ICO, macOS ICNS, Linux PNGs, web favicons and mobile/adaptive icons. All 69 generated hashes, platform icon containers and Windows resource checks passed. The default installed icon uses the original navy mark on a white rounded tile; the dark edition has a contrast keyline. Windows 0.4.1 includes the new app/setup/uninstaller icons and assisted-installer artwork. The actual upgrade on this PC and private-profile Day/Night host-logo checks passed. Linux 0.4.1 AppImage/Debian packages also passed matching-payload, default-icon, packaged-logo/favicon and extracted AppRun checks; see [installation evidence](installation.md).
 
-The desktop packaging and runtime already use the shared branding paths for the executable, installer, launcher, Host and Singer Display windows; the mobile preview has corresponding icon paths. Existing custom singer-display logos remain independent. Already-generated installers retain their prior identity. Exporting an ICNS or configuring a macOS target does not establish a native Mac build.
+The desktop packaging and runtime use the shared branding paths for the executable, installer, launcher, Host and Singer Display windows; the mobile preview has corresponding icon paths. Existing custom singer-display logos remain independent. Older generated installers retain their prior identity. Exporting an ICNS or configuring a macOS target does not establish a native Mac build.
+
+![Selected text-free Microphone Play icon, default light edition](../assets/branding/png/light/icon-256.png)
 
 ## Four TPV directions
 
@@ -57,7 +59,7 @@ All six directions also have blue-led and optional pink editions, each in light 
 
 Each source has a corresponding `-small.svg` in the same directory. The accompanying review ZIP contains all **36** direction/theme/palette editions: six directions, two themes and three palettes. Each edition includes editable SVG, micro SVG, PNGs at 16, 24, 32, 48, 64, 128, 256, 512 and 1024 pixels, and a Windows ICO with sizes 16 through 256. Native vector construction was used to control letter geometry and small-size rendering; no raster-generation service was used.
 
-The options above are historical alternatives. Velvet Script was selected on 12 November from a later vintage/cursive review, then superseded by Microphone Play on 13 November. Its Lobster lettering and purple/cyan palette are historical, not instructions for the new mark. Retain the existing sources and licenses. Actual Start menu, taskbar, desktop and light/dark Dock behavior for the new identity still need verification on each target system.
+The options above are historical alternatives. Velvet Script was selected on 12 November from a later vintage/cursive review, then superseded by Microphone Play on 13 November. Its Lobster lettering and purple/cyan palette are historical, not instructions for the new mark. Retain the existing sources and licenses. Windows package resources and Start menu references are verified; remaining taskbar/desktop, Linux launcher and light/dark Dock appearance still need checks on their target systems.
 
 ## Earlier review retained as history
 

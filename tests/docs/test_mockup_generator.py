@@ -15,6 +15,45 @@ spec.loader.exec_module(generator)
 
 
 class MockupGeneratorTest(unittest.TestCase):
+    def test_branding_rejects_changed_or_outside_assets_before_creating_pdf(self):
+        colors = {key: '#123456' for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')}
+        meta = {'product': 'Test', 'deck_title': 'Branding', 'deck_subtitle': 'Synthetic',
+                'themes': {'Night': colors, 'Day': colors}}
+        screen = {'id': 'TEST', 'title': 'Singer display', 'status': 'Planned', 'description': 'Synthetic',
+                  'layout': 'display', 'detail': 'Not implemented', 'display_title': 'DEMO',
+                  'display_subtitle': 'Example', 'display_next': 'Next: Sam'}
+        with tempfile.TemporaryDirectory(prefix='tpv-brand-reference-test-') as directory:
+            root = Path(directory)
+            source, output = root / 'docs' / 'spec.md', root / 'mockups.pdf'
+            source.parent.mkdir()
+            assets = root / 'assets' / 'branding'
+            assets.mkdir(parents=True)
+            logos = {}
+            for theme, name in (('Night', 'logo-dark.png'), ('Day', 'logo-light.png')):
+                data = (ROOT / 'assets' / 'branding' / name).read_bytes()
+                (assets / name).write_bytes(data)
+                logos[theme] = {'path': '../assets/branding/' + name, 'sha256': hashlib.sha256(data).hexdigest()}
+            meta['brand_logos'] = logos
+            def write_source():
+                source.write_text('```mockup-theme\n' + json.dumps(meta) + '\n```\n```mockup\n' +
+                                  json.dumps(screen) + '\n```\n', encoding='utf-8')
+            write_source()
+            generator.generate(source, output)
+            self.assertEqual(len(PdfReader(output).pages), 4)
+            output.unlink()
+            original = (assets / 'logo-dark.png').read_bytes()
+            (assets / 'logo-dark.png').write_bytes(original + b'changed')
+            with self.assertRaisesRegex(ValueError, 'SHA256'):
+                generator.generate(source, output)
+            self.assertFalse(output.exists())
+            (assets / 'logo-dark.png').write_bytes(original)
+            (root / 'logo-dark.png').write_bytes(original)
+            logos['Night']['path'] = '../logo-dark.png'
+            write_source()
+            with self.assertRaisesRegex(ValueError, 'local approved'):
+                generator.generate(source, output)
+            self.assertFalse(output.exists())
+
     def test_growing_inventory_paginates_before_the_screen_pages(self):
         colors = {key: '#123456' for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')}
         meta = {'product': 'Test', 'deck_title': 'Inventory', 'deck_subtitle': 'Synthetic', 'themes': {'Night': colors, 'Day': colors}}
