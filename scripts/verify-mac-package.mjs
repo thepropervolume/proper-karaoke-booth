@@ -97,7 +97,7 @@ const inspect = async (app, architecture) => {
       await matchSource(join(resources, resource.to, filename), join(repo, resource.from, filename), `${resource.to}/${filename}`);
     }
   }
-  const wrapper = join(contents, 'tpv-karaoke');
+  const wrapper = join(resources, 'control', 'tpv-karaoke');
   const wrapperText = await readFile(wrapper, 'utf8');
   assert.equal(wrapperText, (await readFile(join(repo, 'assets/cli/tpv-karaoke'), 'utf8')).replace(/\r\n/g, '\n'));
   assert.ok(!wrapperText.includes('\r'));

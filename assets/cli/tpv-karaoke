@@ -4,9 +4,11 @@ set -eu
 cli_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cli_runtime="$cli_dir/proper-karaoke-booth"
 cli_entry="$cli_dir/resources/control/cli.cjs"
-if [ -d "$cli_dir/MacOS" ]; then
-  cli_runtime="$cli_dir/MacOS/proper-karaoke-booth"
-  cli_entry="$cli_dir/Resources/control/cli.cjs"
+if [ -f "$cli_dir/cli.cjs" ] && [ -x "$cli_dir/../../MacOS/proper-karaoke-booth" ]; then
+  # macOS seals this script as a resource; loose executable scripts directly in
+  # Contents are treated as nested code and invalidate the bundle signature.
+  cli_runtime="$cli_dir/../../MacOS/proper-karaoke-booth"
+  cli_entry="$cli_dir/cli.cjs"
 fi
 case "${1-}" in
   --settings|--keybindings)

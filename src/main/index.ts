@@ -916,7 +916,7 @@ else {
   ipcMain.handle('host:control-status', event => { guardHost(event.sender.id); return localControlStatus(); });
   ipcMain.handle('host:show-control-cli', event => {
     guardHost(event.sender.id);
-    const path = app.isPackaged ? process.platform === 'darwin' ? join(process.resourcesPath, '..', 'tpv-karaoke') : join(dirname(app.getPath('exe')), process.platform === 'win32' ? 'tpv-karaoke.cmd' : 'tpv-karaoke') : join(app.getAppPath(), 'dist/control/cli.cjs');
+    const path = app.isPackaged ? process.platform === 'darwin' ? join(process.resourcesPath, 'control', 'tpv-karaoke') : join(dirname(app.getPath('exe')), process.platform === 'win32' ? 'tpv-karaoke.cmd' : 'tpv-karaoke') : join(app.getAppPath(), 'dist/control/cli.cjs');
     if (!existsSync(path)) throw new Error('Build or install the current CLI first.');
     shell.showItemInFolder(path);
   });

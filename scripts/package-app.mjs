@@ -76,8 +76,9 @@ try {
       installerSidebar: join(stage, configuration.nsis.installerSidebar),
       uninstallerSidebar: join(stage, configuration.nsis.uninstallerSidebar),
       include: join(stage, configuration.nsis.include) },
-    extraResources: configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
-    extraFiles: configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
+    extraResources: [...configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
+      ...(platform === 'mac' ? [{ from: unixCli, to: 'control/tpv-karaoke' }] : [])],
+    extraFiles: platform === 'mac' ? [] : configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
     // A multi-architecture build must download each matching Electron runtime.
     // Reusing the host runtime would silently mislabel (for example) an arm64 Mac.
     ...(target.nodeName === process.platform && architectures.length === 1 && Arch[architectures[0]] === process.arch
