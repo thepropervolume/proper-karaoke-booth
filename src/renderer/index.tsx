@@ -3,6 +3,8 @@ import '@fontsource/nunito-sans/400.css';
 import '@fontsource/nunito-sans/700.css';
 import '@fontsource/nunito-sans/800.css';
 import { createRoot } from 'react-dom/client';
+import brandLogoDark from '../../assets/branding/logo-dark.svg';
+import brandLogoLight from '../../assets/branding/logo-light.svg';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, singerAvailable, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
 import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/settings';
@@ -528,7 +530,10 @@ function App() {
 
   return <div className="app" data-layout={settings.layout}>
     <header className="topbar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true">▥</span><span>The Proper Volume<small>Karaoke host</small></span></div>
+      <div className="brand">
+        <img className="brand__logo brand__logo--dark" src={brandLogoDark} alt="The Proper Volume Karaoke Booth" width="220" height="52" />
+        <img className="brand__logo brand__logo--light" src={brandLogoLight} alt="The Proper Volume Karaoke Booth" width="220" height="52" />
+      </div>
       <h1>Local rehearsal{appVersion && <small style={{marginLeft:'0.6em'}} aria-label="Application version">v{appVersion}</small>}</h1>
       <Tooltip text={shortcutHint('Appearance', 'appearance')}><button className="icon-button accent-button" aria-label="Appearance" onClick={() => openPreferences('appearance')} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
       <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>

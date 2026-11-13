@@ -2,6 +2,8 @@
 
 The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The experimental relay is deployed and public browser request/recovery rehearsals passed; physical-phone, venue-network and long-show checks remain. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
 
+The next branding update uses an orange/pink vintage microphone with a play outline and no lettering in the app icon. Older installed versions may show the previous icon. The host can still choose a separate singer-display logo, and the TPV lyric-backdrop video remains the same.
+
 ## Join from the venue network
 
 If the host has opened a local room, connect to the venue network and open the private invitation link they share with you. Enter your name and choose **Join the show**. The page lets you search loaded songs, request a song and check your request status. You can withdraw your own pending or accepted request; ask the host if the song is already staged or playing. The page shows up to 50 requests at a time, prioritizing active requests. Use **Load more songs** to browse additional pages of the library. If you cannot find a song, enter its title and optional artist under **Can't find your song?** and send it to the host; this does not add a recording or a rotation entry.

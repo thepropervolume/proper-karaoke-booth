@@ -71,7 +71,11 @@ try {
     linux: { ...configuration.linux, icon: join(stage, configuration.linux.icon) },
     mac: { ...configuration.mac, icon: join(stage, configuration.mac.icon) },
     nsis: { ...configuration.nsis, installerIcon: join(stage, configuration.nsis.installerIcon),
-      uninstallerIcon: join(stage, configuration.nsis.uninstallerIcon), installerHeaderIcon: join(stage, configuration.nsis.installerHeaderIcon) },
+      uninstallerIcon: join(stage, configuration.nsis.uninstallerIcon),
+      installerHeader: join(stage, configuration.nsis.installerHeader),
+      installerSidebar: join(stage, configuration.nsis.installerSidebar),
+      uninstallerSidebar: join(stage, configuration.nsis.uninstallerSidebar),
+      include: join(stage, configuration.nsis.include) },
     extraResources: configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
     extraFiles: configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
     // A multi-architecture build must download each matching Electron runtime.
