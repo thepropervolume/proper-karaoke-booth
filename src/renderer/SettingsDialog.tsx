@@ -89,12 +89,14 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
         <details className="settings-group">
           <summary>Karaoke Services</summary>
           <div className="settings-group__content">
-            <p>Paid-provider account linking is not available yet. YouTube videos can be downloaded and played from Song Library.</p>
-            <p className="muted">We are investigating how to connect existing subscriptions, including KaraFun, subject to each provider's access and terms.</p>
+            <label className="settings-check"><input type="checkbox" checked={draft.providerCatalogEnabled} onChange={event => setDraft({ ...draft, providerCatalogEnabled: event.target.checked })} /> Search service catalogs in Song Library</label>
+            <p>KaraFun and Party Tyme use their public catalog metadata. No paid account is needed for those searches. Configure provider-issued Stingray and Sunfly profiles in Sources.</p>
+            <p className="muted">Search-only matches show the service name and cannot be queued or played in the booth yet. Existing subscription linking and playback remain separate work.</p>
             <ul aria-label="Karaoke service availability">
-              <li>KaraFun — Not available yet</li>
-              <li>Party Tyme — Not available yet</li>
-              <li>Sunfly — Not available yet</li>
+              <li>KaraFun — Public catalog search; playback pending</li>
+              <li>Party Tyme — Public catalog search; playback pending</li>
+              <li>Sunfly — Catalog access requires a provider profile; playback pending</li>
+              <li>Stingray — Catalog access requires a provider profile; playback pending</li>
             </ul>
           </div>
         </details>

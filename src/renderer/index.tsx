@@ -41,6 +41,9 @@ import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { LibraryCatalogStatus } from './LibraryCatalogStatus';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
+import { ProviderCatalogPanel, ProviderCatalogResults } from './ProviderCatalogPanel';
+import { useProviderCatalogSearch } from './use-provider-catalog-search';
+import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogStatus } from '../domain/provider-catalog';
 import { requestWithSinger } from './request-singer';
 import { requestLibrarySong } from './request-library-song';
 import { downloadLibrarySong } from './download-library-song';
@@ -52,6 +55,7 @@ import type { HistoryExportResult } from '../main/history-export';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
+import '../styles/provider-catalog.scss';
 
 type Screen = 'library' | 'sources' | 'requests' | 'singers' | 'playlists' | 'remote';
 type Result = { ok: boolean; error?: string; cancelled?: boolean; notice?: string };
@@ -83,6 +87,10 @@ declare global {
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
       searchCommunityCatalog: (query: string) => Promise<LocalCatalogResult>;
+      getProviderCatalogStatus: () => Promise<ProviderCatalogStatus[]>;
+      searchProviderCatalog: (query: string) => Promise<ProviderCatalogSearchResult[]>;
+      chooseProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
+      openProviderCatalogSong: (input: { provider: ProviderCatalogId; id: string }) => Promise<void>;
       ratingKeys: (ids: string[]) => Promise<Record<string, RecordingKey>>;
       lookupSongRatings: (keys: RecordingKey[]) => Promise<SongRatingsLookup>;
       rateSong: (key: RecordingKey, value: number | null) => Promise<SongRatingVote>;
@@ -140,6 +148,7 @@ function App() {
   const [clockMs, setClockMs] = useState(() => Date.now());
   const [screen, setScreen] = useState<Screen>('library');
   const [search, setSearch] = useState('');
+  const [providerCatalogRevision, setProviderCatalogRevision] = useState(0);
   const [librarySort, setLibrarySort] = useState<LibrarySort>('import-oldest');
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
   const [libraryFilenames, setLibraryFilenames] = useState<Record<string, string>>({});
@@ -305,6 +314,8 @@ function App() {
 
   const versions = useMemo(() => state ? visibleVersions(state) : [], [state]);
   const catalogSearch = useLibraryCatalogSearch(search, screen === 'library', JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile]), window.tpv.searchCommunityCatalog);
+  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy]);
+  const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
   const filtered = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
     catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result]);
   const selectedVersion = filtered.find(v => v.id === selectedVersionId);
@@ -556,7 +567,7 @@ function App() {
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
           <div className="section-heading"><h2>Song Library</h2><div><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint('Import CD+G / ZIP', 'importCdg')}><button className="icon-button" aria-label="Import CD+G / ZIP…" disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div></div>
-          <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search your library and Karaoke Nerds" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search your library and service catalogs" value={search} onChange={e => setSearch(e.target.value)} />
             <label>Sort<select aria-label="Sort songs" value={librarySort} onChange={event => setLibrarySort(event.target.value as LibrarySort)}>
               <option value="import-oldest">Import order</option><option value="import-newest">Newest imported</option><option value="title-asc">Title A–Z</option><option value="title-desc">Title Z–A</option><option value="artist-asc">Artist A–Z</option><option value="artist-desc">Artist Z–A</option>
             </select></label>
@@ -565,11 +576,11 @@ function App() {
             </select></label></div>
           <LibraryCatalogStatus state={catalogSearch} />
           <div className="eyebrow">Title / artist <span className="muted"> · Local files and online recordings</span></div>
-          <div ref={songList} role="listbox" aria-label="Songs" className="song-list" onScroll={event => {
+          <div ref={songList} className="library-results" onScroll={event => {
             const rows = event.currentTarget.querySelectorAll<HTMLElement>('.song-option');
             const step = rows[1] && rows[0] ? rows[1].offsetTop - rows[0].offsetTop : rows[0]?.offsetHeight;
             if (step && step > 0) setRatingWindowStart(Math.max(0, Math.floor(event.currentTarget.scrollTop / step / 40) * 40));
-          }}>
+          }}><div role="listbox" aria-label="Songs" className="song-list">
             {filtered.map((version, index) => <div className={`track-row song-option ${version.id === selectedVersionId ? 'selected' : ''}`} key={version.id} role="option" aria-selected={version.id === selectedVersionId} tabIndex={0}
               onClick={() => setSelectedVersionId(version.id)} onDoubleClick={() => { setSelectedVersionId(version.id); setQueueVersion(version); }}
               onContextMenu={event => { event.preventDefault(); setSelectedVersionId(version.id); setContextMenu({ version, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 250)) }); }}
@@ -578,8 +589,9 @@ function App() {
               {version.source && <span className="badge">YouTube</span>}
               {ratingButton(version)}
             </div>)}
-            {!filtered.length && <p className="empty">{search.trim() || versions.length ? 'No songs match this search or filter.' : 'Search Karaoke Nerds or import a local video to begin. Your original file stays in place.'}</p>}
-          </div>
+            {!filtered.length && <p className="empty">{search.trim() || versions.length ? 'No local or Karaoke Nerds songs match this search or filter.' : 'Search Karaoke Nerds or import a local video to begin. Your original file stays in place.'}</p>}
+          </div><ProviderCatalogResults state={providerSearch} openSong={window.tpv.openProviderCatalogSong} /></div>
+          {search.trim().length >= 2 && libraryFilter !== 'all' && <p className="muted">Service catalog results appear under All Songs; local metadata filters cannot verify provider content ratings.</p>}
           <form className="request-form" onSubmit={makeRequest}>
             <label>Singer for {selectedVersion ? `“${selectedVersion.title}”` : 'selected song'}<select value={selectedSingerId} onChange={e => setSelectedSingerId(e.target.value)}><option value="">Choose a singer</option>{state.singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}<option value="__new__">Add a new singer…</option></select></label>
             {selectedSingerId === '__new__' && <label>New singer name<input autoComplete="off" value={newRequestSingerName} onChange={e => setNewRequestSingerName(e.target.value)} maxLength={100} /></label>}
@@ -594,7 +606,7 @@ function App() {
             <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
           </form>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.'); }} /><section><h2>Third-Party Services</h2><p>Connect approved catalog and playback services here as provider access becomes available.</p><ul><li>KaraFun — partnership/playback access pending</li><li>Party Tyme — developer access pending</li><li>Sunfly — developer access pending</li><li>Stingray — developer access pending</li></ul><p className="muted">An ordinary subscription or metadata API token does not currently enable in-app playback from these services.</p></section></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
