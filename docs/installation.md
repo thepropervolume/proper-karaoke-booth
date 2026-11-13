@@ -1,22 +1,22 @@
 # Installing The Proper Volume Karaoke Booth
 
-The current development version is **0.4.2**. Windows installer/ZIP, an actual Windows upgrade, and Linux AppImage/Debian packages have passed the checks below. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
+The current development version is **0.4.3**. Windows installer/ZIP, the actual Windows upgrade, and Linux AppImage/Debian packages passed the checks below. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
 
 ## Available packages
 
 | Platform | Package | Current verification |
 | --- | --- | --- |
-| Windows 64-bit | Assisted installer and extractable ZIP | 0.4.2 from `e501475`; installed upgrade, public search, nested-path CLI privacy, no-autoplay, payload and icon checks passed. Show/configuration hashes preserved. |
-| Linux 64-bit | AppImage and Debian | 0.4.2 from verified `e501475` archive; payload, branding, final AppRun public-search and compiled-CLI privacy checks passed. Root/Xvfb flags are QA-only; non-root desktop, installation and hardware remain unverified. |
+| Windows 64-bit | Assisted installer and extractable ZIP | 0.4.3 from `d14bfb2`; installed upgrade, three public metadata sources, exact Store SKU/artist, file retention, CLI privacy, policy, no-autoplay and payload checks passed. Seven original show/configuration hashes preserved. |
+| Linux 64-bit | AppImage and Debian | 0.4.3 from verified `d14bfb2` archive; 52 focused tests, payload/branding and actual public search/CLI/profile-clear checks passed. Linode product-detail HTTP 403 produces explicit unknown artist; identity and safe fallback passed. Non-root desktop, installation and hardware remain unverified. |
 | macOS Intel and Apple silicon | `.dmg` and ZIP build targets | Must be built and verified on a Mac. No macOS package claimed yet. |
 
 Generated files live in the repository's `release` folder and are not committed to Git. Windows development packages are **unsigned**. Version 0.4.1 uses the owner-selected [Microphone Play](app-icon-options.md) identity: the original navy microphone on a white rounded tile is the default installed icon, with no visible text. Matching light/dark masters and exports are retained; the full logo reads **TPV / KARAOKE BOOTH**. All 69 generated hashes, both ICO/ICNS sets and actual Windows icon resources passed verification. Assisted NSIS setup includes proportional 150×57 header and 164×314 sidebar artwork in 24-bit BMP files. Earlier installers retain their previous identity, including 0.4.0 Velvet Script. Windows may identify unsigned packages as an unrecognized publisher. Only use packages from a trusted project build. Native macOS/Linux desktop appearance, physical show behavior and platform signing remain release gates.
 
 ## Windows
 
-Finish or stop the current show and close the app normally before replacing an installed version. Run `Proper-Karaoke-Booth-0.4.2-windows-x64-setup.exe` and follow the installation wizard. It defaults to installation for the current user, allows choosing a destination, and creates a Start menu shortcut. It does not automatically start the app after installation. Administrator elevation and a desktop shortcut are disabled by default.
+Finish or stop the current show and close the app normally before replacing an installed version. Run `Proper-Karaoke-Booth-0.4.3-windows-x64-setup.exe` and follow the installation wizard. It defaults to installation for the current user, allows choosing a destination, and creates a Start menu shortcut. It does not automatically start the app after installation. Administrator elevation and a desktop shortcut are disabled by default.
 
-Alternatively, extract the entire `Proper-Karaoke-Booth-0.4.2-win-x64.zip` to a folder and open `proper-karaoke-booth.exe`. Keep its supporting files together. The ZIP uses the same application profile as the installer; it is not a separate show profile.
+Alternatively, extract the entire `Proper-Karaoke-Booth-0.4.3-win-x64.zip` to a folder and open `proper-karaoke-booth.exe`. Keep its supporting files together. The ZIP uses the same application profile as the installer; it is not a separate show profile.
 
 The show database, settings and keybindings stay in the existing `proper-karaoke-booth` user-data directory (normally `%APPDATA%\proper-karaoke-booth` on Windows). An explicit `--user-data-dir` or a custom startup profile is honored before the single-instance check. Uninstalling is configured to preserve application data. Back up the show before upgrading; uninstalling is not a backup procedure.
 
@@ -26,17 +26,17 @@ The installer includes the app, Electron runtime and default silent TPV lyric ba
 
 ## Linux
 
-Version 0.4.1 Linux packages include the selected Microphone Play icon, default lyric backdrop, public catalog discovery and bundled CLI. No 0.3.1 Linux build was produced. For an AppImage, save it in a folder you want to keep, allow it to run as a program in your file manager, and open it. From a terminal:
+Version 0.4.3 Linux packages include the selected Microphone Play icon, default lyric backdrop, public catalog discovery, Sunfly Store search and bundled CLI. No 0.3.1 Linux build was produced. For an AppImage, save it in a folder you want to keep, allow it to run as a program in your file manager, and open it. From a terminal:
 
 ```sh
-chmod +x Proper-Karaoke-Booth-0.4.1-linux-x86_64.AppImage
-./Proper-Karaoke-Booth-0.4.1-linux-x86_64.AppImage
+chmod +x Proper-Karaoke-Booth-0.4.3-linux-x86_64.AppImage
+./Proper-Karaoke-Booth-0.4.3-linux-x86_64.AppImage
 ```
 
 For Debian or Ubuntu, install the downloaded `.deb` through your software installer or use:
 
 ```sh
-sudo apt install ./Proper-Karaoke-Booth-0.4.1-linux-amd64.deb
+sudo apt install ./Proper-Karaoke-Booth-0.4.3-linux-amd64.deb
 ```
 
 Run the app as your regular desktop user. Some distributions require AppImage/FUSE support libraries. The app's established profile is normally `~/.config/proper-karaoke-booth`, respecting the desktop's configuration location. Keep private catalog configuration and media separate from the downloaded package. Linux audio outputs, codecs, desktop launch, upgrade and removal still need verification on the intended show computer.
@@ -84,7 +84,7 @@ New CDG imports use the bundled TPV Version 3 animation by default. Configure **
 
 Windows installs include `tpv-karaoke.cmd` beside the application executable. Use **Preferences → Local API and CLI → Show CLI Tool** to locate it. Enable that preference and save before using `status`, `capabilities`, `state`, `settings`, `shortcuts`, or `open settings` / `open keybindings`. No separate Node installation is required. The direct wrapper flags `--settings` and `--keybindings` also launch/focus the desktop while the API is disabled.
 
-An installed/extracted Linux package includes the executable `tpv-karaoke` wrapper beside `proper-karaoke-booth`. To use an AppImage's bundled wrapper, extract it to a persistent folder with `./Proper-Karaoke-Booth-0.4.1-linux-x86_64.AppImage --appimage-extract` and run `./squashfs-root/tpv-karaoke --help`; keep the entire extracted folder together. The wrapper is not installed into the shell PATH automatically. macOS wrapper layout is configured but remains unbuilt. See [API/CLI commands and limits](local-control-api.md).
+An installed/extracted Linux package includes the executable `tpv-karaoke` wrapper beside `proper-karaoke-booth`. To use an AppImage's bundled wrapper, extract it to a persistent folder with `./Proper-Karaoke-Booth-0.4.3-linux-x86_64.AppImage --appimage-extract` and run `./squashfs-root/tpv-karaoke --help`; keep the entire extracted folder together. The wrapper is not installed into the shell PATH automatically. macOS wrapper layout is configured but remains unbuilt. See [API/CLI commands and limits](local-control-api.md).
 
 Historical Windows 0.4.0 receipts identify source `0e90733`, with `sourceRevisionChangedDuringBuild: false`. Their dirty flag records only the three pre-existing untracked deployment drafts, which packaging excludes. Version 0.4.0 full tests passed 679 checks with seven platform/environment skips; source UI/shortcut/ratings rehearsals and actual Windows packaged checks passed. Those muted synthetic checks did not verify installer execution, physical audio/displays or native desktop launcher surfaces.
 
@@ -94,7 +94,7 @@ Linux 0.4.0 came from a SHA-verified Git archive of `0e90733` (archive SHA256 `2
 
 ## 0.4.1 Linux Evidence And Service Recovery
 
-Linux 0.4.1 uses the frozen `24f5f15` archive with SHA256 `25259ac98c198b74b79ac1aa7cb5a7c4ad9e96e639b8c60925fb6e6b8fddbd8c`. All tracked source bytes remained unchanged. The companion `release/Proper-Karaoke-Booth-0.4.1-linux-verification.json` records 115 targeted passes with zero failures/skips, 69 branding hashes, matching AppImage/Debian payloads, ten default light PNG sizes, packaged Day/Night header logos/favicon, extracted AppRun restart/no-autoplay and public-catalog checks, bundled CLI/API lifecycle/navigation, and the packaged staged-policy rehearsal. Root/Xvfb launches used test-only `--no-sandbox` and `--disable-gpu` flags; shipping defaults were unchanged. Non-root desktop sandbox, Linux installation/upgrade/removal and physical show devices remain unverified.
+Linux 0.4.1 uses the frozen `24f5f15` archive with SHA256 `25259ac98c198b74b79ac1aa7cb5a7c4ad9e96e639b8c60925fb6e6b8fddbd8c`. All tracked source bytes remained unchanged. The companion `release/Proper-Karaoke-Booth-0.4.3-linux-verification.json` records 115 targeted passes with zero failures/skips, 69 branding hashes, matching AppImage/Debian payloads, ten default light PNG sizes, packaged Day/Night header logos/favicon, extracted AppRun restart/no-autoplay and public-catalog checks, bundled CLI/API lifecycle/navigation, and the packaged staged-policy rehearsal. Root/Xvfb launches used test-only `--no-sandbox` and `--disable-gpu` flags; shipping defaults were unchanged. Non-root desktop sandbox, Linux installation/upgrade/removal and physical show devices remain unverified.
 
 An unattended MySQL upgrade had left the existing catalog, queue-relay and ratings services stopped. Linode III confirmed MySQL health, started only those three existing services and verified public health/search/empty-rating responses. No code, schema, credentials, provider configuration or website changes were made for recovery. A prevention proposal remains unapplied; no production MySQL restart was used as a test.
 
@@ -105,3 +105,9 @@ Windows installer/ZIP were built from runtime source `e501475`. The actual packa
 This PC upgraded from 0.4.1 to 0.4.2 after a private backup at `C:\tmp\tpv-karaoke-backups\before-0.4.2-20261113T180532Z`. All seven original show/configuration hashes were unchanged afterward. Installed executable/ASAR and ZIP payloads match the tested unpacked application. The final build receipt records frozen runtime source and no source revision change during packaging; uncommitted documentation is excluded from application code. Packages are unsigned.
 
 KaraFun/Party Tyme metadata needs internet for the first query in each app process and no account credentials. Complete public snapshots are cached in memory for up to 24 hours; restarting loses those provider snapshots. Stingray and Sunfly require provider-issued developer profiles. This does not connect subscription playback. See [provider catalog search and configuration](provider-catalog-search.md). Final Linux 0.4.2 AppImage/Debian packages from `e501475` passed matching payload, public search and compiled-CLI privacy checks. Twenty-one focused control/privacy tests passed; 119 unaffected earlier checks are retained by source comparison. The verification receipt records exactly what was rerun. Real-user Linux installation, sandbox, physical show hardware and macOS remain unverified.
+
+## 0.4.3 Public Sunfly Store Search
+
+Windows installer/ZIP use frozen runtime source `d14bfb2`. The actual packaged and installed application passed live KaraFun/Party Tyme search and Sunfly Store exact-SKU search (`SF1124621`), displaying the verified artist credit for Our Song. It also passed profile-mode clearing without deleting the selected synthetic file, inactive Stingray status, restrictive policy and preference guards, no queue/play promotion, and actual compiled-CLI private-path redaction. The full Windows suite passed 736 tests with seven environment/platform skips; type checking and all 69 branding hashes passed.
+
+This PC upgraded from 0.4.2 to 0.4.3 after a protected backup at `C:\tmp\tpv-karaoke-backups\before-0.4.3-20261113T183618Z`; all seven original show/configuration hashes were unchanged. Public Store metadata does not connect subscriptions or playback. Store results cover at most five first-page title/SF-SKU matches, with optional verified artist metadata; artist search is not established. See [Sunfly Store behavior](sunfly-store-catalog.md). Linux 0.4.3 AppImage/Debian package checks passed from the same frozen runtime, including 52 focused tests and actual search/CLI/profile-clear checks, and physical show checks and native macOS remain open.

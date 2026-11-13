@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 13 November 2026. **Application milestone:** 0.4.2 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
+**Revision:** 13 November 2026. **Application milestone:** 0.4.3 development build; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -21,6 +21,8 @@ The host computer is the single authority for show state, queue rules and playba
 Version each delivered application update using semantic 0.x.y versions and include it in the host interface, installer filename and completion report. Reserve 1.0.0 for the approved official release. Several focused commits delivered together may share one version. Version 0.4.1 Windows installer/ZIP and Linux AppImage/Debian packages use frozen runtime source `24f5f15`, including the owner-selected Microphone Play identity, a text-free icon, full host logo and assisted-installer artwork. All 69 generated asset hashes passed. Actual Windows app/setup/uninstaller resources match all nine approved icon frames; this PC upgraded from 0.2.0 to 0.4.1 with original show/settings bytes preserved after a private backup. Installed Day/Night logos and Start menu/uninstall icon references passed. Linux verified both payloads, default light launcher icons, Day/Night logos, extracted AppRun launch/restart, public catalog, bundled CLI/API lifecycle and policy-lock behavior; 115 targeted checks passed. Linux used a private virtual display and test-only root flags, leaving shipping sandbox defaults unchanged. Real-user Linux installation, upgrade/removal and desktop sandbox remain unverified. The Windows safety-base suite passed 685 tests with seven platform/environment skips. Earlier 0.4.0 packages used Velvet Script; their separately documented playback/backdrop checks remain historical evidence. macOS Intel and Apple silicon DMG/ZIP still require a Mac build and verification. Packages exclude private configuration, song media, yt-dlp, FFmpeg and LibreOffice, and preserve the established app-data directory. Windows packages are unsigned. Signing, notarization, uninstallation, remaining native desktop surfaces and physical show checks remain release work. See the installation guide for receipts and platform limits.
 
 Version 0.4.2 adds service catalog search before streaming integration. Windows installer/ZIP use frozen runtime source `e501475`; this PC upgraded from 0.4.1 to 0.4.2 after a private backup, preserving all seven original show/configuration hashes. Actual packaged and installed public-provider search, inactive partner status, disable toggle, restored policy restrictions and no-autoplay checks passed. The full Windows suite passed 723 tests with seven platform/environment skips. The final package receipt records no source revision change during its build. Default local CLI/API settings also redact nested provider-profile paths; explicit private-path inclusion and input immutability were verified. Linux 0.4.2 AppImage/Debian payloads and final packaged public-search/compiled-CLI privacy checks passed from the same frozen archive. Twenty-one focused control/privacy tests passed; 119 unaffected earlier checks are retained with source-comparison evidence. Linux installation, real-user sandbox and physical hardware remain unverified. Metadata discovery is not evidence of paid-provider playback.
+
+The 0.4.3 development build adds default public Sunfly Store title/SF-SKU search and optional developer-profile mode selection. Windows 0.4.3 installer/ZIP and the actual 0.4.2-to-0.4.3 upgrade are verified from frozen runtime `d14bfb2`; 736 Windows tests passed with seven platform/environment skips. Packaged/installed public searches, exact Store identity, optional artist enrichment, profile-file retention, CLI privacy and policy guards passed. All seven original show/configuration hashes were preserved after a private backup. Linux 0.4.3 AppImage/Debian package checks passed from the same frozen runtime, including 52 focused tests and actual search/CLI/profile-clear checks. On the Linode test connection the Store API succeeds but product details return HTTP 403, so artist/duration remain explicitly unknown; Windows verified the known credit for the same SKU. Store metadata is separate from streaming identities and entitlements.
 
 ## 2. People, interfaces and navigation
 
@@ -44,7 +46,7 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Song Ratings, Appearance, Library Settings, Karaoke Services, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display, Keyboard Shortcuts, Local API and CLI, and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
 
-**Available in the 0.4.2 development build:** Karaoke Services controls `providerCatalogEnabled`, which defaults to true. `providerCatalogProfiles` stores `karafun`, `partytyme`, `sunfly` and `stingray` path entries with empty defaults, never credential values. KaraFun/Party Tyme public catalog search needs no account profile. Sources uses a native file picker for provider-issued Sunfly/Stingray profiles; website email/password files and KaraFun Business tokens are not developer catalog profiles. Credentials are read in the main process and are not entered into or returned to the renderer or singer clients.
+**Available in the 0.4.2 development build:** Karaoke Services controls `providerCatalogEnabled`, which defaults to true. `providerCatalogProfiles` stores `karafun`, `partytyme`, `sunfly` and `stingray` path entries with empty defaults, never credential values. KaraFun/Party Tyme public catalog search needs no account profile. The 0.4.3 development build also uses public Sunfly Store search when its developer-profile path is empty. Sources uses a native file picker for optional provider-issued Sunfly access or required Stingray access; website email/password files and KaraFun Business tokens are not developer catalog profiles. Credentials are read in the main process and are not entered into or returned to the renderer or singer clients. Sources labels public/developer modes. Use Public Store Search clears only the Sunfly profile selection, retaining its file; Remove Profile Selection does the same for Stingray. An invalid explicitly selected Sunfly profile is an error, never an automatic public fallback.
 
 **Planned:** complete settings coverage, migrations and helpful error recovery; layout variants including a genuinely compact single-screen show; complete shortcut coverage for remaining specialized actions; and a global action/command interface. Appearance changes must not interrupt a show. Confirm skip and other show-interrupting actions; routine pause, volume and valid queue edits should not require repeated confirmation. Undo of eligible queue edits is a proposed feature, with any expiry and conflict behavior to be specified.
 
@@ -140,7 +142,7 @@ Logical entities include Song, exact SongVersion and LocalAsset; Show/Party, Sin
 
 **Planned general API and CLI:** every supported application action should be available through one authenticated local authority and a documented command-line client, not a second SQLite writer. Offer capability discovery, effective preferences, shows/parties, users and own libraries, catalog/import, playback, outputs, providers, policy, commands and events as permissions permit. Default the general API off; use authenticated loopback with scoped, revocable tokens. LAN binding requires explicit opt-in and authenticated TLS. Publish versioned OpenAPI/event schemas, pagination, stable IDs, structured errors and CLI help/exit codes. Protect file paths, billing data and secrets. The initial source subset is implemented independently of the cloud relay: an off-by-default authenticated loopback API reads capabilities, state, settings and shortcuts, and queues Preferences/Keyboard Shortcuts navigation. The actual Windows app and compiled CLI passed a private-profile integration rehearsal for default-disabled startup, enabling, authenticated reads, settings/shortcut navigation, restart token rotation, stale-token denial and disable/quit cleanup without autoplay. The initial contract is documented in `docs/local-control-api.md` and `docs/local-control-openapi.yaml`. Full mutation control, events, pagination and role-scoped operations remain planned; Windows and Linux bundled-wrapper/package verification passed.
 
-The 0.4.2 host-only catalog IPC provides `getProviderCatalogStatus`, `searchProviderCatalog`, `chooseProviderCatalogProfile` and `openProviderCatalogSong`. These project metadata/configuration state and approved official links, never playback rights or media tokens. Provider discovery is not yet exposed through the local HTTP API or CLI; those catalog/provider resource families remain planned.
+The 0.4.2 host-only catalog IPC provides `getProviderCatalogStatus`, `searchProviderCatalog`, `chooseProviderCatalogProfile`, `clearProviderCatalogProfile` and `openProviderCatalogSong`. These project metadata/configuration state and approved official links, never playback rights or media tokens. Provider discovery is not yet exposed through the local HTTP API or CLI; those catalog/provider resource families remain planned.
 
 For every mutation, validate role, show/epoch, expected revision, item state and active policy. Persist the original result with the command ID before replying; reject reused IDs with different content. Stale clients refresh a filtered snapshot; an unknown result is queried rather than replayed blindly. Generation identifiers protect playback from late events. Nonstructural high-frequency controls need sequencing so old slider updates cannot overwrite newer state.
 
@@ -162,7 +164,11 @@ The community feed supplies metadata and YouTube watch links, not directly downl
 
 Public catalogs load on demand, coalesce concurrent loads and retain a complete snapshot for up to 24 hours in app-process memory. An older complete public snapshot can be searched with a clear warning when refresh fails; bounded failure backoff avoids a fetch on every keystroke. There is no persistent disk or global/shared MySQL cache for these provider catalogs yet. Restart loses the snapshot; a cold offline session cannot reuse it. Each public provider returns at most 50 matches. Source text, sizes, identities and response shapes are bounded and validated; failure of one provider does not erase local/Karaoke Nerds results.
 
-Sunfly and Stingray metadata adapters have fixture coverage but no live developer access is confirmed. Stingray requires a provider-issued strict JSON profile containing only `apiKey`, `deviceId`, `languageCode` and `countryCode`; Sunfly requires a private raw developer access-key file. The separately documented Stingray OAuth inspector and ordinary website subscriptions are not interchangeable credentials. Sunfly must complete a bounded full catalog scan, including withdrawal handling, before publishing any results; no partial scan is searchable. Its complete snapshot lives in process for up to 24 hours and returns at most 20 matches; Stingray also projects at most 20. No media, license or playback request is made by these adapters.
+Protected Sunfly and Stingray metadata adapters have fixture coverage but no live developer access is confirmed. Stingray requires a provider-issued strict JSON profile containing only `apiKey`, `deviceId`, `languageCode` and `countryCode`; Sunfly requires a private raw developer access-key file. The separately documented Stingray OAuth inspector and ordinary website subscriptions are not interchangeable credentials. Sunfly must complete a bounded full catalog scan, including withdrawal handling, before publishing any results; no partial scan is searchable. Its complete snapshot lives in process for up to 24 hours and returns at most 20 matches; Stingray also projects at most 20. No media, license or playback request is made by these adapters.
+
+**Experimental public Sunfly Store mode in the 0.4.3 development build:** with no selected Sunfly developer profile, title/SF-SKU queries use the public store without credentials or paid-client keys. The bounded first page contains at most five eligible individual-song products; this is not a full store-catalog sync, and artist search is not verified. Store identities are `store:productID`, with optional `providerSku` retaining the exact SF SKU from the source. These are not protected streaming identities or playback entitlements. Artist/duration/language enrichment requires cross-matched public Product/MusicRecording JSON-LD; missing artists stay unknown, with no URL-slug guesses.
+
+Store query results remain in main-process memory for five minutes and product detail for 24 hours, with no persistent/global cache. An explicitly selected developer profile continues to use the protected full-catalog adapter; missing, invalid or denied credentials fail explicitly without public fallback. The host can clear only the profile pointer to choose public Store mode, preserving the credential file. Stingray can similarly remove its selection while retaining its file, but has no public fallback. Search-only metadata, policy enforcement and CLI path redaction remain unchanged; Store results cannot enter the playable queue.
 
 Service matches appear under All Songs rather than local metadata-review/content filters. Main-process policy enforcement blocks provider discovery for age-restricted shows or any version allowlist because these recordings are not approved show versions. Renderer query/profile/policy generations suppress obsolete responses, while host-only external links resolve the latest provider/ID against an HTTPS allowlist. A provider advisory such as KaraFun's explicit flag is metadata, not proof of complete content coverage or a playback grant. See [provider catalog setup and limitations](provider-catalog-search.md).
 
@@ -833,7 +839,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "id": "D13",
   "title": "Song sources",
   "status": "Partial",
-  "description": "Karaoke Nerds, manual YouTube links and provider metadata discovery; playback remains separate.",
+  "description": "Karaoke Nerds, YouTube links and public catalog/store discovery with optional developer profiles.",
   "layout": "panels",
   "toolbar": "Sources | Karaoke Nerds, Custom YouTube Video Importer and Third-Party Services",
   "heading": "Karaoke Nerds",
@@ -852,26 +858,26 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   ],
   "footer_heading": "Third-Party Services",
   "footer_rows": [
-    "KaraFun / Party Tyme | Public catalog search",
-    "Sunfly / Stingray | Developer key needed"
+    "KaraFun / Party Tyme | Public metadata",
+    "Sunfly Store | Title / SF SKU",
+    "Stingray | Developer key needed"
   ],
-  "detail": "Public catalog metadata needs no login. Issued partner keys enable metadata checks, not playback. Search-only service rows never enter the queue; downloaded YouTube videos use normal local playback."
+  "detail": "Public Sunfly Store search needs no key; optional developer access is separate. Clearing a profile selection retains its file. Search-only service rows never enter the queue."
 }
 ```
-
 ```mockup
 {
   "id": "D14",
   "title": "Service catalog search",
   "status": "Current",
-  "description": "Public service metadata beside local playback; partner catalogs need issued developer keys.",
+  "description": "Public catalog/store metadata beside local playback; optional developer access stays separate.",
   "layout": "panels",
-  "toolbar": "Artist / title search | Public snapshots cached 24h while the app is open",
+  "toolbar": "Title / artist search | Sunfly Store: title or SF SKU; artist search unverified",
   "heading": "Service Catalogs - Search Only",
   "rows": [
     "Catalog Example | Sample Artist | KaraFun | Search only",
     "Another Example | Another Artist | Party Tyme | Search only",
-    "Sunfly | Developer key needed",
+    "Store Example | Artist unknown | Sunfly Store | SF123456",
     "Stingray | Developer API profile needed"
   ],
   "side_heading": "Local Queue",
@@ -886,6 +892,6 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Profiles | Sources picker",
     "Playback | Pending"
   ],
-  "detail": "Synthetic data. Provider results cannot enter the queue or play; the local queue remains normal. Restrictive show policy hides unapproved service records. Profile credentials stay outside the renderer."
+  "detail": "Synthetic data. Sunfly Store shows up to five first-page songs; store IDs/SKUs are not streaming identities. Unknown artists stay unknown. Provider matches cannot enter the local queue or play."
 }
 ```

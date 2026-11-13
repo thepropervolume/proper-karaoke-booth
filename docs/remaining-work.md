@@ -214,3 +214,24 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [ ] Add persistent/central provider metadata caching if required; current provider caches disappear when the app exits.
 - [ ] Obtain real Stingray/Sunfly catalog credentials and verify their APIs; website account passwords are not developer keys.
 - [ ] Connect each provider's eligible subscription, approved streaming engine, reporting and queue/transport lifecycle. Metadata search does not complete playback integration.
+
+## 0.4.3 Public Sunfly Store
+
+- [x] Add default public Sunfly Store title/SF-SKU discovery when no developer profile is selected; use no account credentials or paid-client keys.
+- [x] Preserve store-qualified product IDs and optional exact SF SKUs, separate from streaming identities and entitlements.
+- [x] Bound results to five first-page individual-song products; enrich artist/duration only from matching Product/MusicRecording metadata and leave missing artists unknown.
+- [x] Cache Store query/detail metadata in the main process for five minutes/24 hours; preserve explicit developer-profile failures without public fallback.
+- [x] Provide public/developer mode labels and profile-selection removal that retains credential files.
+- [ ] Verify artist-query coverage and broader Sunfly Store discovery separately; do not claim complete catalog coverage.
+- [x] Complete 0.4.3 tests, Windows/Linux package checks and the actual Windows upgrade; see verified delivery below.
+- [ ] Connect approved Sunfly streaming identities, subscription rights and playback; store metadata alone does not provide them.
+
+## 0.4.3 Verified Delivery
+
+- [x] Build Windows installer/ZIP and Linux AppImage/Debian packages from frozen runtime `d14bfb2`; preserve receipts and SHA256 sums.
+- [x] Upgrade this Windows PC, retaining all seven original show/configuration hashes after a protected backup.
+- [x] Pass 736 Windows tests with seven environment/platform skips, type checking, 52 focused Linux tests, and actual packaged metadata/CLI/profile-clear checks.
+- [x] Verify exact Sunfly Store SKU/ID/title; Windows enriched the artist, while the Linode detail-page HTTP 403 produced the explicitly tested Unknown artist fallback. Do not infer credits or bypass the denial.
+- [x] Keep search-only records out of playback/queue, redact private profile paths by default and retain credential files when clearing their selection.
+- [ ] Obtain real Stingray/developer-provider access, verify Sunfly artist search/coverage and connect approved subscription playback.
+- [ ] Verify physical show output, real-user Linux installation/sandbox, signing and native macOS.
