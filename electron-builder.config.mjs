@@ -1,4 +1,4 @@
-/** Unsigned development packages. Production signing/notarization is a release gate. */
+/** Development packages have no publisher certificate. macOS uses ad-hoc integrity signing. */
 export default {
   appId: 'com.thepropervolume.karaokebooth',
   productName: 'The Proper Volume Karaoke Booth',
@@ -41,5 +41,6 @@ export default {
   // Retain builder 26's defaults and include Electron's directly linked libraries.
   deb: { depends: ['libgtk-3-0 | libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils',
     'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0', 'libgbm1', 'libasound2 | libasound2t64', 'libdrm2', 'libx11-xcb1'] },
-  mac: { target: ['dmg', 'zip'], icon: 'assets/branding/app.icns', category: 'public.app-category.music', hardenedRuntime: true, identity: null },
+  mac: { target: ['dmg', 'zip'], icon: 'assets/branding/app.icns', category: 'public.app-category.music',
+    minimumSystemVersion: '13.0.0', hardenedRuntime: true, identity: '-', notarize: false },
 };

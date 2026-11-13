@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { build as viteBuild } from 'vite';
 import { build as bundle } from 'esbuild';
 import electronBuilder from 'electron-builder';
@@ -84,6 +84,18 @@ try {
       ? { electronDist: dirname(requireFromRepo('electron')) } : {}),
   };
   const artifacts = await build({ projectDir: repo, targets: target.createTarget(undefined, ...architectures), config, publish: 'never' });
+  // Apple silicon requires valid integrity signatures even for development builds.
+  // Check the real bundles before calling them ad-hoc signed in the receipt.
+  if (platform === 'mac') {
+    for (const architecture of architectures) {
+      const appDirectory = join(repo, 'release', architecture === Arch.arm64 ? 'mac-arm64' : 'mac', `${configuration.executableName}.app`);
+      execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appDirectory], { stdio: 'pipe' });
+      const signature = spawnSync('/usr/bin/codesign', ['--display', '--verbose=4', appDirectory], { encoding: 'utf8' });
+      if (signature.status !== 0 || !/^Signature=adhoc$/m.test(signature.stderr) || !/^TeamIdentifier=not set$/m.test(signature.stderr)) {
+        throw new Error(`Expected ad-hoc development signature for ${Arch[architecture]}.`);
+      }
+    }
+  }
   const checksums = [];
   for (const artifact of [...new Set(artifacts)].sort()) {
     const actual = await realpath(artifact);
@@ -96,7 +108,8 @@ try {
     electron: installedElectron, builder: requireFromRepo('electron-builder/package.json').version,
     sourceCommit, sourceHasUncommittedChanges: sourceStatus === null ? null : sourceStatus.length > 0,
     sourceRevisionChangedDuringBuild: git('rev-parse', 'HEAD') !== sourceCommit || git('status', '--porcelain') !== sourceStatus,
-    createdAt: new Date().toISOString(), signed: false, artifacts: checksums };
+    createdAt: new Date().toISOString(), signed: false,
+    codeSigning: platform === 'mac' ? 'ad-hoc' : 'none', notarized: false, artifacts: checksums };
   const receiptBase = join(repo, 'release', `Proper-Karaoke-Booth-${metadata.version}-${platform}`);
   await writeFile(receiptBase + '-build.json', JSON.stringify(receipt, null, 2) + '\n');
   await writeFile(receiptBase + '-SHA256SUMS.txt', checksums.map(item => `${item.sha256}  ${item.file}`).join('\n') + '\n');
