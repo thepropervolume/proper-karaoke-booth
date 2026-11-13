@@ -36,7 +36,16 @@ try {
   const sunfly = page.getByRole('region', { name: 'Sunfly Store catalog results', exact: true });
   await sunfly.getByRole('listitem').first().waitFor({ timeout: 45_000 });
   assert.ok(await sunfly.getByText('Our Song', { exact: true }).count() > 0);
-  assert.ok((await sunfly.getByRole('listitem').first().innerText()).includes('Anne-Marie'));
+  const store = (await page.evaluate(() => window.tpv.searchProviderCatalog('SF1124621'))).find(result => result.provider === 'sunfly');
+  assert.equal(store.status, 'ok'); assert.equal(store.songs.length, 1);
+  const recording = store.songs[0];
+  assert.equal(recording.id, 'store:553'); assert.equal(recording.providerSku, 'SF1124621'); assert.equal(recording.title, 'Our Song');
+  assert.equal(recording.webUrl, 'https://www.sunflykaraoke.com/karaoke/anne-marie/our-song/');
+  const rowText = await sunfly.getByRole('listitem').first().innerText();
+  if (recording.artist === null) {
+    assert.ok(rowText.includes('Unknown artist')); assert.match(store.message, /details could not be verified/);
+  } else { assert.ok(recording.artist.includes('Anne-Marie')); assert.ok(rowText.includes(recording.artist)); }
+  console.log(`Sunfly Store live artist enrichment: ${recording.artist === null ? 'unavailable; explicit unknown metadata verified' : 'verified against the exact SKU and visible row'}.`);
   const shots = process.argv[3] ? resolve(process.argv[3]) : null;
   if (shots) { await mkdir(shots, { recursive: true }); await sunfly.getByRole('listitem').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: join(shots, 'library-service-search.png') }); }
   await page.getByRole('button', { name: 'Sources', exact: true }).click();
