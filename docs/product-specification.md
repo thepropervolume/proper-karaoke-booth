@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 13 November 2026. **Application milestone:** 0.4.1 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
+**Revision:** 13 November 2026. **Application milestone:** 0.4.2 development; official release target 1.0.0. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and the companion mockup book; generated documents must be regenerated from it rather than edited independently.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -14,15 +14,17 @@ The Proper Volume Karaoke is intended to be a dependable, local-first karaoke ho
 
 The host computer is the single authority for show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. Companion interfaces must never become a second playback or queue authority. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
 
-**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started preview, and the initial authenticated local API/CLI for reads and settings navigation. **Planned:** the full native companion apps, complete general local API, complete access-control model, paid karaoke providers and paid subscriptions. The app is not yet validated as a live-show replacement.
+**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started preview, host-only service catalog metadata search, and the initial authenticated local API/CLI for reads and settings navigation. **Planned:** the full native companion apps, complete general local API, complete access-control model, paid-provider subscription playback and paid subscriptions. The app is not yet validated as a live-show replacement.
 
 ### Development versions and installers
 
 Version each delivered application update using semantic 0.x.y versions and include it in the host interface, installer filename and completion report. Reserve 1.0.0 for the approved official release. Several focused commits delivered together may share one version. Version 0.4.1 Windows installer/ZIP and Linux AppImage/Debian packages use frozen runtime source `24f5f15`, including the owner-selected Microphone Play identity, a text-free icon, full host logo and assisted-installer artwork. All 69 generated asset hashes passed. Actual Windows app/setup/uninstaller resources match all nine approved icon frames; this PC upgraded from 0.2.0 to 0.4.1 with original show/settings bytes preserved after a private backup. Installed Day/Night logos and Start menu/uninstall icon references passed. Linux verified both payloads, default light launcher icons, Day/Night logos, extracted AppRun launch/restart, public catalog, bundled CLI/API lifecycle and policy-lock behavior; 115 targeted checks passed. Linux used a private virtual display and test-only root flags, leaving shipping sandbox defaults unchanged. Real-user Linux installation, upgrade/removal and desktop sandbox remain unverified. The Windows safety-base suite passed 685 tests with seven platform/environment skips. Earlier 0.4.0 packages used Velvet Script; their separately documented playback/backdrop checks remain historical evidence. macOS Intel and Apple silicon DMG/ZIP still require a Mac build and verification. Packages exclude private configuration, song media, yt-dlp, FFmpeg and LibreOffice, and preserve the established app-data directory. Windows packages are unsigned. Signing, notarization, uninstallation, remaining native desktop surfaces and physical show checks remain release work. See the installation guide for receipts and platform limits.
 
+Version 0.4.2 adds service catalog search before streaming integration. Windows installer/ZIP use frozen runtime source `e501475`; this PC upgraded from 0.4.1 to 0.4.2 after a private backup, preserving all seven original show/configuration hashes. Actual packaged and installed public-provider search, inactive partner status, disable toggle, restored policy restrictions and no-autoplay checks passed. The full Windows suite passed 723 tests with seven platform/environment skips. The final package receipt records no source revision change during its build. Default local CLI/API settings also redact nested provider-profile paths; explicit private-path inclusion and input immutability were verified. Linux 0.4.2 AppImage/Debian payloads and final packaged public-search/compiled-CLI privacy checks passed from the same frozen archive. Twenty-one focused control/privacy tests passed; 119 unaffected earlier checks are retained with source-comparison evidence. Linux installation, real-user sandbox and physical hardware remain unverified. Metadata discovery is not evidence of paid-provider playback.
+
 ## 2. People, interfaces and navigation
 
-**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is in the File menu. File → Import provides video-file, custom-directory and CDG/ZIP actions alongside the library icons. View offers Appearance, Choose Accent Color and Layout menus. Sources groups Karaoke Nerds, the Custom YouTube Video Importer and pending Third-Party Services. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile directory contains an **offline native singer preview** using synthetic data; it cannot join a show, send real requests or store credentials.
+**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is in the File menu. File → Import provides video-file, custom-directory and CDG/ZIP actions alongside the library icons. View offers Appearance, Choose Accent Color and Layout menus. Sources groups Karaoke Nerds, the Custom YouTube Video Importer and Third-Party Services metadata search/private-profile setup. Subscription playback remains pending. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile directory contains an **offline native singer preview** using synthetic data; it cannot join a show, send real requests or store credentials.
 
 **Planned:** distinct KJ remote, delegated staff queue workspace, expanded singer web and native clients, and account/billing screens. A KJ remote emphasizes transport, while queue staff moderate and organize future turns without playback or output controls. The singer experience provides discovery, own requests and a safe public view of the show. A singer display is presentation-only and never exposes host controls, private notes, file paths or account information. Native clients are not assumed to inherit browser security properties; their authentication, certificate handling, secure storage, background behavior and reconnection require separate testing.
 
@@ -38,9 +40,11 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 ## 3. Host workspace and settings
 
-**Available:** the main screen has a library, visible singer rotation, import controls, current/staged status and a persistent Play/Pause, Stop, Skip and volume area. A song is selectable without playback. Double-click or Enter opens an Add to Queue dialog for an existing singer or a new singer name; submitting adds a request rather than starting a song. The contextual menu offers Add to Queue, Add to Playlist, Edit Metadata, Relink File and Show in Files. Queue rows are selectable and Delete removes an eligible request; an active performance is protected. Search is accessible from both host and singer windows.
+**Available:** the main screen has a library, visible singer rotation, import controls, current/staged status and a persistent Play/Pause, Stop, Skip and volume area. A song is selectable without playback. Double-click or Enter opens an Add to Queue dialog for an existing singer or a new singer name; submitting adds a request rather than starting a song. The contextual menu offers Add to Queue, Add to Playlist, Edit Metadata, Relink File and Show in Files. Queue rows are selectable and Delete removes an eligible request; an active performance is protected. Search is accessible from both host and singer windows. These selection and queue actions apply to playable local/Karaoke Nerds records; separate service-catalog matches are labeled Search Only / Playback Pending and cannot become queue items.
 
-**Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Song Ratings, Appearance, Library Settings, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display, Keyboard Shortcuts, Local API and CLI, and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
+**Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Song Ratings, Appearance, Library Settings, Karaoke Services, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display, Keyboard Shortcuts, Local API and CLI, and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
+
+**Available in the 0.4.2 development build:** Karaoke Services controls `providerCatalogEnabled`, which defaults to true. `providerCatalogProfiles` stores `karafun`, `partytyme`, `sunfly` and `stingray` path entries with empty defaults, never credential values. KaraFun/Party Tyme public catalog search needs no account profile. Sources uses a native file picker for provider-issued Sunfly/Stingray profiles; website email/password files and KaraFun Business tokens are not developer catalog profiles. Credentials are read in the main process and are not entered into or returned to the renderer or singer clients.
 
 **Planned:** complete settings coverage, migrations and helpful error recovery; layout variants including a genuinely compact single-screen show; complete shortcut coverage for remaining specialized actions; and a global action/command interface. Appearance changes must not interrupt a show. Confirm skip and other show-interrupting actions; routine pause, volume and valid queue edits should not require repeated confirmation. Undo of eligible queue edits is a proposed feature, with any expiry and conflict behavior to be specified.
 
@@ -136,6 +140,8 @@ Logical entities include Song, exact SongVersion and LocalAsset; Show/Party, Sin
 
 **Planned general API and CLI:** every supported application action should be available through one authenticated local authority and a documented command-line client, not a second SQLite writer. Offer capability discovery, effective preferences, shows/parties, users and own libraries, catalog/import, playback, outputs, providers, policy, commands and events as permissions permit. Default the general API off; use authenticated loopback with scoped, revocable tokens. LAN binding requires explicit opt-in and authenticated TLS. Publish versioned OpenAPI/event schemas, pagination, stable IDs, structured errors and CLI help/exit codes. Protect file paths, billing data and secrets. The initial source subset is implemented independently of the cloud relay: an off-by-default authenticated loopback API reads capabilities, state, settings and shortcuts, and queues Preferences/Keyboard Shortcuts navigation. The actual Windows app and compiled CLI passed a private-profile integration rehearsal for default-disabled startup, enabling, authenticated reads, settings/shortcut navigation, restart token rotation, stale-token denial and disable/quit cleanup without autoplay. The initial contract is documented in `docs/local-control-api.md` and `docs/local-control-openapi.yaml`. Full mutation control, events, pagination and role-scoped operations remain planned; Windows and Linux bundled-wrapper/package verification passed.
 
+The 0.4.2 host-only catalog IPC provides `getProviderCatalogStatus`, `searchProviderCatalog`, `chooseProviderCatalogProfile` and `openProviderCatalogSong`. These project metadata/configuration state and approved official links, never playback rights or media tokens. Provider discovery is not yet exposed through the local HTTP API or CLI; those catalog/provider resource families remain planned.
+
 For every mutation, validate role, show/epoch, expected revision, item state and active policy. Persist the original result with the command ID before replying; reject reused IDs with different content. Stale clients refresh a filtered snapshot; an unknown result is queried rather than replayed blindly. Generation identifiers protect playback from late events. Nonstructural high-frequency controls need sequencing so old slider updates cannot overwrite newer state.
 
 Beyond the initial `/v1/capabilities`, `/v1/state`, `/v1/settings`, `/v1/shortcuts` and navigation-only `/v1/actions` source routes, the proposed resource families include `/v1/preferences`, `/v1/parties`, `/v1/users`, `/v1/users/{id}/library`, `/v1/catalog`, `/v1/playback`, `/v1/outputs`, `/v1/providers`, `/v1/policies`, `/v1/commands` and `/v1/events`. Those broader resource families and their compatibility guarantees remain design proposals, not implemented mutation endpoints. Capability discovery should report supported versions, commands, bounds, role scopes and required local confirmations. Provider credentials and local paths require appropriately restricted owner scopes. Authenticated event subscriptions must be revoked with their token and resume from a fresh authorized state.
@@ -152,7 +158,15 @@ The community feed supplies metadata and YouTube watch links, not directly downl
 
 **Planned video-cache behavior:** the host chooses a base directory and specific brands or artists, with automatic caching opt-in. For an artist, select the most recently published eligible video for each artist and track. Use a verified publication date when available and an exact-video match from yt-dlp's upload date as the best available approximation when it is not; preserve which source was used and do not label an upload date as a confirmed publication date. A ranking that compares any upload-date fallback is approximate, even if the selected video's own date is verified. Do not substitute Karaoke Nerds `Created` or a yt-dlp release date for either. The batch-planning prototype requires complete artist coverage and reports incomplete or ambiguous cases, including competing versions without either usable date. The target layout is `$BASE_CACHED_VIDEOS_DIR/$PROVIDER/Brands/$BRAND_SLUG/$ARTIST/$ARTIST - $TRACK_NAME.$FILE_EXTENSION`, for example `/chosen/path/karaokenerds/Brands/TheProperVolume/Nada Surf/Nada Surf - Amateur.mp4`. Reject unresolved brand matches and ambiguous or colliding destinations, prevent traversal and symlink escapes, and never silently overwrite an existing file. Automatic brand/artist batch downloads remain unimplemented; explicitly selected videos now download and attach to the existing library entry.
 
-**High-priority planned music providers:** integrate through approved APIs or SDKs with confirmed commercial, geographic, operating-system, playback, cache and reporting rights. A priority is letting hosts link an existing KaraFun account and use its eligible subscription in the app where the provider permits it. KaraFun advertises native login and user-linked subscriptions through its [OEM partnership API](https://business.karafun.com/oem), but the partnership, applicable plans and rights, operating systems, availability and pricing for this project remain unconfirmed. Prioritize Stingray and Sunfly and investigate additional compatible services the host can use for under $20 per month each; this limit applies per service, not to their combined cost. Confirm actual total pricing, developer access, eligible subscriptions and hosting rights before representing a service as within budget. Candidate research also includes Party Tyme and Karaoke Cloud Pro; no access, catalog, pricing, entitlement, endorsement or integration is promised. Adapters must describe exact version, availability, entitlement and capabilities such as seek, key/tempo, offline playback, stems, lyric mode, output restrictions and supported platforms. Never silently replace a chosen recording or bypass protected playback. An unavailable provider must not disable local songs or destroy queue state.
+**Experimental service catalog discovery in the 0.4.2 development build:** host Song Library and Sources search KaraFun and Party Tyme public metadata independently from local and Karaoke Nerds results. The inspected official KaraFun CSV parsed 90,284 records and the Party Tyme public table parsed 44,967 rows on 13 November 2026. These are observed export counts, not an upstream-freshness or territory/playability guarantee. Provider-specific IDs remain distinct even when artist/title strings match. Results show the service name in place of local DJ/brand codes and are explicitly search-only; they cannot become local versions, enter the queue, start playback or be requested by remote singers. Public metadata search requires no consumer login or paid API plan and does not borrow private web-player client keys or signatures.
+
+Public catalogs load on demand, coalesce concurrent loads and retain a complete snapshot for up to 24 hours in app-process memory. An older complete public snapshot can be searched with a clear warning when refresh fails; bounded failure backoff avoids a fetch on every keystroke. There is no persistent disk or global/shared MySQL cache for these provider catalogs yet. Restart loses the snapshot; a cold offline session cannot reuse it. Each public provider returns at most 50 matches. Source text, sizes, identities and response shapes are bounded and validated; failure of one provider does not erase local/Karaoke Nerds results.
+
+Sunfly and Stingray metadata adapters have fixture coverage but no live developer access is confirmed. Stingray requires a provider-issued strict JSON profile containing only `apiKey`, `deviceId`, `languageCode` and `countryCode`; Sunfly requires a private raw developer access-key file. The separately documented Stingray OAuth inspector and ordinary website subscriptions are not interchangeable credentials. Sunfly must complete a bounded full catalog scan, including withdrawal handling, before publishing any results; no partial scan is searchable. Its complete snapshot lives in process for up to 24 hours and returns at most 20 matches; Stingray also projects at most 20. No media, license or playback request is made by these adapters.
+
+Service matches appear under All Songs rather than local metadata-review/content filters. Main-process policy enforcement blocks provider discovery for age-restricted shows or any version allowlist because these recordings are not approved show versions. Renderer query/profile/policy generations suppress obsolete responses, while host-only external links resolve the latest provider/ID against an HTTPS allowlist. A provider advisory such as KaraFun's explicit flag is metadata, not proof of complete content coverage or a playback grant. See [provider catalog setup and limitations](provider-catalog-search.md).
+
+**High-priority planned paid playback:** integrate through approved APIs or SDKs with confirmed commercial, geographic, operating-system, playback, cache and reporting rights. A priority is letting hosts link an existing KaraFun account and use its eligible subscription in the app where the provider permits it. KaraFun advertises native login and user-linked subscriptions through its [OEM partnership API](https://business.karafun.com/oem), but the partnership, applicable plans and rights, operating systems, availability and pricing for this project remain unconfirmed. Prioritize Stingray and Sunfly and investigate additional compatible services the host can use for under $20 per month each; this limit applies per service, not to their combined cost. Confirm actual total pricing, developer access, eligible subscriptions and hosting rights before representing a service as within budget. Paid playback research also includes Party Tyme and Karaoke Cloud Pro; public metadata discovery does not promise playback access, pricing, entitlement or endorsement. Adapters must describe exact version, availability, entitlement and capabilities such as seek, key/tempo, offline playback, stems, lyric mode, output restrictions and supported platforms. Never silently replace a chosen recording or bypass protected playback. An unavailable provider must not disable local songs or destroy queue state.
 
 Hosts or venues pay for the application in a future commercial release; singers participate free. App access and provider subscriptions are separate entitlements unless an agreement explicitly bundles them. Plans, prices, tax, refunds, trials, billing cadence, device limits, concurrent shows, grant duration and provider terms remain undecided. A proposed paid release uses server-verified subscription status, signed device-bound offline grants, billing-event idempotency and a bounded grant for a show already started; an outage with a valid grant should not stop local hosting, and billing expiry should not unexpectedly cut live audio. Preserve viewing, export and recovery when an entitlement expires. Account, billing, checkout, licensing and paid access are not implemented.
 
@@ -236,7 +250,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "D01",
   "title": "Desktop host",
   "status": "Current",
-  "description": "Library, singer rotation and persistent transport remain visible in one workspace.",
+  "description": "Playable songs and service-only search beside singer rotation and persistent transport.",
   "layout": "desktop",
   "navigation": [
     "Library",
@@ -245,7 +259,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   ],
   "selected_navigation": "Library",
   "heading": "Song Library",
-  "toolbar": "Search title, artist, filename or code     Sort     Filter",
+  "toolbar": "Search library + service catalogs     Sort     Filter",
   "import_actions": [
     {
       "icon": "importVideo",
@@ -264,7 +278,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "Popular | Nada Surf | PVOL-002 | 8.2/10 hearts",
     "Example Song | Sample Artist | YouTube | 9.0/10 hearts",
     "Another Example | Sample Artist",
-    "A Song for Tonight | Sample Artist"
+    "Catalog Example | Sample Artist | KaraFun | Search only"
   ],
   "side_heading": "Singer Rotation",
   "side_rows": [
@@ -284,7 +298,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "stop",
     "skip"
   ],
-  "detail": "File offers Import and Back up show. View offers Appearance, Accent Color and Layout. Play opens the saved singer display; Previous restarts the same song. Host-only links stay at the bottom.",
+  "detail": "Service catalog rows are search-only; local and saved YouTube songs retain normal queue/play controls. File offers Import and Back up show; View offers Appearance, Accent Color and Layout.",
   "host_navigation": [
     "Requests",
     "Singers",
@@ -292,7 +306,6 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   ]
 }
 ```
-
 ```mockup
 {
   "id": "Q01",
@@ -669,7 +682,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
 
 Mapped brands use `BASE/karaokenerds/Brands/BRAND_SLUG/ARTIST/ARTIST - TITLE.mp4`; plain links/unmapped brands use `BASE/youtube/ARTIST/ARTIST - TITLE.mp4`. Safe names and exclusive publication prevent overwrite; a video-ID suffix is used only for an occupied name. A verified ownership/fingerprint sidecar is required to reuse unattached cache files. Same song, request and history identities are retained. Cached media uses normal output selection, transport, timeline and offline playback. Download completion never starts playback; the host presses Play. Missing or changed files require deliberate recovery. Complete files survive restart and app exit and need separate media backup.
 
-The separate embedded preview still uses system audio and requires internet; it remains outside the show and does not download. Brand/artist automatic batch selection, paid providers, YouTube login and general YouTube search remain planned. The installed tools downloaded the owner's video and verified H.264/AAC with zero-network reuse. Real show output, every video, supported platforms and packaged tool distribution remain verification work. No paid provider is connected; KaraFun OEM access and a quote, Stingray credentials/terms and Sunfly SDK/trial approval remain external gates.
+The separate embedded preview still uses system audio and requires internet; it remains outside the show and does not download. Brand/artist automatic batch selection, paid providers, YouTube login and general YouTube search remain planned. The installed tools downloaded the owner's video and verified H.264/AAC with zero-network reuse. Real show output, every video, supported platforms and packaged tool distribution remain verification work. No paid provider is connected for playback; public KaraFun/Party Tyme metadata discovery and fixture-tested partner catalog adapters are separate. KaraFun OEM access and a quote, Stingray credentials/terms and Sunfly SDK/trial approval remain external playback gates.
 
 
 ```mockup
@@ -820,7 +833,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "id": "D13",
   "title": "Song sources",
   "status": "Partial",
-  "description": "Karaoke Nerds, manual YouTube links and approved-provider connection status in one place.",
+  "description": "Karaoke Nerds, manual YouTube links and provider metadata discovery; playback remains separate.",
   "layout": "panels",
   "toolbar": "Sources | Karaoke Nerds, Custom YouTube Video Importer and Third-Party Services",
   "heading": "Karaoke Nerds",
@@ -839,9 +852,40 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   ],
   "footer_heading": "Third-Party Services",
   "footer_rows": [
-    "KaraFun and Party Tyme | Playback access pending",
-    "Sunfly and Stingray | Developer access pending"
+    "KaraFun / Party Tyme | Public catalog search",
+    "Sunfly / Stingray | Developer key needed"
   ],
-  "detail": "Provider statuses are not connected subscriptions. Downloaded videos use normal local playback; shared heart ratings describe exact recordings."
+  "detail": "Public catalog metadata needs no login. Issued partner keys enable metadata checks, not playback. Search-only service rows never enter the queue; downloaded YouTube videos use normal local playback."
+}
+```
+
+```mockup
+{
+  "id": "D14",
+  "title": "Service catalog search",
+  "status": "Current",
+  "description": "Public service metadata beside local playback; partner catalogs need issued developer keys.",
+  "layout": "panels",
+  "toolbar": "Artist / title search | Public snapshots cached 24h while the app is open",
+  "heading": "Service Catalogs - Search Only",
+  "rows": [
+    "Catalog Example | Sample Artist | KaraFun | Search only",
+    "Another Example | Another Artist | Party Tyme | Search only",
+    "Sunfly | Developer key needed",
+    "Stingray | Developer API profile needed"
+  ],
+  "side_heading": "Local Queue",
+  "side_rows": [
+    "ON STAGE | Alex - Local Song",
+    "NEXT | Casey - Saved Video",
+    "Transport | Local playback unchanged"
+  ],
+  "footer_heading": "Catalog Access",
+  "footer_rows": [
+    "Public metadata | No login needed",
+    "Profiles | Sources picker",
+    "Playback | Pending"
+  ],
+  "detail": "Synthetic data. Provider results cannot enter the queue or play; the local queue remains normal. Restrictive show policy hides unapproved service records. Profile credentials stay outside the renderer."
 }
 ```

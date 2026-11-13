@@ -1,10 +1,10 @@
 # Host Workspace
 
-Version 0.4.1 retains the unified library, transport, preferences and source controls and adds the selected microphone/play identity. The app icon has no text; the host header follows Day/Night appearance with the full TPV / KARAOKE BOOTH logo. Windows upgrade and isolated Windows/Linux package checks passed. It remains a development rehearsal build; physical audio/display, Linux installation and broader removal checks still apply.
+Version 0.4.2 adds provider metadata search to the unified library and Sources and is installed on this Windows PC. The actual upgrade from 0.4.1 preserved the checked show/configuration files after a private backup. It retains the selected microphone/play identity. The app icon has no text; the host header follows Day/Night appearance with the full TPV / KARAOKE BOOTH logo. Windows 0.4.2 packaged and installed search, policy/preferences and no-autoplay checks passed. Linux 0.4.2 verification is in progress; the previously verified 0.4.1 packages remain available. It remains a development rehearsal build; physical audio/display, Linux installation and broader removal checks still apply.
 
 ## Navigation and Menus
 
-The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains Karaoke Nerds discovery, the Custom YouTube Video Importer and the status of Third-Party Services. Paid-provider playback is still pending approved access.
+The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains Karaoke Nerds discovery, the Custom YouTube Video Importer and Third-Party Services catalog search/configuration. Paid-provider playback is still pending approved access.
 
 Use **File → Import** for **Import Video File**, **Import Custom Directory**, or **Import CD+G / ZIP**. The same three import icons are next to the Song Library heading. CDG conversion progress and cancellation stay visible while a job runs. **Back up show…** is in File; database backups do not include song media or preferences.
 
@@ -38,6 +38,10 @@ Press **Play/Pause** to stage the first eligible request and start it. If necess
 Each local media range uses a verified open file handle. A changed or replaced source is rejected and the current performance pauses with a restore/relink recovery message. This catches observed changes before a range is served; it does not promise immutable source files against every possible concurrent in-place write.
 
 ## Catalog and Heart Ratings
+
+Search **Song Library** with **All Songs** selected to see a separate **Service Catalogs — Search Only** section. KaraFun and Party Tyme use official public metadata; they need no login or paid API plan for search. Sunfly and Stingray require provider-issued developer profiles, selected with the native picker in **Sources → Third-Party Services**. Their adapters have fixture coverage, but real partner access is not yet confirmed. Each result shows the service name beside the artist. **View on Provider**, when offered, opens an official page; these rows cannot enter the queue or play in the booth.
+
+**Preferences → Karaoke Services → Search service catalogs in Song Library** is on by default. Save to apply changes. Provider snapshots are held only while the app is running, with a 24-hour refresh interval; failed refreshes may retain a clearly labeled older complete public snapshot. No central or disk cache exists for these catalogs yet. Strict show age restrictions or a version allowlist block provider discovery at the host boundary; local and Karaoke Nerds behavior continues normally. See [provider catalog setup and limits](provider-catalog-search.md).
 
 Fresh installs can search the shared Karaoke Nerds catalog without a reader configuration file or a bundled secret. Optional private catalog profiles remain supported; an invalid selected private file is reported rather than bypassed. The recovered snapshot's upstream freshness is still unknown and automatic feed refresh remains disabled. Saved searches can be reused offline. See [shared catalog help](shared-catalog.md).
 

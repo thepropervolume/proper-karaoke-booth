@@ -1,10 +1,10 @@
 # Remaining work
 
-Updated 13 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: reliable show operation and a playable streaming service first. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 13 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation, provider catalog search first, then playable streaming integration. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
 ## Current foundation
 
-The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, change settings and configure common action shortcuts through the grouped editor. The host has implemented shared catalog connection/preferences and offline query-cache support, with public read-only shared discovery on fresh installs and a legacy local-catalog mode when shared discovery is disabled. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback.
+The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, change settings and configure common action shortcuts through the grouped editor. The host has implemented shared catalog connection/preferences and offline query-cache support, with public read-only shared discovery on fresh installs and a legacy local-catalog mode when shared discovery is disabled. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. No paid provider is connected for playback. Windows 0.4.2 adds verified public KaraFun/Party Tyme metadata search plus profile-configured Sunfly/Stingray adapters; those results remain search-only. Linux 0.4.2 AppImage/Debian package checks also passed.
 
 ## Priority 0 — streaming and catalog
 
@@ -12,7 +12,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Inspect the owner-provided Business API specification and test the dashboard token read-only: device listing returned 402 and room-token listing 403; content/playback access remains unverified.
 - [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees; the existing consumer subscription has not been proven usable in this app.
 - [ ] Implement and test approved KaraFun account linking, secure credential storage, refresh/revocation and entitlement checks.
-- [ ] Add KaraFun catalog search and exact recording/version identity.
+- [x] Add host-only KaraFun public catalog metadata search with provider IDs; the inspected 90,284-record CSV parses without login. Search-only results do not establish playback or cross-provider equivalence.
+- [x] Add host-only Party Tyme public catalog metadata search, preserving provider codes from the inspected 44,967-row table; subscription playback remains separate.
 - [ ] Integrate approved KaraFun playback with the singer display, queue, transport, reporting and permitted offline behavior; handle failures without losing a turn.
 - [x] Send Stingray a catalog/playback partnership inquiry covering per-user access, private parties and commercial events (owner sent on 11 November 2026; reply pending).
 - [ ] Review Stingray's reply and obtain partner credentials, price, existing-subscription and public-use terms; its fixture-tested developer login/search tools are not a playable service.
@@ -26,7 +27,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Keep app billing and each provider subscription separate; do not assume one grants another.
 - [x] Unify local and Karaoke Nerds search in Song Library, preserving exact recording identity, host edits, filters and offline local results.
 - [x] Queue a catalog recording with singer selection in one host-authority operation; approved requests dispatch serial yt-dlp acquisition without autoplay.
-- [ ] Extend unified discovery to approved paid providers when access is granted.
+- [x] Add a separate service-metadata section to Song Library and Sources, showing service names, bounded results, configuration/errors and explicit non-playable status.
+- [ ] Verify real Sunfly and Stingray developer catalog access; their desktop metadata adapters are fixture-tested only.
 - [ ] Make eligible streaming results requestable and queueable with singer selection and normal rotation rules.
 - [ ] Route eligible provider playback to the singer display and selected audio output with stage/play/pause/stop/skip and safe transition handling.
 - [ ] Handle expired links, network failure, provider unavailability, rate limits, ads and unsupported or region-blocked recordings without consuming a singer's turn.
@@ -198,3 +200,17 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [x] Restore existing catalog/queue/ratings services left stopped by unattended MySQL maintenance, without changing code, schema, credentials, provider configuration or website behavior.
 - [ ] Review and apply a separately proposed service-recovery prevention change; the current proposal remains unapplied.
 - [ ] Verify native macOS packaging/Dock and physical Windows/Linux desktop behavior before 1.0.0.
+
+## 0.4.2 Provider Search
+
+- [x] Prioritize catalog search before streaming; public KaraFun/Party Tyme metadata works without account credentials or a paid API plan.
+- [x] Cache complete public snapshots in app-process memory for up to 24 hours, coalesce loads, apply failure backoff and label retained older snapshots.
+- [x] Add fixture-tested Stingray/Sunfly desktop metadata adapters and private profile selection; Sunfly returns no partial snapshot matches.
+- [x] Keep provider results search-only, provider-scoped and out of the playable queue; enforce restrictive show policy at the host boundary and ignore obsolete renderer replies.
+- [x] Add the default-on Karaoke Services search preference and path-only provider profile settings.
+- [x] Verify Windows 0.4.2 setup/ZIP from runtime `e501475` and the actual 0.4.1→0.4.2 upgrade, preserving seven original show/configuration hashes after a private backup.
+- [x] Pass 723 Windows tests with seven skips and type checking; packaged/installed live public searches, unconfigured partner states, queue/playback boundaries, saved toggle/restored policy guards, no autoplay, nine app/setup icon frames and 69 branding hashes passed.
+- [x] Verify final Linux 0.4.2 AppImage/Debian payloads, public search and compiled-CLI privacy from frozen `e501475`; 21 focused control/privacy tests passed and 119 unchanged earlier checks are retained by source comparison. Real-user installation, sandbox and physical hardware remain open.
+- [ ] Add persistent/central provider metadata caching if required; current provider caches disappear when the app exits.
+- [ ] Obtain real Stingray/Sunfly catalog credentials and verify their APIs; website account passwords are not developer keys.
+- [ ] Connect each provider's eligible subscription, approved streaming engine, reporting and queue/transport lifecycle. Metadata search does not complete playback integration.
