@@ -43,7 +43,7 @@ def main():
         figures.mkdir()
         subprocess.run([sys.executable, str(generator), '--source', str(args.source), '--output', str(pdf)], check=True)
         for index, screen in enumerate(screens):
-            page = str(3 + 2 * index)
+            page = str(module.night_screen_page(len(screens), index))
             subprocess.run([pdftoppm, '-f', page, '-l', page, '-r', '100', '-png', '-singlefile',
                             str(pdf), str(figures / screen['id'])], check=True)
         subprocess.run([sys.executable, str(ROOT / 'scripts' / 'generate-specification.py'),

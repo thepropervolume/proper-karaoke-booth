@@ -20,6 +20,11 @@ class MockupGeneratorTest(unittest.TestCase):
         meta = {'product': 'Test', 'deck_title': 'Inventory', 'deck_subtitle': 'Synthetic', 'themes': {'Night': colors, 'Day': colors}}
         screens = [{'id': f'T{i:02}', 'title': f'Screen {i}', 'status': 'Planned', 'description': 'Synthetic',
                     'layout': 'display', 'detail': 'Not implemented', 'display_title': 'DEMO', 'display_subtitle': 'Example', 'display_next': 'Next: Sam'} for i in range(15)]
+        description = ('A carefully moderated singer queue preserves every accepted performance while the host reviews requests, '
+                       'coordinates the rotation, checks the singer display, and prepares the next song without interrupting playback.')
+        screens[0]['description'] = description
+        long_word = 'K' * 110
+        screens[1]['description'] = f'An identifier {long_word} remains visible.'
         content = '```mockup-theme\n' + json.dumps(meta) + '\n```\n' + ''.join('```mockup\n' + json.dumps(screen) + '\n```\n' for screen in screens)
         with tempfile.TemporaryDirectory(prefix='tpv-inventory-test-') as directory:
             source, output = Path(directory) / 'spec.md', Path(directory) / 'inventory.pdf'
@@ -29,8 +34,26 @@ class MockupGeneratorTest(unittest.TestCase):
             inventory = '\n'.join(page.extract_text() for page in pdf.pages[1:3])
             for screen in screens:
                 self.assertIn(screen['id'], inventory)
+            self.assertIn(description, ' '.join(inventory.split()))
+            self.assertIn(long_word, ''.join(inventory.split()))
+            self.assertNotIn('...', inventory)
             self.assertIn('Screen inventory', pdf.pages[2].extract_text())
             self.assertIn('NIGHT', pdf.pages[3].extract_text())
+
+    def test_inventory_description_wraps_within_the_row_without_losing_text(self):
+        description = ('A long description shows how the host reviews requests and manages singer rotation while preserving '
+                       'a staged song and providing a clear explanation of policy restrictions before playback can begin.')
+        with patch.object(generator, 'line') as draw:
+            generator.inventory_description(None, description, 118, 558, 'TEST')
+        lines = draw.call_args_list
+        self.assertGreaterEqual(len(lines), 2)
+        self.assertLessEqual(len(lines), 3)
+        self.assertEqual(' '.join(call.args[1] for call in lines), description)
+        for call in lines:
+            self.assertGreaterEqual(call.args[3], 530)  # Last baseline stays 22 points above the next row.
+            self.assertLessEqual(generator.stringWidth(call.args[1], 'TPV', call.kwargs['size']), 500)
+        with self.assertRaisesRegex(ValueError, 'too long'):
+            generator.inventory_description(None, 'word ' * 1000, 118, 558, 'TOO_LONG')
 
     def test_single_markdown_source_generates_both_themes_deterministically(self):
         colors = {key: '#123456' for key in ('background', 'panel', 'card', 'line', 'text', 'muted', 'accent', 'selected')}

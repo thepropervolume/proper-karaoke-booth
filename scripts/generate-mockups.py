@@ -20,6 +20,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 PAGE_W, PAGE_H = 1296, 756
+INVENTORY_PAGE_SIZE = 14
 WHITE = colors.HexColor('#f9faf8')
 FONT_DIR = Path(reportlab.__file__).parent / 'fonts'
 pdfmetrics.registerFont(TTFont('TPV', str(FONT_DIR / 'Vera.ttf')))
@@ -122,6 +123,46 @@ def wrapped(c, text, x, y, width, font='TPV', size=13, fill='#51657a', leading=1
         if index == max_lines - 1 and len(lines) > max_lines:
             value += '...'
         line(c, value, x, y - index * leading, font, size, fill, width)
+
+
+def inventory_page_count(screen_count: int) -> int:
+    return (screen_count + INVENTORY_PAGE_SIZE - 1) // INVENTORY_PAGE_SIZE
+
+
+def night_screen_page(screen_count: int, screen_index: int) -> int:
+    """One-based page number after the cover and all inventory pages."""
+    return 2 + inventory_page_count(screen_count) + 2 * screen_index
+
+
+def inventory_description(c, text: str, x: float, y: float, screen_id: str):
+    """Fit the complete description in three lines within an inventory row."""
+    width, max_lines, leading = 500, 3, 14
+    words = text.split()
+    for size in (11, 10, 9, 8, 7):
+        lines, current = [], ''
+        for original in words:
+            word = original
+            while word and stringWidth(word, 'TPV', size) > width:
+                if current:
+                    lines.append(current); current = ''
+                end = len(word)
+                while stringWidth(word[:end], 'TPV', size) > width:
+                    end -= 1
+                lines.append(word[:end]); word = word[end:]
+            if not word:
+                continue
+            candidate = f'{current} {word}'.strip()
+            if current and stringWidth(candidate, 'TPV', size) > width:
+                lines.append(current); current = word
+            else:
+                current = candidate
+        if current:
+            lines.append(current)
+        if len(lines) <= max_lines:
+            for index, value in enumerate(lines):
+                line(c, value, x, y - index * leading, size=size, fill='#51657a')
+            return
+    raise ValueError(f'Screen {screen_id} inventory description is too long to fit without truncation.')
 
 
 def divider(c, x1, y1, x2, y2, color):
@@ -337,18 +378,18 @@ def cover(c, meta, screens, digest):
 
 
 def contents(c, meta, screens):
-    pages = (len(screens) + 13) // 14
-    for start in range(0, len(screens), 14):
+    pages = inventory_page_count(len(screens))
+    for start in range(0, len(screens), INVENTORY_PAGE_SIZE):
         rect(c, 0, 0, PAGE_W, PAGE_H, WHITE)
         line(c, 'Screen inventory', 56, 680, 'TPVBold', 30, '#17283d')
         line(c, 'Each screen appears in Night followed by Day.', 56, 648, size=14, fill='#51657a')
-        for index, item in enumerate(screens[start:start + 14]):
+        for index, item in enumerate(screens[start:start + INVENTORY_PAGE_SIZE]):
             column, row_index = divmod(index, 7)
             x, y = 56 + column * 610, 580 - row_index * 72
             line(c, item['id'], x, y, 'TPVBold', 14, '#007fae')
             line(c, item['title'], x + 62, y, 'TPVBold', 15, '#17283d', 410)
             line(c, item['status'].upper(), x + 480, y, 'TPVBold', 10, '#51657a', 100)
-            line(c, item['description'], x + 62, y - 22, size=11, fill='#51657a', max_width=500)
+            inventory_description(c, item['description'], x + 62, y - 22, item['id'])
         line(c, f"{meta['product']}  /  INTERFACE SPECIFICATION", 56, 29, size=9, fill='#6e7b89')
         c.showPage()
     return pages
@@ -361,7 +402,8 @@ def generate(source: Path, output: Path):
     c.setTitle(meta['deck_title']); c.setAuthor(meta['product'])
     c.setSubject(f'Generated from Markdown SHA-256 {digest}')
     cover(c, meta, screens, digest)
-    page = 2 + contents(c, meta, screens)
+    contents(c, meta, screens)
+    page = night_screen_page(len(screens), 0)
     host_actions = meta.get('host_actions', ['search', 'display', 'fullscreen', 'settings'])
     for item in screens:
         for theme in ('Night', 'Day'):
