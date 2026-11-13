@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, chmod, realpath, rm } from 'node:fs/promises';
 import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { resolveYtDlpExecutable } from '../../src/main/youtube-tools';
@@ -15,7 +15,7 @@ test('old settings get PATH discovery and explicit yt-dlp paths reject malformed
   assert.equal(validStreamingSource({provider:'youtube',videoId:'abcdefghijk',brandSlug:'../escape'}), false);
 });
 test('resolves selected or absolute PATH executable without executing or accepting shell wrappers', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'yt-tools-'));
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'yt-tools-')));
   try {
     const path = join(dir, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
     await writeFile(path, 'fixture, never executed'); await chmod(path, 0o700);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, readFile, writeFile, mkdir, rm, rename, symlink, lstat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, writeFile, mkdir, realpath, rm, rename, symlink, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { YouTubeDownloads, YouTubeDownloadRunError, runYouTubeDownload, type DownloadedYouTubeAsset, type YouTubeDownloadRunner } from '../../src/main/youtube-download';
@@ -10,7 +10,7 @@ const input = { versionId: 'v1', videoId: 'M7lc1UVf-VE', title: 'Song', artist: 
 const movie = Buffer.concat([Buffer.from([0,0,0,24]), Buffer.from('ftypisom0000synthetic-test-video')]);
 const executable = process.execPath;
 async function fixture(action: (root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), 'tpv-youtube-download-'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'tpv-youtube-download-')));
   try { await action(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 const fakeRun: YouTubeDownloadRunner = async (_exe, args, options) => {

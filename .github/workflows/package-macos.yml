@@ -6,6 +6,11 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    # Explicit bash enables pipefail so tee cannot hide test/build failures.
+    shell: bash
+
 concurrency:
   group: package-macos
   cancel-in-progress: false

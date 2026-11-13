@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -30,7 +30,7 @@ test('inspects one canonical video without downloading or claiming publication d
 });
 
 test('publishes one validated MP4 at the requested path without overwriting', async () => {
-  const base = await mkdtemp(path.join(tmpdir(), 'tpv-yt-test-'));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-test-')));
   const calls: string[][] = [];
   const run: YtDlpRunner = async (_exe, args, options) => {
     calls.push(args); assert.ok(options.cwd);
@@ -52,7 +52,7 @@ test('publishes one validated MP4 at the requested path without overwriting', as
 });
 
 test('rejects wrong video IDs, malformed files and propagated command errors', async () => {
-  const base = await mkdtemp(path.join(tmpdir(), 'tpv-yt-invalid-'));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-invalid-')));
   try {
     await assert.rejects(downloadYtDlpVideo({ executable, watchUrl: url, baseDirectory: base, video: { ...video, id: 'wrong' } }), /Invalid/);
     await assert.rejects(downloadYtDlpVideo({ executable, watchUrl: url, baseDirectory: base, video }, { run: async (_e, _a, options) => {
@@ -66,7 +66,7 @@ test('rejects wrong video IDs, malformed files and propagated command errors', a
 });
 
 test('preserves a cancelled command stage because a child process may still be writing', async () => {
-  const base = await mkdtemp(path.join(tmpdir(), 'tpv-yt-child-'));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-child-')));
   const abort = new AbortController();
   try {
     const result = await downloadYtDlpVideo({ executable, watchUrl: url, baseDirectory: base, video }, { signal: abort.signal, run: async (_e, _a, options) => {
@@ -83,7 +83,7 @@ test('preserves a cancelled command stage because a child process may still be w
 });
 
 test('does not replace a destination created while a download is running', async () => {
-  const base = await mkdtemp(path.join(tmpdir(), 'tpv-yt-race-'));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-race-')));
   try {
     const run: YtDlpRunner = async (_exe, _args, options) => {
       await writeFile(path.join(options.cwd!, 'video.mp4'), mp4);
@@ -97,7 +97,7 @@ test('does not replace a destination created while a download is running', async
 });
 
 test('cancellation does not start a pre-aborted download or publish a completed cancelled one', async () => {
-  const base = await mkdtemp(path.join(tmpdir(), 'tpv-yt-cancel-'));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-cancel-')));
   const abort = new AbortController(); abort.abort(); let called = false;
   try {
     const first = await downloadYtDlpVideo({ executable, watchUrl: url, baseDirectory: base, video }, { signal: abort.signal, run: async () => { called = true; return { stdout: '' }; } });
@@ -112,8 +112,8 @@ test('cancellation does not start a pre-aborted download or publish a completed 
 });
 
 test('rejects a pre-existing symlink in the cache hierarchy', async t => {
-  const base = await mkdtemp(path.join(tmpdir(), 'tpv-yt-symlink-'));
-  const outside = await mkdtemp(path.join(tmpdir(), 'tpv-yt-outside-'));
+  const base = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-symlink-')));
+  const outside = await realpath(await mkdtemp(path.join(tmpdir(), 'tpv-yt-outside-')));
   try {
     try { await symlink(outside, path.join(base, 'karaokenerds'), 'dir'); }
     catch (error) { if (['EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) { t.skip('Symlink creation unavailable'); return; } throw error; }
