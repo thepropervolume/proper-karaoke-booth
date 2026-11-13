@@ -45,8 +45,9 @@ try {
   await page.evaluate(() => window.tpv.saveSettings({ providerCatalogEnabled: true }));
   const fakeProfiles = { karafun: '', partytyme: '', sunfly: join(canonicalProfile, 'private-sunfly.key'), stingray: join(canonicalProfile, 'private-stingray.json') };
   await page.evaluate(profiles => window.tpv.saveSettings({ localControlEnabled: true, providerCatalogProfiles: profiles }), fakeProfiles);
-  const cli = await app.evaluate(({ app }) => ({ executable: process.execPath, bundle: require('node:path').join(require('node:path').dirname(app.getAppPath()), 'control', 'cli.cjs') }));
-  const runCli = async (extra = []) => JSON.parse((await promisify(execFile)(cli.executable, [cli.bundle, '--profile-dir', canonicalProfile, 'settings', ...extra], { env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, timeout: 15_000 })).stdout);
+  const cli = await app.evaluate(({ app }) => ({ executable: process.execPath, appPath: app.getAppPath() }));
+  const cliBundle = join(dirname(cli.appPath), 'control', 'cli.cjs');
+  const runCli = async (extra = []) => JSON.parse((await promisify(execFile)(cli.executable, [cliBundle, '--profile-dir', canonicalProfile, 'settings', ...extra], { env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, timeout: 15_000 })).stdout);
   const normal = await runCli();
   assert.deepEqual(normal.result.settings.providerCatalogProfiles, { karafun: '', partytyme: '', sunfly: '', stingray: '' });
   assert.ok(normal.result.redactedFields.includes('providerCatalogProfiles.sunfly'));
