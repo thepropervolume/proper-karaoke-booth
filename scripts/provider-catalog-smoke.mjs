@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 const repo = await realpath(resolve('.')), require = createRequire(join(repo, 'package.json'));
 const { _electron: electron } = require('playwright-core');
 if (process.argv.length < 3 || process.argv.length > 4) throw Error('Usage: node scripts/provider-catalog-smoke.mjs <executable> [screenshots-directory]');
@@ -20,7 +21,7 @@ try {
   const identity = await app.evaluate(({ app }) => ({ profile: app.getPath('userData'), packaged: app.isPackaged, version: app.getVersion() }));
   assert.equal(await realpath(identity.profile), canonicalProfile); assert.equal(identity.packaged, true);
   assert.equal(identity.version, JSON.parse(await readFile(join(repo, 'package.json'), 'utf8')).version);
-  const page = await app.firstWindow(); await page.waitForFunction(() => !!window.tpv);
+  let page = await app.firstWindow(); await page.waitForFunction(() => !!window.tpv);
   await page.getByRole('searchbox', { name: 'Search library', exact: true }).fill('Radiohead');
   const group = page.getByRole('region', { name: 'KaraFun catalog results', exact: true });
   await group.getByRole('listitem').first().waitFor({ timeout: 65_000 });
@@ -30,18 +31,28 @@ try {
   assert.equal(await providerSection.getByRole('button', { name: /queue|play|request/i }).count(), 0);
   const state = await page.evaluate(() => window.tpv.getState()); assert.equal(state.playback, null); assert.equal(state.versions.length, 0); assert.equal(state.requests.length, 0);
   const shots = process.argv[3] ? resolve(process.argv[3]) : null;
-  if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: join(shots, 'library-service-search.png') }); }
+  if (shots) { await mkdir(shots, { recursive: true }); await group.getByRole('listitem').first().scrollIntoViewIfNeeded(); await page.screenshot({ path: join(shots, 'library-service-search.png') }); }
   await page.getByRole('button', { name: 'Sources', exact: true }).click();
   await page.getByRole('region', { name: 'Third-party service catalogs', exact: true }).getByText('Stingray', { exact: true }).waitFor();
   const statuses = await page.evaluate(() => window.tpv.getProviderCatalogStatus());
   assert.equal(statuses.filter(s => s.configured && s.searchAvailable).length, 2);
   assert.ok(statuses.every(s => !s.playbackAvailable));
-  if (shots) await page.screenshot({ path: join(shots, 'sources-service-catalogs.png') });
+  if (shots) { await page.getByRole('region', { name: 'Third-party service catalogs', exact: true }).getByRole('heading', { name: 'Third-Party Services', exact: true }).scrollIntoViewIfNeeded(); await page.screenshot({ path: join(shots, 'sources-service-catalogs.png') }); }
   await page.evaluate(() => window.tpv.saveSettings({ providerCatalogEnabled: false }));
   assert.ok((await page.evaluate(() => window.tpv.searchProviderCatalog('Radiohead'))).every(r => r.songs.length === 0));
   await page.evaluate(() => window.tpv.saveSettings({ providerCatalogEnabled: true }));
-  const outcome = await page.evaluate(() => window.tpv.command({ type: 'setPolicy', policy: { ageRestricted: true, includeVersionIds: null, excludeVersionIds: [] } }));
-  assert.equal(outcome.ok, true);
+  // Policy editing is not an exposed host command. Restore a private policy
+  // fixture only while its app is closed, as in the existing policy rehearsal.
+  await app.close(); app = undefined;
+  const db = new DatabaseSync(join(canonicalProfile, 'show.sqlite'));
+  try {
+    const saved = JSON.parse(db.prepare('SELECT value FROM show_state WHERE id = 1').get().value);
+    saved.policy.ageRestricted = true;
+    db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(saved));
+  } finally { db.close(); }
+  app = await electron.launch({ executablePath, args: [`--user-data-dir=${canonicalProfile}`, '--mute-audio'], env, cwd: temp });
+  assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
+  page = await app.firstWindow(); await page.waitForFunction(() => !!window.tpv);
   assert.ok((await page.evaluate(() => window.tpv.searchProviderCatalog('Radiohead'))).every(r => r.songs.length === 0));
   assert.equal((await page.evaluate(() => window.tpv.getState())).playback, null);
   console.log(`PASS: packaged ${identity.version} live public KaraFun/Party Tyme library search, unconfigured partner status, no queue/play promotion, toggle and policy guard; empty private show stays stopped.`);
