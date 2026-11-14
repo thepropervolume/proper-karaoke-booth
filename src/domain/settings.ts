@@ -1,4 +1,5 @@
 import { PROVIDER_CATALOG_IDS, type ProviderCatalogId } from './provider-catalog';
+import { parseArtistBlacklist, parseSongBlacklist, type BlacklistedSong } from './song-blacklist';
 export type Theme = 'night' | 'day' | 'system';
 export type AccentColor = 'blue' | 'pink' | 'purple';
 export const ACCENT_COLORS: readonly AccentColor[] = ['blue', 'pink', 'purple'];
@@ -8,9 +9,9 @@ export function nextAccentColor(current: AccentColor): AccentColor {
 export type RotationMode = 'singer' | 'fifo';
 export type Layout = 'standard' | 'rotation' | 'library';
 export type LyricBackdrop = 'default' | 'none' | 'custom';
-export type Settings = { appearance: Theme; accentColor: AccentColor; autoApprove: boolean; localControlEnabled: boolean; rotationMode: RotationMode; maxFutureRequestsPerSinger: number; layout: Layout; metadataFormat: MetadataFormat; metadataTemplates: string[]; masterVolume: number; audioOutputId: string; autoBumper: boolean; autoBumperTrackId: string; showNextSingers: boolean; showDisplayLogo: boolean; singerDisplayFullscreen: boolean; lyricBackdrop: LyricBackdrop; lyricBackdropFile: string; pauseIntervalSeconds: number; karaokeNerdsCacheDirectory: string; ytDlpExecutable: string; providerCatalogEnabled: boolean; providerCatalogProfiles: Record<ProviderCatalogId, string>; sharedCatalogEnabled: boolean; sharedCatalogConfigFile: string; ratingProfileConfigFile: string; karaokeNerdsAutoCache: boolean; karaokeNerdsBrands: string[]; karaokeNerdsArtists: string[] };
+export type Settings = { appearance: Theme; accentColor: AccentColor; autoApprove: boolean; localControlEnabled: boolean; rotationMode: RotationMode; maxFutureRequestsPerSinger: number; layout: Layout; metadataFormat: MetadataFormat; metadataTemplates: string[]; masterVolume: number; audioOutputId: string; autoBumper: boolean; autoBumperTrackId: string; showNextSingers: boolean; showDisplayLogo: boolean; singerDisplayFullscreen: boolean; lyricBackdrop: LyricBackdrop; lyricBackdropFile: string; pauseIntervalSeconds: number; karaokeNerdsCacheDirectory: string; ytDlpExecutable: string; providerCatalogEnabled: boolean; providerCatalogProfiles: Record<ProviderCatalogId, string>; sharedCatalogEnabled: boolean; sharedCatalogConfigFile: string; ratingProfileConfigFile: string; karaokeNerdsAutoCache: boolean; karaokeNerdsBrands: string[]; karaokeNerdsArtists: string[]; songBlacklist: BlacklistedSong[]; artistBlacklist: string[] };
 
-export const DEFAULT_SETTINGS: Settings = { appearance: 'system', accentColor: 'blue', autoApprove: true, localControlEnabled: false, rotationMode: 'singer', maxFutureRequestsPerSinger: 3, layout: 'standard', metadataFormat: 'artist-title', metadataTemplates: [], masterVolume: 1, audioOutputId: '', autoBumper: false, autoBumperTrackId: 'builtin-ambient', showNextSingers: false, showDisplayLogo: true, singerDisplayFullscreen: false, lyricBackdrop: 'default', lyricBackdropFile: '', pauseIntervalSeconds: 0, karaokeNerdsCacheDirectory: '', ytDlpExecutable: '', providerCatalogEnabled: true, providerCatalogProfiles: { karafun: '', partytyme: '', sunfly: '', stingray: '' }, sharedCatalogEnabled: true, sharedCatalogConfigFile: '', ratingProfileConfigFile: '', karaokeNerdsAutoCache: false, karaokeNerdsBrands: [], karaokeNerdsArtists: [] };
+export const DEFAULT_SETTINGS: Settings = { appearance: 'system', accentColor: 'blue', autoApprove: true, localControlEnabled: false, rotationMode: 'singer', maxFutureRequestsPerSinger: 3, layout: 'standard', metadataFormat: 'artist-title', metadataTemplates: [], masterVolume: 1, audioOutputId: '', autoBumper: false, autoBumperTrackId: 'builtin-ambient', showNextSingers: false, showDisplayLogo: true, singerDisplayFullscreen: false, lyricBackdrop: 'default', lyricBackdropFile: '', pauseIntervalSeconds: 0, karaokeNerdsCacheDirectory: '', ytDlpExecutable: '', providerCatalogEnabled: true, providerCatalogProfiles: { karafun: '', partytyme: '', sunfly: '', stingray: '' }, sharedCatalogEnabled: true, sharedCatalogConfigFile: '', ratingProfileConfigFile: '', karaokeNerdsAutoCache: false, karaokeNerdsBrands: [], karaokeNerdsArtists: [], songBlacklist: [], artistBlacklist: [] };
 
 function validateCacheSelections(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.length > 500) throw new Error(`Invalid Karaoke Nerds ${label} list.`);
@@ -59,6 +60,7 @@ export function parseSettings(value: unknown): Settings {
     throw new Error('Invalid Karaoke Nerds video-cache settings: use an absolute directory.');
   const karaokeNerdsBrands = validateCacheSelections(merged.karaokeNerdsBrands, 'brand');
   const karaokeNerdsArtists = validateCacheSelections(merged.karaokeNerdsArtists, 'artist');
-  return { ...merged, providerCatalogProfiles: { ...profiles }, metadataTemplates, karaokeNerdsBrands, karaokeNerdsArtists } as Settings;
+  const songBlacklist = parseSongBlacklist(merged.songBlacklist), artistBlacklist = parseArtistBlacklist(merged.artistBlacklist);
+  return { ...merged, providerCatalogProfiles: { ...profiles }, metadataTemplates, karaokeNerdsBrands, karaokeNerdsArtists, songBlacklist, artistBlacklist } as Settings;
 }
 import { validateMetadataTemplates, type MetadataFormat } from './metadata';
