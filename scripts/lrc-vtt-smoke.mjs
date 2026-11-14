@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { strict as assert } from 'node:assert';
 import { parseLrc } from '../src/domain/lrc.ts';
 import { exportLrcWebVtt } from '../src/domain/lrc-vtt.ts';
@@ -15,7 +15,8 @@ if (size < 1 || size > 32 * 1024 * 1024) throw new Error('The synthetic MP4 must
 const requireFromRepo = createRequire(new URL('../package.json', import.meta.url));
 const { _electron: electron } = requireFromRepo('playwright-core');
 const executablePath = requireFromRepo('electron');
-const dir = await mkdtemp(join(tmpdir(), 'tpv-vtt-probe-'));
+const temporaryRoot = await realpath(tmpdir());
+const dir = await mkdtemp(join(temporaryRoot, 'tpv-vtt-probe-'));
 const bootstrap = join(dir, 'main.cjs');
 await writeFile(bootstrap, "const {app,BrowserWindow}=require('electron');app.setPath('userData',process.env.TPV_PROBE_DIR);app.whenReady().then(()=>{let w=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true}});w.loadURL('about:blank');});app.on('window-all-closed',()=>app.quit());\n");
 const videoBytes = await readFile(fixture);
@@ -53,5 +54,8 @@ try {
   console.log('PASS: Electron parsed escaped captions, cleared a gap and selected cues after seeks; audio muted.');
 } finally {
   if (app) await app.close().catch(() => {});
-  await rm(dir, { recursive: true, force: true });
+  const actual = await realpath(dir);
+  if (dirname(actual) !== temporaryRoot || !actual.startsWith(temporaryRoot + sep) || !basename(actual).startsWith('tpv-vtt-probe-'))
+    throw new Error('Unsafe synthetic caption rehearsal cleanup path.');
+  await rm(actual, { recursive: true, force: true });
 }
