@@ -1,13 +1,13 @@
 .library-results { max-height: 48vh; overflow-y: auto; }
 .library-results > .song-list { max-height: none; overflow: visible; }
-.provider-catalog-results { padding: .75rem .25rem; border-top: 1px solid var(--line); }
+.provider-catalog-results { margin-top: 10px; padding: 12px 4px; border-top: 1px solid var(--line); }
 .provider-catalog-results h3 { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
 .provider-catalog-results h4 { font-size: 1rem; margin: 1rem 0 .4rem; }
 .provider-catalog-results p { line-height: 1.45; }
 .provider-catalog-song { grid-template-columns: minmax(0, 1fr) auto; }
 .provider-catalog-song button { max-width: 11rem; overflow-wrap: anywhere; }
 .provider-catalog-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: .8rem; }
-.provider-catalog-card { padding: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--panel); }
+.provider-catalog-card { padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); box-shadow: var(--shadow-1); }
 .provider-catalog-card h3 { margin: 0 0 .6rem; }
 .provider-catalog-card p { line-height: 1.45; overflow-wrap: anywhere; }
 .provider-catalog-panel > .library-toolbar label { flex: 1; }
