@@ -19,7 +19,7 @@ await writeFile(join(profile, 'settings.json'), JSON.stringify({ sharedCatalogEn
 const bootstrap = join(temp, 'bootstrap.cjs');
 await writeFile(bootstrap, `const {app}=require('electron');const fs=require('node:fs');app.setPath('userData',process.env.TPV_QA_PROFILE);app.setAppPath(process.env.TPV_QA_REPO);if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_QA_PROFILE))throw Error('Unsafe profile');globalThis.fetch=async()=>{throw Error('External service access disabled in this rehearsal');};require(process.env.TPV_QA_ENTRY);`);
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_REPO: repo,
-  TPV_QA_ENTRY: await realpath(join(repo, 'dist/main/index.cjs')), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'),
+  TPV_QA_ENTRY: packagedExecutable ? '' : await realpath(join(repo, 'dist/main/index.cjs')), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'),
   XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data') };
 delete env.ELECTRON_RUN_AS_NODE;
 let app;
