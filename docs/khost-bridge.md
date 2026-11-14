@@ -2,6 +2,8 @@
 
 Implemented in source development **0.5.0** as an optional external search/handoff integration. The owner reports their separate KHost subscription works. Loading this bridge and performing authenticated search/handoff on their target machine remain unverified; source implementation, synthetic interoperability tests and an existing consumer subscription are separate evidence.
 
+This bridge was an interim implementation choice. It is not evidence that TPV needs KHost for native playback. The primary goal remains direct account sign-in, acquisition and playback through TPV's own queue and singer screen; the [native integration investigation](karafun-native-integration.md) describes the source findings and proof still needed.
+
 The bridge connects The Proper Volume to a **separately installed, running KHost** with its KaraFun plugin. It searches that installed provider and can explicitly hand a selected result to KHost's normal **Enqueue** action. Playback, singer selection, downloads, licensing checks and account sign-in remain in KHost. A bridge result is not a playable TPV library version; **Send to KHost** must not be described as playing a song through TPV.
 
 This is an independently written plugin using KHost's separately MIT-licensed public contracts. The KHost application implementation and the third-party KaraFun plugin were not copied. It does not call KaraFun directly, read its password or session files, or use a consumer-client identity/signing key. The user's successful KHost test establishes their KHost setup works; it does not establish native TPV playback or provider approval for this app.
