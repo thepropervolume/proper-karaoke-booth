@@ -135,7 +135,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 - [ ] Keep this checklist, [handoff](handoff.md), [host README](../README.md), [singer guide](singer-guide.md) and developer/operator guides synchronized with implemented behavior and tested limits.
 - [x] Reconcile the [Karaoke Nerds operator guide](karaokenerds-catalog.md) with deployed shared search, private desktop connection, offline query cache and refresh recovery limits.
-- [ ] Regenerate the Word specification from [product specification](product-specification.md) and visually verify it; the existing Word edition is outdated.
+- [x] Regenerate the 0.5.0 Word specification from [product specification](product-specification.md), render and visually review all 38 pages, then publish the current edition.
 - [x] Regenerate the 0.4.0 37-page Night/Day mockup PDF from Markdown and visually verify every page; repeat whenever requirements or screens change.
 - [ ] Complete platform install/update/uninstall, signing/icon and distribution checks; private catalog configuration and media tools remain separately provisioned. Keep delivery versions 0.x.y until approved 1.0.0.
 - [ ] Prepare a release checklist covering backups, migration/rollback, real-hardware tests, privacy and provider/venue terms.
@@ -197,7 +197,7 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [x] Integrate the laptop's staged-policy lock, relink and retired-bumper-event fixes; Windows safety-base verification passed 685 tests with seven skips, type checking/build and a muted policy-lock rehearsal.
 - [x] Complete Linux 0.4.1 AppImage/Debian package verification from frozen `24f5f15`: matching payloads, 115 targeted passes without failures/skips, 69 branding hashes, all ten default light PNGs, packaged logos/favicon and extracted AppRun/catalog/CLI/API/staged-policy rehearsals. Non-root desktop and physical hardware remain unverified.
 - [x] Regenerate the 0.4.1 Markdown-based mockup PDF with the selected logo and visually review all 37 pages.
-- [ ] Complete the current Markdown-derived Word refresh and visually verify every rendered page before publishing; native Windows LibreOffice discovery is supported, and the existing published edition remains outdated until replacement passes.
+- [x] Complete the Markdown-derived Word refresh with native Windows LibreOffice rendering, inspect every page and publish the verified 0.5.0 edition; older versioned files remain historical.
 - [x] Restore existing catalog/queue/ratings services left stopped by unattended MySQL maintenance, without changing code, schema, credentials, provider configuration or website behavior.
 - [ ] Review and apply a separately proposed service-recovery prevention change; the current proposal remains unapplied.
 - [x] Verify macOS 0.4.4 DMG/ZIP payloads and native Apple silicon launch; see the versioned evidence below.
@@ -272,11 +272,15 @@ Windows/Linux latest delivered packages and the installed PC remain 0.4.3; this 
 - [ ] Obtain approved paid-provider playback access, pricing and subscription-linking terms; consumer subscriptions alone do not confirm this integration.
 - [ ] Connect full LRC import/playback, seek/resume and the chosen lyric backdrop.
 - [ ] Add a Google Drive application source, with identity, indexing, download and cache rules; local synced-folder import is a different path.
-- [x] Integrate the reviewed `opencode-audit` UI and join its snapshot ancestry while preserving newer fixes; all other published remote branches are merged. Internal temporary agent branches are separate work units.
+- [x] Integrate the reviewed `opencode-audit` UI and join its snapshot ancestry while preserving newer fixes; all remote and local branches are merged. Fourteen patch-equivalent internal cherry-pick commits were joined at `bd1d011` with no file changes.
 - [x] Record the current 0.5.0 complete core-suite result: 861 passes, eight platform/environment skips, zero failures (869 total), plus passing type checking.
 - [x] Verify actual silent synthetic-video pixels in the host preview and two isolated LAN browsers, with Stop/close clearing, reconnect, port migration and shutdown; preserve the owner rating profile during a read-only readiness check with no vote.
-- [ ] Build 0.5.0 installers and verify actual payloads/native behavior before calling them delivered.
+- [x] Build Windows 0.5.0 setup/ZIP from clean frozen `8d4c003`; pass actual packaged restart/no-autoplay, Day/Night logos, minimum-width controls, 20 payload-file comparisons and nine app/setup icon frames.
+- [x] Build macOS 0.5.0 Apple silicon/Intel DMG/ZIP from the same source; verify signatures/payloads, native arm64 launch/restart/branding/CLI help and all downloaded artifact hashes. Intel native execution and notarization remain open.
+- [x] Build the optional bridge 0.1.0 ZIP from the frozen source; retain its receipt/hash without claiming real KHost loading or authenticated handoff.
+- [x] Complete Linux 0.5.0 AppImage/Debian package checks from frozen `8d4c003`: 861 passes/eight skips/zero failures, matching payloads/branding and actual private AppRun restart/no-autoplay, CLI/API, catalog and offline local-rating persistence. Root/Xvfb flags were test-only; non-root desktop and physical devices remain open.
+- [ ] Verify actual Windows 0.5.0 installation/upgrade/removal; this PC remains installed at 0.4.3.
 - [ ] Verify LAN screens on real venue browsers/Wi-Fi/firewall configurations and compare lyric latency/quality; source/HTTP tests do not establish physical-show readiness.
-- [ ] Regenerate and visually verify Word/PDF planning deliverables from the canonical Markdown.
+- [x] Regenerate and publish current Word/PDF planning deliverables from the frozen canonical Markdown; visually review all 38 Word and 45 PDF pages, covering 21 screen families; retain source/artifact hashes.
 
-The current evidence is source-level and version-specific. New Windows installation and 0.5.0 Mac/Linux builds are not yet claimed. Earlier platform verification remains historical evidence, not a replacement for new package checks. See [source status](source-status.md) and [LAN singer-screen help](singer-screen-sharing.md).
+Verification is version-specific: Windows/Linux/macOS 0.5.0 package checks passed from the same frozen runtime. New Windows installation, Intel Mac execution, Linux desktop integration and physical show/venue checks are not claimed. Earlier platform evidence remains historical. See [source status](source-status.md) and [LAN singer-screen help](singer-screen-sharing.md).

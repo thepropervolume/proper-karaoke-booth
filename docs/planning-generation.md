@@ -35,4 +35,16 @@ The optional `brand_logos` entries in the Markdown theme bind the local Night/Da
 
 ## Windows Word Rendering
 
-Generating OOXML is not visual verification. The current document renderer supports native Windows LibreOffice discovered on PATH, as well as the configured rendering runtime; LibreOffice does not have to be bundled inside the app installer. Use the document workflow's `render_docx.py` to obtain page images, inspect every page and fix pagination before publishing the generated Word edition. LibreOffice is a documentation-generation dependency, not a karaoke playback dependency. The revised Word edition remains pending until its actual render/review passes.
+Generating OOXML is not visual verification. The current document renderer supports native Windows LibreOffice discovered on PATH, as well as the configured rendering runtime; LibreOffice does not have to be bundled inside the app installer. Use the document workflow's `render_docx.py` to obtain page images, inspect every page and fix pagination before publishing the generated Word edition. LibreOffice is a documentation-generation dependency, not a karaoke playback dependency.
+
+## Verified 0.5.0 Planning Edition
+
+On 14 November 2026 the current deliverables were generated from the frozen canonical Markdown at source `8d4c003` and published in the project's sibling `planning` folder. The **38-page Word specification** was rendered successfully using official native LibreOffice 26.8.3.1; all final page images were visually inspected at full resolution. The **45-page Night/Day mockup PDF**, covering 21 screen families, also passed full-page visual review. The current identity, status labels, captions, pagination and blacklist-dialog buttons were checked after corrections. Nine documentation-generator tests passed.
+
+| File | SHA256 |
+| --- | --- |
+| `docs/product-specification.md` | `84028ec685c18c17965862bb6b1902387df14d214808693ecf51a00833908de6` |
+| `TPV_Karaoke_Product_Specification_Current.docx` | `7191b9c456cac1645c5c47e10d6f4e033f588170a62fd0e825fece6aa10a646b` |
+| `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `c37cc9a7a00a1bdfb1c9f808d55b951f6555ae63d2a45c41d2781c3d4b04018c` |
+
+The generated `release/Proper-Karaoke-Booth-0.5.0-planning-verification.json` retains the source/artifact hashes and review counts. Older versioned planning files are preserved as historical editions. This verification describes the generated documents; it does not establish that planned application features are implemented or physical show devices have passed testing.
