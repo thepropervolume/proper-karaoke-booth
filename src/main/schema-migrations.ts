@@ -39,13 +39,16 @@ function validateExisting(db: DatabaseSync, complete: boolean, schemaVersion = S
       if (complete && schemaVersion >= introducedIn) throw new Error(`Show database table ${name} is missing.`);
       continue;
     }
-    const info = db.prepare(`PRAGMA table_info("${name}")`).all() as { name: string; notnull: number; pk: number; dflt_value: unknown }[];
+    const info = db.prepare(`PRAGMA table_info("${name}")`).all() as { name: string; type: string; notnull: number; pk: number; dflt_value: unknown }[];
     const actual = new Map(info.map(column => [column.name, column]));
     const key = info.filter(column => column.pk > 0).sort((a, b) => a.pk - b.pk).map(column => column.name);
     if (columns.some(column => !actual.has(column)) || notNull[name].some(column => actual.get(column)?.notnull !== 1) ||
         info.some(column => !columns.includes(column.name) && column.notnull === 1 && column.dflt_value === null) ||
         key.length !== primaryKeys[name].length || key.some((column, index) => column !== primaryKeys[name][index]))
       throw new Error(`Show database table ${name} is incompatible.`);
+    if (name === 'local_song_ratings' && (actual.get('fingerprint')?.type.toUpperCase() !== 'TEXT' ||
+      actual.get('value')?.type.toUpperCase() !== 'INTEGER' || actual.get('updated_at')?.type.toUpperCase() !== 'TEXT'))
+      throw new Error('Show database local ratings column types are incompatible.');
     const unique = db.prepare(`PRAGMA index_list("${name}")`).all() as { name: string; unique: number; partial: number }[];
     const allowed = [primaryKeys[name], ...(name === 'remote_guests' ? [['resume_hash'], ['join_id']] : [])];
     const seen = new Set<string>();
