@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { unlink } from 'node:fs/promises';
+import { unlink, readFile, lstat } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
@@ -49,6 +49,13 @@ import { HostTransport, type TransportResult } from './host-transport';
 import { LocalCommunityBrowser, type LocalCatalogResult } from './karaokenerds-local-browser';
 import { SharedCatalogConnection } from './shared-catalog-connection';
 import { SongRatingsConnection } from './song-ratings-connection';
+import { HostSongRatings } from './host-song-ratings';
+import { compileSongBlacklist } from '../domain/song-blacklist';
+import { YouTubeSearchService } from './youtube-search';
+import { parseYouTubeSubscriptions } from '../domain/youtube-search';
+import { SingerScreenFrameHub, SingerScreenServer } from './singer-screen-server';
+import { SingerScreenCapture } from './singer-screen-capture';
+import type { SingerScreenUiStatus, SingerPreviewFrame } from '../renderer/SingerPreview';
 import { recordingKeyFor, type RecordingKey } from '../domain/song-rating';
 import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-window';
 import { YouTubeAudioGate } from './youtube-audio-gate';
@@ -61,6 +68,8 @@ import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
 import { applicationUserData } from './user-data-path';
 import { ProviderCatalogService } from './provider-catalog-service';
+import { KHostBridgeConnection } from './khost-connection';
+import { readKHostBridgeProfile } from './khost-client';
 import { isProviderCatalogId } from '../domain/provider-catalog';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
@@ -70,8 +79,14 @@ let displayFullscreen: DisplayFullscreen | null = null;
 let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
+let hostRatings: HostSongRatings;
 let communityBrowser: LocalCommunityBrowser | null = null;
 let sharedCatalog: SharedCatalogConnection | null = null;
+function filteredCatalogResult(result: LocalCatalogResult): LocalCatalogResult {
+  if (result.status !== 'ready') return result;
+  const blacklist = compileSongBlacklist(settings);
+  return { ...result, tracks: result.tracks.filter(track => !blacklist.isBlocked(track)) };
+}
 function catalogConfigFile(): string { return settings.sharedCatalogConfigFile || join(app.getPath('userData'), 'catalog-connection.json'); }
 function ratingConfigFile(): string { return settings.ratingProfileConfigFile || join(app.getPath('userData'), 'rating-connection.json'); }
 let activeRatingPath = '';
@@ -83,7 +98,44 @@ function ratingsConnection(): SongRatingsConnection {
 }
 let state: ShowState;
 let settings: Settings;
-const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, policy: state.policy }));
+const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist }));
+const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, policy: state.policy }));
+const khostBridge = new KHostBridgeConnection(() => ({ ...settings, policy: state.policy }));
+let choosingKHostProfile = false;
+const singerFrames = new SingerScreenFrameHub();
+const singerScreenServer = new SingerScreenServer(singerFrames);
+let singerScreenError = '';
+let outputRecovery: { generation: string; revision: number } | null = null;
+function previewFrame(): SingerPreviewFrame {
+  const frame = singerFrames.current;
+  return frame ? { image: `data:image/jpeg;base64,${frame.jpeg.toString('base64')}`, width: frame.width, height: frame.height } : null;
+}
+singerFrames.subscribe(() => { if (host && !host.isDestroyed()) host.webContents.send('host:singer-preview', previewFrame()); });
+const singerCapture = new SingerScreenCapture(singerFrames, {
+  hasDemand: () => !shuttingDown && (!!settings && settings.hostPreviewPosition !== 'hidden' && !!host && !host.isDestroyed() && host.isVisible() || singerScreenServer.status().viewers > 0),
+  capture: async () => {
+    const window = display;
+    if (!window || window.isDestroyed() || !displayReady) return null;
+    const image = await window.webContents.capturePage();
+    if (window !== display || window.isDestroyed() || !displayReady || image.isEmpty()) return null;
+    const size = image.getSize(), scale = Math.min(1, 1600 / size.width, 1000 / size.height);
+    const scaled = image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: 'best' });
+    return { jpeg: scaled.toJPEG(80), ...scaled.getSize() };
+  },
+});
+function singerScreenStatus(): SingerScreenUiStatus {
+  const value = singerScreenServer.status();
+  const error = singerScreenError || (value.state === 'failed' ? 'The singer-screen listener stopped unexpectedly. Retry sharing or choose another port.' : '');
+  return { status: error ? 'error' : value.state === 'listening' ? 'running' : 'stopped', port: value.port,
+    urls: value.urls, viewers: value.viewers, maximumViewers: value.maxViewers, ...(error ? { message: error } : {}) };
+}
+async function reconcileSingerScreen(): Promise<void> {
+  singerScreenError = '';
+  try {
+    if (shuttingDown || !settings.singerScreenEnabled) await singerScreenServer.stop();
+    else await singerScreenServer.start({ port: settings.singerScreenPort });
+  } catch { singerScreenError = 'The singer-screen port could not be opened. Check whether another app uses it, or choose a different port in Preferences → Singer Display.'; }
+}
 let choosingProviderProfile = false;
 const settingsUpdates = new SettingsUpdateQueue();
 let settingsPath: string;
@@ -168,8 +220,8 @@ const queuedDownloads = new QueuedVideoDownloads(async versionId => {
 function syncQueuedDownloads(): void {
   if (shuttingDown || !store || !settings) return;
   const active=youtubeDownloads?.snapshot();
-  if(active && !isVersionAllowed(state,active.versionId))youtubeDownloads?.cancel(active.id);
-  queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state,request.versionId))
+  if(active && !isVersionAllowed(state, active.versionId, settings))youtubeDownloads?.cancel(active.id);
+  queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state, request.versionId, settings))
     .map(request=>request.versionId).filter(id=>state.versions.find(version=>version.id===id)?.source?.provider==='youtube' && (!store.media(id) || !existsSync(store.media(id)!.path))));
 }
 function automaticBumperEligible(): boolean {
@@ -191,7 +243,7 @@ const activeDownloadBaselines = new Map<string, DownloadBaseline>();
 async function startYouTubeDownload(versionId: string) {
   if (shuttingDown || preparingDownload) throw new Error('A video download is being prepared. Try again shortly.');
   const version = state.versions.find(item => item.id === versionId);
-  if (!version?.source || !isVersionAllowed(state, versionId)) throw new Error('This video is unavailable.');
+  if (!version?.source || !isVersionAllowed(state, versionId, settings)) throw new Error('This video is unavailable.');
   const existingJob = youtubeDownloads?.snapshot();
   if (youtubeDownloads?.active()) {
     if (existingJob?.versionId === versionId) return existingJob;
@@ -208,7 +260,7 @@ async function startYouTubeDownload(versionId: string) {
     const executable = await resolveYtDlpExecutable(settings.ytDlpExecutable);
     if (shuttingDown) throw new Error('The application is closing.');
     const current=state.versions.find(item=>item.id===versionId);
-    if(!current?.source || current.source.videoId!==version.source.videoId || !isVersionAllowed(state,versionId))throw new Error('This video selection is no longer available.');
+    if(!current?.source || current.source.videoId!==version.source.videoId || !isVersionAllowed(state, versionId, settings))throw new Error('This video selection is no longer available.');
     const currentMedia = store.media(versionId);
     if (!sameStoredMedia(originalMedia, currentMedia)) throw new Error('The saved video link changed while preparing this download.');
     if (retry && !cachedVideoIdentityMatches(retry.media.path, retry.identity)) throw new Error('The saved video changed after it was checked. Retry after file changes finish.');
@@ -217,7 +269,7 @@ async function startYouTubeDownload(versionId: string) {
     if (!youtubeDownloads || config !== youtubeDownloadConfig) {
       youtubeDownloads = new YouTubeDownloads(directory, executable, asset => {
         const current = state.versions.find(item => item.id === asset.versionId);
-        if (shuttingDown || current?.source?.videoId !== asset.videoId || !isVersionAllowed(state,asset.versionId)) throw new Error('The video selection changed or is no longer available under the show policy.');
+        if (shuttingDown || current?.source?.videoId !== asset.videoId || !isVersionAllowed(state, asset.versionId, settings)) throw new Error('The video selection changed or is no longer available under the show policy.');
         const previous = store.media(asset.versionId);
         const active = state.requests.find(request => request.id === state.playback?.requestId);
         if (active?.versionId === asset.versionId) throw new Error('Stop this performance first, then Retry and Play. Your request stays in the queue.');
@@ -291,7 +343,7 @@ function publishDisplay(): void {
   const version = state.versions.find(v => v.id === request?.versionId);
   const singer = state.singers.find(s => s.id === request?.singerId);
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
-    .filter(r => singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId)).slice(0, 3)
+    .filter(r => singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
   const current = playback && request && version && singer && store.media(version.id) ? { generation: playback.generationId, status: playback.status,
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
@@ -315,12 +367,24 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   }
   store.save(result.state, [], history);
   state = result.state;
+  if (result.outcome.ok && command.type === 'setPolicy') youtubeSearch.cancel();
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) verifiedPlayback = null;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
   if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) automaticBumper.arm(previousGeneration);
   if (result.outcome.ok && ['request','accept','editRequest','moveRequest','promoteRequest','removeRequest','rejectRequest','setPolicy'].includes(command.type)) syncQueuedDownloads();
   try{broadcast();}catch{/* A closed view must not turn a durable command into a failure. */}
   return result.outcome;
+}
+
+function commitCatalogRequest(input: unknown) {
+    if(shuttingDown)return {ok:false,error:'The application is closing.'};
+    const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now());
+    if(!planned.result.ok)return planned.result;
+    store.save(planned.state);state=planned.state;
+    let notice:string|undefined;
+    try{syncQueuedDownloads();}catch{notice='Queued successfully. Use Download Video / Retry if its download does not appear.';}
+    try{broadcast();}catch{/* A committed request remains successful even if a view closes. */}
+    return {...planned.result,...(notice?{notice}:{})};
 }
 function pauseForOutputLoss(): boolean {
   if (!shuttingDown && state.playback?.status === 'playing') return perform({ type: 'pause' }).ok;
@@ -474,6 +538,7 @@ async function createDisplayWindow(automatic: boolean): Promise<void> {
     if (displayId !== previous) rememberSingerDisplay(displayId);
   });
   display.on('closed', () => {
+    singerCapture.invalidate(); outputRecovery = null;
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     if (display !== window) return;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
@@ -497,25 +562,32 @@ async function ensureSingerDisplayReady(): Promise<void> {
   }
 }
 function hostPlayPause(): Promise<TransportResult> {
+  const recoveryIntent = outputRecovery ? { ...outputRecovery } : null;
+  const playbackIntent = state.playback ? { ...state.playback } : null;
   return hostTransport.run('playPause', async () => {
     if (shuttingDown) return { ok: false, error: 'The application is closing.' };
     if (playbackTimeline.snapshot().seeking) return { ok: false, error: 'Wait for the current seek to finish.' };
-    if (state.playback?.status === 'playing') return executeHostCommand({ type: 'pause' }, true);
+    if (playbackIntent?.status === 'playing') {
+      if (state.playback?.generationId !== playbackIntent.generationId) return { ok: false, error: 'The active song changed. Review the player and try again.' };
+      return state.playback.status === 'paused' ? { ok: true } : executeHostCommand({ type: 'pause' }, true);
+    }
+    if (state.playback?.status === 'playing') return { ok: true };
     if (!state.playback && !state.stagedRequestId) {
       const staged = await executeHostCommand({ type: 'stage' }, true);
       if (!staged.ok) return staged;
     }
     const generation = state.playback?.generationId ?? null;
     const stagedId = state.stagedRequestId;
-    const policyError = startPolicyError(state, { type: generation ? 'resume' : 'start' }, stagedId);
+    const policyError = startPolicyError(state, { type: generation ? 'resume' : 'start' }, stagedId, settings);
     if (policyError) return { ok: false, error: policyError };
     await ensureSingerDisplayReady();
     if (generation ? state.playback?.generationId !== generation || state.playback.status !== 'paused' : !!state.playback || state.stagedRequestId !== stagedId)
       return { ok: false, error: 'The selected track changed while opening the player. Review the queue and press Play again.' };
-    return executeHostCommand(generation ? { type: 'resume' } : { type: 'start', generationId: randomUUID() }, true);
+    return executeHostCommand(generation ? { type: 'resume' } : { type: 'start', generationId: randomUUID() }, true, recoveryIntent);
   });
 }
 function restartCurrentTrack(): Promise<TransportResult> {
+  const recoveryIntent = outputRecovery ? { ...outputRecovery } : null;
   return hostTransport.run('restart', async () => {
     if (shuttingDown || playbackTransition || !displayReady || !display || display.isDestroyed()) return { ok: false, error: 'The singer player is not ready. Open it and resume the song before restarting.' };
     const generation = state.playback?.generationId;
@@ -524,7 +596,7 @@ function restartCurrentTrack(): Promise<TransportResult> {
     const result = await playbackTimeline.seek({ generation, position: 0 });
     if (!result.ok) return result;
     if (state.playback?.generationId !== generation) return { ok: false, error: 'The active song changed. Review the player before restarting.' };
-    return state.playback.status === 'paused' ? executeHostCommand({ type: 'resume' }, true) : { ok: true };
+    return state.playback.status === 'paused' ? executeHostCommand({ type: 'resume' }, true, recoveryIntent) : { ok: true };
   });
 }
 function isRecord(x: unknown): x is Record<string, unknown> { return !!x && typeof x === 'object' && !Array.isArray(x); }
@@ -568,10 +640,11 @@ function playable(command: Command): string | null {
   if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
 }
-async function executeHostCommand(command: Command, transportOwned = false): Promise<{ ok: boolean; error?: string }> {
+async function executeHostCommand(command: Command, transportOwned = false, observedRecovery?: { generation: string; revision: number } | null): Promise<{ ok: boolean; error?: string }> {
+  const recoveryAtIntent = observedRecovery === undefined ? command.type === 'resume' && outputRecovery ? { ...outputRecovery } : null : observedRecovery;
   if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'pause', 'stop', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
     return { ok: false, error: 'Wait for the current playback transition to finish.' };
-  const initialPolicyError = startPolicyError(state, command);
+  const initialPolicyError = startPolicyError(state, command, undefined, settings);
   if (initialPolicyError) return { ok: false, error: initialPolicyError };
   if (command.type === 'start' || command.type === 'resume') {
     const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
@@ -607,17 +680,22 @@ async function executeHostCommand(command: Command, transportOwned = false): Pro
       } catch { return { ok: false, error: 'The song file could not be verified. Check its location or relink the original file.' }; }
       finally { mediaChecks.delete(check); }
       if (shuttingDown || !await mediaIdentityMatches(media.path, sourceIdentity)) return { ok: false, error: 'The song file changed during verification. Check or relink the original file.' };
-      const policyBeforeBumper = startPolicyError(state, command, requestId);
+      const policyBeforeBumper = startPolicyError(state, command, requestId, settings);
       if (policyBeforeBumper) return { ok: false, error: policyBeforeBumper };
       await bumper?.karaokeStarting();
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
       const stillMatches = await mediaIdentityMatches(media.path, sourceIdentity);
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
-      const reason = startPolicyError(state, command, requestId) || playable(command);
+      const reason = startPolicyError(state, command, requestId, settings) || playable(command);
       const currentMedia = versionId && store.media(versionId);
       if (reason || !currentMedia || currentMedia.path !== media.path || currentMedia.fingerprint !== media.fingerprint || !stillMatches) {
         if (!state.playback) bumper?.karaokeEnded();
         return { ok: false, error: reason || 'The song file changed during verification. Check or relink the original file.' };
+      }
+      if (command.type === 'resume' && outputRecovery) {
+        if (!recoveryAtIntent || recoveryAtIntent.generation !== outputRecovery.generation || recoveryAtIntent.revision !== outputRecovery.revision)
+          return { ok: false, error: 'The audio output changed while checking the song. Check the output and press Play again.' };
+        display?.webContents.send('display:output-recovery', recoveryAtIntent);
       }
       const result = perform(command);
       if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; }
@@ -744,6 +822,13 @@ else {
   sharedCatalog = new SharedCatalogConnection(join(app.getPath('userData'), 'shared-catalog-cache', 'queries.json'));
   logoData = await loadLogo(logoPath);
   store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
+  hostRatings = new HostSongRatings(store, () => {
+    const connection = ratingsConnection(), path = ratingConfigFile();
+    return {
+      lookup: async keys => { const result = await connection.lookup(keys); return path === ratingConfigFile() && connection === activeRatings ? result : { status: 'unavailable' as const }; },
+      vote: async (key, value) => { const result = await connection.vote(key, value); return path === ratingConfigFile() && connection === activeRatings ? result : { status: 'unavailable' as const }; },
+    };
+  });
   state = store.load() ?? createInitialState(randomUUID(), randomUUID());
   // A restarted host is a new authority; an interrupted performance is never resumed automatically.
   state.hostEpoch = randomUUID();
@@ -820,12 +905,35 @@ else {
   ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
   ipcMain.handle('host:backup-cleanup', event => { guardHost(event.sender.id); return showBackup.retryCleanup(); });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
+  singerCapture.start();
+  await reconcileSingerScreen();
+  ipcMain.handle('host:singer-preview', event => { guardHost(event.sender.id); return previewFrame(); });
+  ipcMain.handle('host:singer-screen-status', event => { guardHost(event.sender.id); return singerScreenStatus(); });
+  ipcMain.handle('host:singer-screen-retry', async event => { guardHost(event.sender.id); await reconcileSingerScreen(); return singerScreenStatus(); });
+  ipcMain.handle('host:singer-screen-copy', (event, url: unknown) => { guardHost(event.sender.id); if (typeof url !== 'string' || !singerScreenStatus().urls.includes(url)) throw new Error('Choose a current singer-screen address.'); clipboard.writeText(url); });
+  ipcMain.handle('host:youtube-search', (event, query: unknown) => { guardHost(event.sender.id); if (shuttingDown) return { status: 'unavailable', songs: [] }; return youtubeSearch.search(query); });
+  ipcMain.handle('host:youtube-search-cancel', event => { guardHost(event.sender.id); youtubeSearch.cancel(); });
+  ipcMain.handle('host:youtube-subscriptions-import', async event => {
+    guardHost(event.sender.id); if (!host || shuttingDown) return null;
+    const choice = await dialog.showOpenDialog(host, { title: 'Import YouTube subscriptions from Google Takeout', properties: ['openFile'], filters: [{ name: 'Subscriptions CSV or JSON', extensions: ['csv', 'json'] }] });
+    if (choice.canceled || !choice.filePaths[0] || shuttingDown) return null;
+    const info = await lstat(choice.filePaths[0]);
+    if (!info.isFile() || info.size > 2 * 1024 * 1024) throw new Error('Choose a subscriptions CSV or JSON file smaller than 2 MiB.');
+    return parseYouTubeSubscriptions(await readFile(choice.filePaths[0], 'utf8'));
+  });
+  ipcMain.handle('host:youtube-search-request', (event, input: unknown) => {
+    guardHost(event.sender.id);
+    if (!isRecord(input)) return { ok: false, error: 'Choose a current YouTube search result.' };
+    const song = youtubeSearch.lookup(input.searchId, input.videoId);
+    if (!song) return { ok: false, error: 'The YouTube result or channel rules changed. Search again before queueing.' };
+    return commitCatalogRequest({ singerId: input.singerId, requestId: input.requestId, track: { youtubeId: song.videoId, title: song.title, artist: song.artist || '' } });
+  });
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); refreshAvailabilityDeadline(); return state; });
   ipcMain.handle('host:youtube-download-status', event => { guardHost(event.sender.id); return downloadStatus(); });
   ipcMain.handle('host:youtube-download', async (event, versionId: unknown) => {
     guardHost(event.sender.id);
     if (typeof versionId !== 'string') throw new Error('Choose a YouTube song.');
-    if (!state.versions.some(version=>version.id===versionId && version.source?.provider==='youtube') || !isVersionAllowed(state,versionId)) throw new Error('This video is unavailable.');
+    if (!state.versions.some(version=>version.id===versionId && version.source?.provider==='youtube') || !isVersionAllowed(state, versionId, settings)) throw new Error('This video is unavailable.');
     if (shuttingDown) throw new Error('The application is closing.');
     if (queuedDownloads.snapshot().activeVersionId === versionId) return youtubeDownloads?.snapshot() ?? null;
     const version = state.versions.find(item => item.id === versionId)!;
@@ -836,7 +944,7 @@ else {
       let checked: Awaited<ReturnType<typeof inspectCachedVideo>>;
       try { checked = await inspectCachedVideo(original, check.signal); } finally { mediaChecks.delete(check); }
       const current = state.versions.find(item => item.id === versionId);
-      if (shuttingDown || current?.source?.videoId !== version.source?.videoId || !isVersionAllowed(state, versionId) ||
+      if (shuttingDown || current?.source?.videoId !== version.source?.videoId || !isVersionAllowed(state, versionId, settings) ||
           !sameStoredMedia(original, store.media(versionId)) || !cachedVideoIdentityMatches(original.path, checked.identity))
         throw new Error('The song or saved video changed while checking it. Review the selection and retry.');
       if (checked.valid) return null;
@@ -872,14 +980,14 @@ else {
   ipcMain.handle('host:history-export-cleanup', event => { guardHost(event.sender.id); return historyExport.retryCleanup(); });
   ipcMain.handle('host:reveal-media', (event, versionId: unknown) => {
     guardHost(event.sender.id);
-    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId)) throw new Error('Song unavailable.');
+    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId, settings)) throw new Error('Song unavailable.');
     const media = store.media(versionId);
     if (!media || !existsSync(media.path)) throw new Error('The source file is unavailable.');
     shell.showItemInFolder(media.path);
   });
   ipcMain.handle('host:relink-media', async (event, versionId: unknown) => {
     guardHost(event.sender.id);
-    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId)) throw new Error('Song unavailable.');
+    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId, settings)) throw new Error('Song unavailable.');
     if (!host || host.isDestroyed() || relinking || playbackTransition) throw new Error('Finish the current playback or file operation first.');
     const activeVersion = () => state.requests.find(item => item.id === state.playback?.requestId)?.versionId;
     if (activeVersion() === versionId) throw new Error('Stop the active performance before relinking this song.');
@@ -894,7 +1002,7 @@ else {
       const check = new AbortController(); mediaChecks.add(check);
       try {
         await verifyAndRelinkMedia(path, original.fingerprint, check.signal,
-          () => !shuttingDown && !playbackTransition && activeVersion() !== versionId && isVersionAllowed(state, versionId),
+          () => !shuttingDown && !playbackTransition && activeVersion() !== versionId && isVersionAllowed(state, versionId, settings),
           () => store.relinkMedia(original, path));
       }
       finally { mediaChecks.delete(check); }
@@ -952,6 +1060,41 @@ else {
     return { ok: true };
   });
   ipcMain.handle('host:app-version', event => { guardHost(event.sender.id); return app.getVersion(); });
+  ipcMain.handle('host:khost-status', event => { guardHost(event.sender.id); return khostBridge.status(); });
+  ipcMain.handle('host:khost-search', (event, query: unknown) => { guardHost(event.sender.id); return shuttingDown ? { status: 'unavailable' } : khostBridge.search(query); });
+  ipcMain.handle('host:khost-search-cancel', event => { guardHost(event.sender.id); khostBridge.cancelSearch(); });
+  ipcMain.handle('host:khost-handoff', (event, value: unknown) => { guardHost(event.sender.id); return shuttingDown ? { status: 'unavailable' } : khostBridge.handoff(value); });
+  ipcMain.handle('host:khost-handoff-status', (event, value: unknown) => { guardHost(event.sender.id); return khostBridge.handoffStatus(value); });
+  ipcMain.handle('host:khost-handoff-acknowledge', async (event, value: unknown) => {
+    guardHost(event.sender.id);
+    if (!khostBridge.acknowledgeHandoff(value)) throw new Error('Wait for the handoff request to return before clearing its warning.');
+    return khostBridge.status();
+  });
+  ipcMain.handle('host:khost-choose-profile', async event => {
+    guardHost(event.sender.id);
+    if (!host || shuttingDown || choosingKHostProfile) return khostBridge.status();
+    choosingKHostProfile = true;
+    try {
+      const chosen = await dialog.showOpenDialog(host, { title: 'Choose Private TPV KHost Bridge Connection',
+        properties: ['openFile'], filters: [{ name: 'Private Bridge JSON', extensions: ['json'] }] });
+      if (!chosen.canceled && chosen.filePaths[0] && !shuttingDown) {
+        await readKHostBridgeProfile(chosen.filePaths[0]);
+        await settingsUpdates.run(() => {
+          settings = writeSettings(settingsPath, { ...settings, khostBridgeConfigFile: chosen.filePaths[0] });
+          khostBridge.invalidate(); settingsCreated = false; publishSettings();
+        });
+      }
+      return khostBridge.status();
+    } finally { choosingKHostProfile = false; }
+  });
+  ipcMain.handle('host:khost-clear-profile', async event => {
+    guardHost(event.sender.id);
+    await settingsUpdates.run(() => {
+      settings = writeSettings(settingsPath, { ...settings, khostBridgeConfigFile: '' });
+      khostBridge.invalidate(); settingsCreated = false; publishSettings();
+    });
+    return khostBridge.status();
+  });
   ipcMain.handle('host:provider-catalog-status', event => { guardHost(event.sender.id); return providerCatalog.status(); });
   ipcMain.handle('host:provider-catalog-search', (event, query: unknown) => { guardHost(event.sender.id); return providerCatalog.search(query); });
   ipcMain.handle('host:provider-catalog-open', async (event, input: unknown) => {
@@ -1010,18 +1153,8 @@ else {
     }
     return keys;
   });
-  ipcMain.handle('host:rating-lookup', async (event, keys: unknown) => {
-    guardHost(event.sender.id);
-    const connection = ratingsConnection(), path = ratingConfigFile();
-    const result = await connection.lookup(keys);
-    return path === ratingConfigFile() && connection === activeRatings ? result : { status: 'unavailable' };
-  });
-  ipcMain.handle('host:rating-vote', async (event, key: unknown, value: unknown) => {
-    guardHost(event.sender.id);
-    const connection = ratingsConnection(), path = ratingConfigFile();
-    const result = await connection.vote(key, value);
-    return path === ratingConfigFile() && connection === activeRatings ? result : { status: 'unavailable' };
-  });
+  ipcMain.handle('host:rating-lookup', (event, keys: unknown) => { guardHost(event.sender.id); return hostRatings.lookup(keys); });
+  ipcMain.handle('host:rating-vote', (event, key: unknown, value: unknown) => { guardHost(event.sender.id); return hostRatings.vote(key, value); });
   ipcMain.handle('host:rating-choose-profile', async event => {
     guardHost(event.sender.id); if (!host || shuttingDown) return null;
     const selected = await dialog.showOpenDialog(host, { title: 'Choose Private Rating Profile', properties: ['openFile'], filters: [{ name: 'Rating Profile JSON', extensions: ['json'] }] });
@@ -1048,35 +1181,26 @@ else {
     if (settings.sharedCatalogEnabled && existsSync(config) && sharedCatalog) {
       const result = await sharedCatalog.search(config, query);
       if (shuttingDown || !settings.sharedCatalogEnabled || config !== catalogConfigFile()) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
-      return result;
+      return filteredCatalogResult(result);
     }
     if (settings.sharedCatalogEnabled && sharedCatalog && !settings.sharedCatalogConfigFile) {
       const result = await sharedCatalog.publicSearch(query);
       if (shuttingDown || !settings.sharedCatalogEnabled || settings.sharedCatalogConfigFile || existsSync(catalogConfigFile())) return { status: 'unavailable', tracks: [], limited: false, lastSuccess: null };
-      return result;
+      return filteredCatalogResult(result);
     }
     if (!communityBrowser) throw new Error('Catalog unavailable.');
-    return communityBrowser.search(query);
+    const local = communityBrowser.search(query); return filteredCatalogResult(local);
   });
-  ipcMain.handle('host:request-catalog-track', (event, input: unknown) => {
-    guardHost(event.sender.id);
-    if(shuttingDown)return {ok:false,error:'The application is closing.'};
-    const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now());
-    if(!planned.result.ok)return planned.result;
-    store.save(planned.state);state=planned.state;
-    let notice:string|undefined;
-    try{syncQueuedDownloads();}catch{notice='Queued successfully. Use Download Video / Retry if its download does not appear.';}
-    try{broadcast();}catch{/* A committed request remains successful even if a view closes. */}
-    return {...planned.result,...(notice?{notice}:{})};
-  });
+  ipcMain.handle('host:request-catalog-track', (event, input: unknown) => { guardHost(event.sender.id); return commitCatalogRequest(input); });
   ipcMain.handle('host:add-youtube', async (event, input: unknown) => {
     guardHost(event.sender.id);
     if (shuttingDown || !isRecord(input) || !shortString(input.title) || typeof input.artist !== 'string' || input.artist.length > 500) return { ok: false, error: 'Enter a song title and optional artist.' };
+    if (compileSongBlacklist(settings).isBlocked({ title: input.title, artist: input.artist })) return { ok: false, error: 'This song or artist is blacklisted in Preferences.' };
     const videoId = youtubeIdentity(input.url);
     if (!videoId) return { ok: false, error: 'Enter a valid YouTube video link or ID.' };
     const existing = state.versions.find(version => version.source?.provider === 'youtube' && version.source.videoId === videoId);
     const brandSlug = typeof input.brandSlug === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(input.brandSlug) ? input.brandSlug : undefined;
-    if (existing) return isVersionAllowed(state,existing.id) ? {ok:true,versionId:existing.id,notice:'Already in your library. Video downloads when queued.'} : {ok:false,error:'This recording is unavailable under the current show policy.'};
+    if (existing) return isVersionAllowed(state, existing.id, settings) ? {ok:true,versionId:existing.id,notice:'Already in your library. Video downloads when queued.'} : {ok:false,error:'This recording is unavailable under the current show policy.'};
     const id = randomUUID();
     const result = perform({ type: 'addVersion', version: { id, title: input.title.trim(), artist: input.artist.trim(), rating: 'unrated', source: { provider: 'youtube', videoId, ...(brandSlug ? {brandSlug} : {}) } } });
     if (!result.ok) return { ok: false, error: result.message };
@@ -1117,13 +1241,18 @@ else {
       try {
         if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
         const ratingProfileChanged = settings.ratingProfileConfigFile !== proposed.ratingProfileConfigFile;
+        const khostSettingsChanged = (['khostBridgeConfigFile', 'songBlacklist', 'artistBlacklist'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
+        const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         settings = writeSettings(settingsPath, proposed);
+        if (khostSettingsChanged) khostBridge.invalidate();
         if (ratingProfileChanged) { activeRatings = null; activeRatingPath = ''; }
         if(disablingAutomaticBumper && bumper?.getState().status !== 'stopped') await bumper?.stop();
         settingsCreated = false;
         publishSettings();
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
-        publishDisplay();
+        broadcast();
+        if (youtubeSettingsChanged) youtubeSearch.cancel();
+        await reconcileSingerScreen();
         await reconcileLocalControl();
         return settings;
       } finally { if (changingOutput) { playbackTransition = false; publishBumper(); } }
@@ -1275,6 +1404,8 @@ else {
     if (!playbackTimeline.snapshot().seeking && typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);
     if (value.type === 'ended' && state.playback.status === 'playing') perform({ type: 'complete', generationId: state.playback.generationId }, 'engine');
     else if (value.type === 'output-error') {
+      if (typeof value.revision === 'number' && Number.isSafeInteger(value.revision) && value.revision > 0) outputRecovery = { generation: state.playback.generationId, revision: value.revision };
+      singerCapture.invalidate();
       pauseForOutputLoss();
       if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Audio output needs attention', detail: typeof value.message === 'string' ? value.message.slice(0, 500) : 'Choose the output in Preferences and resume when ready.' });
     } else if (value.type === 'error') {
@@ -1312,6 +1443,9 @@ function waitForImport(job: ImportJob): Promise<boolean> {
 app.on('before-quit', event => {
   automaticBumper.close();
   shuttingDown = true; for (const check of mediaChecks) check.abort();
+  youtubeSearch.cancel(); singerCapture.stop();
+  const singerScreenWasActive = singerScreenServer.status().state !== 'stopped';
+  const singerScreenShutdown = singerScreenServer.stop().then(() => true, () => false);
   const pendingImport = importJob?.snapshot();
   const importing = !!pendingImport && ['scanning', 'hashing', 'cancelling'].includes(pendingImport.phase);
   if (importing) importJob?.cancel(pendingImport!.jobId);
@@ -1324,7 +1458,7 @@ app.on('before-quit', event => {
   const downloading = !!youtubeDownloads?.active() || preparingDownload || !!queuedDownloads.snapshot().activeVersionId;
   const controlShutdown = localControl?.stop().then(() => true, () => false) ?? Promise.resolve(true);
   const downloadShutdown = Promise.race([Promise.all([queuedDownloads.shutdown(),youtubeDownloads?.shutdown()]).then(() => true, () => false), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  const wait = !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
+  const wait = singerScreenWasActive || !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
   const internetShutdown=internetQueue?.shutdown() ?? Promise.resolve(true);
   const backupShutdown = showBackup.shutdown();
@@ -1337,8 +1471,8 @@ app.on('before-quit', event => {
   const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedControl = Promise.race([controlShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean,controlClean]) => {
-    if (!controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean) {
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl,singerScreenShutdown]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean,controlClean,singerScreenClean]) => {
+    if (!singerScreenClean || !controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;

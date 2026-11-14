@@ -25,7 +25,30 @@ contextBridge.exposeInMainWorld('tpv', {
   },
   chooseSharedCatalogConfiguration: () => ipcRenderer.invoke('host:choose-catalog-config'),
   getSharedCatalogStatus: (file?: string) => ipcRenderer.invoke('host:catalog-status', file),
+  singerScreens: {
+    preview: () => ipcRenderer.invoke('host:singer-preview'),
+    onPreview: (callback: (value: unknown) => void) => { const listener = (_event: unknown, value: unknown) => callback(value); ipcRenderer.on('host:singer-preview', listener); return () => ipcRenderer.removeListener('host:singer-preview', listener); },
+    status: () => ipcRenderer.invoke('host:singer-screen-status'),
+    retry: () => ipcRenderer.invoke('host:singer-screen-retry'),
+    copyUrl: (url: string) => ipcRenderer.invoke('host:singer-screen-copy', url),
+  },
+  youtubeSearch: {
+    search: (query: string) => ipcRenderer.invoke('host:youtube-search', query),
+    cancel: () => ipcRenderer.invoke('host:youtube-search-cancel'),
+    request: (value: unknown) => ipcRenderer.invoke('host:youtube-search-request', value),
+    importSubscriptions: () => ipcRenderer.invoke('host:youtube-subscriptions-import'),
+  },
   getState: () => ipcRenderer.invoke('host:get-state'),
+  khostBridge: {
+    status: () => ipcRenderer.invoke('host:khost-status'),
+    chooseProfile: () => ipcRenderer.invoke('host:khost-choose-profile'),
+    clearProfile: () => ipcRenderer.invoke('host:khost-clear-profile'),
+    search: (query: string) => ipcRenderer.invoke('host:khost-search', query),
+    cancelSearch: () => ipcRenderer.invoke('host:khost-search-cancel'),
+    handoff: (value: unknown) => ipcRenderer.invoke('host:khost-handoff', value),
+    handoffStatus: (requestId: string) => ipcRenderer.invoke('host:khost-handoff-status', requestId),
+    acknowledgeHandoff: (requestId: string) => ipcRenderer.invoke('host:khost-handoff-acknowledge', requestId),
+  },
   getTimeline: () => ipcRenderer.invoke('host:get-timeline'),
   seek: (input: unknown) => ipcRenderer.invoke('host:seek', input),
   onTimeline: (callback: (value: unknown) => void) => {
@@ -156,6 +179,11 @@ contextBridge.exposeInMainWorld('tpv', {
 
 contextBridge.exposeInMainWorld('tpvDisplay', {
   ready: () => ipcRenderer.send('display:ready'),
+  onOutputRecovery: (callback: (value: unknown) => void) => {
+    const listener = (_event: unknown, value: unknown) => callback(value);
+    ipcRenderer.on('display:output-recovery', listener);
+    return () => ipcRenderer.removeListener('display:output-recovery', listener);
+  },
   onSeek: (callback: (value: unknown) => void) => {
     const listener = (_event: unknown, value: unknown) => callback(value);
     ipcRenderer.on('display:seek', listener);
