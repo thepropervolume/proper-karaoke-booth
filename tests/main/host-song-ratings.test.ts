@@ -149,3 +149,15 @@ test('new local votes participate in normal show snapshots and survive reopen wi
     finally { restored.close(); }
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('an empty legacy ratings table with text score affinity cannot be adopted as a numeric schema', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateShowSchema(db);
+    db.exec(`INSERT INTO show_state VALUES (1, '{}'); DROP TABLE local_song_ratings; PRAGMA user_version = 2;
+      CREATE TABLE local_song_ratings (fingerprint TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);`);
+    assert.throws(() => migrateShowSchema(db), /column types are incompatible/);
+    assert.equal((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 2);
+    assert.equal((db.prepare('SELECT type FROM pragma_table_info(\'local_song_ratings\') WHERE name = \'value\'').get() as { type: string }).type, 'TEXT');
+  } finally { db.close(); }
+});
