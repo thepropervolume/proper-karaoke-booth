@@ -7,6 +7,7 @@ import { Collections } from './collections';
 import { RemoteQueue } from './remote-queue';
 import { migrateShowSchema } from './schema-migrations';
 import { createShowSnapshot } from './show-snapshots';
+import { isLocalRecordingKey, validHeartVote, parseRecordingKeys, type LocalRecordingKey, type SongRating } from '../domain/song-rating';
 
 /** The private path never leaves the main process. */
 export interface StoredMedia {
@@ -124,6 +125,32 @@ export class Store<T> {
 
   byFingerprint(fingerprint: string): StoredMedia | undefined {
     return this.db.prepare('SELECT id, path, fingerprint FROM media WHERE fingerprint = ? LIMIT 1').get(fingerprint) as StoredMedia | undefined;
+  }
+
+  /** Content-identical local files share one host-only vote, independent of filenames or metadata. */
+  localSongRatings(keys: LocalRecordingKey[]): SongRating[] {
+    parseRecordingKeys(keys);
+    if (keys.some(key => !isLocalRecordingKey(key))) throw new Error('Choose local library recordings for local ratings.');
+    const read = this.db.prepare(`SELECT rating.value AS value FROM media
+      LEFT JOIN local_song_ratings rating ON rating.fingerprint = media.fingerprint WHERE media.fingerprint = ? LIMIT 1`);
+    return keys.map(recordingKey => {
+      const row = read.get(recordingKey.slice(7)) as { value: number | null } | undefined;
+      if (!row) throw new Error('Local rating recording is unavailable.');
+      return { recordingKey, average: row.value, count: row.value === null ? 0 : 1, ownVote: row.value };
+    });
+  }
+
+  /** Uses the sole show connection, so normal show backups retain local-only votes. */
+  rateLocalSong(recordingKey: LocalRecordingKey, value: number | null): SongRating {
+    this.assertAuthority();
+    if (!isLocalRecordingKey(recordingKey) || !validHeartVote(value)) throw new Error('Choose a local recording and 1–10 hearts, or clear its rating.');
+    // Refuse unknown hashes rather than creating arbitrary host-side records.
+    this.localSongRatings([recordingKey]);
+    const fingerprint = recordingKey.slice(7);
+    if (value === null) this.db.prepare('DELETE FROM local_song_ratings WHERE fingerprint = ?').run(fingerprint);
+    else this.db.prepare(`INSERT INTO local_song_ratings (fingerprint, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(fingerprint) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(fingerprint, value, new Date().toISOString());
+    return this.localSongRatings([recordingKey])[0];
   }
 
   /** Replace only the path of the exact media row the host verified. Never writes the source file. */

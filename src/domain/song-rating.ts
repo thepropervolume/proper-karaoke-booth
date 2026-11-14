@@ -1,11 +1,22 @@
 import { validStreamingSource } from './streaming-source';
 
 export type RecordingKey = `youtube:${string}` | `sha256:${string}`;
+export type LocalRecordingKey = `sha256:${string}`;
+export type RatingStorage = 'local' | 'global';
 export type SongRating = { recordingKey: RecordingKey; average: number | null; count: number; ownVote: number | null };
 export const MAX_RATING_KEYS = 100;
 
 export function isRecordingKey(value: unknown): value is RecordingKey {
   return typeof value === 'string' && /^(?:youtube:[A-Za-z0-9_-]{11}|sha256:[a-f0-9]{64})$/.test(value);
+}
+
+/** Unidentified local files stay on the host, even when they have a content hash. */
+export function isLocalRecordingKey(value: unknown): value is LocalRecordingKey {
+  return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value);
+}
+
+export function ratingStorageFor(key: RecordingKey): RatingStorage {
+  return isLocalRecordingKey(key) ? 'local' : 'global';
 }
 
 /** Ratings describe an exact recording, never an artist/title approximation. */
