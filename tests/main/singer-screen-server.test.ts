@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request, type IncomingMessage, type RequestOptions } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
+import { runInNewContext } from 'node:vm';
 import { SingerScreenFrameHub, SingerScreenServer, isLanSingerScreenPeer } from '../../src/main/singer-screen-server';
 
 const jpeg = (label: string) => Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from(label), Buffer.from([0xff, 0xd9])]);
@@ -29,16 +30,22 @@ async function read(port: number, path: string, options: RequestOptions = {}) {
 async function openStream(port: number) {
   return new Promise<{ response: IncomingMessage; frames: Buffer[]; close: () => void }>((resolve, reject) => {
     const req = request({ hostname: '127.0.0.1', port, path: '/stream' }, response => {
-      const frames: Buffer[] = []; let buffered = Buffer.alloc(0);
+      const frames: Buffer[] = []; let buffered = Buffer.alloc(0), started = false;
+      const boundary = Buffer.from('--tpv-singer-frame\r\n'), nextPart = Buffer.from('\r\n--tpv-singer-frame\r\n');
       response.on('error', () => {});
       response.on('data', chunk => {
         buffered = Buffer.concat([buffered, chunk]);
         for (;;) {
+          if (!started) {
+            if (buffered.length < boundary.length) return;
+            assert.ok(buffered.subarray(0, boundary.length).equals(boundary)); buffered = buffered.subarray(boundary.length); started = true;
+          }
           const index = buffered.indexOf('\r\n\r\n'); if (index < 0) return;
-          const length = Number(/Content-Length: (\d+)/.exec(buffered.subarray(0, index).toString())?.[1]);
-          assert.ok(length > 0 && length <= 2 * 1024 * 1024);
-          const end = index + 4 + length; if (buffered.length < end + 2) return;
-          frames.push(Buffer.from(buffered.subarray(index + 4, end))); buffered = buffered.subarray(end + 2);
+          assert.match(buffered.subarray(0, index).toString(), /Content-Type: image\/jpeg/);
+          const end = buffered.indexOf(nextPart, index + 4);
+          if (end < 0) { assert.ok(buffered.length <= 2 * 1024 * 1024 + 1024); return; }
+          const length = end - index - 4; assert.ok(length > 0 && length <= 2 * 1024 * 1024);
+          frames.push(Buffer.from(buffered.subarray(index + 4, end))); buffered = buffered.subarray(end + nextPart.length);
         }
       });
       resolve({ response, frames, close: () => { response.destroy(); req.destroy(); } });
@@ -74,7 +81,9 @@ test('visual page fits its viewport, serves only its static assets and exposes n
   assert.match(String(page.response.headers['content-security-policy']), /default-src 'none'/);
   const css = await read(port, '/screen.css'); assert.match(css.body, /height:100dvh/); assert.match(css.body, /object-fit:contain/);
   const js = await read(port, '/screen.js'); assert.match(js.body, /frameAvailable/); assert.doesNotMatch(js.body, /localStorage|cookie|tpv-media/);
-  assert.deepEqual(JSON.parse((await read(port, '/status')).body), { frameAvailable: false, viewers: 0 });
+  const status = JSON.parse((await read(port, '/status')).body);
+  assert.deepEqual(Object.keys(status).sort(), ['frameAvailable', 'streamId', 'viewers']);
+  assert.equal(status.frameAvailable, false); assert.equal(status.viewers, 0); assert.match(status.streamId, /^[a-f0-9-]{36}$/);
   for (const route of ['/host', '/api', '/show.sqlite', '/settings.json', '/control-api.json', '/tpv-media']) assert.equal((await read(port, route)).response.statusCode, 404);
   assert.equal((await read(port, '/', { method: 'HEAD' })).body, '');
   assert.equal(server.status().urls[0], `http://127.0.0.1:${port}`);
@@ -106,6 +115,24 @@ test('multiple browser streams receive the same frames and clear replaces old ly
     try { await until(() => replacement.frames.length === 1); assert.deepEqual(replacement.frames[0], idle); }
     finally { replacement.close(); }
   } finally { a.close(); b.close(); }
+}));
+
+test('the first idle JPEG has the next complete MIME header without waiting for a second capture', async () => fixture(async (hub, _server, port) => {
+  const image = jpeg('one-deduplicated-idle-frame'); hub.publish({ jpeg: image, width: 640, height: 360 });
+  const received: Buffer[] = [];
+  const requestHandle = request({ hostname: '127.0.0.1', port, path: '/stream' });
+  let response: IncomingMessage | undefined;
+  requestHandle.on('response', value => { response = value; value.on('data', chunk => received.push(chunk)); value.on('error', () => {}); });
+  requestHandle.on('error', () => {}); requestHandle.end();
+  try {
+    const boundary = Buffer.from('--tpv-singer-frame\r\nContent-Type: image/jpeg\r\n\r\n');
+    await until(() => Buffer.concat(received).subarray(-boundary.length).equals(boundary), 'First JPEG was not followed by the next complete MIME header.');
+    const bytes = Buffer.concat(received);
+    assert.ok(bytes.subarray(0, boundary.length).equals(boundary));
+    assert.equal(bytes.indexOf(image), bytes.indexOf('\r\n\r\n') + 4);
+    assert.equal(bytes.indexOf(image) + image.length + 2 + boundary.length, bytes.length);
+    assert.equal(hub.current?.sequence, 1, 'The browser receives complete framing without publishing a fake new frame.');
+  } finally { response?.destroy(); requestHandle.destroy(); }
 }));
 
 test('viewer limit is explicit and a disconnected browser releases its place', async () => fixture(async (_hub, server, port) => {
@@ -143,6 +170,44 @@ test('rapid start/stop and reconfiguration serialize listener ownership and rele
     await new Promise<void>(resolve => probe.close(() => resolve()));
   } finally { await server.stop(); }
 });
+
+test('a restarted listener changes its public stream generation while repeated start on the same listener does not', async () => {
+  const server = new SingerScreenServer(new SingerScreenFrameHub());
+  try {
+    const first = await server.start({ bind: '127.0.0.1', port: 0 }), port = first.port!;
+    const id = JSON.parse((await read(port, '/status', { agent: false })).body).streamId;
+    await server.start({ bind: '127.0.0.1', port });
+    assert.equal(JSON.parse((await read(port, '/status', { agent: false })).body).streamId, id);
+    await server.stop(); await server.start({ bind: '127.0.0.1', port });
+    assert.notEqual(JSON.parse((await read(port, '/status', { agent: false })).body).streamId, id);
+  } finally { await server.stop(); }
+});
+
+test('the browser waits for a slow first image and reconnects when a listener restarts without resetting a pending image download', async () => fixture(async (_hub, _server, port) => {
+  const source = (await read(port, '/screen.js')).body;
+  let streamId = 'first-listener', nextId = 0;
+  const listeners = new Map<string, () => void>(), timers = new Map<number, { callback: () => void; delay: number }>();
+  const image = { naturalWidth: 0, complete: false, src: '/stream', addEventListener: (name: string, callback: () => void) => listeners.set(name, callback) };
+  const waiting = { hidden: false }, message = { textContent: '' };
+  const fire = (milliseconds: number) => {
+    const found = [...timers].find(([, timer]) => timer.delay === milliseconds); assert.ok(found, `Missing ${milliseconds}ms timer.`);
+    timers.delete(found[0]); found[1].callback();
+  };
+  runInNewContext(source, { document: { getElementById: (id: string) => id === 'screen' ? image : id === 'waiting' ? waiting : message },
+    fetch: async () => ({ ok: true, json: async () => ({ frameAvailable: true, viewers: 1, streamId }) }), AbortController, Date,
+    setTimeout: (callback: () => void, milliseconds: number) => { const id = ++nextId; timers.set(id, { callback, delay: milliseconds }); return id; },
+    clearTimeout: (id: number) => timers.delete(id) });
+  await delay(0);
+  assert.ok(![...timers.values()].some(timer => timer.delay === 1500), 'An initial image still downloading must not be restarted.');
+  assert.equal(image.src, '/stream');
+  image.naturalWidth = 640; image.complete = true; listeners.get('load')!(); streamId = 'restarted-listener';
+  fire(1000); await delay(0); assert.equal(waiting.hidden, false); fire(1500);
+  assert.match(image.src, /^\/stream\?retry=/);
+  image.naturalWidth = 0; image.complete = false; fire(1000); await delay(0);
+  assert.ok(![...timers.values()].some(timer => timer.delay === 1500), 'The replacement image must be allowed to finish downloading.');
+  image.naturalWidth = 640; image.complete = true; listeners.get('load')!(); fire(1000); await delay(0);
+  assert.equal(waiting.hidden, true);
+}));
 
 test('port conflicts fail with an actionable error and a later start can recover', async () => fixture(async (_hub, _server, port) => {
   const other = new SingerScreenServer(new SingerScreenFrameHub());

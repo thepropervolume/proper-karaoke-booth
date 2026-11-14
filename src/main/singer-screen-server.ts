@@ -2,6 +2,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
 import { isIP, type Socket } from 'node:net';
+import { randomUUID } from 'node:crypto';
 
 export type SingerScreenFrame = Readonly<{ jpeg: Buffer; width: number; height: number; sequence: number }>;
 type FrameListener = (frame: SingerScreenFrame | null) => void;
@@ -39,15 +40,17 @@ export type SingerScreenServerStatus = {
   error?: 'port-in-use' | 'listen-failed';
 };
 export type SingerScreenStartOptions = { port?: number; bind?: string };
-type Client = { response: ServerResponse; blocked: boolean; pendingFrame: boolean; timer: ReturnType<typeof setTimeout> | null };
+type Client = { response: ServerResponse; started: boolean; blocked: boolean; pendingFrame: boolean; timer: ReturnType<typeof setTimeout> | null };
 const BOUNDARY = 'tpv-singer-frame';
+const PART_HEADER = Buffer.from(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\n\r\n`);
 // A generated, opaque black 1x1 JPEG replaces old lyrics immediately on clear.
 const IDLE_JPEG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDxmiiigD//2Q==', 'base64');
 const HTML = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The Proper Volume — Singer Display</title><link rel="stylesheet" href="/screen.css"><script src="/screen.js" defer></script></head><body><img id="screen" src="/stream" alt="Live singer display"><div id="waiting" role="status"><h1>The Proper Volume Karaoke</h1><p id="message">Waiting for the singer display</p><small>Visual display only. Audio plays on the host.</small></div></body></html>';
 const CSS = 'html,body{margin:0;width:100%;height:100%;max-height:100vh;overflow:hidden;background:#000;color:#fff;font:20px system-ui,sans-serif}body{height:100dvh}#screen{display:block;width:100%;height:100%;max-height:100vh;object-fit:contain}#waiting{position:fixed;inset:0;display:grid;align-content:center;text-align:center;padding:1rem;background:#090e18}#waiting[hidden]{display:none}h1{font-size:clamp(1.2rem,4vw,2.5rem)}small{color:#b5becb}';
-const SCRIPT = `(() => {const screen=document.getElementById('screen'),waiting=document.getElementById('waiting'),message=document.getElementById('message');let retry;
-screen.addEventListener('error',()=>{waiting.hidden=false;message.textContent='Connection lost. Reconnecting…';clearTimeout(retry);retry=setTimeout(()=>{screen.src='/stream?retry='+Date.now();},1500);});
-async function status(){try{const response=await fetch('/status',{cache:'no-store',credentials:'omit'});if(!response.ok)throw Error();const result=await response.json();waiting.hidden=result.frameAvailable===true;message.textContent='Waiting for the singer display';}catch{waiting.hidden=false;message.textContent='Connection lost. Reconnecting…';}setTimeout(status,1000);}void status();})();`;
+const SCRIPT = `(() => {const screen=document.getElementById('screen'),waiting=document.getElementById('waiting'),message=document.getElementById('message');let retry=null,streamId=null,healthy=screen.naturalWidth>0,needsReconnect=false;
+function reconnect(){healthy=false;needsReconnect=true;waiting.hidden=false;message.textContent='Connection lost. Reconnecting…';if(retry!==null)return;retry=setTimeout(()=>{retry=null;needsReconnect=false;screen.src='/stream?retry='+Date.now();},1500);}
+screen.addEventListener('error',reconnect);screen.addEventListener('load',()=>{healthy=screen.naturalWidth>0;if(healthy)needsReconnect=false;if(healthy&&retry!==null){clearTimeout(retry);retry=null;}});
+async function status(){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),2500);try{const response=await fetch('/status',{cache:'no-store',credentials:'omit',signal:controller.signal});if(!response.ok)throw Error();const result=await response.json();if(typeof result.streamId!=='string')throw Error();const restarted=streamId!==null&&streamId!==result.streamId;streamId=result.streamId;if(restarted||needsReconnect||screen.complete&&screen.naturalWidth===0)reconnect();waiting.hidden=result.frameAvailable===true&&healthy&&screen.naturalWidth>1;if(healthy)message.textContent='Waiting for the singer display';}catch{reconnect();}finally{clearTimeout(timeout);setTimeout(status,1000);}}void status();})();`;
 const HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate', 'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin',
@@ -80,6 +83,7 @@ export class SingerScreenServer {
   private boundPort: number | null = null;
   private bind: string | null = null;
   private failure: SingerScreenServerStatus['error'];
+  private streamId = '';
   private readonly maxViewers: number;
   private readonly slowClientMs: number;
   constructor(private readonly hub: SingerScreenFrameHub, options: { maxViewers?: number; slowClientMs?: number } = {}) {
@@ -124,6 +128,7 @@ export class SingerScreenServer {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Invalid listener address.');
       this.boundPort = address.port;
+      this.streamId = randomUUID();
       this.unsubscribe = this.hub.subscribe(frame => this.broadcast(frame));
       // Handle errors after successful listen without an unhandled EventEmitter error.
       server.on('error', () => {
@@ -171,13 +176,13 @@ export class SingerScreenServer {
     if (path === '/') { reply(200, 'text/html; charset=utf-8', HTML); return; }
     if (path === '/screen.css') { reply(200, 'text/css; charset=utf-8', CSS); return; }
     if (path === '/screen.js') { reply(200, 'text/javascript; charset=utf-8', SCRIPT); return; }
-    if (path === '/status') { reply(200, 'application/json; charset=utf-8', JSON.stringify({ frameAvailable: this.hub.current !== null, viewers: this.clients.size })); return; }
+    if (path === '/status') { reply(200, 'application/json; charset=utf-8', JSON.stringify({ frameAvailable: this.hub.current !== null, viewers: this.clients.size, streamId: this.streamId })); return; }
     if (path !== '/stream') { reply(404, 'text/plain; charset=utf-8', 'Not found.'); return; }
     if (request.method === 'HEAD') { response.writeHead(200, { ...HEADERS, 'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}` }); response.end(); return; }
     if (this.clients.size >= this.maxViewers) { reply(503, 'text/plain; charset=utf-8', 'Singer display viewer limit reached.'); return; }
     response.writeHead(200, { ...HEADERS, 'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`, Connection: 'keep-alive' });
     response.flushHeaders();
-    const client: Client = { response, blocked: false, pendingFrame: false, timer: null };
+    const client: Client = { response, started: false, blocked: false, pendingFrame: false, timer: null };
     this.clients.add(client);
     response.on('close', () => this.removeClient(client));
     response.on('error', () => this.removeClient(client));
@@ -190,7 +195,11 @@ export class SingerScreenServer {
   }
   private packet(frame: SingerScreenFrame | null): Buffer {
     const jpeg = frame?.jpeg ?? IDLE_JPEG;
-    return Buffer.concat([Buffer.from(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`), jpeg, Buffer.from('\r\n')]);
+    // Chromium finalizes the previous image only after parsing the next part's
+    // complete headers. Supply those immediately, then append its JPEG when a
+    // new capture arrives. MIME boundaries delimit bodies; Content-Length is
+    // optional and cannot be known in advance for the next image.
+    return Buffer.concat([jpeg, Buffer.from('\r\n'), PART_HEADER]);
   }
   private broadcast(frame: SingerScreenFrame | null): void {
     const packet = this.packet(frame);
@@ -202,7 +211,9 @@ export class SingerScreenServer {
   private send(client: Client, packet: Buffer): void {
     if (!this.clients.has(client)) return;
     if (client.blocked) { client.pendingFrame = true; return; }
-    if (!client.response.write(packet)) {
+    const bytes = client.started ? packet : Buffer.concat([PART_HEADER, packet]);
+    client.started = true;
+    if (!client.response.write(bytes)) {
       client.blocked = true;
       client.timer = setTimeout(() => { this.removeClient(client); client.response.destroy(); }, this.slowClientMs);
       client.timer.unref();
