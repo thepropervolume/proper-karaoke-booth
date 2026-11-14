@@ -9,7 +9,7 @@ export type KHostBridgeSong = {
 };
 export type KHostBridgeFailureStatus = 'unavailable' | 'unauthorized' | 'invalid-request' | 'busy'
   | 'expired-result' | 'handoff-unavailable' | 'provider-unavailable' | 'protocol-error'
-  | 'idempotency-conflict' | 'unknown-request' | 'configuration-error' | 'sign-in-required';
+  | 'idempotency-conflict' | 'unknown-request' | 'configuration-error' | 'sign-in-required' | 'not-configured' | 'policy-blocked';
 export type KHostBridgeFailure = { status: KHostBridgeFailureStatus; requestId?: string; mayHaveBeenAccepted?: boolean };
 export type KHostBridgeStatus = KHostBridgeFailure | {
   status: 'ready'; companion: 'KHost'; provider: 'karafun'; providerAvailable: boolean;
@@ -21,4 +21,16 @@ export type KHostBridgeSearch = KHostBridgeFailure | {
 export type KHostBridgeHandoff = KHostBridgeFailure | {
   status: 'handed-off'; requestId: string; state: 'pending' | 'complete' | 'failed';
   playback: 'external-khost'; queueMayHaveChanged: true;
+};
+export type KHostPendingHandoff = { requestId: string; title: string; artist: string; uncertain: boolean; sending: boolean; result: KHostBridgeHandoff };
+export type KHostBridgeUiStatus = { configured: boolean; connection: KHostBridgeStatus; pending: KHostPendingHandoff | null };
+export type KHostBridgeApi = {
+  status(): Promise<KHostBridgeUiStatus>;
+  chooseProfile(): Promise<KHostBridgeUiStatus>;
+  clearProfile(): Promise<KHostBridgeUiStatus>;
+  search(query: string): Promise<KHostBridgeSearch>;
+  cancelSearch(): Promise<void>;
+  handoff(value: { resultId: string; requestId: string }): Promise<KHostBridgeHandoff>;
+  handoffStatus(requestId: string): Promise<KHostBridgeHandoff>;
+  acknowledgeHandoff(requestId: string): Promise<KHostBridgeUiStatus>;
 };

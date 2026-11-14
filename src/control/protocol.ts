@@ -20,7 +20,7 @@ export class ControlError extends Error {
 }
 
 export const INSTANCE_HEADERS = {instance:'x-tpv-control-instance',profile:'x-tpv-control-profile',pid:'x-tpv-control-pid'} as const;
-const privateSettings = ['sharedCatalogConfigFile','ratingProfileConfigFile','lyricBackdropFile','karaokeNerdsCacheDirectory','ytDlpExecutable'] as const;
+const privateSettings = ['sharedCatalogConfigFile','ratingProfileConfigFile','khostBridgeConfigFile','lyricBackdropFile','karaokeNerdsCacheDirectory','ytDlpExecutable'] as const;
 export function controlSettings(value:unknown, includePrivatePaths=false):{settings:ReturnType<typeof parseSettings>;redactedFields:string[]} {
   const settings=parseSettings(value),redactedFields:string[]=[];
   if(!includePrivatePaths)for(const key of privateSettings)if(settings[key]){settings[key]='';redactedFields.push(key);}

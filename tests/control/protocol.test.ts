@@ -20,6 +20,14 @@ test('nested provider profile paths are private by default and projection never 
   explicit.settings.providerCatalogProfiles.sunfly='/changed';
   assert.equal(value.providerCatalogProfiles.sunfly,'/private/sunfly.key');
 });
+test('KHost companion profile location is owner-private in default CLI and API settings',()=>{
+  const value={...DEFAULT_SETTINGS,khostBridgeConfigFile:'C:\\private\\khost-connection.json'};
+  const normal=controlSettings(value);
+  assert.equal(normal.settings.khostBridgeConfigFile,'');assert.ok(normal.redactedFields.includes('khostBridgeConfigFile'));
+  assert.doesNotMatch(JSON.stringify(normal),/khost-connection\.json|C:\\\\private/);
+  const explicit=controlSettings(value,true);assert.equal(explicit.settings.khostBridgeConfigFile,value.khostBridgeConfigFile);
+  explicit.settings.khostBridgeConfigFile='';assert.equal(value.khostBridgeConfigFile,'C:\\private\\khost-connection.json');
+});
 test('adapter output redacts credential fields and bounds depth, cycles and bytes',()=>{
   const text=controlJson({state:{showId:'qa',token:'never-return',password:'never-return',apiKey:'never-return'},revision:3});
   assert.doesNotMatch(text,/never-return/);assert.equal(JSON.parse(text).revision,3);
