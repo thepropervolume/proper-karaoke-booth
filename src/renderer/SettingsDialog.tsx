@@ -7,6 +7,10 @@ import { SharedCatalogControls } from './SharedCatalogControls';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { RatingProfileControls } from './RatingProfileControls';
 import { LocalControlSettings } from './LocalControlSettings';
+import { Icon } from './Icon';
+import { BlacklistSettings } from './BlacklistSettings';
+import { YouTubeSearchSettings } from './YouTubeSearchSettings';
+import { DEFAULT_HOST_PANEL_SIZES } from '../domain/host-layout';
 import type { Shortcuts } from '../domain/shortcuts';
 import type { SettingsSection } from '../domain/app-action';
 import '../styles/settings.scss';
@@ -51,9 +55,12 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
     try { await window.tpv.revealConfigFile(kind); }
     catch (reason) { setError(`Could not show the file: ${reason instanceof Error ? reason.message : String(reason)}`); }
   };
-  return <dialog ref={dialog} className="settings-dialog" aria-labelledby="settings-title" onCancel={onClose}>
+  return <dialog ref={dialog} className="settings-dialog settings-dialog--preferences" aria-labelledby="settings-title" onCancel={onClose}>
     <form onSubmit={event => void submit(event)}>
-      <h2 id="settings-title">Preferences</h2>
+      <div className="settings-dialog__header">
+        <div><h2 id="settings-title">Preferences</h2><p className="muted">Changes apply when you save. Keyboard shortcuts save separately.</p></div>
+        <button type="button" className="icon-button settings-dialog__close" aria-label="Close preferences" onClick={onClose} disabled={saving}><Icon name="close" /></button>
+      </div>
       <div className="settings-groups">
         <SharedCatalogControls value={draft} onChange={setDraft} />
         <details className="settings-group" data-settings-section="ratings">
@@ -69,11 +76,24 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <label>Accent Color<select aria-label="Accent Color" value={draft.accentColor} onChange={event => setDraft({ ...draft, accentColor: event.target.value as Settings['accentColor'] })}>
               <option value="blue">Blue</option><option value="pink">Pink</option><option value="purple">Purple</option>
             </select></label>
-            <label>Workspace layout<select value={draft.layout} onChange={event => setDraft({ ...draft, layout: event.target.value as Settings['layout'] })}>
+            <label>Workspace layout<select aria-label="Workspace layout" value={draft.layout} onChange={event => {
+              const layout = event.target.value as Settings['layout'];
+              setDraft({ ...draft, layout, hostPanelSizes: layout === 'rotation' ? { ...draft.hostPanelSizes, queue: Math.max(360, Math.min(1000, Math.round(window.innerWidth * .4))) } : layout === 'standard' ? { ...draft.hostPanelSizes, queue: DEFAULT_HOST_PANEL_SIZES.queue } : draft.hostPanelSizes });
+            }}>
               <option value="standard">Standard</option><option value="rotation">Wider singer rotation</option><option value="library">Wide song library</option>
             </select></label>
+            <label>Singer Preview Position<select aria-label="Singer Preview Position" value={draft.hostPreviewPosition} onChange={event => setDraft({ ...draft, hostPreviewPosition: event.target.value as Settings['hostPreviewPosition'] })}>
+              <option value="above">Above Host Queue</option><option value="below">Below Host Queue</option><option value="hidden">Hidden</option>
+            </select></label>
+            <p className="muted">Drag the panel separators to resize the workspace. Arrow keys move a focused separator; Shift moves farther. Double-click a separator to restore its default size.</p>
+            <button type="button" onClick={() => setDraft({ ...draft, hostPanelSizes: { ...DEFAULT_HOST_PANEL_SIZES } })}>Reset Panel Sizes</button>
           </div>
         </details>
+        <details className="settings-group" data-settings-section="blacklist">
+          <summary>Song and Artist Blacklist</summary>
+          <div className="settings-group__content"><BlacklistSettings value={draft} onChange={setDraft} /></div>
+        </details>
+        <YouTubeSearchSettings value={draft} onChange={setDraft} bridge={window.tpv.youtubeSearch} />
         <details className="settings-group">
           <summary>Library Settings</summary>
           <div className="settings-group__content">
@@ -145,6 +165,9 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
         <details className="settings-group">
           <summary>Singer Display</summary>
           <div className="settings-group__content">
+            <label className="settings-check"><input type="checkbox" checked={draft.singerScreenEnabled} onChange={event => setDraft({ ...draft, singerScreenEnabled: event.target.checked })} /> Share the singer screen with browsers on the local network</label>
+            <label>Singer Screen Port<input aria-label="Singer Screen Port" type="number" min="1024" max="65535" step="1" required value={draft.singerScreenPort} onChange={event => setDraft({ ...draft, singerScreenPort: event.target.valueAsNumber })} /></label>
+            <p className="muted">Sharing uses a separate, read-only visual screen. Sound stays on this host. Save, then open Remote Sessions for the addresses and connection status.</p>
             <label>Lyric Backdrop<select aria-label="Lyric Backdrop" value={draft.lyricBackdrop} onChange={event => setDraft({ ...draft, lyricBackdrop: event.target.value as Settings['lyricBackdrop'] })}>
               <option value="default">TPV Animated Backdrop (Version 3)</option><option value="none">Solid CDG Background</option><option value="custom">Custom Video</option>
             </select></label>

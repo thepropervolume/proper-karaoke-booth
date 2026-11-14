@@ -25,6 +25,8 @@ const temp = await mkdtemp(join(tmpdir(), 'tpv-ui-qa-'));
 const profile = join(temp, 'profile');
 await mkdir(profile);
 const canonicalProfile = await realpath(profile);
+// This fixture exercises the seeded local catalog, never the public service.
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ sharedCatalogEnabled: false, providerCatalogEnabled: false }));
 const localCatalogBase = join(temp, process.platform === 'win32' ? 'localappdata' : 'xdg-data');
 const localCatalogDir = join(localCatalogBase, 'ProperKaraokeBooth', 'karaokenerds');
 await mkdir(localCatalogDir, { recursive: true });
@@ -80,7 +82,7 @@ try {
   assert.equal(initial.versions.length, 0, 'Temporary profile unexpectedly has songs.');
   assert.equal(initial.requests.length, 0, 'Temporary profile unexpectedly has requests.');
 
-  await host.getByRole('button', { name: 'Karaoke Nerds', exact: true }).click();
+  await host.getByRole('button', { name: 'Sources', exact: true }).click();
   const community = host.getByRole('region', { name: 'Karaoke Nerds catalog' });
   await community.getByLabel('Artist or song title').fill('synthetic artist');
   await community.getByRole('button', { name: 'Search catalog' }).click();
@@ -101,7 +103,7 @@ try {
   await host.getByText('Library Settings', { exact: true }).click();
   const templates = host.getByLabel('Filename and folder templates, one per line');
   await templates.fill('${DJ Code} - ${Artist} - ${Track Name}');
-  await host.getByText('Singer Display', { exact: true }).click();
+  await host.locator('summary').filter({ hasText: /^Singer Display$/ }).click();
   await host.getByLabel('Show the next singers').check();
   await host.getByRole('button', { name: 'Choose logo…' }).click();
   await host.getByText('Audio Controls', { exact: true }).click();
@@ -132,7 +134,7 @@ try {
   await librarySearch.fill('.mp4');
   await songs.getByRole('option').filter({ hasText: 'Popular' }).waitFor();
   await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('missing-artist');
-  await host.getByText('No songs match this search or filter.').waitFor();
+  await host.getByText('No local or Karaoke Nerds songs match this search or filter.').waitFor();
   await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('all');
   await host.getByRole('combobox', { name: 'Sort songs' }).selectOption('title-asc');
   await librarySearch.clear();
@@ -149,10 +151,10 @@ try {
     const list = document.querySelector('.song-list');
     const added = Array.from({ length: 100 }, () => { const row = document.createElement('div'); row.style.height = '62px'; list.append(row); return row; });
     const footer = document.querySelector('.transport').getBoundingClientRect();
-    const result = { footerBottom: footer.bottom, viewport: window.innerHeight, pageHeight: document.documentElement.scrollHeight, listScrolls: list.scrollHeight > list.clientHeight };
+    const result = { footerBottom: footer.bottom, viewport: window.innerHeight, pageHeight: document.documentElement.scrollHeight, listScrolls: (() => { const scroll = document.querySelector('.library-results') || list; return scroll.scrollHeight > scroll.clientHeight; })() };
     added.forEach(row => row.remove()); return result;
   });
-  assert.ok(layout.listScrolls && layout.footerBottom <= layout.viewport + 1 && layout.pageHeight <= layout.viewport + 1, 'The player must stay visible with a long library.');
+  assert.ok(layout.listScrolls && layout.footerBottom <= layout.viewport + 1 && layout.pageHeight <= layout.viewport + 1, `The player must stay visible with a long library: ${JSON.stringify(layout)}`);
   await host.getByRole('button', { name: 'Import Video File', exact: true }).hover();
   await host.getByRole('tooltip', { name: 'Import Video File' }).waitFor({ state: 'visible', timeout: 1000 });
   await songRow.click({ button: 'right' });

@@ -12,7 +12,10 @@ import type { LibraryFilter, LibrarySort } from '../domain/library-view';
 import { unifiedLibrary, type LibrarySearchVersion } from '../domain/unified-library';
 import type { CatalogRequestTrack } from '../domain/catalog-request';
 import { recordingKeyFor, type RecordingKey, type SongRating } from '../domain/song-rating';
-import type { SongRatingsLookup, SongRatingVote } from '../main/song-ratings-client';
+import type { HostRatingsLookup, HostRatingVote } from '../main/host-song-ratings';
+import type { SongRatingsLookup } from '../main/song-ratings-client';
+import { compileSongBlacklist, normalizeBlacklistIdentity } from '../domain/song-blacklist';
+import { DEFAULT_HOST_PANEL_SIZES, fittedHostPanels, HOST_PANEL_LIMITS, type HostPanelSizes } from '../domain/host-layout';
 import type { LocalControlUiStatus } from './LocalControlSettings';
 import { SongRatingButton, SongRatingDialog } from './SongRating';
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
@@ -29,6 +32,10 @@ import { QueueEditDialog } from './QueueEditDialog';
 import { SingerAvailabilityControl } from './SingerAvailabilityControl';
 import { Tooltip } from './Tooltip';
 import { SettingsDialog } from './SettingsDialog';
+import { PanelSeparator } from './PanelSeparator';
+import { SingerPreview, type SingerScreenBridge } from './SingerPreview';
+import { SingerScreensPanel } from './SingerScreensPanel';
+import { YouTubeSearchPanel, type YouTubeSearchBridge } from './YouTubeSearchPanel';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';
@@ -42,6 +49,8 @@ import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { LibraryCatalogStatus } from './LibraryCatalogStatus';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { ProviderCatalogPanel, ProviderCatalogResults } from './ProviderCatalogPanel';
+import { KHostBridgePanel } from './KHostBridgePanel';
+import type { KHostBridgeApi } from '../domain/khost-bridge';
 import { useProviderCatalogSearch } from './use-provider-catalog-search';
 import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogStatus } from '../domain/provider-catalog';
 import { requestWithSinger } from './request-singer';
@@ -56,9 +65,12 @@ import '../styles/main.scss';
 import '../styles/tooltip.scss';
 import '../styles/import-panel.scss';
 import '../styles/provider-catalog.scss';
+import '../styles/host-panels.scss';
 
 type Screen = 'library' | 'sources' | 'requests' | 'singers' | 'playlists' | 'remote';
+type NoticeTone = 'info' | 'success' | 'error';
 type Result = { ok: boolean; error?: string; cancelled?: boolean; notice?: string };
+type QueueSelection = LibrarySearchVersion & { youtubeSearchReceipt?: { searchId: string; videoId: string } };
 declare global {
   interface Window {
     tpv: {
@@ -93,8 +105,11 @@ declare global {
       clearProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
       openProviderCatalogSong: (input: { provider: ProviderCatalogId; id: string }) => Promise<void>;
       ratingKeys: (ids: string[]) => Promise<Record<string, RecordingKey>>;
-      lookupSongRatings: (keys: RecordingKey[]) => Promise<SongRatingsLookup>;
-      rateSong: (key: RecordingKey, value: number | null) => Promise<SongRatingVote>;
+      lookupSongRatings: (keys: RecordingKey[]) => Promise<HostRatingsLookup>;
+      rateSong: (key: RecordingKey, value: number | null) => Promise<HostRatingVote>;
+      singerScreens: SingerScreenBridge;
+      youtubeSearch: YouTubeSearchBridge;
+      khostBridge: KHostBridgeApi;
       chooseRatingProfile: () => Promise<string | null>;
       ratingProfileStatus: (file?: string) => Promise<SongRatingsLookup>;
       requestCatalogTrack: (input: { track: CatalogRequestTrack; singerId: string; requestId: string }) => Promise<Result & { versionId?: string; notice?: string }>;
@@ -164,7 +179,7 @@ function App() {
   const [editingRequest, setEditingRequest] = useState<SongRequest | null>(null);
   const [queueMenu, setQueueMenu] = useState<{ request: SongRequest; x: number; y: number } | null>(null);
   const draggedRequest = useRef('');
-  const [queueVersion, setQueueVersion] = useState<LibrarySearchVersion | null>(null);
+  const [queueVersion, setQueueVersion] = useState<QueueSelection | null>(null);
   const [playlistVersion, setPlaylistVersion] = useState<Version | null>(null);
   const [contextMenu, setContextMenu] = useState<{ version: LibrarySearchVersion; x: number; y: number } | null>(null);
   const [collections, setCollections] = useState<CollectionsSnapshot>({ playlists: [], items: [], history: [] });
@@ -174,7 +189,20 @@ function App() {
   const [missingSinger, setMissingSinger] = useState('');
   const [missingTitle, setMissingTitle] = useState('');
   const [missingArtist, setMissingArtist] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNoticeState] = useState('');
+  const [noticeTone, setNoticeTone] = useState<NoticeTone>('info');
+  const noticeTimer = useRef<number | null>(null);
+  const setNotice = (message: string, tone: NoticeTone = 'info') => {
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = null;
+    setNoticeState(message); setNoticeTone(tone);
+    if (message && tone !== 'error') noticeTimer.current = window.setTimeout(() => setNoticeState(current => current === message ? '' : current), 8000);
+  };
+  const dismissNotice = () => {
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = null; setNoticeState('');
+  };
+  useEffect(() => () => { if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current); }, []);
   const [busy, setBusy] = useState(false);
   const [importActive, setImportActive] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
@@ -182,6 +210,21 @@ function App() {
   const [importPickerBusy, setImportPickerBusy] = useState(false);
   const [relinkBusy, setRelinkBusy] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [panelSizes, setPanelSizes] = useState<HostPanelSizes>({ ...DEFAULT_HOST_PANEL_SIZES });
+  const panelSizesRef = useRef(panelSizes), panelSaveSequence = useRef(0), panelSavePending = useRef(false);
+  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  useEffect(() => { const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight }); window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize); }, []);
+  useEffect(() => { if (!panelSavePending.current) { panelSizesRef.current = { ...settings.hostPanelSizes }; setPanelSizes(panelSizesRef.current); } }, [JSON.stringify(settings.hostPanelSizes)]);
+  const fittedPanels = fittedHostPanels(panelSizes, viewport.width, viewport.height);
+  const libraryLayout = settings.layout === 'library' && viewport.width > 850;
+  const changePanelSize = (key: keyof HostPanelSizes, value: number) => {
+    panelSizesRef.current = { ...panelSizesRef.current, [key]: value }; setPanelSizes(panelSizesRef.current);
+  };
+  const commitPanelSize = (key: keyof HostPanelSizes, value: number) => {
+    changePanelSize(key, value); const sequence = ++panelSaveSequence.current; panelSavePending.current = true;
+    void window.tpv.saveSettings({ hostPanelSizes: { ...panelSizesRef.current } }).then(saved => { if (sequence === panelSaveSequence.current) { panelSavePending.current = false; setSettings(saved); } })
+      .catch(() => { if (sequence === panelSaveSequence.current) { panelSavePending.current = false; setNotice('Could not save panel sizes. Try moving the separator again.', 'error'); } });
+  };
   const [accentSaving, setAccentSaving] = useState(false);
   const accentSaveInFlight = useRef(false);
   const [settingsPath, setSettingsPath] = useState('');
@@ -203,14 +246,14 @@ function App() {
   const [ratingKeys, setRatingKeys] = useState<Record<string, RecordingKey>>({});
   const [ratings, setRatings] = useState<Record<string, SongRating>>({});
   const [ratingsLoading, setRatingsLoading] = useState(false);
-  const [canRate, setCanRate] = useState(false);
+  const [canRateByKey, setCanRateByKey] = useState<Record<string, boolean>>({});
   const [ratingDialog, setRatingDialog] = useState<{ title: string; key: RecordingKey } | null>(null);
   const ratingOpenSequence = useRef(0);
   const ratingWriteEpoch = useRef(0);
   const [ratingReload, setRatingReload] = useState(0);
   const [ratingWindowStart, setRatingWindowStart] = useState(0);
   useEffect(() => { setRatingWindowStart(0); songList.current?.scrollTo(0, 0); }, [search, librarySort, libraryFilter]);
-  useEffect(() => { setRatings({}); setCanRate(false); setRatingDialog(null); ++ratingOpenSequence.current; }, [settings.ratingProfileConfigFile]);
+  useEffect(() => { setRatings({}); setCanRateByKey({}); setRatingDialog(null); ++ratingOpenSequence.current; }, [settings.ratingProfileConfigFile]);
   useEffect(() => {
     ++ratingOpenSequence.current;
     if (settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion) setRatingDialog(null);
@@ -234,29 +277,29 @@ function App() {
     // Subscribe before the initial snapshot so an intervening update is not lost.
     const unsubscribe = window.tpv.subscribe(value => { if (alive) setState(current => !current || value.revision >= current.revision ? value : current); });
     window.tpv.getState().then(value => { if (alive) setState(current => !current || value.revision >= current.revision ? value : current); })
-      .catch(error => { if (alive) setNotice(`Could not load the show: ${String(error)}`); });
+      .catch(error => { if (alive) setNotice(`Could not load the show: ${String(error)}`, 'error'); });
     return () => { alive = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {
     let alive = true;
     void window.tpv.getCollections().then(value => { if (alive) setCollections(value); })
-      .catch(error => { if (alive) setNotice(`Could not load playlists and history: ${String(error)}`); });
+      .catch(error => { if (alive) setNotice(`Could not load playlists and history: ${String(error)}`, 'error'); });
     return () => { alive = false; };
   }, [state?.revision]);
 
   useEffect(() => {
     let alive = true;
     void window.tpv.getLibraryFilenames().then(value => { if (alive) setLibraryFilenames(value); })
-      .catch(() => { if (alive) setNotice('Filename search is unavailable.'); });
+      .catch(() => { if (alive) setNotice('Filename search is unavailable.', 'error'); });
     return () => { alive = false; };
   }, [state?.revision, filenameRefresh]);
 
   useEffect(() => {
     let alive = true;
     void window.tpv.getShortcuts().then(result => {
-      if (alive) { setShortcuts(result.shortcuts); setShortcutsPath(result.path); if (result.error) setNotice(`${result.error} Defaults are active until the file is fixed and the app restarted.`); }
-    }).catch(error => { if (alive) setNotice(`Could not load keyboard shortcuts: ${String(error)}`); });
+      if (alive) { setShortcuts(result.shortcuts); setShortcutsPath(result.path); if (result.error) setNotice(`${result.error} Defaults are active until the file is fixed and the app restarted.`, 'error'); }
+    }).catch(error => { if (alive) setNotice(`Could not load keyboard shortcuts: ${String(error)}`, 'error'); });
     return () => { alive = false; };
   }, []);
 
@@ -268,7 +311,7 @@ function App() {
       if (result.created && (previousTheme === 'day' || previousTheme === 'night'))
         loaded = await window.tpv.saveSettings({ appearance: previousTheme });
       if (alive) { setSettings(loaded); setSettingsPath(result.path); }
-    }).catch(error => { if (alive) setNotice(`Could not load preferences: ${String(error)}`); });
+    }).catch(error => { if (alive) setNotice(`Could not load preferences: ${String(error)}`, 'error'); });
     return () => { alive = false; };
   }, []);
 
@@ -288,7 +331,7 @@ function App() {
     try {
       const accentColor = await window.tpv.cycleAccentColor();
       setSettings(current => ({ ...current, accentColor }));
-    } catch { setNotice('Could not save the accent color. Please try again.'); }
+    } catch { setNotice('Could not save the accent color. Please try again.', 'error'); }
     finally { accentSaveInFlight.current = false; setAccentSaving(false); }
   };
 
@@ -313,20 +356,22 @@ function App() {
     return () => { window.removeEventListener('mousedown', dismiss); window.removeEventListener('keydown', escape); };
   }, [queueMenu]);
 
-  const versions = useMemo(() => state ? visibleVersions(state) : [], [state]);
-  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library', JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile]), window.tpv.searchCommunityCatalog);
-  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy]);
+  const blacklist = useMemo(() => compileSongBlacklist(settings), [settings.songBlacklist, settings.artistBlacklist]);
+  const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
+  const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
+  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library', JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist]), window.tpv.searchCommunityCatalog);
+  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist]);
   const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
   const filtered = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
-    catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result]);
+    catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version)) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result, blacklist]);
   const selectedVersion = filtered.find(v => v.id === selectedVersionId);
   const selectedSinger = state?.singers.find(s => s.id === selectedSingerId);
   const pending = state?.requests.filter(r => r.status === 'pending') ?? [];
   const future = state ? orderedFuture(state, settings.rotationMode, clockMs) : [];
   const selectedFuture = future.find(request => request.id === selectedRequestId);
-  const eligibleFuture = state && future.some(r => r.status === 'accepted' && singerAvailable(state, r.singerId, clockMs) && isVersionAllowed(state, r.versionId));
+  const eligibleFuture = state && future.some(r => r.status === 'accepted' && singerAvailable(state, r.singerId, clockMs) && hostVersionAllowed(r.versionId));
   const staged = state?.requests.find(r => r.id === state.stagedRequestId);
-  const stagedBlocked = !!(state && staged && !isVersionAllowed(state, staged.versionId));
+  const stagedBlocked = !!(state && staged && !hostVersionAllowed(staged.versionId));
   const active = state?.requests.find(r => r.id === state.playback?.requestId);
   const ratingSelection = JSON.stringify([...new Set([...filtered.slice(ratingWindowStart, ratingWindowStart + 80).map(version => version.id), ...future.map(request => request.versionId), ...(active ? [active.versionId] : [])])].slice(0, 1000));
   useEffect(() => {
@@ -342,16 +387,16 @@ function App() {
       const keys = [...new Set(Object.values(resolved))];
       if (!keys.length) return;
       const loaded: Record<string, SongRating> = {};
-      let allowed = false;
+      const allowed: Record<string, boolean> = {}, failed = new Set<string>();
       for (let offset = 0; offset < keys.length; offset += 100) {
-        const result = await window.tpv.lookupSongRatings(keys.slice(offset, offset + 100));
+        const batch = keys.slice(offset, offset + 100), result = await window.tpv.lookupSongRatings(batch);
         if (!alive || writeEpoch !== ratingWriteEpoch.current) return;
-        if (result.status !== 'ready') { setCanRate(false); setRatings({}); return; }
-        allowed = result.canVote;
+        if (result.status !== 'ready') { for (const key of batch) { allowed[key] = false; failed.add(key); } continue; }
+        for (const key of batch) { allowed[key] = result.canVoteByKey[key] === true; if (!result.items.some(item => item.recordingKey === key)) failed.add(key); }
         for (const item of result.items) loaded[item.recordingKey] = item;
       }
-      if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings(current => ({ ...current, ...loaded })); setCanRate(allowed); }
-    })().catch(() => { if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings({}); setCanRate(false); } }).finally(() => { if (alive) setRatingsLoading(false); });
+      if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings(current => { const next = { ...current, ...loaded }; for (const key of failed) delete next[key]; return next; }); setCanRateByKey(current => ({ ...current, ...allowed })); }
+    })().catch(() => { if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings({}); setCanRateByKey({}); } }).finally(() => { if (alive) setRatingsLoading(false); });
     return () => { alive = false; };
   }, [ratingSelection, settings.ratingProfileConfigFile, ratingReload, filenameRefresh]);
   const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
@@ -365,9 +410,9 @@ function App() {
     try {
       const result = await operation();
       if (result?.cancelled) return;
-      if (result && !result.ok) setNotice(result.error || 'The action could not be completed.');
-      else setNotice(result?.notice || success || '');
-    } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+      if (result && !result.ok) setNotice(result.error || 'The action could not be completed.', 'error');
+      else setNotice(result?.notice || success || '', success ? 'success' : 'info');
+    } catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
     finally { setBusy(false); }
   };
   const command = (payload: Command, success?: string) => run(() => window.tpv.command(payload), success);
@@ -377,36 +422,36 @@ function App() {
     try {
       const result = await (retry ? window.tpv.retryBackupCleanup() : window.tpv.backupShow());
       setBackupCleanup(result.status === 'cleanup-needed');
-      if (result.status === 'saved') setNotice('Show backup saved. Video files and preferences are not included. Protect the backup using your destination folder permissions.');
-      else if (result.status === 'failed') setNotice('Backup could not be completed. Choose a new filename on a supported local drive and try again; existing files are never overwritten.');
-      else if (result.status === 'cleanup-needed') setNotice(`${result.published ? 'The backup was saved' : 'The backup was not saved'}, but temporary backup cleanup needs attention. Retry cleanup before creating another backup.`);
-    } catch { setNotice('Backup could not be completed. Please try again.'); }
+      if (result.status === 'saved') setNotice('Show backup saved. Video files and preferences are not included. Protect the backup using your destination folder permissions.', 'success');
+      else if (result.status === 'failed') setNotice('Backup could not be completed. Choose a new filename on a supported local drive and try again; existing files are never overwritten.', 'error');
+      else if (result.status === 'cleanup-needed') setNotice(`${result.published ? 'The backup was saved' : 'The backup was not saved'}, but temporary backup cleanup needs attention. Retry cleanup before creating another backup.`, 'error');
+    } catch { setNotice('Backup could not be completed. Please try again.', 'error'); }
     finally { setBackupBusy(false); }
   };
   const beginImport = async (kind: 'files' | 'folder') => {
     if (importPickerBusy || importActive) return;
     setImportPickerBusy(true); setNotice('');
     try { await window.tpv.importFiles(kind); }
-    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
     finally { setImportPickerBusy(false); }
   };
   const relinkSong = async (id: string) => {
     if (relinkBusy) return;
     setRelinkBusy(true); setNotice('Checking the selected file…');
-    try { const result = await window.tpv.relinkMedia(id); if (result.ok && !result.cancelled) setFilenameRefresh(value => value + 1); setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.'); }
-    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    try { const result = await window.tpv.relinkMedia(id); if (result.ok && !result.cancelled) setFilenameRefresh(value => value + 1); setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.', result.ok ? 'success' : 'error'); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
     finally { setRelinkBusy(false); }
   };
   const playPause = () => {
     if (!active && stagedBlocked) {
-      setNotice('The staged song is unavailable under the current policy. Release it or change the policy before starting.');
+      setNotice('The staged song is unavailable under the current policy. Release it or change the policy before starting.', 'error');
       return Promise.resolve();
     }
     return run(() => window.tpv.playPause());
   };
   const mutateCollections = async (action: CollectionsAction): Promise<boolean> => {
     try { setCollections(await window.tpv.mutateCollections(action)); setNotice(''); return true; }
-    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); return false; }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); return false; }
   };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -484,20 +529,24 @@ function App() {
     const sequence = ++ratingOpenSequence.current;
     try {
       const key = recordingKeyFor(version.source) ?? ratingKeys[version.id] ?? (await window.tpv.ratingKeys([version.id]))[version.id];
-      if (!key) { setNotice('This recording needs an imported media fingerprint before it can be rated.'); return; }
+      if (!key) { setNotice('This recording needs an imported media fingerprint before it can be rated.', 'error'); return; }
       const result = await window.tpv.lookupSongRatings([key]);
       if (sequence !== ratingOpenSequence.current) return;
-      if (result.status !== 'ready') { setNotice(`Shared ratings are unavailable (${result.status}). Your song and queue are unchanged.`); return; }
+      if (result.status !== 'ready') { setNotice(`Ratings are unavailable (${result.status}). Your song and queue are unchanged.`, 'error'); return; }
       setRatings(current => ({ ...current, ...Object.fromEntries(result.items.map(item => [item.recordingKey, item])) }));
-      setCanRate(result.canVote); setRatingDialog({ title: version.title, key });
-    } catch { if (sequence === ratingOpenSequence.current) setNotice('Shared ratings could not be reached. Your song and queue are unchanged.'); }
+      setCanRateByKey(current => ({ ...current, ...result.canVoteByKey })); setRatingDialog({ title: version.title, key });
+    } catch { if (sequence === ratingOpenSequence.current) setNotice('Ratings could not be loaded. Your song and queue are unchanged.', 'error'); }
   };
   const ratingButton = (version: Version | LibrarySearchVersion | undefined) => {
     if (!version) return null;
     const key = recordingKeyFor(version.source) ?? ratingKeys[version.id];
     return <SongRatingButton title={version.title} rating={key ? ratings[key] ?? null : null} loading={ratingsLoading && !!key && !ratings[key]} onClick={() => void showSongRating(version)} />;
   };
-  const savePreferencePatch = (patch: Partial<Settings>) => run(async () => { setSettings(await window.tpv.saveSettings(patch)); });
+  const savePreferencePatch = (patch: Partial<Settings>) => run(async () => {
+    if (patch.layout === 'rotation') patch = { ...patch, hostPanelSizes: { ...panelSizesRef.current, queue: Math.max(360, Math.min(1000, Math.round(window.innerWidth * .4))) } };
+    else if (patch.layout === 'standard') patch = { ...patch, hostPanelSizes: { ...panelSizesRef.current, queue: DEFAULT_HOST_PANEL_SIZES.queue } };
+    setSettings(await window.tpv.saveSettings(patch));
+  });
   const seekOffset = (seconds: number) => run(async () => {
     const timeline = await window.tpv.getTimeline();
     if (!timeline.generation || !timeline.seekable || timeline.seeking) return { ok: false, error: 'The current song is not ready to seek.' };
@@ -539,42 +588,92 @@ function App() {
   };
   const current = describe(active);
   const stage = describe(staged);
+  const sidebarMaximum = Math.max(140, Math.min(HOST_PANEL_LIMITS.sidebar[1], viewport.width * .24));
+  const queueMaximum = Math.max(260, Math.min(HOST_PANEL_LIMITS.queue[1], viewport.width - fittedPanels.sidebar - 324));
+  const libraryQueueMaximum = Math.max(100, Math.min(HOST_PANEL_LIMITS.libraryQueue[1], viewport.height * .45));
+  const previewMaximum = Math.max(90, Math.min(HOST_PANEL_LIMITS.preview[1], libraryLayout ? fittedPanels.libraryQueue - 100 : viewport.height * .4));
+  const previewSize = Math.min(fittedPanels.preview, previewMaximum);
+  const panelStyle = { '--sidebar-width': `${fittedPanels.sidebar}px`, '--queue-width': `${Math.min(fittedPanels.queue, queueMaximum)}px`, '--preview-height': `${previewSize}px`, '--library-queue-height': `${fittedPanels.libraryQueue}px` } as React.CSSProperties;
+  const preview = settings.hostPreviewPosition !== 'hidden' ? <SingerPreview bridge={window.tpv.singerScreens} onOpen={() => void run(() => window.tpv.openDisplay())} /> : null;
+  const previewSeparator = preview ? <PanelSeparator className="preview-separator" label="Resize Singer Preview" orientation="horizontal" value={previewSize} minimum={90} maximum={previewMaximum} defaultValue={DEFAULT_HOST_PANEL_SIZES.preview} reverse={settings.hostPreviewPosition === 'below'} onChange={value => changePanelSize('preview', value)} onCommit={value => commitPanelSize('preview', value)} /> : null;
+  const blacklistSelection = (kind: 'song' | 'artist', version: LibrarySearchVersion) => {
+    setContextMenu(null);
+    void run(async () => {
+      if (kind === 'artist') {
+        const artist = version.artist?.trim() || '';
+        if (!artist) return { ok: false, error: 'This song has no artist. Add a song rule or edit its metadata first.' };
+        if (settings.artistBlacklist.some(item => normalizeBlacklistIdentity(item) === normalizeBlacklistIdentity(artist))) return;
+        setSettings(await window.tpv.saveSettings({ artistBlacklist: [...settings.artistBlacklist, artist] }));
+      } else {
+        if (blacklist.isBlocked(version)) return;
+        setSettings(await window.tpv.saveSettings({ songBlacklist: [...settings.songBlacklist, { artist: version.artist || '', title: version.title }] }));
+      }
+    }, kind === 'artist' ? 'Artist blacklisted across this host’s sources.' : 'Song blacklisted across this host’s sources and recording versions.');
+  };
 
-  return <div className="app" data-layout={settings.layout}>
+  return <div className="app" data-layout={settings.layout} style={panelStyle}>
     <header className="topbar">
       <div className="brand">
         <img className="brand__logo brand__logo--dark" src={brandLogoDark} alt="The Proper Volume Karaoke Booth" width="220" height="52" />
         <img className="brand__logo brand__logo--light" src={brandLogoLight} alt="The Proper Volume Karaoke Booth" width="220" height="52" />
       </div>
-      <h1>Local rehearsal{appVersion && <small style={{marginLeft:'0.6em'}} aria-label="Application version">v{appVersion}</small>}</h1>
-      <Tooltip text={shortcutHint('Appearance', 'appearance')}><button className="icon-button accent-button" aria-label="Appearance" onClick={() => openPreferences('appearance')} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
-      <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>
-      <Tooltip text={shortcutHint('Singer Display', 'singerDisplay')}><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
-      <Tooltip text={shortcutHint('Toggle singer display fullscreen', 'toggleFullscreen')}><button className="icon-button" aria-label="Toggle singer display fullscreen" onClick={() => void run(() => window.tpv.toggleDisplayFullscreen())}><Icon name="fullscreen" /></button></Tooltip>
-      <Tooltip text={shortcutHint('Preferences', 'preferences')}><button className="icon-button" aria-label="Preferences" onClick={() => openPreferences()} disabled={!settingsPath || accentSaving}><Icon name="settings" /></button></Tooltip>
+      <div className="topbar__identity">
+        <h1>Local rehearsal</h1>
+        {appVersion && <span className="topbar__version" aria-label="Application version">v{appVersion}</span>}
+      </div>
+      <div className="topbar__status" role="status" aria-live="polite">
+        <span className={`status-dot ${state?.playback?.status === 'playing' ? 'is-live' : state?.playback?.status === 'paused' ? 'is-paused' : ''}`} aria-hidden="true" />
+        <span>{state?.playback?.status === 'playing' ? `On stage · ${current.singer}` : state?.playback?.status === 'paused' ? `Paused · ${current.singer}` : staged ? `Staged · ${stage.singer}` : 'Player ready'}</span>
+      </div>
+      {busy && <span className="topbar__busy" role="status"><span className="spinner" aria-hidden="true" />Working…</span>}
+      <div className="topbar__actions">
+        <Tooltip text={shortcutHint('Appearance', 'appearance')}><button className="icon-button accent-button" aria-label="Appearance" onClick={() => openPreferences('appearance')} disabled={!settingsPath || accentSaving}><Icon name="palette" /></button></Tooltip>
+        <Tooltip text={`Search (${shortcuts.search.map(formatShortcut).join(', ')})`}><button className="icon-button" aria-label="Open library search" onClick={focusSearch}><Icon name="search" /></button></Tooltip>
+        <Tooltip text={shortcutHint('Singer Display', 'singerDisplay')}><button className="icon-button" aria-label="Singer display" onClick={() => void run(() => window.tpv.openDisplay())}><Icon name="display" /></button></Tooltip>
+        <Tooltip text={shortcutHint('Toggle singer display fullscreen', 'toggleFullscreen')}><button className="icon-button" aria-label="Toggle singer display fullscreen" onClick={() => void run(() => window.tpv.toggleDisplayFullscreen())}><Icon name="fullscreen" /></button></Tooltip>
+        <Tooltip text={shortcutHint('Preferences', 'preferences')}><button className="icon-button" aria-label="Preferences" onClick={() => openPreferences()} disabled={!settingsPath || accentSaving}><Icon name="settings" /></button></Tooltip>
+      </div>
     </header>
     <nav className="sidebar" aria-label="Workspace">
       <div className="eyebrow">Workspace</div>
-      {([['library', 'Library'], ['playlists', 'Playlists'], ['sources', 'Sources']] as const).map(([id, label]) =>
-        <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}
-      <div className="sidebar__host"><div className="eyebrow">Host Workspace</div>{([['requests', `Requests${pending.length ? ` (${pending.length})` : ''}`], ['singers', 'Singers'], ['remote', 'Remote Sessions']] as const).map(([id, label]) => <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}>{label}</button>)}</div>
+      {([['library', 'Library', 'library'], ['playlists', 'Playlists', 'playlist'], ['sources', 'Sources', 'globe']] as const).map(([id, label, icon]) =>
+        <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-label={label} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}><Icon name={icon} /><span>{label}</span></button>)}
+      <div className="sidebar__host"><div className="eyebrow">Host Workspace</div>{([['requests', 'Requests', 'inbox'], ['singers', 'Singers', 'singers'], ['remote', 'Remote Sessions', 'remote']] as const).map(([id, label, icon]) => <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-label={label} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}><Icon name={icon} /><span>{label}</span>{id === 'requests' && pending.length > 0 && <span className="nav-item__count" aria-hidden="true">{pending.length}</span>}</button>)}</div>
     </nav>
+    <PanelSeparator className="sidebar-separator" label="Resize Workspace Sidebar" orientation="vertical" value={fittedPanels.sidebar} minimum={140} maximum={sidebarMaximum} defaultValue={DEFAULT_HOST_PANEL_SIZES.sidebar} onChange={value => changePanelSize('sidebar', value)} onCommit={value => commitPanelSize('sidebar', value)} />
     <main className="main-panel">
-      {screen==='remote' && <><InternetSessionPanel bridge={window.tpv.internetSessions} /><p className="muted">Singers open your link, enter their name and request songs from your library. Keep this app running. This internet link also works for guests on venue Wi-Fi.</p></>}
-      {notice && <p className="notice" role="status">{notice}</p>}
+      {screen==='remote' && <><SingerScreensPanel bridge={window.tpv.singerScreens} settings={settings} onSave={async patch => setSettings(await window.tpv.saveSettings(patch))} /><InternetSessionPanel bridge={window.tpv.internetSessions} /><p className="muted">Singers open your link, enter their name and request songs from your library. Keep this app running. This internet link also works for guests on venue Wi-Fi.</p></>}
+      {notice && <div className={`notice notice--${noticeTone}`} role={noticeTone === 'error' ? 'alert' : 'status'} aria-live={noticeTone === 'error' ? 'assertive' : 'polite'}>
+        <Icon name={noticeTone === 'error' ? 'warning' : noticeTone === 'success' ? 'check' : 'info'} />
+        <p>{notice}</p>
+        <button type="button" className="notice__dismiss" aria-label="Dismiss message" onClick={dismissNotice}><Icon name="close" /></button>
+      </div>}
       <ImportPanel bridge={window.tpv.imports} onActiveChange={setImportActive} />
       <YouTubeDownloadsPanel bridge={window.tpv.youtubeDownloads} onCached={setCachedVideoIds} />
       <CdgImportPanel bridge={window.tpv.cdg} showStart={false} />
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
-          <div className="section-heading"><h2>Song Library</h2><div><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint('Import CD+G / ZIP', 'importCdg')}><button className="icon-button" aria-label="Import CD+G / ZIP…" disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div></div>
-          <div className="library-toolbar"><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search your library and service catalogs" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="page-heading">
+            <div>
+              <span className="eyebrow">Host workspace</span>
+              <h2>Song Library</h2>
+              <p className="muted page-heading__subtitle">Find a song, choose a singer, and add it to the rotation. Single-click selects; double-click adds it to the queue.</p>
+            </div>
+            <div className="page-heading__actions"><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint('Import CD+G / ZIP', 'importCdg')}><button className="icon-button" aria-label="Import CD+G / ZIP…" disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div>
+          </div>
+          <div className="library-toolbar">
+            <div className="search-field"><Icon name="search" /><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search your library and service catalogs" value={search} onChange={e => setSearch(e.target.value)} /></div>
             <label>Sort<select aria-label="Sort songs" value={librarySort} onChange={event => setLibrarySort(event.target.value as LibrarySort)}>
               <option value="import-oldest">Import order</option><option value="import-newest">Newest imported</option><option value="title-asc">Title A–Z</option><option value="title-desc">Title Z–A</option><option value="artist-asc">Artist A–Z</option><option value="artist-desc">Artist Z–A</option>
             </select></label>
             <label>Filter<select aria-label="Filter songs" value={libraryFilter} onChange={event => setLibraryFilter(event.target.value as LibraryFilter)}>
               <option value="all">All songs</option><option value="review">Needs metadata review</option><option value="missing-artist">Missing artist</option><option value="clean">Clean</option><option value="explicit">Explicit</option><option value="unrated">Unrated</option><option value="uncertain">Uncertain rating</option>
-            </select></label></div>
+            </select></label>
+          </div>
+          <div className="library-meta">
+            <span role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</span>
+            {(search.trim() || libraryFilter !== 'all') && <button type="button" className="link" onClick={() => { setSearch(''); setLibraryFilter('all'); }}>Clear search and filters</button>}
+          </div>
           <LibraryCatalogStatus state={catalogSearch} />
           <div className="eyebrow">Title / artist <span className="muted"> · Local files and online recordings</span></div>
           <div ref={songList} className="library-results" onScroll={event => {
@@ -590,24 +689,43 @@ function App() {
               {version.source && <span className="badge">YouTube</span>}
               {ratingButton(version)}
             </div>)}
-            {!filtered.length && <p className="empty">{search.trim() || versions.length ? 'No local or Karaoke Nerds songs match this search or filter.' : 'Search Karaoke Nerds or import a local video to begin. Your original file stays in place.'}</p>}
-          </div><ProviderCatalogResults state={providerSearch} openSong={window.tpv.openProviderCatalogSong} /></div>
+            {!filtered.length && <div className="empty-state">
+              <Icon name="library" />
+              <p className="empty">{search.trim() || versions.length ? 'No local or Karaoke Nerds songs match this search or filter.' : 'Search Karaoke Nerds or import a local video to begin. Your original file stays in place.'}</p>
+              {(search.trim() || libraryFilter !== 'all')
+                ? <button type="button" onClick={() => { setSearch(''); setLibraryFilter('all'); }}>Clear search and filters</button>
+                : <div className="empty-state__actions"><button type="button" className="primary" onClick={() => void beginImport('files')} disabled={busy || importActive || importPickerBusy}>Import videos</button><button type="button" onClick={() => setScreen('sources')}>Browse Karaoke Nerds</button></div>}
+            </div>}
+          </div><ProviderCatalogResults state={providerSearch} openSong={window.tpv.openProviderCatalogSong} />
+            {libraryFilter === 'all' && <YouTubeSearchPanel bridge={window.tpv.youtubeSearch} query={search} settings={settings} policy={state.policy} disabled={busy}
+              onSave={async patch => setSettings(await window.tpv.saveSettings(patch))}
+              onChoose={(song, searchId) => setQueueVersion({ id: `youtube-search:${song.videoId}`, title: song.title, artist: song.artist || '', rating: 'unrated', source: { provider: 'youtube', videoId: song.videoId }, youtubeSearchReceipt: { searchId, videoId: song.videoId } })} />}
+          </div>
           {search.trim().length >= 2 && libraryFilter !== 'all' && <p className="muted">Service catalog results appear under All Songs; local metadata filters cannot verify provider content ratings.</p>}
-          <form className="request-form" onSubmit={makeRequest}>
-            <label>Singer for {selectedVersion ? `“${selectedVersion.title}”` : 'selected song'}<select value={selectedSingerId} onChange={e => setSelectedSingerId(e.target.value)}><option value="">Choose a singer</option>{state.singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}<option value="__new__">Add a new singer…</option></select></label>
-            {selectedSingerId === '__new__' && <label>New singer name<input autoComplete="off" value={newRequestSingerName} onChange={e => setNewRequestSingerName(e.target.value)} maxLength={100} /></label>}
-            <button type="submit" disabled={busy || !selectedVersion || (!selectedSinger && !(selectedSingerId === '__new__' && newRequestSingerName.trim()))}>Add request</button>
-          </form>
-          <h3>Can't Find a Song?</h3>
-          <p className="muted">Save a request for the host to review. This does not add it to the rotation.</p>
-          <form className="request-form" onSubmit={requestMissingSong}>
-            <label>Singer name<input value={missingSinger} onChange={e => setMissingSinger(e.target.value)} maxLength={100} required /></label>
-            <label>Song title<input value={missingTitle} onChange={e => setMissingTitle(e.target.value)} maxLength={200} required /></label>
-            <label>Artist (optional)<input value={missingArtist} onChange={e => setMissingArtist(e.target.value)} maxLength={200} /></label>
-            <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
-          </form>
+          <section className="composer" aria-label="Add a song request">
+            <div className="composer__summary">
+              <span className="eyebrow">Queue a request</span>
+              {selectedVersion
+                ? <><strong>{selectedVersion.title}</strong><small>{selectedVersion.artist || 'Unknown artist'}</small></>
+                : <span className="muted">Select a song above to choose a singer.</span>}
+            </div>
+            <form className="request-form" onSubmit={makeRequest}>
+              <label>Singer for {selectedVersion ? `“${selectedVersion.title}”` : 'selected song'}<select value={selectedSingerId} onChange={e => setSelectedSingerId(e.target.value)}><option value="">Choose a singer</option>{state.singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}<option value="__new__">Add a new singer…</option></select></label>
+              {selectedSingerId === '__new__' && <label>New singer name<input autoComplete="off" value={newRequestSingerName} onChange={e => setNewRequestSingerName(e.target.value)} maxLength={100} /></label>}
+              <button type="submit" className="primary" disabled={busy || !selectedVersion || (!selectedSinger && !(selectedSingerId === '__new__' && newRequestSingerName.trim()))}>Add request</button>
+            </form>
+          </section>
+          <section className="composer composer--subtle" aria-label="Request a missing song">
+            <div className="composer__summary"><span className="eyebrow">Can't find a song?</span><p className="muted">Save a request for the host to review. This does not add it to the rotation.</p></div>
+            <form className="request-form" onSubmit={requestMissingSong}>
+              <label>Singer name<input value={missingSinger} onChange={e => setMissingSinger(e.target.value)} maxLength={100} required /></label>
+              <label>Song title<input value={missingTitle} onChange={e => setMissingTitle(e.target.value)} maxLength={200} required /></label>
+              <label>Artist (optional)<input value={missingArtist} onChange={e => setMissingArtist(e.target.value)} maxLength={200} /></label>
+              <button type="submit" disabled={busy || !missingSinger.trim() || !missingTitle.trim()}>Save missing-song request</button>
+            </form>
+          </section>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -629,22 +747,35 @@ function App() {
         {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
       </>}
     </main>
-    <aside className="rotation" aria-label="Singer rotation">
-      <h2>{settings.rotationMode === 'singer' ? 'Singer Rotation' : 'Request Queue'}</h2><span className="badge">{settings.autoApprove ? 'Auto-approve' : 'Host moderated'}</span>
-      <div className="eyebrow">On Stage</div>
-      <div className="on-stage">{active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small>{ratingButton(state?.versions.find(version => version.id === active.versionId))}</> : <span className="muted">No singer on stage</span>}</div>
-      <div className="section-heading"><span className="eyebrow">Up Next</span><button disabled={busy || !!staged || !eligibleFuture} onClick={() => void command({ type: 'stage' })}>Stage next</button></div>
-      <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || !state || !isVersionAllowed(state, selectedFuture.versionId) || state.promotedRequestId === selectedFuture.id} onClick={() => { if (selectedFuture) void command({ type: 'promoteRequest', requestId: selectedFuture.id }, 'Request promoted to the front of the waiting queue.'); }}>Promote selected</button>
-      <div className="queue-actions"><button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').findIndex(r => r.id === selectedFuture.id) < 1} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i > 0) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i - 1].id }); }}>Move up</button> <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').at(-1)?.id === selectedFuture.id} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i >= 0 && i < waiting.length - 1) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i + 2]?.id ?? null }); }}>Move down</button> <button disabled={busy || (!state?.manualQueueOrder?.length && !state?.promotedRequestId)} onClick={() => void command({ type: 'resetQueueOrder' }, 'Automatic queue order restored.')}>Automatic order</button></div>
-      {state?.manualQueueOrder?.length ? <p className="muted">Manual order · new requests follow the arranged queue.</p> : null}
+    <PanelSeparator className="queue-separator" label={libraryLayout ? 'Resize Host Queue Height' : 'Resize Host Queue Width'} orientation={libraryLayout ? 'horizontal' : 'vertical'} reverse value={libraryLayout ? fittedPanels.libraryQueue : Math.min(fittedPanels.queue, queueMaximum)} minimum={libraryLayout ? 100 : 260} maximum={libraryLayout ? libraryQueueMaximum : queueMaximum} defaultValue={libraryLayout ? DEFAULT_HOST_PANEL_SIZES.libraryQueue : DEFAULT_HOST_PANEL_SIZES.queue} onChange={value => changePanelSize(libraryLayout ? 'libraryQueue' : 'queue', value)} onCommit={value => commitPanelSize(libraryLayout ? 'libraryQueue' : 'queue', value)} />
+    <aside className="host-queue-panel" aria-label="Singer rotation" data-preview-position={settings.hostPreviewPosition}>
+      {settings.hostPreviewPosition === 'above' && <>{preview}{previewSeparator}</>}
+      <div className="rotation">
+      <div className="rotation__heading">
+        <div><span className="eyebrow">Host queue</span><h2>{settings.rotationMode === 'singer' ? 'Singer Rotation' : 'Request Queue'}</h2></div>
+        <span className="badge">{settings.autoApprove ? 'Auto-approve' : 'Host moderated'}</span>
+      </div>
+      <div className="on-stage">
+        <div className="on-stage__status"><span className={`status-dot ${active ? 'is-live' : ''}`} aria-hidden="true" /><span className="eyebrow">{active ? (state?.playback?.status === 'paused' ? 'Paused' : 'Playing now') : 'On stage'}</span></div>
+        {active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small>{ratingButton(state?.versions.find(version => version.id === active.versionId))}</> : <span className="muted">No singer on stage</span>}
+      </div>
+      <div className="rotation__section-heading"><span className="eyebrow">Up next · {future.length} waiting</span></div>
+      <div className="rotation__actions">
+        <button className="primary" disabled={busy || !!staged || !eligibleFuture} onClick={() => void command({ type: 'stage' })}>Stage next</button>
+        <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || !state || !hostVersionAllowed(selectedFuture.versionId) || state.promotedRequestId === selectedFuture.id} onClick={() => { if (selectedFuture) void command({ type: 'promoteRequest', requestId: selectedFuture.id }, 'Request promoted to the front of the waiting queue.'); }}>Promote selected</button>
+        <div className="queue-actions"><button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').findIndex(r => r.id === selectedFuture.id) < 1} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i > 0) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i - 1].id }); }}>Move up</button> <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').at(-1)?.id === selectedFuture.id} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i >= 0 && i < waiting.length - 1) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i + 2]?.id ?? null }); }}>Move down</button> <button disabled={busy || (!state?.manualQueueOrder?.length && !state?.promotedRequestId)} onClick={() => void command({ type: 'resetQueueOrder' }, 'Automatic queue order restored.')}>Automatic order</button></div>
+      </div>
+      {state?.manualQueueOrder?.length ? <p className="muted rotation__hint">Manual order · new requests follow the arranged queue.</p> : null}
       <div role="listbox" aria-label="Singer Rotation" data-queue-list>{future.map((request, index) => { const item = describe(request); return <div className={`queue-row ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}
         draggable={!busy && request.status === 'accepted'} onDragStart={event => { draggedRequest.current = request.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', request.id); }} onDragEnd={() => { draggedRequest.current = ''; }}
         onDragOver={event => { if (!busy && request.status === 'accepted' && draggedRequest.current && draggedRequest.current !== request.id) event.preventDefault(); }}
         onDrop={event => { event.preventDefault(); const id = draggedRequest.current; draggedRequest.current = ''; if (!busy && id && id !== request.id && request.status === 'accepted') void command({ type: 'moveRequest', requestId: id, beforeRequestId: request.id }); }}
         onContextMenu={event => { event.preventDefault(); setSelectedRequestId(request.id); setQueueMenu({ request, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 240)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 230)) }); }}
-        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? (state && !isVersionAllowed(state, request.versionId) ? 'Staged · locked · unavailable under current policy' : 'Staged · locked') : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !isVersionAllowed(state, request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
+        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Staged · locked · unavailable under current policy' : 'Staged · locked') : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       {staged && <button disabled={busy} onClick={() => void command({ type: 'release' })}>Release staged song</button>}
+      </div>
+      {settings.hostPreviewPosition === 'below' && <>{previewSeparator}{preview}</>}
     </aside>
     <footer className="transport" aria-label="Playback controls">
       <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Staged' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Stage an accepted request to begin'}</small></div>
@@ -653,9 +784,9 @@ function App() {
         <Tooltip text={!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (stagedBlocked || pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text={shortcutHint('Stop', 'stop')}><button className="icon-button" aria-label="Stop" disabled={busy || !active} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
         <Tooltip text={shortcutHint('Skip', 'skip')}><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
-        <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const masterVolume = Number(event.target.value) / 100; setSettings(current => ({ ...current, masterVolume })); void window.tpv.saveSettings({ masterVolume }).catch(error => setNotice(`Could not save volume: ${String(error)}`)); }} /></label>
       </div>
       <PlaybackTimeline generation={state?.playback?.generationId ?? null} disabled={busy} shortcuts={shortcuts} />
+      <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const masterVolume = Number(event.target.value) / 100; setSettings(current => ({ ...current, masterVolume })); void window.tpv.saveSettings({ masterVolume }).catch(error => setNotice(`Could not save volume: ${String(error)}`, 'error')); }} /></label>
       <div className="transport__status" role="status">{!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : !active && pauseRemaining > 0 ? `Pause interval: ${pauseRemaining}s remaining. Press Play when ready.` : 'Key and tempo controls are not yet available. Configure optional bumper music in Audio Controls.'}</div>
     </footer>
     {queueMenu && <div className="song-menu queue-menu" role="menu" aria-label="Queued request actions" style={{ left: queueMenu.x, top: queueMenu.y }}>
@@ -668,17 +799,17 @@ function App() {
     {editingRequest && state && <QueueEditDialog request={editingRequest} singers={state.singers} versions={versions} onClose={() => setEditingRequest(null)} onSave={async (singerId, versionId) => {
       const result = await window.tpv.command({ type: 'editRequest', requestId: editingRequest.id, singerId, versionId });
       if (!result.ok) throw new Error(result.error || 'The request could not be updated.');
-      setNotice('Queued request updated.');
+      setNotice('Queued request updated.', 'success');
     }} />}
     {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} shortcuts={shortcuts} initialSection={settingsSection} focusRequest={settingsFocusRequest} onSaveShortcuts={async value => { setBusy(true); try { setShortcuts(await window.tpv.saveShortcuts(value)); } finally { setBusy(false); } }} onClose={() => setSettingsOpen(false)} onSave={async value => { setBusy(true); try { const saved = await window.tpv.saveSettings(value); setSettings(saved); } finally { setBusy(false); } }} />}
-    {ratingDialog && <SongRatingDialog title={ratingDialog.title} recordingKey={ratingDialog.key} rating={ratings[ratingDialog.key] ?? null} canVote={canRate} onClose={() => setRatingDialog(null)} onOpenPreferences={() => { setRatingDialog(null); openPreferences('ratings'); }} onSave={async value => {
+    {ratingDialog && <SongRatingDialog title={ratingDialog.title} recordingKey={ratingDialog.key} rating={ratings[ratingDialog.key] ?? null} canVote={canRateByKey[ratingDialog.key] === true} onClose={() => setRatingDialog(null)} onOpenPreferences={() => { setRatingDialog(null); openPreferences('ratings'); }} onSave={async value => {
       ++ratingWriteEpoch.current;
       setBusy(true);
       try {
         const result = await window.tpv.rateSong(ratingDialog.key, value);
         if (result.status !== 'ready') throw new Error(`Your rating was not confirmed (${result.status}). Check the connection or rating profile and retry explicitly.`);
         setRatings(current => ({ ...current, [result.item.recordingKey]: result.item })); setRatingReload(current => current + 1); return result.item;
-      } catch (error) { setNotice(error instanceof Error ? error.message : 'Your rating was not confirmed.'); throw error; }
+      } catch (error) { setNotice(error instanceof Error ? error.message : 'Your rating was not confirmed.', 'error'); throw error; }
       finally { setBusy(false); }
     }} />}
     {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist) => {
@@ -687,6 +818,9 @@ function App() {
     }} />}
     {contextMenu && <div className="song-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
       <button role="menuitem" onClick={() => { setQueueVersion(contextMenu.version); setContextMenu(null); }}>Add to Queue</button>
+      <button role="menuitem" disabled={busy} onClick={() => blacklistSelection('song', contextMenu.version)}>Blacklist Song</button>
+      <button role="menuitem" disabled={busy || !contextMenu.version.artist?.trim()} onClick={() => blacklistSelection('artist', contextMenu.version)}>Blacklist Artist</button>
+      <button role="menuitem" onClick={() => { setContextMenu(null); openPreferences('blacklist'); }}>Manage Blacklist…</button>
       {!contextMenu.version.catalogTrack && <>
         <button role="menuitem" onClick={() => { setPlaylistVersion(contextMenu.version); setContextMenu(null); }}>Add to Playlist</button>
         <button role="menuitem" onClick={() => { setEditingVersion(contextMenu.version); setContextMenu(null); }}>Edit Metadata</button>
@@ -702,12 +836,14 @@ function App() {
         addSinger: singer => window.tpv.command({ type: 'addSinger', singer }),
         singerCreated,
         addRequest: async singerId => {
-          const result = await requestLibrarySong(queueVersion, singerId, crypto.randomUUID(), window.tpv);
+          const result = queueVersion.youtubeSearchReceipt
+            ? await window.tpv.youtubeSearch.request({ ...queueVersion.youtubeSearchReceipt, singerId, requestId: crypto.randomUUID() })
+            : await requestLibrarySong(queueVersion, singerId, crypto.randomUUID(), window.tpv);
           if (result.ok && result.versionId) setSelectedVersionId(result.versionId);
           queueNotice = result.notice || ''; return result;
         },
       });
-      setNotice(queueNotice || (settings.autoApprove ? 'Song added to the queue.' : 'Request submitted for review.'));
+      setNotice(queueNotice || (settings.autoApprove ? 'Song added to the queue.' : 'Request submitted for review.'), 'success');
     }} />}
     {playlistVersion && state && <AddToPlaylistDialog song={playlistVersion} singers={state.singers} playlists={collections.playlists} onClose={() => setPlaylistVersion(null)} onSave={async playlistId => { if (!await mutateCollections({ type: 'add', playlistId, versionId: playlistVersion.id })) throw new Error('Could not add the song.'); }} />}
   </div>;
