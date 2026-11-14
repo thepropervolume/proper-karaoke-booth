@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>0.1.0</Version>
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="KHost.Abstractions" Version="1.0.0" />
+    <Compile Include="src/**/*.cs" />
+    <Content Include="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute"><_Parameter1>BridgeSmoke</_Parameter1></AssemblyAttribute>
+  </ItemGroup>
+</Project>

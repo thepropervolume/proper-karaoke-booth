@@ -1,0 +1,9 @@
+{
+  "id": "2176562d-ec10-40db-9ab9-8650cad0aa0c",
+  "name": "The Proper Volume Companion Bridge",
+  "version": "0.1.0",
+  "author": "The Proper Volume",
+  "description": "Optional authenticated loopback catalog search and explicit queue handoff. Playback remains in KHost; no KaraFun credentials leave KHost.",
+  "entryAssembly": "TPV.KHostBridge.dll",
+  "icon": "plug"
+}
