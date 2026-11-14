@@ -9,7 +9,7 @@ export class RemoteAuthorityCoordinator {
   private failed = false;
   private failures = new Set<() => void>();
   constructor(private readonly store: Store<ShowState>,
-    private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger'>>,
+    private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>>,
     private readonly installCommitted: (state: ShowState) => void) {}
 
   private notify(callback: () => void): void {
