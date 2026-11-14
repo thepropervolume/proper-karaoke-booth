@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { parseSongRating, type RecordingKey, type SongRating } from '../domain/song-rating';
+import { isLocalRecordingKey, parseSongRating, type RecordingKey, type SongRating } from '../domain/song-rating';
 import { Tooltip } from './Tooltip';
 import '../styles/song-rating.scss';
 
@@ -12,7 +12,7 @@ export function SongRatingButton({ title, rating, loading = false, onClick }: {
   title: string; rating: SongRating | null; loading?: boolean; onClick: () => void;
 }) {
   const summary = loading ? 'Loading ratings' : rating ? `${averageText(rating)}; ${countText(rating.count)}` : 'Ratings not loaded';
-  const label = `Rate ${title}. ${summary}${rating?.ownVote ? `. Your host rating: ${rating.ownVote} out of 10 hearts` : ''}`;
+  const label = `Rate ${title}. ${summary}${rating?.ownVote ? `. Your ${isLocalRecordingKey(rating.recordingKey) ? 'local' : 'host'} rating: ${rating.ownVote} out of 10 hearts` : ''}`;
   return <Tooltip text={label}>
     <button type="button" className="song-rating-button" aria-label={label} aria-busy={loading} draggable={false}
       onPointerDown={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}
@@ -36,6 +36,7 @@ export function SongRatingDialog({ title, recordingKey, rating, canVote, onClose
   onClose: () => void; onSave: (value: number | null) => Promise<SongRating>; onOpenPreferences?: () => void;
 }) {
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), hearts = useRef<HTMLDivElement>(null);
+  const local = isLocalRecordingKey(recordingKey), ratingLabel = local ? 'Your Local Rating' : 'Your Host Rating';
   const [state, setState] = useState(() => ({ recordingKey, confirmed: rating?.recordingKey === recordingKey ? rating : null, choice: rating?.recordingKey === recordingKey ? rating.ownVote : null, dirty: false }));
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const activeKey = useRef(recordingKey);
@@ -62,10 +63,10 @@ export function SongRatingDialog({ title, recordingKey, rating, canVote, onClose
     try {
       const confirmed = parseSongRating(await onSave(value));
       if (!confirmed || confirmed.recordingKey !== key || confirmed.ownVote !== value)
-        throw new Error('The service did not confirm this rating. Refresh and check before trying again.');
+        throw new Error('The application did not confirm this rating. Refresh and check before trying again.');
       if (activeKey.current !== key) return;
       setState({ recordingKey: key, confirmed, choice: confirmed.ownVote, dirty: false });
-      setNotice(value === null ? 'Your host rating was cleared.' : 'Your host rating was saved.');
+      setNotice(value === null ? `Your ${local ? 'local' : 'host'} rating was cleared.` : `Your ${local ? 'local' : 'host'} rating was saved.`);
     } catch (reason) {
       if (activeKey.current === key) setError(reason instanceof Error ? reason.message : String(reason));
     } finally { setSaving(false); }
@@ -78,11 +79,13 @@ export function SongRatingDialog({ title, recordingKey, rating, canVote, onClose
       <p className="song-rating-dialog__song"><strong>{title}</strong></p>
       <p className="song-rating-dialog__summary">{state.confirmed
         ? <><span aria-hidden="true">♥ </span>{averageText(state.confirmed)} <span className="muted">· {countText(state.confirmed.count)}</span></>
-        : 'The shared rating has not loaded yet.'}</p>
-      <p id={`${id}-host-note`} className="muted">Your host rating is saved for the configured private host profile. This does not create an individual singer account. Ratings apply to this exact recording.</p>
+        : `The ${local ? 'local' : 'shared'} rating has not loaded yet.`}</p>
+      <p id={`${id}-host-note`} className="muted">{local
+        ? 'This file has no provider recording ID. Your rating is saved in this host’s local show database and works offline. It is not sent to the shared service. Identical file contents share this local rating.'
+        : 'Your host rating is saved in the shared database for the configured private host profile. This does not create an individual singer account. Ratings apply to this exact provider recording.'}</p>
       <fieldset disabled={saving || !canVote}>
-        <legend>Your Host Rating</legend>
-        <div className="song-rating-dialog__hearts" ref={hearts} role="radiogroup" aria-label="Your Host Rating" aria-describedby={`${id}-host-note`}
+        <legend>{ratingLabel}</legend>
+        <div className="song-rating-dialog__hearts" ref={hearts} role="radiogroup" aria-label={ratingLabel} aria-describedby={`${id}-host-note`}
           onKeyDown={event => {
             const from = Number((event.target as HTMLElement).closest('[data-heart-value]')?.getAttribute('data-heart-value'));
             if (!from || !['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -100,15 +103,15 @@ export function SongRatingDialog({ title, recordingKey, rating, canVote, onClose
       </fieldset>
       <p className="song-rating-dialog__choice" aria-live="polite">{state.choice === null ? 'Choose 1–10 hearts.' : `${state.choice} out of 10 hearts${state.dirty ? ' · Unsaved' : ''}`}</p>
       {!canVote && <div className="song-rating-dialog__setup">
-        <p>You can view shared ratings. Configure your private host rating profile to save or clear your own rating.</p>
-        {onOpenPreferences && <button type="button" onClick={() => { onClose(); onOpenPreferences(); }}>Open Rating Preferences</button>}
+        <p>{local ? 'This local recording is not available for rating. Finish importing it or reopen its library entry and try again.' : 'You can view shared ratings. Configure your private host rating profile to save or clear your own rating.'}</p>
+        {!local && onOpenPreferences && <button type="button" onClick={() => { onClose(); onOpenPreferences(); }}>Open Rating Preferences</button>}
       </div>}
       {error && <p role="alert">Could not save rating: {error}</p>}
       {notice && <p role="status">{notice}</p>}
       <div className="settings-actions song-rating-dialog__actions">
         <button type="button" disabled={saving} onClick={onClose}>Close</button>
-        <button type="button" disabled={saving || !canVote || !state.confirmed?.ownVote} onClick={() => void save(null)}>Clear My Host Rating</button>
-        <button type="submit" className="primary" disabled={saving || !canVote || state.choice === null || !state.dirty}>{saving ? 'Saving…' : 'Save Host Rating'}</button>
+        <button type="button" disabled={saving || !canVote || !state.confirmed?.ownVote} onClick={() => void save(null)}>{local ? 'Clear My Local Rating' : 'Clear My Host Rating'}</button>
+        <button type="submit" className="primary" disabled={saving || !canVote || state.choice === null || !state.dirty}>{saving ? 'Saving…' : local ? 'Save Local Rating' : 'Save Host Rating'}</button>
       </div>
     </form>
   </dialog>;
