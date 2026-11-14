@@ -71,6 +71,7 @@ import { ProviderCatalogService } from './provider-catalog-service';
 import { KHostBridgeConnection } from './khost-connection';
 import { readKHostBridgeProfile } from './khost-client';
 import { isProviderCatalogId } from '../domain/provider-catalog';
+import { parseHostPolicy } from './host-policy';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 let host: BrowserWindow | null = null;
@@ -604,6 +605,10 @@ function shortString(x: unknown): x is string { return typeof x === 'string' && 
 function validateCommand(value: unknown): Command | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
   switch (value.type) {
+    case 'setPolicy': {
+      const policy = parseHostPolicy(value.policy);
+      return policy ? { type: 'setPolicy', policy } : null;
+    }
     case 'editVersion':
       return shortString(value.id) && shortString(value.title) && typeof value.artist === 'string' && value.artist.length <= 500 ? { type: 'editVersion', id: value.id, title: value.title, artist: value.artist } : null;
     case 'addSinger':
