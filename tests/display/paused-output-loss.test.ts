@@ -6,9 +6,10 @@ import { DEFAULT_SHORTCUTS } from '../../src/domain/shortcuts';
 test('an output change while paused requires deliberate recovery before resuming', async () => {
   const descriptors = new Map(['window', 'document', 'navigator', 'Audio'].map(name =>
     [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
-  const events: { type?: string; generation?: string }[] = [];
+  const events: { type?: string; generation?: string; revision?: number }[] = [];
   let publish: ((value: unknown) => Promise<void>) | undefined;
   let onDeviceChange: (() => void) | undefined;
+  let recoverOutput: ((value: unknown) => void) | undefined;
   let defaultSink = 'speaker-a';
   let audibleSink = '';
   let video: FakeMedia;
@@ -36,7 +37,8 @@ test('an output change while paused requires deliberate recovery before resuming
     addEventListener() {},
     tpvDisplay: {
       onSeek() {}, onBumperCommand() {}, ready() {}, shortcut() {}, bumperAck() {}, bumperEvent() {}, bumperDeviceChange() {},
-      event(value: { type?: string; generation?: string }) { events.push(value); },
+      onOutputRecovery(callback: (value: unknown) => void) { recoverOutput = callback; return () => {}; },
+      event(value: { type?: string; generation?: string; revision?: number }) { events.push(value); },
       subscribe(callback: (value: unknown) => Promise<void>) { publish = callback; return () => {}; },
     },
   };
@@ -69,6 +71,35 @@ test('an output change while paused requires deliberate recovery before resuming
     assert.deepEqual({ hostNotified, paused: video.paused, muted: video.muted, audibleSink },
       { hostNotified: true, paused: true, muted: true, audibleSink: 'speaker-a' },
       'the display must report the changed output and stay silent until deliberate recovery');
+    assert.ok(recoverOutput, 'display registers its trusted recovery callback');
+    const firstRevision = events.filter(event => event.type === 'output-error').at(-1)?.revision;
+    assert.ok(Number.isSafeInteger(firstRevision));
+    recoverOutput({ generation: 'old-generation', revision: firstRevision });
+    await publish({ ...view, next: ['Another singer'] });
+    assert.equal(video.muted, true, 'stale recovery and queue updates cannot release the output gate');
+    recoverOutput({ generation: 'g1', revision: firstRevision });
+    await publish(view);
+    assert.deepEqual({ paused: video.paused, muted: video.muted, audibleSink },
+      { paused: false, muted: false, audibleSink: 'speaker-b' },
+      'a deliberate recovery can validate the current default sink and resume this generation');
+    await publish({ ...view, playback: { ...playback, status: 'paused' } });
+    defaultSink = 'speaker-c'; onDeviceChange();
+    const secondRevision = events.filter(event => event.type === 'output-error').at(-1)?.revision;
+    recoverOutput({ generation: 'g1', revision: secondRevision });
+    const pendingResume = publish(view);
+    // A newer device event can arrive after host authorization but before the
+    // asynchronous route finishes. Its fresh revision invalidates that intent.
+    defaultSink = 'speaker-d'; onDeviceChange();
+    await pendingResume;
+    assert.equal(video.muted, true); assert.equal(video.paused, true); assert.equal(audibleSink, 'speaker-b');
+    recoverOutput({ generation: 'g1', revision: secondRevision });
+    await publish(view);
+    assert.equal(video.muted, true, 'replaying stale authorization cannot release a newer device event');
+    const newestRevision = events.filter(event => event.type === 'output-error').at(-1)?.revision;
+    assert.ok(Number(newestRevision) > Number(secondRevision));
+    recoverOutput({ generation: 'g1', revision: newestRevision });
+    await publish(view);
+    assert.equal(video.muted, false); assert.equal(video.paused, false); assert.equal(audibleSink, 'speaker-d');
   } finally {
     for (const [name, descriptor] of descriptors) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

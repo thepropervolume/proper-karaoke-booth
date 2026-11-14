@@ -4,7 +4,7 @@ import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
-declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
+declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
@@ -12,6 +12,9 @@ const next = document.querySelector<HTMLElement>('#next')!;
 const logos = document.querySelectorAll<HTMLImageElement>('#idle-logo, #header-logo');
 let current: PlaybackState | null = null;
 let updateSequence = 0;
+let outputRecoveryGeneration: string | null = null;
+let outputRevision = 0;
+let rerouteRequested = false;
 let shortcuts = DEFAULT_SHORTCUTS;
 let lastTimelineReport = 0;
 function reportTimeline(force = false): void {
@@ -50,14 +53,30 @@ const output = new AudioOutputRouter(async () => {
   if (!navigator.mediaDevices?.enumerateDevices) throw new Error('Audio output enumeration is unavailable.');
   return navigator.mediaDevices.enumerateDevices();
 });
+// Only a deliberate, verified main-process Resume authorizes recovery after a
+// device change. A routine state publication must never silently select a new sink.
+window.tpvDisplay.onOutputRecovery?.(value => {
+  if (!value || typeof value !== 'object') return;
+  const recovery = value as { generation?: unknown; revision?: unknown };
+  if (recovery.generation !== current?.generation || recovery.generation !== outputRecoveryGeneration ||
+    !Number.isSafeInteger(recovery.revision) || recovery.revision !== outputRevision) return;
+  outputRecoveryGeneration = null;
+  rerouteRequested = true;
+});
+function reportOutputFailure(generation: string, message: string): void {
+  outputRecoveryGeneration = generation;
+  ++outputRevision;
+  rerouteRequested = false;
+  ++updateSequence;
+  output.invalidate(video);
+  window.tpvDisplay.event({ type: 'output-error', generation, revision: outputRevision, position: video.currentTime || 0, message });
+}
 navigator.mediaDevices?.addEventListener('devicechange', () => {
   bumperPlayer.muteForOutputChange();
   window.tpvDisplay.bumperDeviceChange();
-  if (!current || current.status !== 'playing') return;
+  if (!current) return;
   const generation = current.generation;
-  ++updateSequence;
-  output.invalidate(video);
-  window.tpvDisplay.event({ type: 'output-error', generation, position: video.currentTime || 0, message: 'Audio devices changed. Check the output in Preferences, then resume when ready.' });
+  reportOutputFailure(generation, 'Audio devices changed. Check the output in Preferences, then resume when ready.');
 });
 window.addEventListener('keydown', event => {
   if (event.repeat || event.defaultPrevented || event.isComposing || (event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable]:not([contenteditable=\"false\"])')) return;
@@ -102,7 +121,6 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
 }
 window.tpvDisplay.subscribe(async (view) => {
   bumperPlayer.setVolume(view.bumperVolume);
-  const sequence = ++updateSequence;
   shortcuts = view.shortcuts;
   const state = view.playback;
   document.body.classList.toggle('idle', !state);
@@ -112,27 +130,39 @@ window.tpvDisplay.subscribe(async (view) => {
     if (view.logo) logo.src = view.logo; else logo.removeAttribute('src');
   });
   if (!state) {
+    ++updateSequence;
     const previousGeneration = current?.generation;
     current = null;
+    outputRecoveryGeneration = null; rerouteRequested = false;
     output.invalidate(video); video.removeAttribute('src'); video.load();
     waiting.hidden = false; caption.textContent = '';
     // invalidate() mutes and pauses synchronously before this acknowledgement.
     if (previousGeneration) window.tpvDisplay.event({ type: 'silenced', generation: previousGeneration });
     return;
   }
-  const changed = !current || current.generation !== state.generation;
+  const changed = !current || current.generation !== state.generation || current.src !== state.src;
+  const transportChanged = changed || current?.status !== state.status || current.outputId !== state.outputId;
+  if (changed) { outputRecoveryGeneration = null; rerouteRequested = false; }
   current = state;
   waiting.hidden = true; caption.textContent = `${state.singer} · ${state.title}`;
   const player = changed ? playerFor(state) : video;
   player.volume = state.volume;
+  // Queue, caption, branding, shortcut and volume refreshes do not affect the
+  // current route, including one which is still being prepared asynchronously.
+  if (!transportChanged && !rerouteRequested) return;
+  const sequence = ++updateSequence;
+  if (outputRecoveryGeneration === state.generation) {
+    output.invalidate(player);
+    return;
+  }
   if (state.status === 'playing') {
+    rerouteRequested = false;
     let ready = false;
     try {
       ready = await output.prepare(player, state.outputId, () => sequence === updateSequence && video === player && current?.generation === state.generation && current.status === 'playing');
     } catch (error) {
       if (sequence === updateSequence && video === player && current?.generation === state.generation) {
-        player.pause();
-        window.tpvDisplay.event({ type: 'output-error', generation: state.generation, position: player.currentTime || 0, message: error instanceof Error ? error.message : 'Could not use the selected output.' });
+        reportOutputFailure(state.generation, error instanceof Error ? error.message : 'Could not use the selected output.');
       }
     }
     if (ready) {
