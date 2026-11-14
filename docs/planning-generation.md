@@ -39,7 +39,7 @@ Generating OOXML is not visual verification. The current document renderer suppo
 
 ## Verified 0.5.0 Planning Edition
 
-On 14 November 2026 the current deliverables were generated from the frozen canonical Markdown at source `8d4c003` and published in the project's sibling `planning` folder. The **38-page Word specification** was rendered successfully using official native LibreOffice 26.8.3.1; all final page images were visually inspected at full resolution. The **45-page Night/Day mockup PDF**, covering 21 screen families, also passed full-page visual review. The current identity, status labels, captions, pagination and blacklist-dialog buttons were checked after corrections. Nine documentation-generator tests passed.
+On 14 November 2026 the initial 0.5.0 deliverables were generated from the frozen canonical Markdown at source `8d4c003` and published in the project's sibling `planning` folder. The **38-page Word specification** was rendered successfully using official native LibreOffice 26.8.3.1; all final page images were visually inspected at full resolution. The **45-page Night/Day mockup PDF**, covering 21 screen families, also passed full-page visual review. The current identity, status labels, captions, pagination and blacklist-dialog buttons were checked after corrections. Nine documentation-generator tests passed.
 
 | File | SHA256 |
 | --- | --- |
@@ -48,3 +48,15 @@ On 14 November 2026 the current deliverables were generated from the frozen cano
 | `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `c37cc9a7a00a1bdfb1c9f808d55b951f6555ae63d2a45c41d2781c3d4b04018c` |
 
 The generated `release/Proper-Karaoke-Booth-0.5.0-planning-verification.json` retains the source/artifact hashes and review counts. Older versioned planning files are preserved as historical editions. This verification describes the generated documents; it does not establish that planned application features are implemented or physical show devices have passed testing.
+
+### Native KaraFun Research Revision
+
+The later 14 November revision at `d657c17` makes native KaraFun account/playback investigation the primary path and identifies the external KHost bridge as interim. The current Word and PDF were regenerated from that canonical Markdown; the application binaries remain 0.5.0 with no runtime change. Page counts remain 38 and 45. Word pages 15–17 and the PDF cover were reviewed at full resolution; all other final page images are byte-identical to the previously reviewed pages. The unchanged mockup screens do not claim that native KaraFun playback is implemented.
+
+| Current file | SHA256 |
+| --- | --- |
+| `docs/product-specification.md` | `0b71cee7616ec3c8254c1dd68b79eb07bc75c7f78720802549cf3d71ab529220` |
+| `TPV_Karaoke_Product_Specification_Current.docx` | `4f209b2bc1b6f264e4c91fe58e718722a9af61390409e8d477fd4d99b56e34cc` |
+| `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `64911ed2de3afcbda0b1fe1a9ea233ae2de8e8877f29acc57c84d2d16f095380` |
+
+The separate `release/Proper-Karaoke-Booth-0.5.0-native-research-planning-verification.json` preserves this later source/artifact relationship. The initial delivery receipt remains historical evidence rather than being overwritten.
