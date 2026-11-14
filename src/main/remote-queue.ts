@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { applyCommand, isVersionAllowed, visibleVersions, type Outcome, type ShowState } from '../domain';
 import { normalizeMissingRequest } from '../domain/missing-request';
 import type { Settings } from '../domain/settings';
+import { compileSongBlacklist } from '../domain/song-blacklist';
 
 type Guest = { id: string; singerId: string; showId: string };
 type Receipt = { fingerprint: string; outcome: string };
@@ -28,7 +29,7 @@ export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
   private authorityFault = false;
-  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger'>>,
+  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>>,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
     private readonly onUncertainCommit: () => void = () => {}) {
@@ -193,6 +194,7 @@ export class RemoteQueue {
   snapshot(token: unknown, scope = '') {
     const guest = this.authenticate(token, scope), state = this.state();
     const catalog = this.catalog(token, 0, 50, scope);
+    const visible = new Set(visibleVersions(state, this.settings()).map(version => version.id));
     const singerName = state.singers.find(singer => singer.id === guest.singerId)?.name ?? '';
     // Preserve active requests even when they are older than recent completed or
     // removed requests. The bound also applies to malformed/legacy state with
@@ -202,7 +204,7 @@ export class RemoteQueue {
     let visibleCount = 0;
     for (let index = state.requests.length - 1; index >= 0; index--) {
       const request = state.requests[index];
-      if (request.singerId !== guest.singerId || !isVersionAllowed(state, request.versionId)) continue;
+      if (request.singerId !== guest.singerId || !visible.has(request.versionId)) continue;
       visibleCount++;
       const target = ['pending', 'accepted', 'staged', 'playing'].includes(request.status) ? active : recent;
       if (target.length < MAX_SNAPSHOT_REQUESTS) target.push({ index, request });
@@ -217,13 +219,13 @@ export class RemoteQueue {
   catalog(token: unknown, offset = 0, limit = 50, scope = '') {
     this.authenticate(token, scope);
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw denied();
-    const state = this.state(), versions = visibleVersions(state);
+    const state = this.state(), versions = visibleVersions(state, this.settings());
     const items = versions.slice(offset, offset + limit).map(v => ({ id: v.id, title: v.title, artist: v.artist }));
     return { revision: state.revision, items, nextOffset: offset + limit < versions.length ? offset + limit : null };
   }
   catalogItem(token: unknown, versionId: string, scope = '') {
     const state = this.state(); this.authenticate(token, scope);
-    if (!isVersionAllowed(state, versionId)) return null;
+    if (!isVersionAllowed(state, versionId, this.settings())) return null;
     const version = state.versions.find(v => v.id === versionId)!;
     return { id: version.id, title: version.title, artist: version.artist };
   }
@@ -249,12 +251,15 @@ export class RemoteQueue {
       const singer = state.singers.find(item => item.id === guest.singerId);
       const request = normalizeMissingRequest({ singer: singer?.name, title, artist });
       if (!request) throw denied();
-      const outcome: Outcome = { ok: true, revision: state.revision };
-      const requestId = randomUUID();
-      this.db.prepare('INSERT INTO missing_song_requests (id, singer, title, artist, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(requestId, request.singer, request.title, request.artist, new Date(this.now()).toISOString());
-      this.db.prepare('INSERT INTO remote_missing_song_owners (request_id, guest_id, singer_id, show_id) VALUES (?, ?, ?, ?)')
-        .run(requestId, guest.id, guest.singerId, guest.showId);
+      const settings = this.settings(), blocked = compileSongBlacklist({ songBlacklist: settings.songBlacklist ?? [], artistBlacklist: settings.artistBlacklist ?? [] }).isBlocked(request);
+      const outcome: Outcome = blocked ? { ok: false, code: 'NOT_AVAILABLE', message: 'Song is not available', revision: state.revision } : { ok: true, revision: state.revision };
+      if (!blocked) {
+        const requestId = randomUUID();
+        this.db.prepare('INSERT INTO missing_song_requests (id, singer, title, artist, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(requestId, request.singer, request.title, request.artist, new Date(this.now()).toISOString());
+        this.db.prepare('INSERT INTO remote_missing_song_owners (request_id, guest_id, singer_id, show_id) VALUES (?, ?, ?, ?)')
+          .run(requestId, guest.id, guest.singerId, guest.showId);
+      }
       this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)')
         .run(guest.id, commandId, fingerprint, JSON.stringify(outcome));
       return outcome;
