@@ -1,6 +1,6 @@
 # Architecture and progress
 
-Updated 12 November 2026 for development version 0.4.0. This describes implemented source and recorded rehearsals; future engine and platform choices remain open.
+Updated 14 November 2026 for source development version 0.5.0. This describes implemented source and recorded rehearsals; package verification is recorded separately in [installation](installation.md), and future engine/platform choices remain open.
 
 ## Current show authority
 
@@ -26,7 +26,17 @@ The dedicated MySQL catalog service at `apps.thepropervolume.com` is deployed an
 
 Karaoke Nerds supplies recording metadata and YouTube links, not a paid playback entitlement. Accepted catalog requests dispatch permanent acquisition through yt-dlp; completed media attaches to the existing version and uses the ordinary local queue/player without autoplay. FFmpeg and yt-dlp are host prerequisites. Automatic brand/artist batch downloads remain planned.
 
-Shared recording-quality heart ratings use a separate MySQL schema and authenticated service. Public readers receive aggregates; a provisioned host voter credential permits one replaceable vote per exact recording. Catalog reader access cannot write ratings. Credentials stay in the main process, and verified singer accounts or remote self-service voting are not implied. No paid karaoke provider is connected for playback or existing-subscription sign-in. Provider SDK/API access and rights remain separate prerequisites.
+Provider-identified YouTube/Karaoke Nerds recording-quality heart ratings use a separate MySQL schema and authenticated service. Public readers receive aggregates; a provisioned host voter credential permits one replaceable vote per exact recording. Source-less files instead use their imported SHA256 fingerprint and save their vote locally in schema-3 `show.sqlite`, without sending that fingerprint or vote to the shared service. Per-recording capability checks keep local voting available when shared access is missing. Catalog reader access cannot write global ratings. Credentials stay in the main process, and verified singer accounts or remote self-service voting are not implied. Native paid-provider playback and existing-subscription sign-in remain unconnected. Provider SDK/API access and rights remain separate prerequisites.
+
+## 0.5.0 Discovery And External Handoff
+
+Bounded yt-dlp YouTube search returns metadata candidates after karaoke/video/channel filtering and host approval/block rules. The host remembers canonical metadata behind opaque current-search receipts. Singer selection resolves that receipt at the authority, rechecks current policy and blacklists, and uses the existing request/download transaction; renderer-supplied metadata cannot authorize a recording. Discovery never autoplays. Takeout subscription files seed channel approvals without signing into YouTube, reading browser cookies or accessing the private subscriptions feed.
+
+The optional KHost companion plugin is independently written against separately MIT-licensed public contracts. TPV explicitly selects an owner-only loopback connection profile, searches the separately installed provider, and hands an opaque authorized result to KHost's offered Enqueue action. Account sign-in, acquisition, singer selection and playback stay in KHost. Policy/blacklist/profile checks and original-ID outcome recovery protect dispatch; unresolved handoffs are never automatically resent. External results are not playable TPV versions. Synthetic listener/client and authority tests are distinct from still-unverified authenticated use inside the owner's real KHost installation. See [bridge architecture and setup](khost-bridge.md).
+
+## 0.5.0 Visual Capture And Host Layout
+
+The silent Singer Preview and opt-in LAN singer screens reuse captures of the actual singer window rather than creating another media player. Capture epochs reject stale window/frame callbacks and coalesce concurrent requests. The LAN HTTP listener is read-only, disabled by default and separate from authenticated singer requests; bounded streams and backpressure prevent slow viewers from controlling or unboundedly buffering the host. Audio stays on the host output. Host panel sizes are persisted at committed pointer/keyboard adjustments and clamped to the current viewport. See [LAN sharing limits](singer-screen-sharing.md) and [host controls](host-workspace.md).
 
 ## Media investigation and verification
 

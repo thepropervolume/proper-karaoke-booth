@@ -32,3 +32,7 @@ python scripts/generate-specification.py --source docs/product-specification.md 
 The scripts fail on invalid or missing required mockup information. Do not treat a successful command as visual approval: render the Word document and PDF to page images and inspect every page for readability, spacing and accurate statuses. Run the documentation generator tests with `python -m unittest discover -s tests/docs`.
 
 The optional `brand_logos` entries in the Markdown theme bind the local Night/Day horizontal PNGs to exact SHA256 hashes. Update those hashes when the selected identity changes. The generator refuses an unexpected path, absent image or mismatched digest; all other screen text/palettes still come from the Markdown blocks.
+
+## Windows Word Rendering
+
+Generating OOXML is not visual verification. The current document renderer supports native Windows LibreOffice discovered on PATH, as well as the configured rendering runtime; LibreOffice does not have to be bundled inside the app installer. Use the document workflow's `render_docx.py` to obtain page images, inspect every page and fix pagination before publishing the generated Word edition. LibreOffice is a documentation-generation dependency, not a karaoke playback dependency. The revised Word edition remains pending until its actual render/review passes.

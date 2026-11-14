@@ -1,4 +1,4 @@
-# Singer Guide for Development Version 0.4.4
+# Singer Guide for Development Version 0.5.0
 
 The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The experimental relay is deployed and public browser request/recovery rehearsals passed; physical-phone, venue-network and long-show checks remain. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
 
@@ -8,7 +8,15 @@ The 0.4.3 development build adds host-only Sunfly Store title/SF-SKU results wit
 
 The identity introduced in 0.4.1 uses an orange/pink vintage microphone with a play outline and no lettering in the app icon. Older installed versions may show the previous icon. The host can still choose a separate singer-display logo, and the TPV lyric-backdrop video remains the same.
 
-Version 0.4.4 adds Mac development packages without changing singer request behavior. The Apple silicon app passed a muted launch/restart rehearsal on macOS 27.0.1; this does not establish physical-show readiness. Windows/Linux hosts remain at 0.4.3. Ask the host which installed build is in use.
+Version 0.5.0 adds host-side YouTube discovery, song/artist blacklists and optional LAN lyric-screen sharing. Package verification is in progress; ask the host which installed version is in use. Earlier Windows/Linux 0.4.3 and Mac 0.4.4 verification remains recorded separately and does not establish physical-show readiness.
+
+The host can optionally search KaraFun through a separate KHost application and hand a result to its external queue. Those songs do not enter the TPV queue or singer request library, and KHost handles singer selection and playback. Ask the host which application's queue is being used. The owner's separate KHost subscription test worked; authenticated use of the new TPV bridge on the target machine still needs verification.
+
+## Watch the Singer Screen
+
+If the host enables **LAN Singer Screens**, open the numeric address they share, for example `http://192.168.1.20:4051`, while connected to the venue network. It shows the same singer screen without playing a second audio feed. A hostname such as `proper-computer.local` works only when the network resolves it. If the display or connection is unavailable, the page waits/reconnects rather than becoming a host control panel.
+
+This viewing address does not join the queue or identify a singer. Ask for the separate local-room invitation or internet Remote Session link to request songs. The host may block songs, artists or YouTube channels; hidden results are unavailable for requests. Approved YouTube candidates can be requested by the host through the usual singer-name dialog, and downloads do not start a performance automatically.
 
 ## Join from the venue network
 
@@ -47,4 +55,4 @@ New CDG songs use the host’s TPV animated backdrop by default, with the origin
 
 ## Recording Heart Ratings
 
-The host can view a recording’s shared 1–10-heart score in library search and the queue and, with a provisioned rating profile, save one host vote for that exact recording. These hearts describe the recording and are separate from Clean/Explicit content restrictions or a singer performance score. Remote singer voting and account ownership are not implemented yet; ask the host if you want to discuss a recording’s quality.
+The host can view and save 1–10-heart recording ratings in the library and queue. Provider-identified YouTube/Karaoke Nerds recordings share a global score through the host's private writer profile; source-less file ratings remain in the host's local database and work offline. Hearts describe a recording, not your singing performance or Clean/Explicit classification. Remote singer voting and account ownership are not implemented; ask the host if you want to discuss a recording's quality.

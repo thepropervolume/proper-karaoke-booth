@@ -1,6 +1,12 @@
 # Installing The Proper Volume Karaoke Booth
 
-The current macOS development version is **0.4.4**; Windows/Linux packages and this PC remain at **0.4.3**. Windows installer/ZIP, the actual Windows upgrade, Linux AppImage/Debian packages, and the native macOS checks passed the platform-specific checks below. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
+Source development version **0.5.0** is in verification. The latest previously verified packages remain macOS **0.4.4** and Windows/Linux **0.4.3**; this PC's installed version has not been replaced by the source update. A configured build target is not a completed installer. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
+
+## 0.5.0 Source Update
+
+Private, muted source rehearsals cover the refreshed workspace, persisted panel resizing, preview placement, blacklist save/cancel/removal and local heart ratings without a remote writer profile. The new LAN mirror and capture modules have temporal and HTTP integration coverage. The current complete core suite passed **861 tests with eight platform/environment skips and zero failures** (869 total), and type checking passed. Actual-app playback of a silent synthetic MP4 produced matching singer-window pixels in the host preview and two isolated LAN browsers; Stop/close clearing, reconnect, port migration and shutdown passed. An owner-rating read-only IPC check reported ready/canVote without submitting a vote or changing its profile hash. New installer receipts and native packaged rehearsals will be recorded after they complete; no new Windows installation or 0.5.0 Mac/Linux package is claimed yet. These compositor checks do not verify physical audio, venue Wi-Fi or show hardware.
+
+The application still requires separately installed `yt-dlp` for YouTube search/downloads and FFmpeg for media processing/CDG conversion. Google Takeout subscription files can seed channel approvals; Google account passwords and browser cookies are not imported. LAN singer-screen sharing is off by default and uses port 4051 only when enabled. See [sharing setup and limits](singer-screen-sharing.md).
 
 ## Available packages
 

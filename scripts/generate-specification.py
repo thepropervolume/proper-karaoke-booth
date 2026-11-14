@@ -111,6 +111,10 @@ def configure(document):
         style = styles[name]
         style.font.name = "Arial"; style.font.size = Pt(size)
         style.font.bold = True; style.font.color.rgb = RGBColor.from_string("000000")
+        # python-docx's default template can carry a themed blue Title rule.
+        # Keep generated headings plain even when the installed template varies.
+        for border in list(style.element.xpath("./w:pPr/w:pBdr")):
+            border.getparent().remove(border)
         style.paragraph_format.keep_with_next = True
         style.paragraph_format.space_before = Pt(14 if name == "Heading 1" else 8)
         style.paragraph_format.space_after = Pt(5)
@@ -121,7 +125,7 @@ def configure(document):
         styles[name].paragraph_format.space_after = Pt(3)
     header = section.header.paragraphs[0]
     header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    set_font(header.add_run("THE PROPER VOLUME  /  PRODUCT SPECIFICATION"), size=8, color="59636E")
+    set_font(header.add_run("THE PROPER VOLUME  /  PRODUCT SPECIFICATION"), size=8, color="000000")
     footer = section.footer.paragraphs[0]
     set_font(footer.add_run("Generated from the repository specification  |  "), size=8, color="59636E")
     field = OxmlElement("w:fldSimple"); field.set(qn("w:instr"), "PAGE"); footer._p.append(field)

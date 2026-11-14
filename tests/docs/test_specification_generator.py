@@ -36,6 +36,9 @@ class SpecificationGeneratorTest(unittest.TestCase):
             self.assertIn('Planned', text)
             self.assertNotIn('"description"', text)
             self.assertEqual(len(doc.inline_shapes), 1)
+            self.assertFalse(doc.styles['Title'].element.xpath('./w:pPr/w:pBdr'))
+            self.assertTrue(all(str(run.font.color.rgb) == '000000'
+                                for run in doc.sections[0].header.paragraphs[0].runs))
 
     def test_missing_derived_figure_fails(self):
         with tempfile.TemporaryDirectory() as directory:

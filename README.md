@@ -1,8 +1,10 @@
 # The Proper Volume Karaoke
 
-Version **0.4.4** adds verified macOS development DMG/ZIP packages: the Apple silicon app passed native launch/restart, branding and bundled CLI help checks on macOS 27.0.1; Intel packages passed static payload/signature checks only. Mac bundles have ad-hoc integrity signatures and are not Developer ID signed or notarized. Windows/Linux delivery remains **0.4.3**, and this PC is still running 0.4.3. Version **0.4.3** extends the local-first desktop karaoke rehearsal application with public Sunfly Store title/SKU search. Windows **0.4.3** is installed and verified; Linux 0.4.3 AppImage/Debian package checks passed from the same frozen runtime, including 52 focused tests and actual search/CLI/profile-clear checks. Development updates use `0.x.y`; `1.0.0` is reserved for the approved official release. This is early development software, not yet ready to run a live show. Core local playback does not require an account or internet connection after installation; YouTube downloads require internet; saved songs play offline.
+Version **0.5.0** is the current source development update. It integrates the reviewed `opencode-audit` interface, a silent singer-screen preview, draggable panels, host-wide song/artist blacklists, filtered YouTube karaoke search, local-file heart ratings and opt-in LAN singer screens. Paid-service results remain search-only in TPV. The optional [KHost companion bridge](docs/khost-bridge.md) implements external search/handoff through a separately installed KHost; authenticated end-to-end use on the owner's target machine is still unverified. Native paid-provider playback is pending.
 
-See the [host workspace guide](docs/host-workspace.md) for Sources, menus, editable shortcuts, automatic singer-display opening, Previous and shared heart ratings.
+The latest previously verified installers are Windows/Linux **0.4.3** and macOS **0.4.4**. New 0.5.0 packages and platform checks are in progress; see [installation evidence](docs/installation.md). Development updates use `0.x.y`; `1.0.0` remains the official-release target. Physical show devices and production readiness require further verification.
+
+See the [host workspace guide](docs/host-workspace.md), [source status](docs/source-status.md), [LAN singer-screen setup](docs/singer-screen-sharing.md) and [singer guide](docs/singer-guide.md).
 
 ## Run or install
 

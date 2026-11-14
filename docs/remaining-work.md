@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 13 November 2026 from the current checkout. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation, provider catalog search first, then playable streaming integration. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 14 November 2026 for source development 0.5.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation, provider catalog search first, then playable streaming integration. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
 ## Current foundation
 
@@ -15,8 +15,9 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Add host-only KaraFun public catalog metadata search with provider IDs; the inspected 90,284-record CSV parses without login. Search-only results do not establish playback or cross-provider equivalence.
 - [x] Add host-only Party Tyme public catalog metadata search, preserving provider codes from the inspected 44,967-row table; subscription playback remains separate.
 - [ ] Integrate approved KaraFun playback with the singer display, queue, transport, reporting and permitted offline behavior; handle failures without losing a turn.
-- [x] Send Stingray a catalog/playback partnership inquiry covering per-user access, private parties and commercial events (owner sent on 11 November 2026; reply pending).
-- [ ] Review Stingray's reply and obtain partner credentials, price, existing-subscription and public-use terms; its fixture-tested developer login/search tools are not a playable service.
+- [x] Send Stingray a catalog/playback partnership inquiry covering per-user access, private parties and commercial events (owner sent on 11 November 2026; commercial-partnership reply received 12 November).
+- [x] Read Stingray's 12 November reply: API access is through commercial partnerships; send an authorized follow-up requesting the appropriate team.
+- [ ] Obtain Stingray partner credentials, price, existing-subscription and public-use terms; its fixture-tested developer login/search tools are not a playable service.
 - [ ] Verify Stingray login and catalog search with an authorized real account and confirm the applicable API-key/OAuth flow.
 - [ ] Add Stingray permitted playback and play reporting; enforce its provider-specific asset-storage restrictions.
 - [ ] Obtain Sunfly trial/partner access, Electron playback SDK, quote, public-use and territory terms; its fixture-tested account/catalog tools do not play songs.
@@ -196,10 +197,11 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [x] Integrate the laptop's staged-policy lock, relink and retired-bumper-event fixes; Windows safety-base verification passed 685 tests with seven skips, type checking/build and a muted policy-lock rehearsal.
 - [x] Complete Linux 0.4.1 AppImage/Debian package verification from frozen `24f5f15`: matching payloads, 115 targeted passes without failures/skips, 69 branding hashes, all ten default light PNGs, packaged logos/favicon and extracted AppRun/catalog/CLI/API/staged-policy rehearsals. Non-root desktop and physical hardware remain unverified.
 - [x] Regenerate the 0.4.1 Markdown-based mockup PDF with the selected logo and visually review all 37 pages.
-- [ ] Regenerate and visually verify Word when the required bundled renderer is available; the current Word edition remains outdated.
+- [ ] Complete the current Markdown-derived Word refresh and visually verify every rendered page before publishing; native Windows LibreOffice discovery is supported, and the existing published edition remains outdated until replacement passes.
 - [x] Restore existing catalog/queue/ratings services left stopped by unattended MySQL maintenance, without changing code, schema, credentials, provider configuration or website behavior.
 - [ ] Review and apply a separately proposed service-recovery prevention change; the current proposal remains unapplied.
-- [ ] Verify native macOS packaging/Dock and physical Windows/Linux desktop behavior before 1.0.0.
+- [x] Verify macOS 0.4.4 DMG/ZIP payloads and native Apple silicon launch; see the versioned evidence below.
+- [ ] Verify native Dock appearance and physical Windows/Linux desktop behavior before 1.0.0.
 
 ## 0.4.2 Provider Search
 
@@ -248,3 +250,33 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 - [ ] Configure Apple Developer ID signing/notarization for public distribution. Current signatures are ad-hoc integrity signatures only.
 
 Windows/Linux latest delivered packages and the installed PC remain 0.4.3; this Mac packaging update does not establish a new Windows/Linux build or paid-provider playback.
+
+## 0.5.0 Host Workflow and Source Integration
+
+- [x] Bring the reviewed `opencode-audit` interface into the current source while retaining newer Mac packaging fixes.
+- [x] Add a silent actual-singer-window preview above/below Host Queue, with a hidden option.
+- [x] Add pointer/keyboard-resizable sidebar, queue and preview separators, saved dimensions, viewport clamps and reset.
+- [x] Keep the transport visible with long combined local/service/YouTube search results and across host layouts.
+- [x] Add host-wide artist and artist/title blacklists, Preferences editing and library context actions; enforce current rules at search, request and playback boundaries.
+- [x] Store source-less file heart votes locally in schema-3 `show.sqlite`; retain authenticated global source-ID votes and per-key capabilities.
+- [x] Pass separate global QA-voter set/repeat/update/clear checks without changing existing human votes or credentials.
+- [x] Add bounded `yt-dlp` karaoke search with channel hints, approved-only mode, channel blocklists and Takeout subscription import.
+- [x] Queue a selected YouTube candidate through canonical search receipts and the normal singer dialog/download authority, without autoplay.
+- [x] Add opt-in LAN visual sharing on default port 4051, with multiple bounded browser streams, no extra audio and no host-control API.
+- [x] Add epoch-fenced/deduplicated singer capture and read-only HTTP lifecycle/backpressure tests; pass private host UI rehearsals for controls, blacklist behavior and local ratings.
+- [x] Review KHost/plugin architecture and licensing boundaries; keep the independently written optional contract bridge separate from native TPV playback.
+- [x] Send authorized KaraFun, Stingray, Sunfly and Party Tyme follow-ups; record available replies and official integration routes.
+- [x] Integrate the timed-LRC parser and VTT foundation.
+- [x] Implement the optional TPV/KHost external search/handoff bridge and host controls, with protected profile selection, current-policy/blacklist checks and original-ID uncertain-outcome recovery; KHost owns sign-in, acquisition and playback.
+- [ ] Verify loading the compiled bridge and authenticated search/handoff on the owner's actual KHost machine; their successful separate KHost subscription test does not establish this integration.
+- [ ] Obtain approved paid-provider playback access, pricing and subscription-linking terms; consumer subscriptions alone do not confirm this integration.
+- [ ] Connect full LRC import/playback, seek/resume and the chosen lyric backdrop.
+- [ ] Add a Google Drive application source, with identity, indexing, download and cache rules; local synced-folder import is a different path.
+- [x] Integrate the reviewed `opencode-audit` UI and join its snapshot ancestry while preserving newer fixes; all other published remote branches are merged. Internal temporary agent branches are separate work units.
+- [x] Record the current 0.5.0 complete core-suite result: 861 passes, eight platform/environment skips, zero failures (869 total), plus passing type checking.
+- [x] Verify actual silent synthetic-video pixels in the host preview and two isolated LAN browsers, with Stop/close clearing, reconnect, port migration and shutdown; preserve the owner rating profile during a read-only readiness check with no vote.
+- [ ] Build 0.5.0 installers and verify actual payloads/native behavior before calling them delivered.
+- [ ] Verify LAN screens on real venue browsers/Wi-Fi/firewall configurations and compare lyric latency/quality; source/HTTP tests do not establish physical-show readiness.
+- [ ] Regenerate and visually verify Word/PDF planning deliverables from the canonical Markdown.
+
+The current evidence is source-level and version-specific. New Windows installation and 0.5.0 Mac/Linux builds are not yet claimed. Earlier platform verification remains historical evidence, not a replacement for new package checks. See [source status](source-status.md) and [LAN singer-screen help](singer-screen-sharing.md).

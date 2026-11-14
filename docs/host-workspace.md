@@ -1,6 +1,40 @@
 # Host Workspace
 
+## Workspace Refresh in 0.5.0
+
+The interface refresh from `opencode-audit` adds sidebar icons and request counts, clearer Song Library and Host Queue headings, an always-visible compact transport, and Preferences with a sticky header and footer. Informational and success notices clear after eight seconds; error notices remain until dismissed or replaced. **Dismiss message** clears a notice explicitly. Existing sort, filter, queue, rating, double-click and context-menu actions remain available.
+
 Version 0.4.3 adds public Sunfly Store title/SKU search to the provider metadata workspace. Windows 0.4.3 is installed and verified, and Linux AppImage/Debian package checks passed. The update preserves the selected microphone/play identity, existing show/settings and normal local playback. Version 0.4.4 adds macOS DMG/ZIP packages; native Apple silicon launch/restart, branding and CLI help passed on macOS 27.0.1. Intel packages received static checks only. Windows/Linux and this PC remain at 0.4.3. Mac Finder installation, Gatekeeper approval, physical show hardware and real-user Linux installation remain open. See [installation](installation.md).
+
+## Preview and Resizable Panels
+
+The small **Singer Preview** mirrors the actual singer window with no second audio player. Its display button opens the singer window. Choose **Preferences → Appearance → Singer Preview Position** to place it above or below Host Queue, or hide it.
+
+Drag the separators between the sidebar, library and Host Queue, or between the preview and queue. Wide Song Library uses a horizontal queue-height separator. Focus a separator and use arrow keys to resize; hold Shift for a larger step. Double-click restores that separator's default size. Sizes save when the drag or key adjustment commits, and fit the current viewport without overwriting larger saved desktop dimensions. **Reset Panel Sizes** in Appearance restores the defaults when preferences are saved. Transport controls stay visible while the library's combined local/service/YouTube results scroll.
+
+## Song and Artist Blacklists
+
+Open **Preferences → Song and Artist Blacklist** to add or remove artist names and artist/title pairs. Save to apply the draft; Cancel leaves saved rules intact. A song rule covers every version matching that complete artist and title across sources. An artist rule covers that artist's songs. Matches fold case, spacing and typographic equivalents; they do not use substring or wildcard matching. An empty artist means unknown-artist results only.
+
+Right-click a library row for **Blacklist Song**, **Blacklist Artist** or **Manage Blacklist…**. These rules belong to the host settings across shows, separate from a show's clean/explicit and version-specific policy. They filter discovery and are checked again at request/playback boundaries. Existing queue items are retained with unavailable status so the host can remove or change them deliberately.
+
+## YouTube Karaoke Search
+
+With **All Songs** selected, type at least two characters in Song Library. The YouTube section uses `yt-dlp`, adds karaoke to the search and excludes live, private/restricted and out-of-range videos. Candidates must identify karaoke in their video metadata and have a karaoke-channel hint or host approval. Channel hints and suggested artist/title splits are heuristics, not verified musical metadata or a guarantee of track quality.
+
+Choose **Preferences → YouTube Search → Approved channels only** for stricter curation. Add channel IDs/handles manually or import a Google Takeout subscriptions CSV/JSON file. The app does not sign into the private subscriptions feed or extract browser cookies. **Block Channel** on a candidate persists a channel rule; blocked IDs/handles override approvals. A subscribed channel still needs a karaoke-indicated candidate.
+
+**Choose Singer** opens the normal singer dialog, including new names. Submission passes an opaque current-search receipt to the host authority, saves the canonical recording/request and dispatches an approved request's permanent download. It never starts playback automatically. Manual moderation waits for approval. A stale or policy-invalid search result must be searched again rather than saved from renderer-supplied metadata.
+
+## LAN Singer Screens
+
+Open **Remote Sessions → LAN Singer Screens** and start sharing, or save its checkbox and port under **Preferences → Singer Display**. Port 4051 is the default. Copy a displayed address to browsers on the venue network. This is a read-only visual mirror with audio remaining on the host; singer request links are a separate feature. Numeric addresses are the reliable fallback when `.local` resolution is unavailable. See [LAN setup, firewall and limits](singer-screen-sharing.md).
+
+## Optional KaraFun via KHost
+
+**Sources → KaraFun via KHost** uses the independently installed KHost application and optional TPV companion plugin. Sign in and confirm normal KaraFun playback inside KHost first, enable the bridge plugin there, then explicitly select its private connection profile in TPV. **Search KaraFun Through KHost** returns external results; choose the singer in KHost and use **Send to KHost (External Queue)** to hand one over. This affects KHost's queue and may show its prompts. It does not add a playable TPV queue item or start playback here.
+
+Current content restrictions and song/artist blacklists apply before search/handoff. If a send becomes uncertain, use **Check Handoff Status** and inspect KHost's queue before clearing the warning; clearing never resends a song. Account sign-in, downloads and playback stay inside KHost. The owner reports their separate KHost subscription works, but actual authenticated bridge use on their target machine remains unverified. See [bridge installation, recovery and limits](khost-bridge.md).
 
 ## Navigation and Menus
 
@@ -47,9 +81,9 @@ Sources distinguishes public/developer catalog modes. **Choose Developer Profile
 
 Fresh installs can search the shared Karaoke Nerds catalog without a reader configuration file or a bundled secret. Optional private catalog profiles remain supported; an invalid selected private file is reported rather than bypassed. The recovered snapshot's upstream freshness is still unknown and automatic feed refresh remains disabled. Saved searches can be reused offline. See [shared catalog help](shared-catalog.md).
 
-Heart controls in search results, the queue and On Stage show the shared average and count. Open one to choose 1–10 hearts. A provisioned private rating profile permits **Your host rating**, one current vote per exact recording; saving a different value replaces that vote. Clearing removes it. The UI updates only after confirmation from the global MySQL service. Public readers see aggregates, not voter identities. These quality/preferences ratings are separate from Clean/Explicit content classifications.
+Heart controls in library search, the queue and On Stage use exact recording identities. YouTube/Karaoke Nerds recordings use their case-sensitive YouTube IDs and share average/count and the configured host's vote through the global MySQL-backed service. A source-less file uses its imported SHA256 fingerprint and saves **Your Local Rating** in this host's `show.sqlite`; it works offline without a remote profile. Identical file contents share the local rating, while separately converted CDG backdrops may produce a different fingerprint. Artist/title edits do not merge recordings.
 
-Use **Preferences → Song Ratings** to select/check a private profile. A draft check does not change active access; save preferences to apply it. Hosts without a profile can read aggregates. Full singer accounts, cross-device ownership and remote singer voting remain planned. Local files use their content SHA256; different CDG backdrop conversions currently have separate exact-asset ratings. See [ratings help](song-ratings.md).
+Open the heart control to choose 1–10 hearts, save a replacement or clear the current vote. A global vote needs a provisioned private writer profile; a catalog-reader token does not grant write access. Public lookup remains aggregate-only. The interface checks capability per recording so a shared outage or read-only profile does not disable local ratings. A failed global write is never relabeled as a successful local save. Use **Preferences → Song Ratings** to select/check a private profile; a draft check does not apply it or delete the file. Remote singer voting and cross-device person ownership remain planned. These hearts are separate from Clean/Explicit classifications. See [ratings help](song-ratings.md).
 
 ## Launcher Flags
 
