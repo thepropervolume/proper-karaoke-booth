@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isRecordingKey, parseRecordingKeys, parseSongRating, recordingKeyFor, validHeartVote } from '../../src/domain/song-rating';
+import { isLocalRecordingKey, isRecordingKey, parseRecordingKeys, parseSongRating, ratingStorageFor, recordingKeyFor, validHeartVote } from '../../src/domain/song-rating';
 
 test('rating identities use exact case-sensitive YouTube recordings ahead of local download fingerprints',()=>{
   const hash='a'.repeat(64);
@@ -9,6 +9,8 @@ test('rating identities use exact case-sensitive YouTube recordings ahead of loc
   assert.equal(recordingKeyFor(undefined),null);
   assert.equal(recordingKeyFor(undefined,'PVOL-003'),null);
   assert.equal(isRecordingKey('youtube:abcdefghijk'),true);assert.equal(isRecordingKey(`sha256:${hash}`),true);
+  assert.equal(ratingStorageFor(`sha256:${hash}`),'local'); assert.equal(ratingStorageFor('youtube:Abcdefghijk'),'global');
+  assert.equal(isLocalRecordingKey('youtube:Abcdefghijk'),false); assert.equal(isLocalRecordingKey(`sha256:${hash}`),true);
   for(const key of ['Artist - Title','youtube:too-short',`sha256:${hash.toUpperCase()}`,'../local','https://youtube.com/watch?v=abcdefghijk'])assert.equal(isRecordingKey(key),false);
 });
 
