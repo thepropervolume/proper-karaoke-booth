@@ -1,5 +1,6 @@
 import { applyCommand, isVersionAllowed, type ShowState, type Version } from './index';
 import type { Settings } from './settings';
+import { compileSongBlacklist } from './song-blacklist';
 
 export type CatalogRequestTrack = { youtubeId: string; title: string; artist: string; brandSlug?: string };
 export type CatalogRequestInput = { track: CatalogRequestTrack; singerId: string; requestId: string };
@@ -14,10 +15,12 @@ export function catalogRequest(state: ShowState, value: unknown, settings: Setti
   const track = value.track;
   if (Object.keys(track).some(key => !['youtubeId','title','artist','brandSlug'].includes(key)) || typeof track.youtubeId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(track.youtubeId) || !text(track.title) || !text(track.artist,true) ||
     (track.brandSlug !== undefined && (typeof track.brandSlug !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(track.brandSlug)))) return fail('The selected catalog recording is invalid.');
+  const blacklist = compileSongBlacklist(settings);
+  if (blacklist.isBlocked({ artist: track.artist, title: track.title })) return fail('This song or artist is blacklisted by the host.');
   const matches = state.versions.filter(item => item.source?.provider === 'youtube' && item.source.videoId === track.youtubeId);
   if (matches.length > 1) return fail('This recording has conflicting library entries. Review them before queueing.');
   const existing = matches[0];
-  if (existing && !isVersionAllowed(state,existing.id)) return fail('This recording is unavailable under the current show policy.');
+  if (existing && !isVersionAllowed(state,existing.id,settings)) return fail('This recording is unavailable under the current host and show policy.');
   const repeated = state.requests.find(item => item.id === value.requestId);
   if (repeated) return existing && repeated.singerId === value.singerId && repeated.versionId === existing.id ? {state,result:{ok:true,versionId:existing.id}} : fail('That request identifier is already in use.');
   const version: Version = existing ?? {id:ids.versionId,title:track.title.trim(),artist:track.artist.trim(),rating:'unrated',
