@@ -82,7 +82,7 @@ test('ambiguous handoff failure retains the request ID and never automatically r
 
 test('companion errors are bounded public statuses with no raw error detail', async () => {
   for (const [code, error, expected] of [[401, 'unauthorized', 'unauthorized'], [429, 'busy', 'busy'],
-    [409, 'expired-result', 'expired-result'], [409, 'idempotency-conflict', 'idempotency-conflict'],
+    [409, 'expired-result', 'expired-result'], [409, 'idempotency-conflict', 'idempotency-conflict'], [409, 'sign-in-required', 'sign-in-required'],
     [503, 'raw private stack trace', 'unavailable']] as const) {
     const client = new KHostBridgeClient({ ...profile, fetch: async () => json({ status: error, token: profile.token }, code) });
     assert.deepEqual(await client.search('song'), { status: expected });
@@ -110,6 +110,15 @@ test('oversized and invalid response bodies are rejected without returning them'
     new Response('private html', { headers: { 'Content-Type': 'text/html', 'X-TPV-KHost-Bridge': '1' } })]) {
     assert.deepEqual(await new KHostBridgeClient({ ...profile, fetch: async () => response }).status(), { status: 'protocol-error' });
   }
+});
+
+test('twenty escaped international metadata rows fit the C# wire budget', async () => {
+  const songs = Array.from({ length: 20 }, () => ({ ...song, resultId: randomUUID(), title: '歌'.repeat(400), artist: '歌'.repeat(400) }));
+  const payload = JSON.stringify({ ...search, songs }).replace(/[\u0080-\uffff]/g, value => '\\u' + value.charCodeAt(0).toString(16).padStart(4, '0'));
+  assert.ok(Buffer.byteLength(payload) > 64 * 1024);
+  const client = new KHostBridgeClient({ ...profile, fetch: async () => new Response(payload,
+    { headers: { 'Content-Type': 'application/json', 'X-TPV-KHost-Bridge': '1' } }) });
+  assert.deepEqual(await client.search('song'), { ...search, songs });
 });
 
 test('deadlines bound an uncooperative companion transport and abort its request', async () => {

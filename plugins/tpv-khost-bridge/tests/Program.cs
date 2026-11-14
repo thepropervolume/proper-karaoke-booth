@@ -72,6 +72,13 @@ Check(state == "complete" && provider.Enqueues == 1, "Poll completion without re
 clock.Advance(TimeSpan.FromMinutes(4));
 using (var response = await Call("POST", "/v1/handoff", new { resultId, requestId = Guid.NewGuid().ToString("D") })) Check(response.StatusCode == HttpStatusCode.Conflict, "Expired search result refused");
 using (var response = await Call("GET", "/v1/handoffs/" + Guid.NewGuid().ToString("D"))) Check(response.StatusCode == HttpStatusCode.NotFound, "Unknown handoff not invented");
+provider.SignInRequired = true;
+using (var response = await Call("POST", "/v1/search", new { query = "song" }))
+{
+    var value = await response.Content.ReadFromJsonAsync<JsonElement>();
+    Check(response.StatusCode == HttpStatusCode.Conflict && value.GetProperty("status").GetString() == "sign-in-required", "Provider sign-in remains in KHost");
+}
+provider.SignInRequired = false;
 provider.Available = false;
 using (var response = await Call("POST", "/v1/search", new { query = "song" })) Check(response.StatusCode == HttpStatusCode.Conflict, "Unavailable provider refused");
 var temporaryRoot = Path.GetFullPath(Path.GetTempPath());
@@ -96,10 +103,12 @@ Console.WriteLine($"PASS: {checks} bridge HTTP/profile checks with synthetic pro
 sealed class FakeProvider : IBridgeProvider
 {
     public bool Available { get; set; } = true;
+    public bool SignInRequired { get; set; }
     public int Searches; public int Enqueues;
     public TaskCompletionSource Complete { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public Task<IReadOnlyList<ProviderSong>> SearchAsync(string query)
     {
+        if (SignInRequired) throw new ProviderSignInRequiredException();
         Interlocked.Increment(ref Searches);
         return Task.FromResult<IReadOnlyList<ProviderSong>>([new("12345", "Song", "Artist", 180, async () =>
         { Interlocked.Increment(ref Enqueues); await Complete.Task; })]);
