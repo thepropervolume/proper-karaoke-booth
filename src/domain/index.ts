@@ -1,6 +1,7 @@
 import { validStreamingSource, type StreamingSource } from './streaming-source';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { futureRequestLimitMessage } from './future-request-limit';
+import { compileSongBlacklist, type SongBlacklistMatcher } from './song-blacklist';
 
 /** Pure show rules. Callers authenticate actors and must persist the returned state,
  * including receipt-only updates, before acknowledging a command. */
@@ -60,15 +61,24 @@ export function createInitialState(showId: string, hostEpoch: string): ShowState
     playback: null, usedGenerationIds: [], promotedRequestId: null, manualQueueOrder: [], receipts: [] };
 }
 
-/** The same predicate must also guard catalog search and direct lookups. */
-export function isVersionAllowed(state: ShowState, versionId: string): boolean {
-  const version = state.versions.find(v => v.id === versionId);
-  if (!version || state.policy.excludeVersionIds.includes(versionId)) return false;
-  if (state.policy.includeVersionIds !== null && !state.policy.includeVersionIds.includes(versionId)) return false;
-  return !state.policy.ageRestricted || version.rating === 'clean';
+export type BlacklistSettings = Partial<Pick<Settings, 'songBlacklist' | 'artistBlacklist'>>;
+const blacklistMatcher = (settings: BlacklistSettings): SongBlacklistMatcher => compileSongBlacklist({
+  songBlacklist: settings.songBlacklist === undefined ? [] : settings.songBlacklist,
+  artistBlacklist: settings.artistBlacklist === undefined ? [] : settings.artistBlacklist,
+});
+function allowedVersion(state: ShowState, version: Version | undefined, blacklist: SongBlacklistMatcher): boolean {
+  if (!version || state.policy.excludeVersionIds.includes(version.id)) return false;
+  if (state.policy.includeVersionIds !== null && !state.policy.includeVersionIds.includes(version.id)) return false;
+  return (!state.policy.ageRestricted || version.rating === 'clean') && !blacklist.isBlocked(version);
 }
-export function visibleVersions(state: ShowState): Version[] {
-  return state.versions.filter(v => isVersionAllowed(state, v.id));
+/** The same predicate must also guard catalog search and direct lookups. Host
+ * blacklist rules remain in settings; they never become sticky show exclusions. */
+export function isVersionAllowed(state: ShowState, versionId: string, settings: BlacklistSettings = {}): boolean {
+  return allowedVersion(state, state.versions.find(v => v.id === versionId), blacklistMatcher(settings));
+}
+export function visibleVersions(state: ShowState, settings: BlacklistSettings = {}): Version[] {
+  const blacklist = blacklistMatcher(settings);
+  return state.versions.filter(version => allowedVersion(state, version, blacklist));
 }
 
 /** The clock comes from the caller; the gap never starts playback itself. */
@@ -140,7 +150,7 @@ function permitted(actor: Actor, command: Command): boolean {
   return actor.role === 'singer' && ((command.type === 'request' && command.singerId === actor.id) || (command.type === 'setSingerAvailability' && command.singerId === actor.id && command.releaseStaged !== true) || command.type === 'withdrawRequest');
 }
 
-export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
+export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
   const fail = (code: string, message: string): Outcome => ({ ok: false, code, message, revision: original.revision });
   // These checks are deliberately before receipt lookup: untrusted callers must not
   // learn stored outcomes or occupy command IDs. The service still authenticates actors.
@@ -153,6 +163,8 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
   if (prior) return { state: original, outcome: prior.fingerprint === fingerprint ? prior.outcome : fail('COMMAND_ID_REUSED', 'Command ID was reused with different content') };
   // Work on a detached JSON value; failed commands can persist only their receipt.
   let state: ShowState = JSON.parse(JSON.stringify(original));
+  const blacklist = blacklistMatcher(settings);
+  const versionAllowed = (versionId: string) => allowedVersion(state, state.versions.find(version => version.id === versionId), blacklist);
   const error: { value: { code: string; message: string } | null } = { value: null };
   const reject = (code: string, message: string) => { error.value = { code, message }; };
   const cmd = envelope.command;
@@ -195,7 +207,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       const limitMessage = singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
       if (!nonempty(cmd.requestId) || !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
-      else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (limitMessage) reject('LIMIT', limitMessage);
       else {
         const request: SongRequest = { id: cmd.requestId, singerId: cmd.singerId, versionId: cmd.versionId, status: 'pending', round: null, order: null };
@@ -207,7 +219,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     case 'accept': {
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || request.status !== 'pending') reject('INVALID_STATE', 'Request is not pending');
-      else if (!isVersionAllowed(state, request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (!versionAllowed(request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
         acceptRequest(state, request);
       }
@@ -239,7 +251,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     case 'promoteRequest': {
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || request.status !== 'accepted') reject('INVALID_STATE', 'Only an accepted waiting request can be promoted');
-      else if (!isVersionAllowed(state, request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (!versionAllowed(request.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else state.promotedRequestId = request.id;
       break;
     }
@@ -267,7 +279,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || !['pending', 'accepted'].includes(request.status)) reject('LOCKED', 'Release the staged song or stop the active performance before editing');
       else if (!state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show');
-      else if (!isVersionAllowed(state, cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
         const changingSinger = request.singerId !== cmd.singerId;
         const limit = changingSinger && singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
@@ -285,7 +297,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     }
     case 'stage': {
       if (state.stagedRequestId) { reject('LOCKED', 'Release the staged track first'); break; }
-      const next = orderedFuture(state, settings.rotationMode, nowMs).find(r => r.status === 'accepted' && singerAvailable(state, r.singerId, nowMs) && isVersionAllowed(state, r.versionId));
+      const next = orderedFuture(state, settings.rotationMode, nowMs).find(r => r.status === 'accepted' && singerAvailable(state, r.singerId, nowMs) && versionAllowed(r.versionId));
       if (!next) reject('NOT_AVAILABLE', 'No eligible accepted request');
       else {
         next.status = 'staged'; state.stagedRequestId = next.id;
@@ -304,19 +316,19 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else if (!staged) reject('INVALID_STATE', 'No staged track');
       else if (remainingPauseSeconds(state, nowMs)) reject('PAUSE_INTERVAL', `Wait ${remainingPauseSeconds(state, nowMs)} seconds before starting the next song.`);
       else if (!singerAvailable(state, staged.singerId, nowMs)) reject('UNAVAILABLE', 'This singer is unavailable; release the staged song or wait until they return');
-      else if (!isVersionAllowed(state, staged.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (!versionAllowed(staged.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (!nonempty(cmd.generationId) || state.usedGenerationIds.includes(cmd.generationId)) reject('INVALID', 'Playback generation must be new');
       else {
         // Preparing a later song does not consume or advance the active round.
         // An explicit promotion (or FIFO mode) can start a later round before
         // earlier eligible turns. Keep the current round open until those turns run.
         const earlierWaiting = state.requests.some(r => r.status === 'accepted' && r.round !== null &&
-          r.round < staged.round! && isVersionAllowed(state, r.versionId));
+          r.round < staged.round! && versionAllowed(r.versionId));
         if (staged.round! > state.currentRound && !earlierWaiting) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
         staged.status = 'playing'; state.stagedRequestId = null;
         state.playback = { requestId: staged.id, generationId: cmd.generationId, status: 'playing' };
         state.usedGenerationIds.push(cmd.generationId);
-        if (staged.round === state.currentRound && !state.requests.some(r => r.status === 'accepted' && r.round === state.currentRound && isVersionAllowed(state, r.versionId))) state.finalTurnBegun = true;
+        if (staged.round === state.currentRound && !state.requests.some(r => r.status === 'accepted' && r.round === state.currentRound && versionAllowed(r.versionId))) state.finalTurnBegun = true;
       }
       break;
     }
@@ -326,6 +338,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     case 'resume':
       if (!state.playback || state.playback.status !== 'paused') reject('INVALID_STATE', 'No paused track');
+      else if (!versionAllowed(state.requests.find(request => request.id === state.playback!.requestId)?.versionId ?? '')) reject('NOT_AVAILABLE', 'Version is not available');
       else state.playback.status = 'playing';
       break;
     case 'stop': {
@@ -356,7 +369,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!p || typeof p.ageRestricted !== 'boolean' || !(p.includeVersionIds === null || (Array.isArray(p.includeVersionIds) && p.includeVersionIds.every(nonempty))) || !Array.isArray(p.excludeVersionIds) || !p.excludeVersionIds.every(nonempty)) { reject('INVALID', 'Invalid policy'); break; }
       state.policy = { ageRestricted: p.ageRestricted, includeVersionIds: p.includeVersionIds === null ? null : [...p.includeVersionIds], excludeVersionIds: [...p.excludeVersionIds] };
       const promoted = state.requests.find(r => r.id === state.promotedRequestId);
-      if (promoted && !isVersionAllowed(state, promoted.versionId)) state.promotedRequestId = null;
+      if (promoted && !versionAllowed(promoted.versionId)) state.promotedRequestId = null;
       // A staged request remains locked even when it becomes ineligible. Start
       // checks the current policy; only the host may release or replace it.
       break;
