@@ -6,6 +6,8 @@
     <Version>0.1.0</Version>
     <GenerateDependencyFile>true</GenerateDependencyFile>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <PathMap>$(MSBuildProjectDirectory)=/_/tpv-khost-bridge</PathMap>
+    <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
