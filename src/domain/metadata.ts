@@ -78,6 +78,8 @@ export function validateMetadataTemplates(value: unknown): string[] {
   return [...value];
 }
 
+// Filename delimiters can occur inside artist/title text too. Explore bounded
+// splits and report ambiguity rather than silently choosing incorrect metadata.
 function matches(parts: Part[], input: string): { results: Fields[]; truncated: boolean } {
   const results: Fields[] = [];
   const resultKeys = new Set<string>();

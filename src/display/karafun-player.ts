@@ -81,6 +81,8 @@ export class KaraFunPlayer {
   private current: Current | null = null;
   private nodes: { source: Source; gain: Gain; role: KaraFunStemRole }[] = [];
   private controller: AbortController | null = null;
+  // epoch invalidates asynchronous loading; action invalidates transport intents
+  // within the same song (for example Pause while AudioContext.resume awaits).
   private epoch = 0;
   private action = 0;
   private muted = true;
@@ -227,6 +229,8 @@ export class KaraFunPlayer {
     }
     if (this.current !== current || action !== this.action || current.outputBlocked) return false;
     this.stopNodes();
+    // Schedule every source at the same future instant on ONE AudioContext.
+    // Starting independent HTML audio elements would let duet voices drift.
     const when = context.currentTime + .025;
     current.anchor = when; current.status = 'playing';
     this.muted = false; this.applyVolume();
@@ -259,6 +263,8 @@ export class KaraFunPlayer {
     const current = this.matches(generation);
     if (!current?.ready || !Number.isFinite(position) || position < 0 || position >= current.duration) return false;
     const playing = current.status === 'playing';
+    // AudioBufferSourceNodes are one-shot. Seeking recreates sources at the new
+    // offset while retaining decoded buffers and the performance identity.
     this.pause(generation); current.savedPosition = position; current.status = 'paused'; this.report();
     return playing && !current.outputBlocked ? this.play(generation) : true;
   }

@@ -25,6 +25,8 @@ const scheduler: SingerScreenCaptureScheduler = {
 export class SingerScreenCapture {
   private running = false;
   private epoch = 0;
+  // Never overlap expensive capturePage calls. Epoch checks discard a capture
+  // that finishes after a display replacement or after the last viewer leaves.
   private inFlight = false;
   private timer: ScheduledCapture | null = null;
   private timerSequence = 0;

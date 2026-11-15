@@ -103,6 +103,8 @@ export function inspectShowSchema(db: DatabaseSync): void {
 
 /** Baseline the existing unversioned schema in one transaction, preserving all rows. */
 export function migrateShowSchema(db: DatabaseSync): void {
+  // Acquire the writer lock before inspecting the version. Schema edits, copied
+  // rows and the version marker must either all commit or all roll back.
   db.exec('BEGIN IMMEDIATE');
   try {
     const current = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;

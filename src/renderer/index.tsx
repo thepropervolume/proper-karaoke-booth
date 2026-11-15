@@ -166,6 +166,9 @@ declare global {
   }
 }
 
+// ShowState is a projection from the authority, while selections, open dialogs
+// and search text are local UI state. Never write SQLite or infer a committed
+// queue change merely because a button was clicked.
 function App() {
   const karaFunAccount = useKaraFunAccount(window.tpv.karaFun);
   const [appVersion, setAppVersion] = useState('');

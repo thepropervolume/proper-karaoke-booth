@@ -28,6 +28,8 @@ export class Store<T> {
     this.db = new DatabaseSync(filename);
     try {
       migrateShowSchema(this.db);
+      // WAL keeps reads responsive; FULL asks SQLite to durably commit before
+      // we acknowledge a show edit. Media bytes remain separate from this DB.
       this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
       this.collections = new Collections(this.db, () => this.assertAuthority());
     } catch (error) { this.db.close(); throw error; }
@@ -44,6 +46,8 @@ export class Store<T> {
     return createShowSnapshot(this.db, destination);
   }
 
+  // An imported version without its media row (or a completed turn without
+  // its history) is an invalid partial outcome, so these share one transaction.
   save(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
     this.assertAuthority();
     this.db.exec('BEGIN IMMEDIATE');

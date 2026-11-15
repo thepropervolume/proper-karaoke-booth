@@ -32,6 +32,8 @@ function failureMessage(error: unknown): string {
 }
 
 /** One import at a time. The injected commit remains the sole show authority. */
+// Hashing and progress yield between work items. Each completed file commits
+// independently, so cancellation keeps good imports instead of undoing a folder.
 export class ImportJob {
   private controller: AbortController | null = null;
   private progress: ImportProgress | null = null;

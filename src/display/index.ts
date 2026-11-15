@@ -192,6 +192,9 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   }
   return player;
 }
+// Caption, logo and volume updates reuse the current player. Only a transport
+// change may start/pause it; this renderer also stays alive for the host preview
+// when its native window is hidden.
 window.tpvDisplay.subscribe(async (view) => {
   bumperPlayer.setVolume(view.bumperVolume);
   shortcuts = view.shortcuts;

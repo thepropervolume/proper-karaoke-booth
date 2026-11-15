@@ -13,6 +13,8 @@ export type Version = { id: string; title: string; artist: string; rating: Ratin
 export type Singer = { id: string; name: string; unavailableUntilMs?: number };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
 export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
+// null means a song has no assigned person. Do not create a shared "anonymous"
+// singer: that would accidentally share request limits and fair-rotation turns.
 export type SongRequest = { id: string; singerId: string | null; versionId: string; status: RequestStatus; round: number | null; order: number | null };
 export type Playback = { requestId: string; generationId: string; status: 'playing' | 'paused' };
 export type Command =
@@ -156,6 +158,8 @@ function permitted(actor: Actor, command: Command): boolean {
   return actor.role === 'singer' && ((command.type === 'request' && command.singerId === actor.id) || (command.type === 'setSingerAvailability' && command.singerId === actor.id && command.releaseStaged !== true) || command.type === 'withdrawRequest');
 }
 
+// This is the pure decision layer: validate the actor/revision, deduplicate the
+// command, and return a new state. The main process persists it before replying.
 export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
   const fail = (code: string, message: string): Outcome => ({ ok: false, code, message, revision: original.revision });
   // These checks are deliberately before receipt lookup: untrusted callers must not

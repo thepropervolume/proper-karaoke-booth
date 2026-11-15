@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import type { KaraFunAccountStatus, KaraFunBridge, KaraFunSearchReply } from '../domain/karafun';
 import type { YouTubeSearchBridge } from './YouTubeSearchPanel';
 import type { YouTubeSearchResult } from '../domain/youtube-search';
+// A query alone is not enough to identify a result: account and policy changes
+// invalidate its request receipt too. The key hides stale replies immediately,
+// even before React has run the cleanup for the previous search.
 export function useKaraFunSearch(bridge: KaraFunBridge, account: KaraFunAccountStatus, query: string, enabled: boolean, scope: string) {
   const key = JSON.stringify([query.trim(), scope, account.revision, enabled]);
   const [result, setResult] = useState<{ key: string; reply: KaraFunSearchReply } | null>(null), [loading, setLoading] = useState(false);

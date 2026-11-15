@@ -137,6 +137,8 @@ export class KaraFunAccount {
     })();
     this.signingIn = task; void task.finally(() => { if (this.signingIn === task) this.signingIn = null; }); return task;
   }
+  // Capture scope AND revision before a provider request; checking both after
+  // awaits prevents a late response from a previous sign-in authorizing playback.
   private context(): { material: KaraFunAccountSession; scope: string; revision: number } {
     if (this.current.state !== 'connected' || !this.material || !this.scope) throw failure(this.current.state === 'expired' ? 'expired' : 'disconnected');
     return { material: this.material, scope: this.scope, revision: this.revision() };

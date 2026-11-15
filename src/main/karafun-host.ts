@@ -14,6 +14,8 @@ type Account = Pick<KaraFunAccount, 'status' | 'revision' | 'accountScope' | 'se
 const sourceKey = (source: KaraFunSource) => `${source.catalog}:${source.songId}`;
 /** The host authority owns search receipts, queue commits and private acquisition. */
 export class KaraFunHost {
+  // A renderer selects a short-lived receipt, not arbitrary provider metadata
+  // or a download URL. Only songs returned for the current account may be queued.
   private receipts: { id: string; revision: number; until: number; songs: Map<string, KaraFunSong> } | null = null;
   private searchAbort: AbortController | null = null;
   private operations = new Set<AbortController>();

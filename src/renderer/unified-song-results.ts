@@ -17,6 +17,8 @@ export const RESULT_PROVIDER_LABELS: Record<SongResultProvider, string> = {
 export const RESULT_PROVIDER_COLORS: Record<SongResultProvider, string> = {
   local: '#601CE9', youtube: '#ff0033', karaokenerds: '#007bff', karafun: '#d5167a', partytyme: '#bb7b16', sunfly: '#d18300', stingray: '#278b91',
 };
+// Artist/title are editable and different recordings can share them. Deduplicate
+// only exact provider identities so a host edit wins without merging versions.
 function identity(row: LibrarySearchVersion): string {
   return row.source?.provider === 'karafun' ? `karafun:${row.source.catalog}:${row.source.songId}` : row.source?.provider === 'youtube' ? `youtube:${row.source.videoId}` : `local:${row.id}`;
 }

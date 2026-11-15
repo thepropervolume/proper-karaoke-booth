@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
+// Keep this list explicit. A generic invoke(channel, payload) would let a page
+// reach unrelated main-process capabilities; main still validates every call.
 contextBridge.exposeInMainWorld('tpv', {
   karaFun: {
     status: () => ipcRenderer.invoke('host:karafun-status'),

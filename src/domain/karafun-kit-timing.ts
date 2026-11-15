@@ -17,6 +17,8 @@ export type KaraFunCountIn = {
 };
 export type KaraFunTrack = { id: number; caption: string | null; fileIndex: number | null };
 export type KaraFunFileLabel = { id: number; label: string };
+// The parser converts provider units/layout into this bounded model. Drawing
+// depends on these values, not on XML nodes, URLs or account credentials.
 export type KaraFunTiming = {
   durationSeconds: number; bounds: KaraFunBox; rightToLeft: boolean;
   pages: KaraFunPage[]; countIns: KaraFunCountIn[]; tracks: KaraFunTrack[]; files: KaraFunFileLabel[];

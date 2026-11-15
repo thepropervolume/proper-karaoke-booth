@@ -9,6 +9,8 @@ export function PlaybackTimeline({ generation, disabled, shortcuts = DEFAULT_SHO
   const hint = (label: string, action: 'seekBackward' | 'seekForward') => `${label}${shortcuts[action].length ? ` (${shortcuts[action].map(formatShortcut).join(', ')})` : ''}`;
   const [timeline, setTimeline] = useState(empty);
   const generationRef = useRef(generation); generationRef.current = generation;
+  // Dragging is only a visual draft. Commit one seek on release/key-up so a
+  // moving slider does not restart every stem for each pointer pixel.
   const [draft, setDraft] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');

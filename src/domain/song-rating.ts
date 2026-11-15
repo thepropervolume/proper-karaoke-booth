@@ -20,6 +20,8 @@ export function ratingStorageFor(key: RecordingKey): RatingStorage {
 }
 
 /** Ratings describe an exact recording, never an artist/title approximation. */
+// A local hash is a private fallback, not a cross-provider identity. In
+// particular, two files titled alike must not inherit each other's votes.
 export function recordingKeyFor(source: unknown, fingerprint?: unknown): RecordingKey | null {
   if (source !== undefined && source !== null) {
     if (!validStreamingSource(source)) return null;

@@ -1,3 +1,5 @@
+// Application composition root: the host owns durable state; renderers ask for
+// actions and report playback facts. Provider credentials and media paths stay here.
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -365,6 +367,8 @@ const applicationIcon = join(app.isPackaged ? process.resourcesPath : join(app.g
 
 function senderIsHost(id: number): boolean { return !!host && !host.isDestroyed() && host.webContents.id === id; }
 function senderIsDisplay(id: number): boolean { return !!display && !display.isDestroyed() && display.webContents.id === id; }
+// A method name in preload is not authorization: check the actual sender again
+// at the service boundary, including calls from the singer renderer.
 function guardHost(id: number): void { if (!senderIsHost(id)) throw new Error('Operation unavailable'); }
 function bumperInfo() {
   return { tracks: [...builtInBumpers.map(({ id, name }) => ({ id, name, builtIn: true })), ...(bumperCatalog?.list() ?? []).map(track => ({ ...track, builtIn: false }))],
@@ -381,6 +385,8 @@ function refreshAvailabilityDeadline(): void {
   for (const singer of state.singers) if ((singer.unavailableUntilMs ?? 0) > now) next = Math.min(next, singer.unavailableUntilMs!);
   if (Number.isFinite(next)) { availabilityTimer = setTimeout(() => { if (!shuttingDown) broadcast(); }, Math.min(2147483647, Math.max(1, next - now))); availabilityTimer.unref(); }
 }
+// Publishing may prepare the next approved turn, but it never arms a new show.
+// Only an existing show's completion/Skip can arm automatic playback.
 function broadcast(): void {
   if (shuttingDown) return;
   if (!autoStageSuspended) {
@@ -394,6 +400,9 @@ function broadcast(): void {
   publishBumper();
   showAdvance.changed();
 }
+// This projection is for our trusted singer renderer, not the guest network API.
+// Local protocol URLs bind media to a playback generation without exposing the
+// provider URL or account session to the host UI or remote singers.
 function publishDisplay(): void {
   if (shuttingDown || !display || display.isDestroyed() || !displayReady) return;
   const playback = state.playback;
@@ -418,6 +427,8 @@ function publishDisplay(): void {
     branding: { boothName: settings.boothName, displayLogoSize: settings.displayLogoSize, bannerEnabled: settings.bannerEnabled,
       bannerText: settings.bannerText, bannerPosition: settings.bannerPosition, bannerExpiresAt: settings.bannerExpiresAt, bannerOnLaunch: settings.bannerOnLaunch } });
 }
+// The state transition and completion history are committed together. A renderer
+// callback from an older generation must never consume the current singer's turn.
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
   const previousGeneration = state.playback?.generationId;
   const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
@@ -1636,6 +1647,8 @@ function waitForImport(job: ImportJob): Promise<boolean> {
     void job.wait().then(() => { clearTimeout(timer); resolve(true); }, () => { clearTimeout(timer); resolve(false); });
   });
 }
+// Fence new work before awaiting shutdown. Otherwise a late download, seek or
+// guest reply could still mutate the show after its database connection closes.
 app.on('before-quit', event => {
   automaticBumper.close(); showAdvance.close();
   cancelPendingPlayback();

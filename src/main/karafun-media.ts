@@ -91,6 +91,8 @@ export class KaraFunMediaCache {
       } catch (error) { aborted(signal); if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; return null; }
       finally { await file?.close().catch(() => {}); }
     };
+    // A verified disk file can save bandwidth, but never grants entitlement.
+    // acquire() already obtained fresh authorization for this account/recording.
     for (const path of new Set([...(options.previousPath ? [options.previousPath] : []), canonical])) {
       const retained = await inspect(path); if (retained) { report('ready', retained.bytes, retained.bytes); return retained; }
     }

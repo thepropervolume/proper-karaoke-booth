@@ -5,6 +5,8 @@ export class QueuedVideoDownloads {
   private wanted = new Set<string>();
   private manual = new Set<string>();
   private pending: string[] = [];
+  // Remember attempts for this launch: a failed file must not create an automatic
+  // retry loop whenever the queue is republished. Explicit Retry clears the fence.
   private attempted = new Set<string>();
   private failures = new Map<string,string>();
   private running: string | null = null;
