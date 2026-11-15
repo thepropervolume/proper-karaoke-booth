@@ -3,9 +3,15 @@ import assert from 'node:assert/strict';
 import { createServer, request, type IncomingMessage, type RequestOptions } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runInNewContext } from 'node:vm';
+import { networkInterfaces } from 'node:os';
 import { SingerScreenFrameHub, SingerScreenServer, isLanSingerScreenPeer } from '../../src/main/singer-screen-server';
 
 const jpeg = (label: string) => Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from(label), Buffer.from([0xff, 0xd9])]);
+// macOS does not assign 127.0.0.2 automatically. Exercise real simultaneous
+// TCP listeners on an assigned private NIC instead of assuming loopback aliases.
+const assignedPrivateAddress = Object.values(networkInterfaces()).flat().filter(value => value && !value.internal && value.family === 'IPv4')
+  .map(value => value!.address).find(address => /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(address));
+const privateInterfaceTest = { skip: assignedPrivateAddress ? false : 'Multi-interface TCP checks require an assigned private IPv4 interface; loopback/server and network-discovery tests still run.' };
 async function until(predicate: () => boolean, message = 'Condition not reached', timeout = 2000) {
   const deadline = Date.now() + timeout;
   while (!predicate()) { if (Date.now() >= deadline) assert.fail(message); await delay(5); }
@@ -227,19 +233,20 @@ test('invalid start options never replace an existing listener', async () => fix
   assert.equal(server.status().port, port); assert.equal((await read(port, '/status')).response.statusCode, 200);
 }));
 
-test('default listeners bind only approved interfaces and loopback, with one shared viewer budget and generation', async () => {
+test('default listeners bind only approved interfaces and loopback, with one shared viewer budget and generation', privateInterfaceTest, async () => {
+  const address = assignedPrivateAddress!;
   const server = new SingerScreenServer(new SingerScreenFrameHub(), {
-    discoverAddresses: async () => ['127.0.0.2', '8.8.8.8', '0.0.0.0'], maxViewers: 1,
+    discoverAddresses: async () => [address, '8.8.8.8', '0.0.0.0'], maxViewers: 1,
   });
   try {
     const status = await server.start({ port: 0 });
     assert.equal(status.bind, 'private');
-    assert.deepEqual(status.urls, [`http://127.0.0.2:${status.port}`, `http://127.0.0.1:${status.port}`]);
+    assert.deepEqual(status.urls, [`http://${address}:${status.port}`, `http://127.0.0.1:${status.port}`]);
     const a = JSON.parse((await read(status.port!, '/status')).body);
-    const b = JSON.parse((await read(status.port!, '/status', { hostname: '127.0.0.2' })).body);
+    const b = JSON.parse((await read(status.port!, '/status', { hostname: address })).body);
     assert.equal(a.streamId, b.streamId);
     assert.equal((await read(status.port!, '/status', { headers: { Host: `127.0.0.3:${status.port}` } })).response.statusCode, 403);
-    const viewer = await openStream(status.port!, '127.0.0.2');
+    const viewer = await openStream(status.port!, address);
     try { assert.equal((await read(status.port!, '/stream')).response.statusCode, 503); }
     finally { viewer.close(); }
   } finally { await server.stop(); }
@@ -254,29 +261,31 @@ test('profile query failure leaves a usable loopback-only display without advert
   } finally { await server.stop(); }
 });
 
-test('network trust is rechecked automatically and a removed or public interface loses its socket', async () => {
-  let approved = ['127.0.0.2'];
+test('network trust is rechecked automatically and a removed or public interface loses its socket', privateInterfaceTest, async () => {
+  const address = assignedPrivateAddress!;
+  let approved = [address];
   const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => approved, networkCheckMs: 40 });
   try {
     const status = await server.start({ port: 0 }), port = status.port!;
-    const viewer = await openStream(port, '127.0.0.2');
+    const viewer = await openStream(port, address);
     approved = [];
     try {
       await until(() => server.status().urls.length === 1);
       assert.deepEqual(server.status().urls, [`http://127.0.0.1:${port}`]);
       assert.equal((await read(port, '/')).response.statusCode, 200);
       const probe = createServer();
-      await new Promise<void>((resolve, reject) => { probe.once('error', reject); probe.listen(port, '127.0.0.2', resolve); });
+      await new Promise<void>((resolve, reject) => { probe.once('error', reject); probe.listen(port, address, resolve); });
       await new Promise<void>(resolve => probe.close(() => resolve()));
     } finally { viewer.close(); }
   } finally { await server.stop(); }
 });
 
-test('a failed second interface rolls back every listener and a retry uses the current approved addresses', async () => {
+test('a failed second interface rolls back every listener and a retry uses the current approved addresses', privateInterfaceTest, async () => {
+  const testAddress = assignedPrivateAddress!;
   const occupied = createServer();
-  await new Promise<void>((resolve, reject) => { occupied.once('error', reject); occupied.listen(0, '127.0.0.2', resolve); });
+  await new Promise<void>((resolve, reject) => { occupied.once('error', reject); occupied.listen(0, testAddress, resolve); });
   const address = occupied.address(); assert.ok(address && typeof address !== 'string');
-  let approved = ['127.0.0.2'];
+  let approved = [testAddress];
   const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => approved });
   try {
     await assert.rejects(server.start({ port: address.port }), /already in use/);
@@ -289,13 +298,14 @@ test('a failed second interface rolls back every listener and a retry uses the c
   } finally { await server.stop(); await new Promise<void>(resolve => occupied.close(() => resolve())); }
 });
 
-test('an explicitly selected interface is closed when its network is no longer approved', async () => {
-  let approved = ['127.0.0.2'];
+test('an explicitly selected interface is closed when its network is no longer approved', privateInterfaceTest, async () => {
+  const address = assignedPrivateAddress!;
+  let approved = [address];
   const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => approved });
   try {
-    const first = await server.start({ port: 0, bind: '127.0.0.2' });
+    const first = await server.start({ port: 0, bind: address });
     approved = [];
-    await assert.rejects(server.start({ port: first.port!, bind: '127.0.0.2' }), /private network/);
+    await assert.rejects(server.start({ port: first.port!, bind: address }), /private network/);
     assert.equal(server.status().state, 'stopped'); assert.deepEqual(server.status().urls, []);
   } finally { await server.stop(); }
 });
