@@ -116,7 +116,8 @@ function color(value: string | undefined): string | null {
   if (!value?.trim()) return null;
   const normalized = value.trim().replace(/^#/, '');
   if (!/^(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(normalized)) fail();
-  return '#' + normalized.toUpperCase();
+  // The format carries RGB; an optional trailing byte is not CSS alpha.
+  return '#' + normalized.slice(0, 6).toUpperCase();
 }
 function box(node: Element | undefined): KaraFunBox | null {
   if (!node) return null;

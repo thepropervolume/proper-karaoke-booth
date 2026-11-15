@@ -1,16 +1,18 @@
-# Singer Guide for Development Version 0.5.0
+# Singer Guide for Development Version 0.6.0
 
 The host operates the app and can enter a request for you, invite you to the experimental venue-network singer page, or start an internet Remote Session and share its link. The experimental relay is deployed and public browser request/recovery rehearsals passed; physical-phone, venue-network and long-show checks remain. Singer account sign-in is not available. The host’s Song Library searches local songs and Karaoke Nerds recordings. Singers search the host library, not the central catalog directly. Approved catalog requests schedule a download when the recording is not already saved; manual moderation waits for host acceptance. Downloads can fail and never start your turn automatically. The host can adjust waiting requests; staged performances remain locked.
 
-Version 0.4.2 also lets the host search public KaraFun/Party Tyme metadata and configured partner catalogs. Those matches are marked **Search Only / Playback Pending** and cannot be requested or played through the booth. They do not appear in the singer library. Your usual local and downloaded Karaoke Nerds songs still use the existing request flow. Windows 0.4.2 is installed and its metadata-search/no-autoplay checks passed; this does not enable paid-service playback.
+The experimental 0.6.0 source adds native KaraFun account linking for the host. After signing in under **Sources → KaraFun**, the host can choose a connected KaraFun library result, enter your name and add it to TPV's ordinary queue. The recording prepares privately in the background; preparation never starts your turn. The host must press Play when ready, and the account must authorize that recording. Real account sign-in/search passed, while complete real-song playback remains under verification. Existing 0.5.0 installers do not include this native path. Ask the host which installed version is in use.
+
+Public KaraFun/Party Tyme metadata and configured partner catalogs remain available separately. Public results marked **Search Only / Playback Pending** cannot be requested or played through the booth. Native KaraFun community recordings are not supported yet. Your usual local and downloaded Karaoke Nerds songs keep their existing request flow.
 
 The 0.4.3 development build adds host-only Sunfly Store title/SF-SKU results without a developer key. They are limited store-product metadata, not the full streaming catalog, and cannot be requested or played in the booth. Artist search is unverified and a missing artist stays unknown. Windows 0.4.3 is installed and verified; Linux 0.4.3 package checks passed. These host-only results remain unavailable for singer requests until playable-provider integration exists.
 
 The identity introduced in 0.4.1 uses an orange/pink vintage microphone with a play outline and no lettering in the app icon. Older installed versions may show the previous icon. The host can still choose a separate singer-display logo, and the TPV lyric-backdrop video remains the same.
 
-Version 0.5.0 adds host-side YouTube discovery, song/artist blacklists and optional LAN lyric-screen sharing. Package verification is in progress; ask the host which installed version is in use. Earlier Windows/Linux 0.4.3 and Mac 0.4.4 verification remains recorded separately and does not establish physical-show readiness.
+Version 0.5.0 adds host-side YouTube discovery, song/artist blacklists and optional LAN lyric-screen sharing. Its Windows/Linux/macOS package verification is recorded in the [installation guide](installation.md); physical-show readiness still requires testing. Ask the host which installed version is in use.
 
-The host can optionally search KaraFun through a separate KHost application and hand a result to its external queue. Those songs do not enter the TPV queue or singer request library, and KHost handles singer selection and playback. Ask the host which application's queue is being used. The owner's separate KHost subscription test worked; authenticated use of the new TPV bridge on the target machine still needs verification.
+The optional **KaraFun via KHost** feature uses a separate application's queue and player. It is distinct from native **KaraFun** in TPV; KHost is not required for the native path. An external handoff does not enter TPV's queue. Ask the host which queue is being used if they choose that optional feature.
 
 ## Watch the Singer Screen
 
@@ -56,3 +58,5 @@ New CDG songs use the host’s TPV animated backdrop by default, with the origin
 ## Recording Heart Ratings
 
 The host can view and save 1–10-heart recording ratings in the library and queue. Provider-identified YouTube/Karaoke Nerds recordings share a global score through the host's private writer profile; source-less file ratings remain in the host's local database and work offline. Hearts describe a recording, not your singing performance or Clean/Explicit classification. Remote singer voting and account ownership are not implemented; ask the host if you want to discuss a recording's quality.
+
+Native KaraFun heart ratings are unavailable until the shared rating service supports that source. A host's KaraFun session lasts only while the app is running. Restarting or signing out requires the host to sign in and prepare again; a retained cache file does not guarantee future account access. Your TPV queue remains intact and does not autoplay after either event.

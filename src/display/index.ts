@@ -2,7 +2,13 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, matchesShortcut, type ShortcutActi
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
-type PlaybackState = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
+import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
+import { paintKaraFunLyrics } from './karafun-lyrics';
+import type { KaraFunTiming } from '../domain/karafun-kit-timing';
+type PlaybackCommon = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
+type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: KaraFunTiming; durationSeconds: number; stems: KaraFunStemSource[] }; backdropSrc: string | null };
+type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
+const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
 declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
@@ -10,6 +16,8 @@ const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
 const next = document.querySelector<HTMLElement>('#next')!;
 const logos = document.querySelectorAll<HTMLImageElement>('#idle-logo, #header-logo');
+const lyrics = document.querySelector<HTMLCanvasElement>('#karafun-lyrics');
+const backdrop = document.querySelector<HTMLVideoElement>('#karafun-backdrop');
 let current: PlaybackState | null = null;
 let updateSequence = 0;
 let outputRecoveryGeneration: string | null = null;
@@ -17,8 +25,46 @@ let outputRevision = 0;
 let rerouteRequested = false;
 let shortcuts = DEFAULT_SHORTCUTS;
 let lastTimelineReport = 0;
+let lastNativeCheckpoint = 0;
+let nativeAnimation: number | null = null;
+let nativeLoading: { generation: string; promise: Promise<void> } | null = null;
+let nativeRecovery: { generation: string; revision: number; promise: Promise<boolean> } | null = null;
+const nativePlayer = new KaraFunPlayer({ onEvent: nativeEvent });
+function nativeEvent(event: KaraFunPlayerEvent): void {
+  if (!isNative(current) || current.generation !== event.generation) return;
+  if (event.type === 'output-error') {
+    outputRecoveryGeneration = event.generation; outputRevision = event.revision;
+    rerouteRequested = false; ++updateSequence;
+  }
+  window.tpvDisplay.event(event);
+  if (event.type === 'timeline' && Date.now() - lastNativeCheckpoint > 5000) {
+    lastNativeCheckpoint = Date.now();
+    window.tpvDisplay.event({ type: 'checkpoint', generation: event.generation, position: event.position });
+  }
+}
+function stopNativeVisuals(): void {
+  if (nativeAnimation !== null) window.cancelAnimationFrame(nativeAnimation);
+  nativeAnimation = null;
+  if (backdrop) { backdrop.muted = true; backdrop.pause(); backdrop.removeAttribute('src'); backdrop.load(); }
+  if (lyrics) lyrics.getContext('2d')?.clearRect(0, 0, lyrics.width, lyrics.height);
+}
+function animateNativeLyrics(): void {
+  if (!isNative(current) || !lyrics) { nativeAnimation = null; return; }
+  paintKaraFunLyrics(lyrics, current.karaFun.timing, nativePlayer.snapshot()?.position ?? current.position);
+  nativeAnimation = window.requestAnimationFrame(animateNativeLyrics);
+}
+function nativeVisuals(state: NativePlayback): void {
+  if (backdrop) {
+    backdrop.muted = true; backdrop.volume = 0; backdrop.loop = true;
+    if (state.backdropSrc && backdrop.getAttribute('src') !== state.backdropSrc) {
+      backdrop.src = state.backdropSrc; backdrop.load();
+      void backdrop.play().catch(() => { /* A silent optional backdrop must not interrupt the song. */ });
+    } else if (!state.backdropSrc && backdrop.hasAttribute('src')) { backdrop.pause(); backdrop.removeAttribute('src'); backdrop.load(); }
+  }
+  if (lyrics && nativeAnimation === null) animateNativeLyrics();
+}
 function reportTimeline(force = false): void {
-  if (!current || (!force && Date.now() - lastTimelineReport < 350)) return;
+  if (!current || isNative(current) || (!force && Date.now() - lastTimelineReport < 350)) return;
   lastTimelineReport = Date.now();
   const duration = video.duration;
   if (!Number.isFinite(duration) || duration <= 0) return;
@@ -28,6 +74,15 @@ function reportTimeline(force = false): void {
 window.tpvDisplay.onSeek((value) => {
   if (!value || typeof value !== 'object') return;
   const request = value as { id?: unknown; generation?: unknown; position?: unknown };
+  if (isNative(current)) {
+    const generation = current.generation;
+    if (request.generation !== generation || typeof request.id !== 'string' || typeof request.position !== 'number' || !Number.isFinite(request.position)) return;
+    void nativePlayer.seek(generation, request.position).then(ok => {
+      if (isNative(current) && current.generation === generation)
+        window.tpvDisplay.event({ type: 'seek-result', id: request.id, generation, position: nativePlayer.snapshot()?.position ?? 0, ok });
+    });
+    return;
+  }
   const player = video, generation = current?.generation;
   if (!generation || request.generation !== generation || typeof request.id !== 'string' || typeof request.position !== 'number' ||
       !Number.isFinite(request.position) || request.position < 0 || !Number.isFinite(player.duration) || request.position >= player.duration) return;
@@ -60,10 +115,23 @@ window.tpvDisplay.onOutputRecovery?.(value => {
   const recovery = value as { generation?: unknown; revision?: unknown };
   if (recovery.generation !== current?.generation || recovery.generation !== outputRecoveryGeneration ||
     !Number.isSafeInteger(recovery.revision) || recovery.revision !== outputRevision) return;
+  if (isNative(current)) {
+    const generation = current.generation, revision = outputRevision, outputId = current.outputId;
+    rerouteRequested = true;
+    const promise = nativePlayer.recoverOutput(generation, revision, outputId).then(ok => {
+      if (!isNative(current) || current.generation !== generation || outputRevision !== revision) return false;
+      if (ok) { outputRecoveryGeneration = null; rerouteRequested = true; }
+      else nativePlayer.invalidateOutput('Could not use the chosen audio output. Check Preferences and press Play again.');
+      return ok;
+    });
+    nativeRecovery = { generation, revision, promise };
+    return;
+  }
   outputRecoveryGeneration = null;
   rerouteRequested = true;
 });
 function reportOutputFailure(generation: string, message: string): void {
+  if (isNative(current)) { nativePlayer.invalidateOutput(message); return; }
   outputRecoveryGeneration = generation;
   ++outputRevision;
   rerouteRequested = false;
@@ -94,17 +162,17 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   const generation = state.generation;
   let lastCheckpoint = 0;
   const report = (type: string, code?: MediaFailure) => {
-    if (video !== player || current?.generation !== generation) return;
+    if (video !== player || current?.generation !== generation || isNative(current)) return;
     window.tpvDisplay.event({ type, generation, position: player.currentTime || 0, ...(code ? { code } : {}) });
   };
   player.addEventListener('ended', () => report('ended'));
   player.addEventListener('error', () => report('error', mediaFailure(player.error?.code)));
   player.addEventListener('pause', () => { report('checkpoint'); reportTimeline(true); });
   for (const event of ['loadedmetadata', 'durationchange', 'progress', 'canplay', 'seeked']) player.addEventListener(event, () => {
-    if (video === player && current?.generation === generation) reportTimeline(true);
+    if (video === player && current?.generation === generation && !isNative(current)) reportTimeline(true);
   });
   player.addEventListener('timeupdate', () => {
-    if (video === player && current?.generation === generation) reportTimeline();
+    if (video === player && current?.generation === generation && !isNative(current)) reportTimeline();
     if (Date.now() - lastCheckpoint > 5000) { lastCheckpoint = Date.now(); report('checkpoint'); }
   });
   video.pause();
@@ -114,7 +182,7 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   player.load();
   if (state.position > 0) {
     player.addEventListener('loadedmetadata', () => {
-      if (video === player && current?.generation === generation && Number.isFinite(player.duration)) player.currentTime = Math.min(state.position, player.duration);
+      if (video === player && current?.generation === generation && !isNative(current) && Number.isFinite(player.duration)) player.currentTime = Math.min(state.position, player.duration);
     }, { once: true });
   }
   return player;
@@ -124,6 +192,7 @@ window.tpvDisplay.subscribe(async (view) => {
   shortcuts = view.shortcuts;
   const state = view.playback;
   document.body.classList.toggle('idle', !state);
+  document.body.classList.toggle('native-karafun', isNative(state));
   next.textContent = view.next.length ? `Coming up: ${view.next.join(' · ')}` : '';
   logos.forEach(logo => {
     logo.hidden = !view.logo;
@@ -134,17 +203,49 @@ window.tpvDisplay.subscribe(async (view) => {
     const previousGeneration = current?.generation;
     current = null;
     outputRecoveryGeneration = null; rerouteRequested = false;
+    nativeRecovery = null; nativeLoading = null; nativePlayer.stop(); stopNativeVisuals();
     output.invalidate(video); video.removeAttribute('src'); video.load();
     waiting.hidden = false; caption.textContent = '';
     // invalidate() mutes and pauses synchronously before this acknowledgement.
     if (previousGeneration) window.tpvDisplay.event({ type: 'silenced', generation: previousGeneration });
     return;
   }
-  const changed = !current || current.generation !== state.generation || current.src !== state.src;
+  const changed = !current || current.generation !== state.generation || current.src !== state.src || current.kind !== state.kind;
   const transportChanged = changed || current?.status !== state.status || current.outputId !== state.outputId;
+  const previousOutput = current?.outputId;
   if (changed) { outputRecoveryGeneration = null; rerouteRequested = false; }
   current = state;
   waiting.hidden = true; caption.textContent = `${state.singer} · ${state.title}`;
+  if (isNative(state)) {
+    if (changed) {
+      nativeRecovery = null; lastNativeCheckpoint = 0;
+      output.invalidate(video); video.removeAttribute('src'); video.load();
+      nativeLoading = { generation: state.generation, promise: nativePlayer.load({ generation: state.generation,
+        stems: state.karaFun.stems, durationSeconds: state.karaFun.durationSeconds, position: state.position,
+        volume: state.volume, outputId: state.outputId }) };
+    } else {
+      nativePlayer.setVolume(state.generation, state.volume);
+      if (previousOutput !== state.outputId)
+        nativePlayer.invalidateOutput('The audio output changed. Check Preferences and press Play again.');
+    }
+    nativeVisuals(state);
+    // Decode and routing can finish after Pause, Stop or another song. Only the
+    // newest transport publication may start its prepared generation.
+    if (!transportChanged && !rerouteRequested) return;
+    const sequence = ++updateSequence;
+    try { await nativeLoading?.promise; }
+    catch { return; /* The player already emitted a generation-bound error. */ }
+    if (nativeRecovery?.generation === state.generation) await nativeRecovery.promise;
+    if (sequence !== updateSequence || !isNative(current) || current.generation !== state.generation) return;
+    if (outputRecoveryGeneration === state.generation || nativePlayer.snapshot()?.outputBlocked) { nativePlayer.pause(state.generation); return; }
+    if (current.status === 'playing') { rerouteRequested = false; await nativePlayer.play(state.generation); }
+    else {
+      nativePlayer.pause(state.generation);
+      window.tpvDisplay.event({ type: 'checkpoint', generation: state.generation, position: nativePlayer.snapshot()?.position ?? 0 });
+    }
+    return;
+  }
+  if (nativePlayer.snapshot()) { nativePlayer.stop(); nativeLoading = null; nativeRecovery = null; stopNativeVisuals(); }
   const player = changed ? playerFor(state) : video;
   player.volume = state.volume;
   // Queue, caption, branding, shortcut and volume refreshes do not affect the

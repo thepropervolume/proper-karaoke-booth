@@ -24,6 +24,10 @@ test('timing fallback derives useful page bounds and duration, ignores nested al
   assert.equal(result.durationSeconds, 4.5); assert.equal(result.pages.length, 1); assert.equal(result.pages[0].startSeconds, .75); assert.equal(result.pages[0].endSeconds, 3.5);
   assert.deepEqual(result.bounds, { x: 0, y: 0, width: 640, height: 360 });
 });
+test('eight-digit producer colors retain RGB rather than turning an opaque lyric transparent', () => {
+  const result = parseKaraFunTiming(timing('<page activecolor="FF00AA00" inactivecolor="112233FF"><line><word>' + syllable() + '</word></line></page>'));
+  assert.equal(result.pages[0].activeColor, '#FF00AA'); assert.equal(result.pages[0].inactiveColor, '#112233');
+});
 test('timing does not infer stem roles from member numbers and sanitizes labels as text', () => {
   assert.deepEqual(describeKaraFunStemLabel('C:/arbitrary/ins.ogg'), { role: 'instrumental', voice: null });
   assert.deepEqual(describeKaraFunStemLabel('ld_Two.ogg'), { role: 'lead', voice: 'Two' });
