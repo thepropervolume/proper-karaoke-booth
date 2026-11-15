@@ -1,3 +1,4 @@
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 // Synthetic provider and generated audio only. The test-only bundler replaces
 // browser authentication; production has no injection hook or test credential.
 import assert from 'node:assert/strict';
@@ -54,7 +55,7 @@ if(url.hostname==='cdnaws.recis.io'){nativeQa.downloads++;return new Response(fs
 require(process.env.TPV_NATIVE_QA_ENTRY);`);
   const env = { ...process.env, TPV_NATIVE_QA_PROFILE: canonicalProfile, TPV_NATIVE_QA_REPO: repo, TPV_NATIVE_QA_MEDIA: mediaPath, TPV_NATIVE_QA_ENTRY: join(stage, 'main/index.cjs'), APPDATA: join(dir, 'appdata'), LOCALAPPDATA: join(dir, 'localappdata'), XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data') }; delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({ executablePath: require('electron'), args: [bootstrap, '--user-data-dir=' + canonicalProfile, '--mute-audio'], cwd: repo, env });
-  const host = await app.firstWindow(); qaHost = host; await host.waitForFunction(() => !!window.tpv?.karaFun);
+  const host = await waitForHostWindow(app); qaHost = host; await host.waitForFunction(() => !!window.tpv?.karaFun);
   app.on('window', page => { page.on('console', message => { if(message.type() === 'error') console.error('Synthetic renderer:',message.text()); }); });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   assert.equal((await host.evaluate(() => window.tpv.karaFun.status())).state, 'disconnected');
@@ -62,14 +63,14 @@ require(process.env.TPV_NATIVE_QA_ENTRY);`);
   await host.getByRole('button', { name: 'Sign In to KaraFun', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.karaFun.status()).state === 'connected');
   await host.getByRole('button', { name: 'Library', exact: true }).click();
-  await host.getByPlaceholder('Search your library and service catalogs').fill('synthetic');
-  await host.getByRole('region', { name: 'KaraFun search results' }).getByRole('button', { name: /Synthetic KaraFun Song/ }).click();
+  await host.getByRole('searchbox', { name: 'Search library' }).fill('synthetic');
+  await host.getByRole('option').filter({ hasText: 'Synthetic KaraFun Song' }).dblclick();
   const dialog = host.getByRole('dialog', { name: 'Add to Queue', exact: true });
   await dialog.getByRole('combobox').selectOption('__new__'); await dialog.getByLabel('New singer name').fill('Native QA');
   await dialog.getByRole('button', { name: 'Add to Queue', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.karaFun.preparations()).some(item => item.phase === 'ready'));
   let show = await host.evaluate(() => window.tpv.getState());
-  assert.equal(show.requests.length, 1); assert.equal(show.requests[0].status, 'accepted'); assert.equal(show.playback, null); assert.equal(app.windows().length, 1);
+  assert.equal(show.requests.length, 1); assert.equal(show.requests[0].status, 'staged'); assert.equal(show.playback, null); assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => window.isVisible()).length), 1);
   assert.equal(show.versions[0].source.provider, 'karafun'); assert.equal(JSON.stringify(show).includes('synthetic-test-session'), false); assert.equal(JSON.stringify(show).includes('https://'), false);
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
   await waitForHostCondition(host, async () => { const timeline = await window.tpv.getTimeline(); return timeline.seekable && timeline.position > .2; }, undefined, {timeout:10000});

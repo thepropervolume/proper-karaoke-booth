@@ -1,3 +1,4 @@
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 // Real packaged application, synthetic files, isolated temporary profile; never reads user media.
 // Usage: node scripts/packaged-directory-import-smoke.mjs <packaged-executable>
 import assert from 'node:assert/strict';
@@ -28,7 +29,7 @@ try {
   assert.equal(identity.packaged, true); assert.ok(identity.entry.endsWith('app.asar'));
   assert.equal(await realpath(identity.profile), canonicalProfile, 'Refusing to use any non-disposable profile.');
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, directory);
-  const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv?.imports);
+  const host = await waitForHostWindow(app); await host.waitForFunction(() => !!window.tpv?.imports);
   assert.equal((await host.evaluate(() => window.tpv.getState())).versions.length, 0);
   await host.getByRole('button', { name: 'Import Custom Directory', exact: true }).click();
   let status;

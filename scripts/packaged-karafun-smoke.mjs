@@ -1,3 +1,4 @@
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 // Actual packaged payload, a disposable profile, and an untouched official login.
 // No credentials, sign-in submission, account API calls or media acquisition.
 // Run: node scripts/packaged-karafun-smoke.mjs [packaged-executable]
@@ -27,7 +28,7 @@ const launch = async () => {
   assert.equal(await app.evaluate(({ app }) => app.isPackaged), true);
   assert.equal(await app.evaluate(({ app }) => app.getVersion()), version);
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
-  const host = await app.firstWindow();
+  const host = await waitForHostWindow(app);
   await waitForHostCondition(host, () => typeof window.tpv?.karaFun?.status === 'function');
   return host;
 };
@@ -97,7 +98,7 @@ try {
   assert.deepEqual(await login.locator('input[type="password"]').evaluateAll(inputs => inputs.map(input => input.value)), ['']);
   await login.close();
   await waitForHostCondition(host, async () => (await window.tpv.karaFun.status()).state === 'disconnected');
-  assert.equal(app.windows().length, 1);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => window.isVisible()).length), 1);
   await host.getByRole('button', { name: 'Sign In to KaraFun', exact: true }).waitFor({ state: 'visible' });
   assert.equal(await host.getByRole('button', { name: 'Sign In to KaraFun', exact: true }).isEnabled(), true);
   assert.deepEqual(await host.evaluate(() => window.tpv.getState()), before, 'Cancelled account connection must not change the show.');
@@ -115,7 +116,7 @@ try {
   const restarted = await host.evaluate(() => window.tpv.getState());
   assert.notEqual(restarted.hostEpoch, before.hostEpoch, 'Restart must rotate the host authority epoch.');
   assert.deepEqual({ ...restarted, hostEpoch: before.hostEpoch }, before);
-  assert.equal(app.windows().length, 1);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => window.isVisible()).length), 1);
   assert.equal((await host.evaluate(() => window.tpv.getTimeline())).generation, null);
   console.log(JSON.stringify({ passed: true, version, packaged: true, muted: true, methodsVerified: methods.length,
     officialLoginRead: true, isolationChecks: Object.keys(isolation).length, cancellation: 'disconnected; show unchanged',

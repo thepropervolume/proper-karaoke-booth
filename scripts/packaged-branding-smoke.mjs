@@ -1,3 +1,4 @@
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 // Actual packaged branding, private profile, muted playback and no real library.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -21,7 +22,7 @@ try {
   const identity = await app.evaluate(({app})=>({profile:app.getPath('userData'),packaged:app.isPackaged,version:app.getVersion()}));
   assert.equal(await realpath(identity.profile),canonicalProfile); assert.equal(identity.packaged,true);
   assert.equal(identity.version,JSON.parse(await readFile(join(repo,'package.json'),'utf8')).version);
-  const page = await app.firstWindow(); await page.waitForFunction(()=>!!window.tpv);
+  const page = await waitForHostWindow(app); await page.waitForFunction(()=>!!window.tpv);
   if (screenshotDirectory) await mkdir(screenshotDirectory,{recursive:true});
   for (const [appearance,visible,hidden] of [['day','light','dark'],['night','dark','light']]) {
     await page.evaluate(appearance=>window.tpv.saveSettings({appearance}),appearance);

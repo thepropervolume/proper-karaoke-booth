@@ -1,3 +1,4 @@
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 // Verify the actual packaged application, using only a new disposable profile.
 // Run after packaging: node scripts/packaged-app-smoke.mjs <executable>
 import assert from 'node:assert/strict';
@@ -36,7 +37,7 @@ const launch = async () => {
 };
 try {
   app = await launch();
-  let host = await app.firstWindow();
+  let host = await waitForHostWindow(app);
   await host.waitForFunction(() => !!window.tpv);
   assert.equal(await host.evaluate(() => window.tpv.getAppVersion()), metadata.version);
   await host.getByLabel('Application version').waitFor();
@@ -48,7 +49,7 @@ try {
   assert.equal(result.ok, true);
   await app.close(); app = undefined;
   app = await launch();
-  host = await app.firstWindow();
+  host = await waitForHostWindow(app);
   await host.waitForFunction(() => !!window.tpv);
   const restored = await host.evaluate(() => window.tpv.getState());
   assert.ok(restored.singers.some(singer => singer.id === 'packaged-qa' && singer.name === 'Packaged QA Singer'));
