@@ -17,10 +17,13 @@ test('schema 3 upgrades its format marker while preserving local ratings, media 
     db.prepare('INSERT INTO show_state VALUES (1, ?)').run('{"revision":9}');
     db.prepare('INSERT INTO media VALUES (?, ?, ?)').run('v1', '/private/original.mp4', 'a'.repeat(64));
     db.prepare('INSERT INTO local_song_ratings VALUES (?, ?, ?)').run('b'.repeat(64), 7, '2026-11-14T00:00:00Z');
+    db.exec(`DROP TABLE performance_history;
+      CREATE TABLE performance_history (generation_id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, singer TEXT NOT NULL,
+        version_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, outcome TEXT NOT NULL, performed_at TEXT NOT NULL);`);
     db.exec('PRAGMA user_version = 3');
     const tables = names(db);
     migrateShowSchema(db);
-    assert.equal(version(db), 4);
+    assert.equal(version(db), SHOW_SCHEMA_VERSION);
     assert.deepEqual(names(db), tables);
     assert.equal((db.prepare('SELECT value FROM show_state').get() as {value:string}).value, '{"revision":9}');
     assert.equal((db.prepare('SELECT path FROM media').get() as {path:string}).path, '/private/original.mp4');

@@ -119,7 +119,7 @@ declare global {
       khostBridge: KHostBridgeApi;
       chooseRatingProfile: () => Promise<string | null>;
       ratingProfileStatus: (file?: string) => Promise<SongRatingsLookup>;
-      requestCatalogTrack: (input: { track: CatalogRequestTrack; singerId: string; requestId: string }) => Promise<Result & { versionId?: string; notice?: string }>;
+      requestCatalogTrack: (input: { track: CatalogRequestTrack; singerId: string | null; requestId: string }) => Promise<Result & { versionId?: string; notice?: string }>;
       addYouTube: (input: {url:string;title:string;artist:string;brandSlug?:string}) => Promise<Result & {versionId?:string;notice?:string}>;
       openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
@@ -416,7 +416,7 @@ function App() {
   }, [ratingSelection, settings.ratingProfileConfigFile, ratingReload, filenameRefresh]);
   const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
   const describe = (request?: SongRequest) => {
-    const singer = state?.singers.find(s => s.id === request?.singerId)?.name ?? 'Unknown singer';
+    const singer = request?.singerId == null ? 'Unassigned' : state?.singers.find(s => s.id === request.singerId)?.name ?? 'Unknown singer';
     const song = state?.versions.find(v => v.id === request?.versionId);
     return { singer, title: song?.title ?? 'Unknown song', artist: song?.artist ?? '' };
   };
@@ -758,7 +758,7 @@ function App() {
       <button role="menuitem" disabled={busy || !['accepted', 'pending', 'staged'].includes(queueMenu.request.status)} onClick={() => { setEditingRequest(queueMenu.request); setQueueMenu(null); }}>Edit track or singer…</button>
       <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { const waiting = future.filter(r => r.status === 'accepted' && r.id !== queueMenu.request.id); void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: waiting[0]?.id ?? null }); setQueueMenu(null); }}>Move to first waiting</button>
       <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: null }); setQueueMenu(null); }}>Move to last waiting</button>
-      <button role="menuitem" onClick={() => { setScreen('singers'); setQueueMenu(null); }}>Singer availability…</button>
+      <button role="menuitem" disabled={queueMenu.request.singerId === null} onClick={() => { setScreen('singers'); setQueueMenu(null); }}>Singer availability…</button>
       <button role="menuitem" disabled={busy} onClick={() => { void command({ type: 'removeRequest', requestId: queueMenu.request.id }); setQueueMenu(null); }}>Remove request</button>
     </div>}
     {editingRequest && state && <QueueEditDialog request={editingRequest} singers={state.singers} versions={versions} onClose={() => setEditingRequest(null)} onSave={async (singerId, versionId) => {

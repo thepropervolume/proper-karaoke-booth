@@ -92,7 +92,7 @@ export class KaraFunHost {
     if (Object.keys(input).some(key => !['searchId', 'songId', 'catalog', 'singerId', 'requestId'].includes(key)) ||
         !receipt || receipt.id !== input.searchId || receipt.revision !== this.account.revision() || receipt.until < Date.now() ||
         this.account.status().state !== 'connected' || typeof input.songId !== 'string' || typeof input.catalog !== 'string' ||
-        typeof input.singerId !== 'string' || typeof input.requestId !== 'string') return { ok: false, error: 'Search KaraFun again before requesting this recording.' };
+        (input.singerId !== null && typeof input.singerId !== 'string') || typeof input.requestId !== 'string') return { ok: false, error: 'Search KaraFun again before requesting this recording.' };
     const song = receipt.songs.get(`${input.catalog}:${input.songId}`);
     if (!song) return { ok: false, error: 'Choose a current KaraFun search result.' };
     const planned = karaFunRequest(this.ports.state(), { songId: song.songId, catalog: song.catalog, title: song.title, artist: song.artist, explicit: song.explicit },

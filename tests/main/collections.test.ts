@@ -61,3 +61,14 @@ test('history shares show transaction and records a generation only once', () =>
   } finally { db.close(); }
 });
 
+test('an unassigned performance records blank singer text and a nullable identity', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    const collections = new Collections(db);
+    const entry = { generationId: 'unassigned', singerId: null, singer: '', versionId: 'v', title: 'Song', artist: 'Artist', outcome: 'completed' as const, at: '2026-11-15T00:00:00Z' };
+    collections.record(entry); assert.deepEqual(collections.snapshot().history, [entry]);
+    assert.throws(() => collections.record({ ...entry, generationId: 'bad', singerId: undefined } as unknown as typeof entry));
+    assert.throws(() => collections.record({ ...entry, generationId: 'bad', singer: 'Invented Person' }));
+  } finally { db.close(); }
+});
+

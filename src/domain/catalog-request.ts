@@ -3,7 +3,7 @@ import type { Settings } from './settings';
 import { compileSongBlacklist } from './song-blacklist';
 
 export type CatalogRequestTrack = { youtubeId: string; title: string; artist: string; brandSlug?: string };
-export type CatalogRequestInput = { track: CatalogRequestTrack; singerId: string; requestId: string };
+export type CatalogRequestInput = { track: CatalogRequestTrack; singerId: string | null; requestId: string };
 export type CatalogRequestResult = { ok: boolean; error?: string; versionId?: string; notice?: string };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown, empty = false): value is string => typeof value === 'string' && (empty || !!value.trim()) && value.length <= 500 && !/[\x00-\x1f\x7f]/.test(value);
@@ -11,7 +11,7 @@ const text = (value: unknown, empty = false): value is string => typeof value ==
 /** Plan the library addition and request together; the authority saves once. */
 export function catalogRequest(state: ShowState, value: unknown, settings: Settings, ids: { versionId: string; commandId: string }, now: number): { state: ShowState; result: CatalogRequestResult } {
   const fail = (error: string) => ({state,result:{ok:false,error}});
-  if (!record(value) || Object.keys(value).some(key => !['track','singerId','requestId'].includes(key)) || !text(value.singerId) || !text(value.requestId) || !record(value.track)) return fail('Choose a song and singer.');
+  if (!record(value) || Object.keys(value).some(key => !['track','singerId','requestId'].includes(key)) || value.singerId !== null && !text(value.singerId) || !text(value.requestId) || !record(value.track)) return fail('Choose a valid song and optional singer.');
   const track = value.track;
   if (Object.keys(track).some(key => !['youtubeId','title','artist','brandSlug'].includes(key)) || typeof track.youtubeId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(track.youtubeId) || !text(track.title) || !text(track.artist,true) ||
     (track.brandSlug !== undefined && (typeof track.brandSlug !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(track.brandSlug)))) return fail('The selected catalog recording is invalid.');

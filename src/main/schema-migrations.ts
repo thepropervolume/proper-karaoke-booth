@@ -1,9 +1,10 @@
 /** Transactional application schema versions. The caller owns the sole show database connection. */
 import type { DatabaseSync } from 'node:sqlite';
 
-// Version 4 adds KaraFun source identities to serialized show state. Older
-// clients must refuse the database instead of treating KIT assets as videos.
-export const SHOW_SCHEMA_VERSION = 4;
+// Version 5 permits unassigned (null-singer) queue/history entries. Older
+// clients require a singer and must refuse this database rather than crash
+// during playback or silently invent a singer when restoring it.
+export const SHOW_SCHEMA_VERSION = 5;
 const required: Record<string, readonly string[]> = {
   show_state: ['id', 'value'], media: ['id', 'path', 'fingerprint'], checkpoint: ['id', 'generation', 'position'],
   missing_song_requests: ['id', 'singer', 'title', 'artist', 'created_at'], missing_song_request_reviews: ['request_id', 'status', 'updated_at'], playlists: ['id', 'name', 'singer_id'],
@@ -44,7 +45,9 @@ function validateExisting(db: DatabaseSync, complete: boolean, schemaVersion = S
     const info = db.prepare(`PRAGMA table_info("${name}")`).all() as { name: string; type: string; notnull: number; pk: number; dflt_value: unknown }[];
     const actual = new Map(info.map(column => [column.name, column]));
     const key = info.filter(column => column.pk > 0).sort((a, b) => a.pk - b.pk).map(column => column.name);
-    if (columns.some(column => !actual.has(column)) || notNull[name].some(column => actual.get(column)?.notnull !== 1) ||
+    const requiredNotNull = notNull[name].filter(column => !(schemaVersion >= 5 && name === 'performance_history' && column === 'singer_id'));
+    if (columns.some(column => !actual.has(column)) || requiredNotNull.some(column => actual.get(column)?.notnull !== 1) ||
+        schemaVersion >= 5 && name === 'performance_history' && actual.get('singer_id')?.notnull !== 0 ||
         info.some(column => !columns.includes(column.name) && column.notnull === 1 && column.dflt_value === null) ||
         key.length !== primaryKeys[name].length || key.some((column, index) => column !== primaryKeys[name][index]))
       throw new Error(`Show database table ${name} is incompatible.`);
@@ -113,7 +116,7 @@ export function migrateShowSchema(db: DatabaseSync): void {
       CREATE TABLE IF NOT EXISTS missing_song_request_reviews (request_id TEXT PRIMARY KEY, status TEXT NOT NULL CHECK (status IN ('pending', 'reviewing', 'fulfilled', 'declined')), updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL, singer_id TEXT);
       CREATE TABLE IF NOT EXISTS playlist_items (playlist_id TEXT NOT NULL, version_id TEXT NOT NULL, PRIMARY KEY (playlist_id, version_id));
-      CREATE TABLE IF NOT EXISTS performance_history (generation_id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, singer TEXT NOT NULL, version_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, outcome TEXT NOT NULL, performed_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS performance_history (generation_id TEXT PRIMARY KEY, singer_id TEXT, singer TEXT NOT NULL, version_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, outcome TEXT NOT NULL, performed_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_invitation_scopes (token_hash TEXT PRIMARY KEY, scope_id TEXT NOT NULL);
@@ -124,6 +127,19 @@ export function migrateShowSchema(db: DatabaseSync): void {
       CREATE TABLE IF NOT EXISTS local_song_ratings (fingerprint TEXT PRIMARY KEY CHECK (length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
         value INTEGER NOT NULL CHECK (typeof(value) = 'integer' AND value BETWEEN 1 AND 10), updated_at TEXT NOT NULL);
       INSERT OR IGNORE INTO playlists (id, name, singer_id) VALUES ('kj-picks', 'KJ Picks', NULL);`);
+    const history = db.prepare('PRAGMA table_info(performance_history)').all() as { name: string; notnull: number }[];
+    if (history.find(column => column.name === 'singer_id')?.notnull === 1) {
+      // SQLite has no ALTER COLUMN DROP NOT NULL. Preserve every row and any
+      // existing explicit indexes/triggers while changing this one constraint.
+      const attached = db.prepare("SELECT sql FROM sqlite_schema WHERE tbl_name = 'performance_history' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name").all() as { sql: string }[];
+      db.exec(`CREATE TABLE performance_history_v5 (generation_id TEXT PRIMARY KEY, singer_id TEXT, singer TEXT NOT NULL,
+        version_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, outcome TEXT NOT NULL, performed_at TEXT NOT NULL);`);
+      db.exec(`INSERT INTO performance_history_v5 (generation_id, singer_id, singer, version_id, title, artist, outcome, performed_at)
+        SELECT generation_id, singer_id, singer, version_id, title, artist, outcome, performed_at FROM performance_history;`);
+      db.exec('DROP TABLE performance_history;');
+      db.exec('ALTER TABLE performance_history_v5 RENAME TO performance_history;');
+      for (const entry of attached) db.exec(entry.sql);
+    }
     // IF NOT EXISTS also tolerates a same-named view; verify the complete
     // resulting table layout before declaring this migration successful.
     validateExisting(db, true);

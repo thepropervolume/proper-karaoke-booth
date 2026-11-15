@@ -217,7 +217,7 @@ window.tpvDisplay.subscribe(async (view) => {
   const previousOutput = current?.outputId;
   if (changed) { outputRecoveryGeneration = null; rerouteRequested = false; }
   current = state;
-  waiting.hidden = true; caption.textContent = `${state.singer} · ${state.title}`;
+  waiting.hidden = true; caption.textContent = [state.singer, state.title].filter(Boolean).join(' · ');
   if (isNative(state)) {
     if (changed) {
       nativeRecovery = null; lastNativeCheckpoint = 0;

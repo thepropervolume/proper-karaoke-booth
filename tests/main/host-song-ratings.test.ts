@@ -10,6 +10,11 @@ import { migrateShowSchema, inspectShowSchema, SHOW_SCHEMA_VERSION } from '../..
 import { createInitialState, type ShowState } from '../../src/domain';
 const fingerprint = 'a'.repeat(64), local = `sha256:${fingerprint}` as const, global = 'youtube:Abcdefghijk' as const;
 const empty = { recordingKey: local, average: null, count: 0, ownVote: null };
+function legacyHistory(db: DatabaseSync) {
+  db.exec(`DROP TABLE performance_history;
+    CREATE TABLE performance_history (generation_id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, singer TEXT NOT NULL,
+      version_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, outcome TEXT NOT NULL, performed_at TEXT NOT NULL);`);
+}
 const makeStore = (filename = ':memory:') => {
   const store = new Store<{ revision: number }>(filename);
   store.save({ revision: 7 }, [{ id: 'local-one', path: '/private/one.mp4', fingerprint }]);
@@ -139,6 +144,7 @@ test('version2 shows upgrade atomically and local rating data is validated durin
   const db = new DatabaseSync(':memory:');
   try {
     migrateShowSchema(db);
+    legacyHistory(db);
     db.exec("INSERT INTO show_state VALUES (1, '{\"revision\":7}'); DROP TABLE local_song_ratings; PRAGMA user_version = 2;");
     inspectShowSchema(db); migrateShowSchema(db);
     assert.equal((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, SHOW_SCHEMA_VERSION);
@@ -172,6 +178,7 @@ test('an empty legacy ratings table with text score affinity cannot be adopted a
   const db = new DatabaseSync(':memory:');
   try {
     migrateShowSchema(db);
+    legacyHistory(db);
     db.exec(`INSERT INTO show_state VALUES (1, '{}'); DROP TABLE local_song_ratings; PRAGMA user_version = 2;
       CREATE TABLE local_song_ratings (fingerprint TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);`);
     assert.throws(() => migrateShowSchema(db), /column types are incompatible/);

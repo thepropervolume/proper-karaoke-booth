@@ -401,19 +401,19 @@ function publishDisplay(): void {
   const version = state.versions.find(v => v.id === request?.versionId);
   const singer = state.singers.find(s => s.id === request?.singerId);
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
-    .filter(r => singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
+    .filter(r => r.singerId !== null && singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
   const native = activeKaraFun?.generation === playback?.generationId && activeKaraFun?.versionId === version?.id &&
     activeKaraFun?.revision === karaFunAccount?.revision() && version?.source?.provider === 'karafun' &&
     version.source.catalog === activeKaraFun.media.source.catalog && version.source.songId === activeKaraFun.media.source.songId ? activeKaraFun : null;
   const backdrop = native ? lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }) : undefined;
-  const current = playback && request && version && singer && store.media(version.id) && (version.source?.provider !== 'karafun' || native) ? { generation: playback.generationId, status: playback.status,
+  const current = playback && request && version && store.media(version.id) && (version.source?.provider !== 'karafun' || native) ? { generation: playback.generationId, status: playback.status,
     kind: native ? 'karafun' : 'video',
     ...(native ? { karaFun: { timing: native.media.kit.timing, durationSeconds: native.media.kit.timing.durationSeconds,
       stems: native.media.kit.stems.map(stem => ({ id: stem.id, role: stem.role, voice: stem.voice, src: `tpv-media://karafun-stem/${encodeURIComponent(playback.generationId)}/${stem.id}` })) },
       backdropSrc: backdrop ? `tpv-media://lyric-backdrop/${encodeURIComponent(playback.generationId)}` : null } : {}),
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
-    position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
+    position: store.position(playback.generationId), title: version.title, singer: singer?.name ?? '', volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
   display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume,
     branding: { boothName: settings.boothName, displayLogoSize: settings.displayLogoSize, bannerEnabled: settings.bannerEnabled,
       bannerText: settings.bannerText, bannerPosition: settings.bannerPosition, bannerExpiresAt: settings.bannerExpiresAt, bannerOnLaunch: settings.bannerOnLaunch } });
@@ -428,7 +428,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
     if (request) {
       const singer = state.singers.find(s => s.id === request.singerId);
       const version = state.versions.find(v => v.id === request.versionId);
-      history = { generationId: state.playback.generationId, singerId: request.singerId, singer: singer?.name ?? 'Unknown singer',
+      history = { generationId: state.playback.generationId, singerId: request.singerId, singer: singer?.name ?? '',
         versionId: request.versionId, title: version?.title ?? 'Unknown song', artist: version?.artist ?? '',
         outcome: command.type === 'complete' ? 'completed' : 'skipped', at: new Date().toISOString() };
     }
@@ -704,12 +704,12 @@ function validateCommand(value: unknown): Command | null {
     case 'addSinger':
       return isRecord(value.singer) && shortString(value.singer.id) && shortString(value.singer.name) ? { type: 'addSinger', singer: { id: value.singer.id, name: value.singer.name } } : null;
     case 'request':
-      return shortString(value.requestId) && shortString(value.singerId) && shortString(value.versionId) ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
+      return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
     case 'accept': return shortString(value.requestId) ? { type: 'accept', requestId: value.requestId } : null;
     case 'removeRequest': return shortString(value.requestId) ? { type: 'removeRequest', requestId: value.requestId } : null;
     case 'setSingerAvailability': return shortString(value.singerId) && Number.isInteger(value.minutes) && (value.minutes as number) >= 0 && (value.minutes as number) <= 60 && (value.releaseStaged === undefined || typeof value.releaseStaged === 'boolean') ? { type: 'setSingerAvailability', singerId: value.singerId, minutes: value.minutes as number, releaseStaged: value.releaseStaged as boolean | undefined } : null;
     case 'moveRequest': return shortString(value.requestId) && (value.beforeRequestId === null || shortString(value.beforeRequestId)) ? { type: 'moveRequest', requestId: value.requestId, beforeRequestId: value.beforeRequestId } : null;
-    case 'editRequest': return shortString(value.requestId) && shortString(value.singerId) && shortString(value.versionId) ? { type: 'editRequest', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
+    case 'editRequest': return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) ? { type: 'editRequest', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
     case 'resetQueueOrder': return { type: 'resetQueueOrder' };
     case 'promoteRequest': return shortString(value.requestId) ? { type: 'promoteRequest', requestId: value.requestId } : null;
     case 'rejectRequest': return shortString(value.requestId) ? { type: 'rejectRequest', requestId: value.requestId } : null;

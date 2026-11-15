@@ -8,6 +8,15 @@ const track = { catalog: 'catalog' as const, songId: '6229', title: 'Synthetic s
 function fixture() { const state = createInitialState('show', 'epoch'); state.singers.push({ id: 's', name: 'Singer' }); return state; }
 const ids = { versionId: 'native-version', commandId: 'native-command' };
 
+test('native selections can queue without a singer and retain atomic replay identity', () => {
+  const state = createInitialState('show', 'epoch');
+  const planned = karaFunRequest(state, track, null, 'unassigned', DEFAULT_SETTINGS, ids, 1000);
+  assert.equal(planned.result.ok, true); assert.equal(planned.state.singers.length, 0);
+  assert.equal(planned.state.requests[0].singerId, null);
+  assert.equal(karaFunRequest(planned.state, track, null, 'unassigned', DEFAULT_SETTINGS, ids, 1001).state, planned.state);
+  assert.equal(karaFunRequest(planned.state, track, 's', 'unassigned', DEFAULT_SETTINGS, ids, 1001).result.ok, false);
+});
+
 test('native KaraFun selection enters the ordinary durable queue without staging or playing', () => {
   const state = fixture(), planned = karaFunRequest(state, track, 's', 'r', DEFAULT_SETTINGS, ids, 1000);
   assert.equal(planned.result.ok, true); assert.equal(state.versions.length, 0);

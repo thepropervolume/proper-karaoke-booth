@@ -87,6 +87,18 @@ test('native host commits an ordinary request and background preparation without
   assert.equal(f.authorizations(), 2, 'starting obtains a fresh descriptor even after a verified download');
   assert.equal(f.state().playback, null, 'authorization itself never starts a performance');
 });
+test('native host can queue an unassigned recording without a synthetic singer or weakening search receipts', async t => {
+  const f = fixture(); t.after(() => f.host.shutdown()); f.state().singers = [];
+  const found = await f.host.search('Synthetic'); assert.ok(found.searchId);
+  const input = { searchId: found.searchId, songId: song.songId, catalog: song.catalog, singerId: null, requestId: 'unassigned' };
+  for (const singerId of ['', undefined, {}, 1]) assert.equal(f.host.request({ ...input, singerId }).ok, false);
+  const queued = f.host.request(input); assert.equal(queued.ok, true); assert.ok(queued.versionId);
+  await until(() => f.media.has(queued.versionId!));
+  assert.equal(f.state().requests[0].singerId, null); assert.equal(f.state().requests[0].status, 'accepted');
+  assert.equal(f.state().singers.length, 0); assert.equal(f.state().playback, null); assert.equal(f.calls.length, 1);
+  assert.equal(f.host.request(input).ok, true); assert.equal(f.state().requests.length, 1, 'the same null-owner receipt is idempotent');
+  assert.equal(f.host.request({ ...input, requestId: 'forged', songId: '9999' }).ok, false);
+});
 test('native receipts reject forged metadata, stale searches, expiry and account changes', async t => {
   const f = fixture(); t.after(() => f.host.shutdown());
   const first = await f.host.search('Synthetic'); assert.ok(first.searchId);

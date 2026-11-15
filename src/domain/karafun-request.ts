@@ -10,12 +10,12 @@ const text = (value: unknown, empty = false): value is string => typeof value ==
 
 /** Only the host's current authenticated-search authority supplies this metadata.
  * Plan the version and request together so a refused request leaves no orphan. */
-export function karaFunRequest(state: ShowState, track: KaraFunRequestTrack, singerId: string, requestId: string,
+export function karaFunRequest(state: ShowState, track: KaraFunRequestTrack, singerId: string | null, requestId: string,
   settings: Settings, ids: { versionId: string; commandId: string }, now: number): { state: ShowState; result: Result } {
   const refuse = (error: string) => ({ state, result: { ok: false, error } });
   if (!track || Object.keys(track).some(key => !['songId', 'catalog', 'title', 'artist', 'explicit'].includes(key)) ||
       track.explicit !== undefined && track.explicit !== null && typeof track.explicit !== 'boolean' ||
-      !text(track.title) || !text(track.artist, true) || !text(singerId) || !text(requestId)) return refuse('Choose a valid KaraFun recording and singer.');
+      !text(track.title) || !text(track.artist, true) || singerId !== null && !text(singerId) || !text(requestId)) return refuse('Choose a valid KaraFun recording and optional singer.');
   const source: KaraFunSource = { provider: 'karafun', songId: track.songId, catalog: track.catalog };
   if (!validStreamingSource(source)) return refuse('The KaraFun recording identity is invalid.');
   if (compileSongBlacklist(settings).isBlocked(track)) return refuse('This song or artist is blacklisted by the host.');

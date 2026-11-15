@@ -16,7 +16,7 @@ export type KaraFunBridge = {
   signIn(): Promise<KaraFunAccountStatus>;
   signOut(): Promise<KaraFunAccountStatus>;
   search(query: string): Promise<KaraFunSearchReply>;
-  request(input: { searchId: string; songId: string; catalog: 'catalog' | 'community'; singerId: string; requestId: string }): Promise<{ ok: boolean; versionId?: string; error?: string; notice?: string }>;
+  request(input: { searchId: string; songId: string; catalog: 'catalog' | 'community'; singerId: string | null; requestId: string }): Promise<{ ok: boolean; versionId?: string; error?: string; notice?: string }>;
   preparations(): Promise<KaraFunPreparation[]>;
   retry(versionId: string): Promise<void>;
   subscribe(callback: (value: KaraFunAccountStatus) => void): () => void;

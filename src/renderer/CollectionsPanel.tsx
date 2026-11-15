@@ -103,7 +103,7 @@ export function CollectionsPanel({ data, singers, versions, selectedVersionId, b
       <button type="button" onClick={() => void exportHistory()} disabled={busy || exportBusy || exportCleanup || !history.length}>Export matching history…</button>
       {exportCleanup && <button type="button" onClick={() => void retryExportCleanup()} disabled={exportBusy}>Retry export cleanup</button>}
       {exportMessage && <p role="status">{exportMessage}</p>}
-      {history.map(item => <div className="track-row" key={item.generationId}><div><strong>{item.title}</strong><small>{item.singer}{item.artist ? ` · ${item.artist}` : ''} · {item.outcome} · {new Date(item.at).toLocaleString()}</small></div></div>)}
+      {history.map(item => <div className="track-row" key={item.generationId}><div><strong>{item.title}</strong><small>{item.singer || 'Unassigned'}{item.artist ? ` · ${item.artist}` : ''} · {item.outcome} · {new Date(item.at).toLocaleString()}</small></div></div>)}
       {!history.length && <p className="empty">{data.history.length ? 'No performances match the current search and singer filter.' : 'No completed or skipped performances yet.'}</p>}
     </>}
   </section>;

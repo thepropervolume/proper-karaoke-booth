@@ -28,5 +28,13 @@ test('failed singer, policy or request limit leaves no orphan library additions'
 test('blocked exact identities and malformed renderer objects cannot create replacements',()=>{
  const state=catalogRequest(setup(),input,DEFAULT_SETTINGS,ids,1).state;state.policy.excludeVersionIds.push('version');
  assert.equal(catalogRequest(state,{...input,requestId:'new'},DEFAULT_SETTINGS,{versionId:'replacement',commandId:'new'},2).result.ok,false);
- for(const value of [{...input,track:{...input.track,filename:'private'}},{...input,track:{...input.track,youtubeId:'not-an-id'}},{...input,singerId:null}])assert.equal(catalogRequest(setup(),value,DEFAULT_SETTINGS,ids,1).result.ok,false);
+ for(const value of [{...input,track:{...input.track,filename:'private'}},{...input,track:{...input.track,youtubeId:'not-an-id'}},{...input,singerId:undefined}])assert.equal(catalogRequest(setup(),value,DEFAULT_SETTINGS,ids,1).result.ok,false);
+});
+test('catalog requests can be unassigned atomically and retry the same identity without creating a singer',()=>{
+ const before=createInitialState('show','epoch'),value={...input,singerId:null};
+ const result=catalogRequest(before,value,DEFAULT_SETTINGS,ids,1);
+ assert.equal(result.result.ok,true);assert.equal(result.state.singers.length,0);assert.equal(result.state.requests[0].singerId,null);
+ const repeat=catalogRequest(result.state,value,DEFAULT_SETTINGS,ids,2);
+ assert.equal(repeat.result.ok,true);assert.equal(repeat.state.requests.length,1);
+ assert.equal(catalogRequest(result.state,{...value,singerId:'different'},DEFAULT_SETTINGS,ids,2).result.ok,false);
 });

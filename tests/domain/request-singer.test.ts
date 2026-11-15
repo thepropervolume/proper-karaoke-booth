@@ -4,13 +4,13 @@ import { requestWithSinger } from '../../src/renderer/request-singer';
 
 test('a rejected request keeps the newly created singer available for a retry', async () => {
   const singers: { id: string; name: string }[] = [];
-  const requests: string[] = [];
+  const requests: (string | null)[] = [];
   let selected = '', fail = true;
   const callbacks = {
     createSingerId: () => 'new-singer',
     addSinger: async (singer: { id: string; name: string }) => { singers.push(singer); return { ok: true }; },
     singerCreated: (id: string) => { selected = id; },
-    addRequest: async (id: string) => { requests.push(id); return fail ? { ok: false, error: 'Song unavailable' } : { ok: true }; },
+    addRequest: async (id: string | null) => { requests.push(id); return fail ? { ok: false, error: 'Song unavailable' } : { ok: true }; },
   };
   await assert.rejects(requestWithSinger({ newSingerName: 'Ben' }, callbacks), /Song unavailable/);
   assert.equal(selected, 'new-singer');
@@ -34,7 +34,7 @@ test('a singer creation failure does not select a singer or send a request', asy
 });
 
 test('an existing singer does not trigger singer creation', async () => {
-  let creations = 0, selected = false, requested = '';
+  let creations = 0, selected = false, requested: string | null = '';
   await requestWithSinger({ singerId: 'existing' }, {
     createSingerId: () => { creations++; return 'new'; },
     addSinger: async () => { creations++; return { ok: true }; },
@@ -44,4 +44,15 @@ test('an existing singer does not trigger singer creation', async () => {
   assert.equal(creations, 0);
   assert.equal(selected, false);
   assert.equal(requested, 'existing');
+});
+
+test('an unassigned request commits null without creating or selecting a singer', async () => {
+  let requested: string | null | undefined;
+  await requestWithSinger({ singerId: null }, {
+    createSingerId: () => { throw new Error('Must not create a placeholder singer'); },
+    addSinger: async () => { throw new Error('Must not add a placeholder singer'); },
+    singerCreated: () => { throw new Error('Must not select a placeholder singer'); },
+    addRequest: async id => { requested = id; return { ok: true }; },
+  });
+  assert.equal(requested, null);
 });

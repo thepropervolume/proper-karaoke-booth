@@ -3,10 +3,10 @@ import type { Singer, SongRequest, Version } from '../domain';
 
 export function QueueEditDialog({ request, singers, versions, onSave, onClose }: {
   request: SongRequest; singers: Singer[]; versions: Version[];
-  onSave: (singerId: string, versionId: string) => Promise<void>; onClose: () => void;
+  onSave: (singerId: string | null, versionId: string) => Promise<void>; onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [singerId, setSingerId] = useState(request.singerId);
+  const [singerId, setSingerId] = useState(request.singerId ?? '');
   const [versionId, setVersionId] = useState(request.versionId);
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
@@ -19,15 +19,15 @@ export function QueueEditDialog({ request, singers, versions, onSave, onClose }:
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); if (saving) return;
     setSaving(true); setError('');
-    try { await onSave(singerId, versionId); onClose(); }
+    try { await onSave(singerId || null, versionId); onClose(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setSaving(false); }
   };
   return <dialog ref={dialog} className="settings-dialog" aria-labelledby="edit-request-title"
     onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}>
     <form onSubmit={event => void submit(event)}>
       <h2 id="edit-request-title">Edit Queued Request</h2>
-      <p>Changing the singer assigns the recipient’s next available round. A manually assigned queue position stays in place. Staged and playing songs are locked.</p>
-      <label>Singer<select aria-label="Singer" autoFocus required value={singerId} disabled={saving} onChange={event => setSingerId(event.target.value)}>
+      <label>Singer (optional)<select aria-label="Singer" autoFocus value={singerId} disabled={saving} onChange={event => setSingerId(event.target.value)}>
+        <option value="">No singer — assign later</option>
         {singers.map(singer => <option key={singer.id} value={singer.id}>{singer.name}</option>)}
       </select></label>
       <label>Find a replacement track<input type="search" value={query} disabled={saving} onChange={event => setQuery(event.target.value)} /></label>
@@ -37,7 +37,7 @@ export function QueueEditDialog({ request, singers, versions, onSave, onClose }:
       </select></label>
       {error && <p role="alert">Could not update request: {error}</p>}
       <div className="settings-actions"><button type="button" disabled={saving} onClick={onClose}>Cancel</button>
-        <button className="primary" type="submit" disabled={saving || !singerId || !versions.some(version => version.id === versionId)}>Save request</button></div>
+        <button className="primary" type="submit" disabled={saving || !versions.some(version => version.id === versionId)}>Save request</button></div>
     </form>
   </dialog>;
 }

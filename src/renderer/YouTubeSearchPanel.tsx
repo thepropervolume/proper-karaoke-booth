@@ -5,7 +5,7 @@ import type { YouTubeKaraokeSong, YouTubeSearchResult } from '../domain/youtube-
 
 export type YouTubeSearchBridge = {
   search(query: string): Promise<YouTubeSearchResult>; cancel(): Promise<void>;
-  request(input: { searchId: string; videoId: string; singerId: string; requestId: string }): Promise<{ ok: boolean; error?: string; notice?: string; versionId?: string }>;
+  request(input: { searchId: string; videoId: string; singerId: string | null; requestId: string }): Promise<{ ok: boolean; error?: string; notice?: string; versionId?: string }>;
   importSubscriptions(): Promise<{ channels: string[]; ignored: number } | null>;
 };
 

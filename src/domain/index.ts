@@ -13,20 +13,20 @@ export type Version = { id: string; title: string; artist: string; rating: Ratin
 export type Singer = { id: string; name: string; unavailableUntilMs?: number };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
 export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
-export type SongRequest = { id: string; singerId: string; versionId: string; status: RequestStatus; round: number | null; order: number | null };
+export type SongRequest = { id: string; singerId: string | null; versionId: string; status: RequestStatus; round: number | null; order: number | null };
 export type Playback = { requestId: string; generationId: string; status: 'playing' | 'paused' };
 export type Command =
   | { type: 'addVersion'; version: Version }
   | { type: 'editVersion'; id: string; title: string; artist: string }
   | { type: 'addSinger'; singer: Singer }
   | { type: 'setSingerAvailability'; singerId: string; minutes: number; releaseStaged?: boolean }
-  | { type: 'request'; requestId: string; singerId: string; versionId: string }
+  | { type: 'request'; requestId: string; singerId: string | null; versionId: string }
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
   | { type: 'promoteRequest'; requestId: string }
   | { type: 'moveRequest'; requestId: string; beforeRequestId: string | null }
   | { type: 'resetQueueOrder' }
-  | { type: 'editRequest'; requestId: string; singerId: string; versionId: string }
+  | { type: 'editRequest'; requestId: string; singerId: string | null; versionId: string }
   | { type: 'rejectRequest'; requestId: string }
   | { type: 'withdrawRequest'; requestId: string }
   | { type: 'stage' }
@@ -86,11 +86,13 @@ export function remainingPauseSeconds(state: ShowState, nowMs: number): number {
   return Number.isFinite(state.nextStartAtMs) ? Math.ceil(Math.max(0, state.nextStartAtMs! - nowMs) / 1000) : 0;
 }
 
-export function singerAvailable(state: ShowState, singerId: string, nowMs: number): boolean {
+export function singerAvailable(state: ShowState, singerId: string | null, nowMs: number): boolean {
+  if (singerId === null) return true;
   return (state.singers.find(singer => singer.id === singerId)?.unavailableUntilMs ?? 0) <= nowMs;
 }
 
-function singerRequestLimit(state: ShowState, singerId: string, configured: number | undefined, nowMs: number): string | null {
+function singerRequestLimit(state: ShowState, singerId: string | null, configured: number | undefined, nowMs: number): string | null {
+  if (singerId === null) return null;
   if (!singerAvailable(state, singerId, nowMs)) {
     const message = futureRequestLimitMessage(state.requests, singerId, 1);
     if (message) return 'An unavailable singer may have at most one upcoming request. Existing requests are retained; return or remove requests before adding another.';
@@ -105,10 +107,12 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode'], 
   // repeatedly filtering it during sorting grows quadratic with show history.
   const positions = new Map<string, number>();
   const deadlines = new Map(state.singers.map(s => [s.id, s.unavailableUntilMs ?? 0]));
-  const available = (id: string) => (deadlines.get(id) ?? 0) <= nowMs;
+  const available = (id: string | null) => id === null || (deadlines.get(id) ?? 0) <= nowMs;
+  const position = (request: SongRequest) => request.singerId === null ? request.order ?? Infinity : positions.get(request.singerId) ?? Infinity;
+  const deadline = (id: string | null) => id === null ? 0 : deadlines.get(id) ?? 0;
   const future: { request: SongRequest; index: number }[] = [];
   state.requests.forEach((request, index) => {
-    if (request.order !== null && !['removed', 'withdrawn', 'rejected'].includes(request.status)) {
+    if (request.singerId !== null && request.order !== null && !['removed', 'withdrawn', 'rejected'].includes(request.status)) {
       positions.set(request.singerId, Math.min(positions.get(request.singerId) ?? Infinity, request.order));
     }
     if (request.status === 'accepted' || request.status === 'staged') future.push({ request, index });
@@ -118,19 +122,21 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode'], 
     const a = left.request, b = right.request;
     return (a.status === 'staged' ? -1 : 0) - (b.status === 'staged' ? -1 : 0) ||
       (available(a.singerId) ? 0 : 1) - (available(b.singerId) ? 0 : 1) ||
-      (!available(a.singerId) && !available(b.singerId) ? (deadlines.get(a.singerId) ?? 0) - (deadlines.get(b.singerId) ?? 0) : 0) ||
+      (!available(a.singerId) && !available(b.singerId) ? deadline(a.singerId) - deadline(b.singerId) : 0) ||
       (a.id === state.promotedRequestId ? -1 : 0) - (b.id === state.promotedRequestId ? -1 : 0) ||
       (manual.get(a.id) ?? Infinity) - (manual.get(b.id) ?? Infinity) ||
       // Request arrays are append-only, so this also preserves FIFO for older
       // shows and for requests approved in a different order than they arrived.
       (mode === 'fifo' ? left.index - right.index : a.round! - b.round! ||
-        (positions.get(a.singerId) ?? Infinity) - (positions.get(b.singerId) ?? Infinity) || a.order! - b.order!);
+        position(a) - position(b) || a.order! - b.order!);
   }).map(item => item.request);
 }
 
 function acceptRequest(state: ShowState, request: SongRequest): void {
   let round = state.currentRound + (state.finalTurnBegun ? 1 : 0);
-  while (state.requests.some(r => r.singerId === request.singerId && r.round === round && !['removed', 'withdrawn', 'rejected'].includes(r.status))) round++;
+  // An unassigned song is its own FIFO slot, never one synthetic singer with a
+  // shared future-request limit or a turn reserved in every following round.
+  while (request.singerId !== null && state.requests.some(r => r.singerId === request.singerId && r.round === round && !['removed', 'withdrawn', 'rejected'].includes(r.status))) round++;
   request.status = 'accepted'; request.round = round; request.order = state.nextOrder++;
 }
 
@@ -205,7 +211,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     }
     case 'request': {
       const limitMessage = singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
-      if (!nonempty(cmd.requestId) || !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
+      if (!nonempty(cmd.requestId) || cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else if (limitMessage) reject('LIMIT', limitMessage);
@@ -278,7 +284,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     case 'editRequest': {
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || !['pending', 'accepted', 'staged'].includes(request.status)) reject('LOCKED', 'Stop the active performance before editing');
-      else if (!state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show');
+      else if (cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show or leave it unassigned');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
         const changingSinger = request.singerId !== cmd.singerId;

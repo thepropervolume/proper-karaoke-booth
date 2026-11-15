@@ -15,7 +15,7 @@ export class SnapshotCleanupError extends Error {
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function id(value: unknown): value is string { return typeof value === 'string' && value.trim().length > 0; }
 function whole(value: unknown): boolean { return Number.isSafeInteger(value) && (value as number) >= 0; }
-function validState(value: unknown): boolean {
+function validState(value: unknown, allowUnassigned: boolean): boolean {
   if (!record(value) || !id(value.showId) || !id(value.hostEpoch) || !whole(value.revision) ||
       !Array.isArray(value.singers) || !Array.isArray(value.versions) || !Array.isArray(value.requests) ||
       !Array.isArray(value.usedGenerationIds) || !value.usedGenerationIds.every(id) || !Array.isArray(value.receipts) ||
@@ -32,7 +32,7 @@ function validState(value: unknown): boolean {
   const singers = new Set(value.singers.map(singer => (singer as Record<string, unknown>).id));
   const versions = new Set(value.versions.map(version => (version as Record<string, unknown>).id));
   if (singers.size !== value.singers.length || versions.size !== value.versions.length) return false;
-  if (!value.requests.every(request => record(request) && id(request.id) && singers.has(request.singerId) && versions.has(request.versionId) &&
+  if (!value.requests.every(request => record(request) && id(request.id) && (allowUnassigned && request.singerId === null || singers.has(request.singerId)) && versions.has(request.versionId) &&
       ['pending', 'accepted', 'staged', 'playing', 'completed', 'skipped', 'removed', 'rejected', 'withdrawn'].includes(String(request.status)) &&
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
@@ -73,7 +73,8 @@ export function inspectShowSnapshot(db: DatabaseSync): SnapshotSummary {
   const row = db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: string } | undefined;
   if (!row) throw new Error('Backup show state is incomplete or incompatible.');
   const state: unknown = JSON.parse(row.value);
-  if (!validState(state) || !record(state)) throw new Error('Backup show state is incomplete or incompatible.');
+  const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+  if (!validState(state, version >= 5) || !record(state)) throw new Error('Backup show state is incomplete or incompatible.');
   return { revision: state.revision as number, singers: (state.singers as unknown[]).length, songs: (state.versions as unknown[]).length, requests: (state.requests as unknown[]).length };
 }
 

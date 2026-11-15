@@ -19,10 +19,10 @@ export function SongRequestDialog({ version, singers, onSubmit, onClose }: {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const name = newName.trim();
-    if (saving || !singerId || (singerId === '__new__' && !name)) return;
+    if (saving || (singerId === '__new__' && !name)) return;
     setSaving(true); setError('');
     try {
-      await onSubmit(singerId === '__new__' ? { newSingerName: name } : { singerId }, id => { setSingerId(id); setNewName(''); });
+      await onSubmit(singerId === '__new__' ? { newSingerName: name } : { singerId: singerId || null }, id => { setSingerId(id); setNewName(''); });
       onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -34,9 +34,9 @@ export function SongRequestDialog({ version, singers, onSubmit, onClose }: {
     <form onSubmit={event => void submit(event)}>
       <h2 id="request-song-title">Add to Queue</h2>
       <p><strong>{version.title}</strong>{version.artist ? ` · ${version.artist}` : ''}</p>
-      <label>Singer
-        <select autoFocus required value={singerId} onChange={event => setSingerId(event.target.value)}>
-          <option value="">Choose a singer</option>
+      <label>Singer (optional)
+        <select autoFocus value={singerId} onChange={event => setSingerId(event.target.value)}>
+          <option value="">No singer — assign later</option>
           {singers.map(singer => <option key={singer.id} value={singer.id}>{singer.name}</option>)}
           <option value="__new__">Add a new singer…</option>
         </select>
@@ -47,7 +47,7 @@ export function SongRequestDialog({ version, singers, onSubmit, onClose }: {
       {error && <p role="alert">Could not add request: {error}</p>}
       <div className="settings-actions">
         <button type="button" onClick={onClose} disabled={saving}>Cancel</button>
-        <button className="primary" type="submit" disabled={saving || !singerId || (singerId === '__new__' && !newName.trim())}>Add to Queue</button>
+        <button className="primary" type="submit" disabled={saving || (singerId === '__new__' && !newName.trim())}>Add to Queue</button>
       </div>
     </form>
   </dialog>;
