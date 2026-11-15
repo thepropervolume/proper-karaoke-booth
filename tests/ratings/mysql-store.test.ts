@@ -16,6 +16,8 @@ const enabled = !!socket && isAbsolute(socket) && !!database && /^tpv_ratings_te
 
 test('recording keys, integer values and bounded lookups preserve exact identity', () => {
   assert.equal(isRecordingKey(youtube), true); assert.equal(isRecordingKey(sha), true);
+  assert.equal(isRecordingKey('karafun:catalog:6229'),true);assert.equal(isRecordingKey('karafun:community:6229'),true);
+  for(const key of ['karafun:6229','karafun:catalog:06229','karafun:catalog:0','karafun:other:6229','karafun:catalog:1234567890123'])assert.equal(isRecordingKey(key),false);
   for (const key of ['youtube:too-short', 'youtube:abcDEF_123-?q=1', 'sha256:' + 'A'.repeat(64), 'sha256:' + 'a'.repeat(63), 'Nada Surf:Amateur', 'file:/private/song.mp4']) assert.equal(isRecordingKey(key), false);
   for (const value of [1, 10, null]) assert.equal(isRatingValue(value), true);
   for (const value of [0, 11, 1.5, '1', Number.NaN]) assert.equal(isRatingValue(value), false);

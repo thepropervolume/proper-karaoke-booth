@@ -104,6 +104,24 @@ test('successful provider votes remain exact provider keys and are explicitly co
   } finally { store.close(); }
 });
 
+test('KaraFun ratings route exact catalog/community identities globally before any media import', async () => {
+  const catalog='karafun:catalog:6229' as const, community='karafun:community:6229' as const;
+  const store=makeStore(); let sharedVotes=0;
+  const host=new HostSongRatings(store,()=>({
+    lookup:async keys=>{assert.deepEqual(keys,[catalog,community]);return{status:'ready',items:keys.map(recordingKey=>({recordingKey,average:null,count:0,ownVote:null})),canVote:true};},
+    vote:async(recordingKey,value)=>{sharedVotes++;assert.equal(recordingKey,catalog);return{status:'ready',item:{recordingKey,average:value,count:value===null?0:1,ownVote:value},canVote:true};},
+  }));
+  try {
+    const result=await host.lookup([catalog,local,community]);assert.equal(result.status,'ready');
+    if(result.status==='ready'){
+      assert.deepEqual(result.storageByKey,{[local]:'local',[catalog]:'global',[community]:'global'});
+      assert.equal(result.canVoteByKey[catalog],true);assert.equal(result.canVoteByKey[community],true);
+    }
+    assert.deepEqual(await host.vote(catalog,9),{status:'ready',item:{recordingKey:catalog,average:9,count:1,ownVote:9},canVote:true,storage:'global'});
+    assert.equal(sharedVotes,1);assert.deepEqual(store.localSongRatings([local]),[empty]);
+  }finally{store.close();}
+});
+
 test('invalid batches, votes and unknown local hashes are refused without a shared request', async () => {
   const store = makeStore(); let called = 0;
   const host = new HostSongRatings(store, () => { called++; throw new Error(); });

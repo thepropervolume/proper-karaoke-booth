@@ -70,6 +70,18 @@ test('unknown or reader bearer always rejects and cannot fall back to anonymous 
   } finally { await service.stop(); }
 });
 
+test('KaraFun catalog and community ratings stay distinct through authenticated writes and anonymous aggregates',async()=>{
+  const {service,call}=await setup();const catalog='karafun:catalog:6229',community='karafun:community:6229';
+  try{
+    assert.equal((await call('/v1/ratings/vote',{recordingKey:catalog,value:9},token)).status,200);
+    assert.equal((await call('/v1/ratings/vote',{recordingKey:community,value:4},token)).status,200);
+    const response=await call('/v1/ratings/lookup',{recordingKeys:[catalog,community]});assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),{items:[{recordingKey:catalog,average:9,count:1,ownVote:null},{recordingKey:community,average:4,count:1,ownVote:null}]});
+    for(const recordingKey of ['karafun:catalog:06229','karafun:catalog:0','karafun:other:6229','karafun:catalog:6229?key=secret'])
+      assert.equal((await call('/v1/ratings/vote',{recordingKey,value:8},token)).status,400);
+  }finally{await service.stop();}
+});
+
 test('strict keys, integers, body shapes, paths and methods are bounded before store writes', async () => {
   const store = fixture(), { service, call } = await setup({ store });
   try {

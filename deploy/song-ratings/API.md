@@ -35,13 +35,21 @@ The same token on another installation represents the same voter. Operators
 provision another voter explicitly; there is no public enrollment endpoint.
 Plaintext tokens remain in private client exports; MySQL stores only SHA-256.
 
-Exact recording keys are `youtube:<11 case-sensitive characters>` or
-`sha256:<64 lowercase hex characters>`. Prefer the saved YouTube identity for
-its downloaded asset so search and queue refer to the same recording. Other
-local media use the current immutable playable MP4's SHA-256. CDG conversions
+Exact recording keys are `youtube:<11 case-sensitive characters>`,
+`karafun:catalog:<song ID>`, `karafun:community:<song ID>` or
+`sha256:<64 lowercase hex characters>`. KaraFun song IDs are canonical positive
+decimal integers up to 12 digits; the catalog namespace distinguishes otherwise
+equal IDs. Provider recordings can be rated directly in search before playback
+or download. Preserve that provider identity for downloaded assets so search and
+queue refer to the same recording. Other local media use the current immutable
+playable MP4's SHA-256 and are rated locally by the desktop. CDG conversions
 with different backdrop output are separate exact assets for this version.
 Never send a filename, local path, artist/title alias or mutable track ID as
 global recording identity. Do not automatically upload offline rating drafts.
+
+The KaraFun namespace addition is compatible with the existing MySQL schema and
+requires a service bundle update, without a database migration or voter changes.
+Keep the existing YouTube and file-identity votes when deploying or rolling back.
 
 Errors are bounded generic JSON: 400 invalid request, 401 unauthorized, 403
 unexpected Host/Origin, 404 unknown exact route, 405 unsupported method, 429

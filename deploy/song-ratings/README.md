@@ -104,6 +104,14 @@ transactional totals and recording-identity validation. Test that runtime DDL
 and access to other schemas fail. Keep tokens out of argv, URLs, logs and browser
 renderer storage. Native clients keep their private voter file outside the build.
 
+The service validator accepts exact `karafun:catalog:<song ID>` and
+`karafun:community:<song ID>` identities in addition to the existing YouTube and
+SHA-256 identities. Deploy the updated service bundle before enabling KaraFun
+ratings in desktop clients. The existing `recording_key` column already fits;
+no database migration, voter reprovisioning or vote rewrite is required. Verify
+the new namespaces with a separately provisioned test voter and clear only that
+voter's test votes. Never use the host's personal voter for deployment checks.
+
 The existing `apps.thepropervolume.com` certificate covers this API. Add only
 the agreed ratings routes to that exact Apache vhost, pointing at 8767; keep
 catalog routes on 8765 and preserve the default TLS deny vhost. Preserve Host

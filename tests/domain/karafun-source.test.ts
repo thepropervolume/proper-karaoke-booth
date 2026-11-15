@@ -31,5 +31,7 @@ test('provider identities cannot contain URLs, credentials, paths or ambiguous i
 });
 
 test('KaraFun source files never masquerade as YouTube ratings or source-less local votes', () => {
-  assert.equal(recordingKeyFor({ provider: 'karafun', catalog: 'catalog', songId: '6229' }, 'a'.repeat(64)), null);
+  assert.equal(recordingKeyFor({ provider: 'karafun', catalog: 'catalog', songId: '6229' }, 'a'.repeat(64)), 'karafun:catalog:6229');
+  assert.equal(recordingKeyFor({ provider: 'karafun', catalog: 'community', songId: '6229' }, 'a'.repeat(64)), 'karafun:community:6229');
+  assert.equal(recordingKeyFor({ provider: 'karafun', catalog: 'catalog', songId: '06229' }, 'a'.repeat(64)), null);
 });

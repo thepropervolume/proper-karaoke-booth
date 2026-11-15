@@ -14,6 +14,21 @@ test('rating identities use exact case-sensitive YouTube recordings ahead of loc
   for(const key of ['Artist - Title','youtube:too-short',`sha256:${hash.toUpperCase()}`,'../local','https://youtube.com/watch?v=abcdefghijk'])assert.equal(isRecordingKey(key),false);
 });
 
+test('KaraFun catalog and community identities can be rated before download without fingerprint fallback',()=>{
+  const hash='a'.repeat(64);
+  for (const catalog of ['catalog','community'] as const) {
+    const source={provider:'karafun' as const,catalog,songId:'6229'};
+    const key=`karafun:${catalog}:6229` as const;
+    assert.equal(recordingKeyFor(source),key); assert.equal(recordingKeyFor(source,hash),key);
+    assert.equal(isRecordingKey(key),true); assert.equal(isLocalRecordingKey(key),false); assert.equal(ratingStorageFor(key),'global');
+  }
+  for (const songId of ['0','06229','-1','1.5','1234567890123','../../6229'])
+    assert.equal(recordingKeyFor({provider:'karafun',catalog:'catalog',songId},hash),null);
+  for (const key of ['karafun:6229','karafun:catalog:0','karafun:catalog:06229','karafun:community:1234567890123','KaraFun:catalog:6229','karafun:other:6229','karafun:catalog:6229?key=secret'])
+    assert.equal(isRecordingKey(key),false);
+  assert.deepEqual(parseRecordingKeys(['karafun:catalog:6229','karafun:community:6229']),['karafun:catalog:6229','karafun:community:6229']);
+});
+
 test('heart votes are integer1–10 or an explicit clear; batches are bounded and distinct',()=>{
   for(const score of [1,5,10,null])assert.equal(validHeartVote(score),true);
   for(const score of [0,11,1.5,'5',undefined,NaN])assert.equal(validHeartVote(score),false);

@@ -1,13 +1,13 @@
 import { validStreamingSource } from './streaming-source';
 
-export type RecordingKey = `youtube:${string}` | `sha256:${string}`;
+export type RecordingKey = `youtube:${string}` | `karafun:${'catalog' | 'community'}:${string}` | `sha256:${string}`;
 export type LocalRecordingKey = `sha256:${string}`;
 export type RatingStorage = 'local' | 'global';
 export type SongRating = { recordingKey: RecordingKey; average: number | null; count: number; ownVote: number | null };
 export const MAX_RATING_KEYS = 100;
 
 export function isRecordingKey(value: unknown): value is RecordingKey {
-  return typeof value === 'string' && /^(?:youtube:[A-Za-z0-9_-]{11}|sha256:[a-f0-9]{64})$/.test(value);
+  return typeof value === 'string' && /^(?:youtube:[A-Za-z0-9_-]{11}|karafun:(?:catalog|community):[1-9]\d{0,11}|sha256:[a-f0-9]{64})$/.test(value);
 }
 
 /** Unidentified local files stay on the host, even when they have a content hash. */
@@ -21,7 +21,10 @@ export function ratingStorageFor(key: RecordingKey): RatingStorage {
 
 /** Ratings describe an exact recording, never an artist/title approximation. */
 export function recordingKeyFor(source: unknown, fingerprint?: unknown): RecordingKey | null {
-  if (validStreamingSource(source)) return source.provider === 'youtube' ? `youtube:${source.videoId}` : null;
+  if (source !== undefined && source !== null) {
+    if (!validStreamingSource(source)) return null;
+    return source.provider === 'youtube' ? `youtube:${source.videoId}` : `karafun:${source.catalog}:${source.songId}`;
+  }
   return typeof fingerprint === 'string' && /^[a-f0-9]{64}$/.test(fingerprint) ? `sha256:${fingerprint}` : null;
 }
 

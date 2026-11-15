@@ -36,6 +36,17 @@ test('empty profile lookups still authenticate with the server instead of guessi
   assert.equal((await denied.lookup([])).status,'forbidden');assert.equal(calls,2);
 });
 
+test('KaraFun votes and summaries use global provider IDs without media fingerprints',async()=>{
+  const key='karafun:catalog:6229',community='karafun:community:6229';
+  const client=new SongRatingsClient({baseUrl,token,fetch:async(input,init)=>{
+    const body=JSON.parse(init?.body as string);assert.equal((init?.headers as Record<string,string>).Authorization,'Bearer '+token);
+    if(String(input).endsWith('/lookup')){assert.deepEqual(body,{recordingKeys:[key,community]});return json({items:[key,community].map(recordingKey=>({recordingKey,average:null,count:0,ownVote:null}))});}
+    assert.deepEqual(body,{recordingKey:key,value:8});return json({recordingKey:key,average:8,count:1,ownVote:8});
+  }});
+  assert.equal((await client.lookup([key,community])).status,'ready');
+  assert.deepEqual(await client.vote(key,8),{status:'ready',item:{recordingKey:key,average:8,count:1,ownVote:8},canVote:true});
+});
+
 test('bad input does not call the network; unsafe configurations are rejected without including secrets',async()=>{
   let calls=0;const client=new SongRatingsClient({baseUrl,token,fetch:async()=>{calls++;throw Error('should not call');}});
   for(const keys of [['Artist - Title'],[recordingKey,recordingKey],Array(101).fill(recordingKey),null])assert.equal((await client.lookup(keys)).status,'invalid-request');
