@@ -267,6 +267,7 @@ Windows/Linux latest delivered packages and the installed PC remain 0.4.3; this 
 - [x] Review KHost/plugin architecture and licensing boundaries; keep the independently written optional contract bridge separate from native TPV playback.
 - [x] Send authorized KaraFun, Stingray, Sunfly and Party Tyme follow-ups; record available replies and official integration routes.
 - [x] Integrate the timed-LRC parser and VTT foundation.
+- [ ] Evaluate the separate [FFmpeg LRC conversion proof](lrc-conversion-proof.md) for a future importer; it is not connected to the app and does not establish real-device playback.
 - [x] Implement the optional TPV/KHost external search/handoff bridge and host controls, with protected profile selection, current-policy/blacklist checks and original-ID uncertain-outcome recovery; KHost owns sign-in, acquisition and playback.
 - [ ] Verify loading the compiled bridge and authenticated search/handoff on the owner's actual KHost machine; their successful separate KHost subscription test does not establish this integration.
 - [ ] Prioritize the [native KaraFun integration](karafun-native-integration.md): establish an accepted account/client login, validate session/expiry behavior and search, then implement authorized KIT acquisition, bounded container/XML decoding and synchronized playback through TPV's own queue, transport and singer screen. The external KHost bridge is optional interim work, not a requirement for this path.
