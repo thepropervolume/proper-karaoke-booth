@@ -8,7 +8,7 @@ Approved requests prepare and stage automatically. Press Play to start the show;
 
 Native KaraFun remains experimental. Complete the official sign-in under **Sources → KaraFun**, then search and queue through the usual singer dialog. Remembered sessions use operating-system encryption where available, retain their account cache identity and are checked before reuse. Sign-out forgets them. Each start/resume still needs current authorization. Physical audio, full-song synchronization, device recovery, native Linux/macOS provider playback and distribution/venue terms remain open. Other paid services expose search-only metadata until their playback integration is connected. See [source status](docs/source-status.md).
 
-Windows/Linux/macOS **0.7.0** packages are built and verified from frozen runtime source `f57fd9a`; macOS adds the tests-only portability fix `9522b0c`. Native Apple silicon execution passed on macOS 27.0.1; Intel verification is static. No installed-copy upgrade was performed. See [installation evidence](docs/installation.md) for delivered artifacts and limits. Updates use `0.x.y`; **1.0.0** is reserved for the approved official release.
+Windows/Linux/macOS **0.7.1** packages are built from frozen source `0c0aa3a`; see [installation evidence](docs/installation.md) for platform-specific counts and limits. Back up the show before the schema-5 upgrade; older schema-4 apps refuse the upgraded database. No installed-copy upgrade was performed. **1.0.0** remains the approved-release target.
 
 ## Run or Install
 

@@ -1,5 +1,24 @@
 # Installing The Proper Volume Karaoke Booth
 
+Development **0.7.1** adds optional singer assignment and a single outer search focus ring. Windows, Linux and macOS packages are built from frozen source `0c0aa3a`. Packages, build/verification receipts and SHA256 manifests are in local `C:\Users\hello\Projects\proper-karaoke-booth\release`; the Dropbox mirror and the owner's installed app were not modified. The official release target remains **1.0.0**.
+
+## 0.7.1 Packages and Checks
+
+| Platform | Package | Verified Scope |
+| --- | --- | --- |
+| Windows x64 | `Proper-Karaoke-Booth-0.7.1-windows-x64-setup.exe` or `Proper-Karaoke-Booth-0.7.1-win-x64.zip` | 1,022 tests passed / 8 skips; actual packaged UI blank-singer queueing, assignment/clear, playback, restart and nullable history. Packaged launch/branding/account-window isolation, source/UI/notices/ZIP hashes also pass. |
+| Linux x64 | `Proper-Karaoke-Booth-0.7.1-linux-x86_64.AppImage` or `Proper-Karaoke-Booth-0.7.1-linux-amd64.deb` | 1,018 tests passed / 12 skips; exact source archive, both payload formats and isolated packaged checks recorded in the Linux receipt. Four extra TCP cases require an assigned private NIC, absent on this public server; they ran on Windows/macOS. |
+| macOS Apple silicon | `Proper-Karaoke-Booth-0.7.1-mac-arm64.dmg` or `.zip` | macOS 27.0.1: 1,022 tests passed / 8 skips, native launch/restart/branding and bundled CLI, strict signatures and matching DMG/ZIP payloads. |
+| macOS Intel | `Proper-Karaoke-Booth-0.7.1-mac-x64.dmg` or `.zip` | Payload, architecture and ad-hoc signature checks; native Intel execution remains unverified. |
+
+All platform suites contain 1,030 tests with zero failures. The [macOS workflow](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/43688738198) passed. Windows is unsigned; Mac apps use ad-hoc signing without Developer ID/notarization. Linux GUI checks use private headless namespaces and test-only root sandbox flags. Installation/upgrade/removal, ordinary desktop sandbox behavior and physical listening/display hot-plug remain separate checks.
+
+**Before installing, back up the show.** This update migrates local history to **schema 5**, allowing genuine null singer ownership. Existing assigned singers and history are preserved transactionally; interrupted-migration rollback and retry passed. Older schema-4 binaries refuse the upgraded database; downgrading requires the pre-upgrade backup. No shared MySQL/catalog/rating migration is involved. Private settings, keybindings, connection files and media require separate backups.
+
+In **Add to Queue**, leave **Singer (optional)** at **No singer — assign later**. The host can assign or clear it through **Edit track or singer…** before playback; prepared request identity/position stays fixed. No placeholder person is created. Named-singer limits and guest ownership remain enforced. The same option works for local, Karaoke Nerds/YouTube and connected native KaraFun songs. Search focus now draws only the outer field ring, checked in both themes and all accent colors.
+
+## Historical 0.7.0 Delivery
+
 Development **0.7.0** has Windows x64 setup/ZIP, Linux x64 AppImage/Debian and separate Apple silicon/Intel macOS DMG/ZIP packages. The official release target remains **1.0.0**. This delivery did not install, upgrade or remove the owner's existing app or modify the Dropbox mirror.
 
 ## 0.7.0 Packages and Verification
