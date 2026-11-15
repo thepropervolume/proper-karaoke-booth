@@ -67,7 +67,7 @@ export function ImportProgressView({ progress, page, error = '', cancelling = fa
   const active = importActive(progress.phase);
   const title = progress.phase === 'completed' ? 'Import complete' : progress.phase === 'cancelled' ? 'Import cancelled' :
     progress.phase === 'failed' ? 'Import stopped' : progress.phase === 'cancelling' ? 'Cancelling import…' : 'Import in progress';
-  return <section className="import-panel" aria-label="Import progress">
+  return <section className="import-panel" data-phase={progress.phase} aria-label="Import progress">
     <div className="import-panel__heading"><h3>{title}</h3>
       {active && <button type="button" disabled={cancelling || progress.phase === 'cancelling'} onClick={onCancel}>Cancel import</button>}
     </div>

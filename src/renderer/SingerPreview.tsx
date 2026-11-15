@@ -14,7 +14,6 @@ export function SingerPreview({ bridge, onOpen }: { bridge: SingerScreenBridge; 
   }, [bridge]);
   return <section className="singer-preview" aria-label="Singer preview">
     <div className="singer-preview__heading"><span className="eyebrow">Singer Preview</span><button type="button" className="icon-button" aria-label="Open singer display from preview" onClick={onOpen}><Icon name="display" /></button></div>
-    <div className="singer-preview__image">{frame ? <img src={frame.image} alt="Live singer display preview" /> : <p>Open the singer display to preview it here.</p>}</div>
-    <small className="muted">Mirrors the singer screen · audio plays once</small>
+    <div className="singer-preview__image">{frame ? <img src={frame.image} alt="Live singer display preview" /> : <p>Preparing preview…</p>}</div>
   </section>;
 }
