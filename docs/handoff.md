@@ -1,8 +1,10 @@
 # Development Handoff
 
-## Current 0.7.0 Source — 15 November 2026
+## Current 0.7.1 Source — 15 November 2026
 
 Active work is in `C:\Users\hello\Projects\proper-karaoke-booth`; Dropbox is the owner's mirror. Commit/push focused changes with relevant tests/help, report each delivered version, and reserve 1.0.0 for approved release. Canonical planning is `docs/product-specification.md`; generate Word/PDF from it into ignored local release/planning. Do not update generated files independently.
+
+Version 0.7.1 adds true optional singer assignment: host/staff request commands accept `singerId: null`, no fake Singer is created, and the queue labels it Unassigned. Only host may assign/change/clear an eligible request, including a prepared one, without changing its staged ID/manual slot. Null requests are independent FIFO fair-round slots without a shared singer limit; remote singers remain bound to their own identities. Captions omit absent names. Schema 5 transactionally makes performance-history singer IDs nullable, preserving assigned legacy rows; back up before upgrade and use that backup for downgrade. Search focus now uses one outer wrapper ring without the inherited inner input glow.
 
 The host now has one dominant readable result list and a global sidebar search, provider-colored 3px borders, shared context actions and concise tooltip help. Connected native KaraFun queues through the normal singer dialog; public metadata stays search-only. Approved requests auto-stage. Play begins the show; completion/confirmed Skip advances after the configured gap and ready media when autoAdvance is enabled. Pending moderation remains pending. Stop/Pause intent, errors and output/display loss fence delayed playback. Restart never starts karaoke.
 
@@ -12,13 +14,13 @@ KaraFun remembered sessions use safeStorage encryption, reject Linux plaintext f
 
 LAN visual sharing binds concrete trusted private interfaces plus loopback. Windows additionally requires actual Private classification and fails closed to loopback for Public/unknown status, with a 5-second classification bound and 30-second trust recheck. No wildcard listener, firewall rule or organisation-policy change is added. Authenticated singer-request rooms and internet sessions remain separate scopes.
 
-Verification completed for this work includes 37 focused automation/fade/capture/staging checks, passing typecheck, muted isolated automatic-bumper and transport/display rehearsals, and a real Windows four-launch safeStorage test. The automation rehearsal covers hidden preview, launch/default output, natural completion/Skip, full gap, Stop and paused restart; transport covers concurrent Play, Previous, placement and withheld-ready timeout/retry. They do not prove audible sound, physical hot-plug, long-show behavior or new packages. Historical 0.6.0 platform packages are verified separately in the installation guide. New 0.7.0 artifacts require their own receipts.
+The inherited 0.7.0 verification includes 37 focused automation/fade/capture/staging checks, passing typecheck, muted isolated automatic-bumper and transport/display rehearsals, and a real Windows four-launch safeStorage test. The automation rehearsal covers hidden preview, launch/default output, natural completion/Skip, full gap, Stop and paused restart; transport covers concurrent Play, Previous, placement and withheld-ready timeout/retry. The 0.7.1 focus-only rehearsal checks pointer/Ctrl+F, Day/Night and all accents with no inner shadow and an unclipped outer ring. These do not prove audible sound, physical hot-plug, long-show behavior or new packages. Historical 0.7.0 platform packages are verified separately in the installation guide. New 0.7.1 artifacts and optional-assignment integration checks require their own evidence.
 
 Remaining priorities: physical audio/display verification, cross-platform package/installer checks, provider terms/access, complete CLI/API mutations, embedded metadata precedence/write-back, native LRC, profiles/roles/privacy, wider show/library management and catalog refresh/batch caching. Preserve existing media, credentials and backups. See [remaining work](remaining-work.md).
 
 ## Historical Milestones
 
-The sections below retain dated implementation and delivery evidence. Statements about memory-only sign-in, manual staging/next starts, a visible-preview requirement or unsupported KaraFun rating identities describe those versions; the current contract above supersedes them.
+The sections below retain dated implementation and delivery evidence. Statements about mandatory singer assignment, older database schemas, memory-only sign-in, manual staging/next starts, a visible-preview requirement or unsupported KaraFun rating identities describe those versions; the current contract above supersedes them.
 
 ## Historical 0.6.0 Native KaraFun Work on 15 November 2026
 

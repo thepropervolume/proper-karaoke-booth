@@ -1,4 +1,4 @@
-# Singer Guide for Development Version 0.7.0
+# Singer Guide for Development Version 0.7.1
 
 Tell the host your name and the song or artist you would like to sing. They can enter a request, invite you to an experimental venue-network singer page or share an internet Remote Session link. Persistent singer accounts are not implemented. Physical-phone, venue-network and long-show checks remain; ask which installed version they are using.
 
@@ -6,11 +6,11 @@ Tell the host your name and the song or artist you would like to sing. They can 
 
 The host's global search combines local files, Karaoke Nerds, curated YouTube, connected native KaraFun and public service metadata in one list. A colored edge and source label identify the recording. Search-only results cannot be queued or played. The singer page browses the host's published library rather than directly searching every provider.
 
-The host double-clicks a playable result or chooses **Add to Queue**, then selects your existing name or enters a new one. Approved requests prepare and stage automatically; manual moderation waits for acceptance. Karaoke Nerds/YouTube requests download through yt-dlp, while native KaraFun prepares privately through the host's account. Failed preparation keeps your turn for recovery.
+The host double-clicks a playable result or chooses **Add to Queue**. They may leave the optional singer empty, select your existing name or enter a new one. An unnamed request shows **Unassigned** and can be assigned later. Approved requests prepare and stage automatically; manual moderation waits for acceptance. Karaoke Nerds/YouTube requests download through yt-dlp, while native KaraFun prepares privately through the host's account. Failed preparation keeps your turn for recovery.
 
 The host starts the show with Play. By default subsequent performances start after the configured gap when the recording and singer are ready. The host can disable automatic advancement or stop/pause it. Order follows fair rotation or request order, with host overrides and a locked staged turn. Preparation alone never starts a new show, and restarting never resumes karaoke automatically.
 
-The host may limit pending, accepted and staged future requests; playback does not count. They may edit the track or singer of a waiting/staged request without changing its identity. Multiple performers per request remain planned.
+The host may limit pending, accepted and staged future requests; playback does not count. They may edit the track or singer of a waiting/staged request without changing its identity. Remote requests always remain assigned to the singer who joined the session; guests cannot submit or take ownership of unassigned host requests. Multiple performers per request remain planned.
 
 Native KaraFun checks the host's subscription for each start/resume. Its remembered session uses operating-system protection where available; expiry may require another official sign-in. Signing out silences native playback and forgets the session. Retained media never guarantees future access. The optional external KHost queue is separate and unnecessary for native TPV playback. Physical audio and native provider playback on Linux/macOS remain unverified.
 
@@ -34,6 +34,6 @@ Use **Can't find your song?** to send a title and optional artist. This creates 
 
 Use availability to step away for 1–60 minutes or return immediately. While away, at most one future request is allowed; existing extras remain. At return you become eligible in the existing fair/FIFO order, subject to host overrides and staged lock. If already staged or singing, speak to the host first.
 
-Hearts rate recording quality from 1–10, not your singing or Clean/Explicit classification. YouTube/Karaoke Nerds votes use the shared service; source-less file votes stay on this host. Version 0.7.0 also identifies KaraFun catalog/community recordings for shared ratings; production service validation must be updated before those keys work remotely. Remote singer voting, personal accounts, favorites and self-service data management remain planned.
+Hearts rate recording quality from 1–10, not your singing or Clean/Explicit classification. YouTube/Karaoke Nerds votes use the shared service; source-less file votes stay on this host. Version 0.7 also identifies KaraFun catalog/community recordings for shared ratings; the matching production validator is deployed and verified. Remote singer voting, personal accounts, favorites and self-service data management remain planned.
 
 Singer/request information stays in the host show; internet requests also pass through the relay. Installers exclude private profiles, song media, yt-dlp and FFmpeg. Development versions remain `0.x.y`; `1.0.0` is the approved official-release target.

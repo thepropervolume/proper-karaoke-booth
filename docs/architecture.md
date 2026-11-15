@@ -1,12 +1,18 @@
 # Architecture and Progress
 
-Updated 15 November 2026 for source development **0.7.0**. Source behavior, synthetic rehearsals, actual-account evidence and platform package verification are separate claims. See [installation](installation.md) for delivered artifacts.
+Updated 15 November 2026 for source development **0.7.1**. Source behavior, synthetic rehearsals, actual-account evidence and platform package verification are separate claims. See [installation](installation.md) for delivered artifacts.
 
 ## Single Host Authority
 
 Electron main owns show rules, local SQLite writes, media paths, provider accounts and process/network operations. Isolated host/singer renderers have narrow preload bridges. Validated domain commands commit before acknowledgement; expected revisions, durable receipts and generation-bound events prevent stale callbacks from consuming another turn. The internet relay, singer clients and CLI never become another SQLite writer.
 
-SQLite uses WAL and synchronous FULL. A new host epoch is issued on restart; interrupted karaoke is always restored paused. Schema 4 distinguishes native KaraFun assets from MP4s. Backups cover the database, not media/settings/private profiles; in-app restore remains planned. Metadata corrections remain local-only until the explicit per-edit embedded-write option is implemented. Failed future write-back must retain the local edit.
+SQLite uses WAL and synchronous FULL. A new host epoch is issued on restart; interrupted karaoke is always restored paused. Schema 5 retains schema 4’s native KaraFun/MP4 distinction and permits null singer identities in requests and performance history. The transactional upgrade rebuilds `performance_history.singer_id` as nullable while preserving existing rows. Older apps reject schema 5; downgrade requires a pre-upgrade backup. Backups cover the database, not media/settings/private profiles; in-app restore remains planned. Metadata corrections remain local-only until the explicit per-edit embedded-write option is implemented. Failed future write-back must retain the local edit.
+
+## Optional Request Ownership
+
+`SongRequest.singerId` is `string | null`. Null is a real unassigned request, not a generated Singer or a shared fairness bucket. Host/staff may submit it; only host may edit/assign/clear an eligible request. Authenticated singer/relay requests remain bound to their session identity, and guest projections do not grant unassigned host requests to anyone. Provider receipt validation and policy checks apply equally to assigned and unassigned host requests.
+
+Each null request gets an independent FIFO slot in the current eligible fair round (next round after the final turn begins), without named-singer limits or absence rules. Assign/clear recomputes eligibility while preserving an explicit manual order and staged identity. History may store a null singer ID; host UI uses Unassigned and singer-display captions omit a missing name. Schema-4 snapshots remain valid only with non-null request singer IDs; migration preserves them unchanged.
 
 ## Playback, Staging and Preview
 
@@ -20,7 +26,7 @@ Main passes booth name, logo size (10–85 viewport-width percent), banner posit
 
 ## Unified Discovery and Provider Accounts
 
-The sidebar search remains visible on every host workspace. All eligible local, Karaoke Nerds, YouTube, native KaraFun and public-service matches share one selectable list/context-menu flow; source capability decides which actions are enabled. Three-pixel source borders use local purple `#601CE9`, Karaoke Nerds blue `#007bff`, YouTube red `#ff0033` and KaraFun pink `#d5167a`. Long results scroll while the transport stays visible. Blacklists and show policy are rechecked at discovery, request and start boundaries.
+The sidebar search remains visible on every host workspace. Its wrapper owns the outer focus ring; focused inputs suppress the inherited inner shadow/outline. All eligible local, Karaoke Nerds, YouTube, native KaraFun and public-service matches share one selectable list/context-menu flow; source capability decides which actions are enabled. Three-pixel source borders use local purple `#601CE9`, Karaoke Nerds blue `#007bff`, YouTube red `#ff0033` and KaraFun pink `#d5167a`. Long results scroll while the transport stays visible. Blacklists and show policy are rechecked at discovery, request and start boundaries.
 
 Karaoke Nerds supplies metadata/YouTube IDs. Approved requests dispatch bounded serial yt-dlp acquisition to permanent host storage; FFmpeg/yt-dlp are external prerequisites. Completion attaches media to the same version/request identity. Automatic brand/artist batches and verified daily-refresh coordination remain planned. A separate manually opened YouTube preview has an audio gate against show playback.
 
@@ -34,7 +40,7 @@ The optional independently written KHost bridge uses separately licensed public 
 
 The dedicated MySQL catalog at `apps.thepropervolume.com` serves the recovered 64,261 valid unique Karaoke Nerds YouTube records. Fresh installs use bounded public search; optional private reader profiles stay main-only. Up to 100 successful scoped queries/20 MiB can be reused offline with a stale label. Feed freshness/retirement history is unknown and automatic refresh remains disabled; never infer it from file dates.
 
-Shared ratings use exact `youtube:ID` and `karafun:catalog:NUMERIC_ID` / `karafun:community:NUMERIC_ID` keys. KaraFun support is implemented in client/service validation without a SQL schema change; production needs that validator deployment before accepting the new keys. Public readers receive aggregates; a separately provisioned voter can replace/clear their own vote. Unknown source-less files use local SHA256 votes in `show.sqlite` and never send those keys remotely. Provider/reader credentials, media fingerprints and profile paths stay main-only. Remote singer voting and person ownership remain planned.
+Shared ratings use exact `youtube:ID` and `karafun:catalog:NUMERIC_ID` / `karafun:community:NUMERIC_ID` keys. KaraFun support is implemented in client/service validation without a shared SQL schema change; the matching production validator is deployed and verified. Public readers receive aggregates; a separately provisioned voter can replace/clear their own vote. Unknown source-less files use local SHA256 votes in `show.sqlite` and never send those keys remotely. Provider/reader credentials, media fingerprints and profile paths stay main-only. Remote singer voting and person ownership remain planned.
 
 ## Remote Access and Local Control
 

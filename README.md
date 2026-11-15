@@ -1,6 +1,8 @@
 # The Proper Volume Karaoke
 
-Development **0.7.0** makes library search the main workspace: one readable result list combines local files, Karaoke Nerds, curated YouTube, connected native KaraFun and public service metadata. The sidebar search stays visible; Ctrl/Cmd+F or its assigned shortcut focuses it from any workspace. Provider labels and narrow colored borders distinguish sources without separate result panels. Context menus work across providers, with unavailable actions disabled.
+Development **0.7.1** makes singer assignment optional when the host queues a song. Leave **Singer (optional)** empty to queue it as **Unassigned**, or select/create a singer. The host may assign, change or clear it later, including on a prepared request. No placeholder singer is created. Search focus now has one outer ring without an inner input glow.
+
+The 0.7 workspace makes library search the main workspace: one readable result list combines local files, Karaoke Nerds, curated YouTube, connected native KaraFun and public service metadata. The sidebar search stays visible; Ctrl/Cmd+F or its assigned shortcut focuses it from any workspace. Provider labels and narrow colored borders distinguish sources without separate result panels. Context menus work across providers, with unavailable actions disabled.
 
 Approved requests prepare and stage automatically. Press Play to start the show; by default completion or confirmed Skip advances after the configured gap and media readiness. Bumper music starts on launch and between songs, with a 1000 ms fade and optional custom tracks. Stop/Pause cancels delayed advancement; restarting always leaves karaoke paused. One hidden singer renderer supplies preview and audio even when the singer window is closed. Booth name, adjustable logo and an expiring scrolling banner customize the display.
 
@@ -18,16 +20,16 @@ npm run build
 npm start
 ```
 
-The app stores the show in local SQLite under Electron user data, separately from this checkout and the shared MySQL catalog/ratings services. Back up before schema-4 upgrades; downgrade requires a pre-upgrade profile/database backup. **File → Back up show…** saves the show database to a new path; media, preferences, keybindings, logos and private profiles require separate backup. In-app restore remains planned.
+The app stores the show in local SQLite under Electron user data, separately from this checkout and the shared MySQL catalog/ratings services. Back up before the schema-5 upgrade; downgrade requires a pre-upgrade profile/database backup. **File → Back up show…** saves the show database to a new path; media, preferences, keybindings, logos and private profiles require separate backup. In-app restore remains planned.
 
 Private credentials, song media, yt-dlp, FFmpeg and LibreOffice are not bundled. yt-dlp/FFmpeg are needed for permanent YouTube acquisition and CDG conversion; LibreOffice is only for rendering generated documentation. The default silent lyric backdrop is bundled. Windows packages are unsigned; current Mac packages use ad-hoc signing without notarization.
 
 ## Host a Rehearsal
 
 1. Import MP4 files/folders or same-name MP3+CDG/single-pair ZIP through **File → Import** or the library icons. Recursive imports report duplicates, failures and progress; cloud-only files must become readable. Originals remain in place. CDG converts through FFmpeg over the chosen backdrop.
-2. Search, select a playable recording and double-click or use **Add to Queue**. Choose an existing singer or enter a new name. Auto-approval is the default; pending requests in moderation mode wait for Accept. Approved YouTube/Karaoke Nerds recordings download immediately through serial yt-dlp jobs. Failed downloads offer Retry.
+2. Search, select a playable recording and double-click or use **Add to Queue**. Leave the optional singer empty, choose an existing singer or enter a new name. Auto-approval is the default; pending requests in moderation mode wait for Accept. Approved YouTube/Karaoke Nerds recordings download immediately through serial yt-dlp jobs. Failed downloads offer Retry.
 3. Press **Play/Pause** once the first track is ready. The singer window opens on its remembered connected display, otherwise the closest non-host monitor, otherwise the current one. The next approved turn is prepared automatically; completion/Skip advances after the gap when enabled. Missing/failed media keeps its turn for recovery. Close hides the singer window while preview/audio continue.
-4. Use Previous to restart the same song, scrub the bottom timeline, adjust volume or edit/reorder future requests. A staged request can change track/singer while keeping its identity and place; a playing performance is protected. Stop returns the current request to the queue and cancels advancement. Restart restores it paused.
+4. Use Previous to restart the same song, scrub the bottom timeline, adjust volume or edit/reorder future requests. A staged request can change track/singer or clear its singer while keeping its identity and place; a playing performance is protected. Stop returns the current request to the queue and cancels advancement. Restart restores it paused.
 5. Set the booth name, logo size and scrolling announcement under **Preferences → Singer Display**. Logo selection has an immediate preview. Banners can expire; persistence across launches is opt-in. Configure launch/interlude music and a 0–300-second gap in Audio Controls.
 
 Right-click rows for queue, playlist, rating, metadata, file/relink or blacklist actions where supported. Hearts are per recording: source-less files use local SHA256 votes; identified recordings use the authenticated shared service. KaraFun catalog/community keys are implemented in 0.7.0; the matching live validator is deployed and both namespaces passed disposable-voter checks. Failure is reported rather than saved under a fake local identity.

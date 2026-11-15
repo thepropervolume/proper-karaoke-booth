@@ -1,10 +1,16 @@
 # Host Workspace
 
-## Workspace in 0.7.0
+## Workspace in 0.7.1
 
-The search-results area is the main workspace, with larger readable song rows and brief status text. A global search field above Workspace in the sidebar remains available from Library, Playlists, Sources and host-only areas. Ctrl/Cmd+F or the assigned search shortcut returns to Library and focuses it. Details belong in immediate (?) tooltips rather than long repeated instructions. Informational notices clear after eight seconds; errors remain until dismissed.
+The search-results area is the main workspace, with larger readable song rows and brief status text. A global search field above Workspace in the sidebar remains available from Library, Playlists, Sources and host-only areas. Ctrl/Cmd+F or the assigned search shortcut returns to Library and focuses it. The search box has one visible outer focus ring; the input does not draw a second inner glow. Details belong in immediate (?) tooltips rather than long repeated instructions. Informational notices clear after eight seconds; errors remain until dismissed.
 
-This guide describes 0.7.0 source behavior. Historical Windows/Linux/macOS 0.6.0 packages were verified separately; see [installation](installation.md) for actual artifacts and platform limits. A new source feature is not evidence of a rebuilt or installed package. Physical show hardware, real-user Linux installation and remaining Mac installation/runtime checks stay open.
+This guide describes 0.7.1 source behavior. Earlier Windows/Linux/macOS packages were verified separately; see [installation](installation.md) for actual artifacts and platform limits. A new source feature is not evidence of a rebuilt or installed package. Physical show hardware, real-user Linux installation and remaining Mac installation/runtime checks stay open.
+
+## Optional Singer Assignment
+
+In **Add to Queue**, leave **Singer (optional)** empty to add a song without assigning anyone. This works for local, Karaoke Nerds, YouTube and connected native KaraFun recordings. The queue shows **Unassigned**; no singer profile is created. Right-click a waiting or prepared request to assign, change or clear its singer later. A prepared request retains its ID and queue slot; an active performance cannot be edited.
+
+Unassigned requests retain FIFO order and each gets its own place in the current eligible fair round (the next round if the final turn has already begun). They do not share a fake singer, singer absence state or per-singer request limit. Remote singer requests still belong to the signed-in session's singer. Back up before the schema-5 upgrade; older apps cannot open the upgraded database.
 
 ## Preview and Resizable Panels
 
@@ -24,7 +30,7 @@ With **All Songs** selected, type at least two characters in global search to in
 
 Choose **Preferences → YouTube Search → Approved channels only** for stricter curation. Add channel IDs/handles manually or import a Google Takeout subscriptions CSV/JSON file. The app does not sign into the private subscriptions feed or extract browser cookies. **Block Channel** on a candidate persists a channel rule; blocked IDs/handles override approvals. A subscribed channel still needs a karaoke-indicated candidate.
 
-**Choose Singer** opens the usual existing/new-name dialog. Submission validates a current-search receipt and policy before committing the recording/request. Approved requests dispatch permanent acquisition and automatically prepare/stage; manual moderation waits for Accept. Queuing or finishing a download alone never starts a new show. An already running automatic show may advance to that eligible turn after the gap.
+**Add to Queue** opens the optional singer dialog. Leave **Singer (optional)** empty to queue an unassigned song, or choose/create a singer. Submission validates a current-search receipt and policy before committing the recording/request. Approved requests dispatch permanent acquisition and automatically prepare/stage; manual moderation waits for Accept. Queuing or finishing a download alone never starts a new show. An already running automatic show may advance to that eligible turn after the gap.
 
 ## LAN Singer Screens
 
@@ -32,7 +38,7 @@ Open **Remote Sessions → LAN Singer Screens** or the sharing controls under **
 
 ## Native KaraFun in 0.7.0
 
-Open **Sources → KaraFun → Sign In to KaraFun** and complete the official sign-in window. Search the unified library, choose a connected KaraFun recording and enter/select a singer. Accepted requests prepare and stage automatically; pending moderation waits. Check **Song Preparation** in Sources and Retry failures there. Press Play to start the show; automatic advancement handles later eligible turns after the gap/media readiness. KHost is unnecessary for this native path.
+Open **Sources → KaraFun → Sign In to KaraFun** and complete the official sign-in window. Search the unified library, choose a connected KaraFun recording and leave the singer empty or enter/select one. Accepted requests prepare and stage automatically; pending moderation waits. Check **Song Preparation** in Sources and Retry failures there. Press Play to start the show; automatic advancement handles later eligible turns after the gap/media readiness. KHost is unnecessary for this native path.
 
 A muted real-account Windows rehearsal on 15 November 2026 passed official sign-in, search, queue/preparation, native playback, pause, seek, Previous, sign-out and paused restart. Version 0.7.0 adds OS-encrypted remembered sign-in where safeStorage is available; the next launch validates it and reuses the same opaque account cache identity. Linux plaintext fallback is refused. Explicit sign-out forgets the saved session and silences native playback. Expiry offers normal sign-in; retained media never bypasses per-performance authorization. Primary completed lyrics use KaraFun pink. Native community playback, user stem mixing, pitch/tempo and fixed-mix fallback remain planned. Physical audio, full-song listening, device recovery, Linux/macOS native provider playback and distribution terms remain open. See [native limits](karafun-native-integration.md).
 

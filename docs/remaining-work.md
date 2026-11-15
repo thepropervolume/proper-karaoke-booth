@@ -1,14 +1,23 @@
 # Remaining work
 
-Updated 15 November 2026 for source development 0.7.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 15 November 2026 for source development 0.7.1. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The current source is 0.7.0; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, mixing/pitch/tempo and provider distribution/venue terms remain open. KaraFun shared-rating identities and the matching production validator are deployed; both namespaces passed disposable-voter lookup/vote/update/withdrawal checks on 15 November. Windows/Linux/macOS 0.7.0 packages have separate verified receipts; installation/upgrade and physical-show gates remain. Earlier evidence stays version-specific. See installation and source-status guides.
+The current source is 0.7.1; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, mixing/pitch/tempo and provider distribution/venue terms remain open. KaraFun shared-rating identities and the matching production validator are deployed; both namespaces passed disposable-voter lookup/vote/update/withdrawal checks on 15 November. Windows/Linux/macOS 0.7.0 packages have separate verified receipts; installation/upgrade and physical-show gates remain. Earlier evidence stays version-specific. See installation and source-status guides.
 
 ## Current foundation
 
 The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, change settings and configure common action shortcuts through the grouped editor. The host has implemented shared catalog connection/preferences and offline query-cache support, with public read-only shared discovery on fresh installs and a legacy local-catalog mode when shared discovery is disabled. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. Experimental native KaraFun is now connected; other paid-provider playback remains pending. Windows 0.4.2 adds verified public KaraFun/Party Tyme metadata search plus profile-configured Sunfly/Stingray adapters; those results remain search-only. Linux 0.4.2 AppImage/Debian package checks also passed.
 
-## 0.7.0 Current Update
+## 0.7.1 Current Update
+
+- [x] Allow host/staff requests without a singer across local and connected queue sources, storing null rather than a fake singer.
+- [x] Let the host assign, change or clear a waiting/prepared request while preserving its staged identity and manual slot; retain remote singer ownership boundaries.
+- [x] Give unassigned requests independent FIFO fair-round slots without named-singer limits or absence state.
+- [x] Migrate assigned shows/history transactionally to schema 5 with nullable history singer IDs; retain schema-aware snapshot validation and older-app refusal.
+- [x] Replace the inner search focus glow with one unclipped outer ring across Day/Night and all accents.
+- [ ] Record 0.7.1 package receipts and platform-specific verification separately from earlier releases.
+
+## 0.7.0 Delivered Update
 
 - [x] Put an always-visible global search above Workspace; focus it from every host area using the assigned shortcut.
 - [x] Combine local, Karaoke Nerds, YouTube, native KaraFun and public metadata into one dominant readable list with shared context menus and capability-disabled actions.
