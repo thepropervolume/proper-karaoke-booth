@@ -23,11 +23,24 @@ export function karaFunLyricFrame(timing: KaraFunTiming, position: number): Kara
 
 export type KaraFunLyricsOptions = {
   width?: number; height?: number; pixelRatio?: number; fontFamily?: string;
-  activeColor?: string; inactiveColor?: string; outlineColor?: string;
+  activeColor?: string; inactiveColor?: string; outlineColor?: string; primarySingerColor?: string;
 };
+export const KARAFUN_PRIMARY_SINGER_COLOR = '#d5167a';
+
+/** Use declared lyric-track order, then page voice identity; keep other singers' palettes. */
+function primarySingerPages(timing: KaraFunTiming): Set<KaraFunPage> {
+  const ids = new Set(timing.pages.map(page => page.trackId).filter(id => id !== null));
+  const primaryId = timing.tracks.find(track => ids.has(track.id))?.id ?? timing.pages.find(page => page.trackId !== null)?.trackId;
+  if (primaryId !== undefined) return new Set(timing.pages.filter(page => page.trackId === primaryId));
+  const voice = timing.pages.find(page => page.voice)?.voice;
+  if (voice) return new Set(timing.pages.filter(page => page.voice === voice));
+  // Older timing has no voice IDs. Preserve distinctly colored alternate pages.
+  const color = timing.pages.find(page => page.activeColor)?.activeColor?.toLowerCase();
+  return new Set(timing.pages.filter(page => !page.activeColor || !color || page.activeColor.toLowerCase() === color));
+}
 
 function paintLine(context: CanvasRenderingContext2D, line: KaraFunLine, page: KaraFunPage, lineIndex: number,
-  timing: KaraFunTiming, position: number, options: KaraFunLyricsOptions): void {
+  timing: KaraFunTiming, position: number, options: KaraFunLyricsOptions, activeColor: string): void {
   const box = line.box ?? { x: timing.bounds.width * .05, y: timing.bounds.height * (.58 + lineIndex * .12), width: timing.bounds.width * .9, height: timing.bounds.height * .11 };
   const text = line.syllables.map(syllable => syllable.text).join('');
   if (!text || box.width <= 0 || box.height <= 0) return;
@@ -42,7 +55,7 @@ function paintLine(context: CanvasRenderingContext2D, line: KaraFunLine, page: K
   context.strokeStyle = options.outlineColor || '#101020';
   context.strokeText(text, x, y);
   context.fillStyle = page.inactiveColor || options.inactiveColor || '#FFFFF3'; context.fillText(text, x, y);
-  context.fillStyle = page.activeColor || options.activeColor || '#0EB7FF';
+  context.fillStyle = activeColor;
   let before = '';
   for (const syllable of line.syllables) {
     const priorWidth = context.measureText(before).width;
@@ -60,7 +73,7 @@ function paintLine(context: CanvasRenderingContext2D, line: KaraFunLine, page: K
     const duration = (line.syllables[0]?.startSeconds ?? 0) - line.leadIn.startSeconds;
     if (duration > 0) {
       const progress = clamp((position - line.leadIn.startSeconds) / duration);
-      context.fillStyle = page.activeColor || options.activeColor || '#0EB7FF';
+      context.fillStyle = activeColor;
       const left = Math.min(line.leadIn.x, box.x), width = Math.max(0, box.x - left);
       context.fillRect(left, box.y + box.height * .85, width * progress, Math.max(2, size * .06));
     }
@@ -84,17 +97,21 @@ export function paintKaraFunLyrics(canvas: HTMLCanvasElement, timing: KaraFunTim
     (height - timing.bounds.height * scale) / 2 * ratio - timing.bounds.y * scale * ratio);
   context.save();
   const frame = karaFunLyricFrame(timing, position);
+  const primary = primarySingerPages(timing), primaryColor = options.primarySingerColor || KARAFUN_PRIMARY_SINGER_COLOR;
+  const primaryProviderColor = timing.pages.find(page => primary.has(page) && page.activeColor)?.activeColor?.toLowerCase();
   for (const { page, opacity } of frame.pages) {
     context.globalAlpha = opacity;
-    for (let index = 0; index < page.lines.length; index++) paintLine(context, page.lines[index], page, index, timing, position, options);
+    const activeColor = primary.has(page) ? primaryColor : page.activeColor || options.activeColor || '#0EB7FF';
+    for (let index = 0; index < page.lines.length; index++) paintLine(context, page.lines[index], page, index, timing, position, options, activeColor);
   }
   context.globalAlpha = 1;
   for (const { cue, progress } of frame.countIns) {
+    const cueColor = !cue.activeColor || cue.activeColor.toLowerCase() === primaryProviderColor ? primaryColor : cue.activeColor;
     const box = cue.box ?? { x: timing.bounds.width * .3, y: timing.bounds.height * .8, width: timing.bounds.width * .4, height: timing.bounds.height * .06 };
     const steps = Math.max(1, Math.min(32, cue.steps || 4)), gap = box.width / steps * .18, stepWidth = box.width / steps;
     for (let index = 0; index < steps; index++) {
       const active = progress * steps >= index + 1;
-      context.fillStyle = (active ? cue.activeColor : cue.inactiveColor) || (active ? options.activeColor || '#0EB7FF' : options.inactiveColor || '#FFFFF3');
+      context.fillStyle = (active ? cueColor : cue.inactiveColor) || (active ? options.activeColor || '#0EB7FF' : options.inactiveColor || '#FFFFF3');
       context.fillRect(box.x + index * stepWidth + gap / 2, box.y, Math.max(0, stepWidth - gap), box.height);
       if (cue.borderWidth > 0) {
         context.strokeStyle = (active ? cue.activeBorderColor : cue.inactiveBorderColor) || options.outlineColor || '#101020';

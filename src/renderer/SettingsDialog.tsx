@@ -10,10 +10,16 @@ import { LocalControlSettings } from './LocalControlSettings';
 import { Icon } from './Icon';
 import { BlacklistSettings } from './BlacklistSettings';
 import { YouTubeSearchSettings } from './YouTubeSearchSettings';
+import { SingerBrandingSettings } from './SingerBrandingSettings';
+import { Tooltip } from './Tooltip';
 import { DEFAULT_HOST_PANEL_SIZES } from '../domain/host-layout';
 import type { Shortcuts } from '../domain/shortcuts';
 import type { SettingsSection } from '../domain/app-action';
 import '../styles/settings.scss';
+
+function SettingsHelp({ label, text }: { label: string; text: string }) {
+  return <Tooltip text={text}><button type="button" className="help-button" aria-label={label}>?</button></Tooltip>;
+}
 
 export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveShortcuts, initialSection = 'general', focusRequest = 0, onSave, onClose }: {
   value: Settings; path: string; shortcutsPath: string; onSave: (value: Partial<Settings>) => Promise<void>; onClose: () => void;
@@ -58,7 +64,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
   return <dialog ref={dialog} className="settings-dialog settings-dialog--preferences" aria-labelledby="settings-title" onCancel={onClose}>
     <form onSubmit={event => void submit(event)}>
       <div className="settings-dialog__header">
-        <div><h2 id="settings-title">Preferences</h2><p className="muted">Changes apply when you save. Keyboard shortcuts save separately.</p></div>
+        <div className="settings-inline-help"><h2 id="settings-title">Preferences</h2><SettingsHelp label="Saving preferences help" text="Save to apply preferences. Logo selection applies immediately. Keyboard shortcuts save separately." /></div>
         <button type="button" className="icon-button settings-dialog__close" aria-label="Close preferences" onClick={onClose} disabled={saving}><Icon name="close" /></button>
       </div>
       <div className="settings-groups">
@@ -85,8 +91,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <label>Singer Preview Position<select aria-label="Singer Preview Position" value={draft.hostPreviewPosition} onChange={event => setDraft({ ...draft, hostPreviewPosition: event.target.value as Settings['hostPreviewPosition'] })}>
               <option value="above">Above Host Queue</option><option value="below">Below Host Queue</option><option value="hidden">Hidden</option>
             </select></label>
-            <p className="muted">Drag the panel separators to resize the workspace. Arrow keys move a focused separator; Shift moves farther. Double-click a separator to restore its default size.</p>
-            <button type="button" onClick={() => setDraft({ ...draft, hostPanelSizes: { ...DEFAULT_HOST_PANEL_SIZES } })}>Reset Panel Sizes</button>
+            <div className="settings-inline-help"><button type="button" onClick={() => setDraft({ ...draft, hostPanelSizes: { ...DEFAULT_HOST_PANEL_SIZES } })}>Reset Panel Sizes</button><SettingsHelp label="Panel resizing help" text="Drag separators to resize panels. Arrow keys move a focused separator; Shift moves farther. Double-click to reset." /></div>
           </div>
         </details>
         <details className="settings-group" data-settings-section="blacklist">
@@ -98,22 +103,19 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <summary>Library Settings</summary>
           <div className="settings-group__content">
             <label>Filename and folder templates, one per line<textarea rows={4} value={templates} onChange={event => setTemplates(event.target.value)} placeholder={'${DJ Code} - ${Artist} - ${Track Name}\n${Artist}/${Title}.mp4'} /></label>
-            <p className="muted">Templates are tried in order. Use {'${Artist}'}, {'${Title}'} or {'${Track Name}'}, {'${DJ Code}'}, and {'${Track Number}'}. Use / between folders; .mp4 is optional.</p>
-            <p className="muted">Repeated artist/title fields are allowed when their values agree. Extra variables such as {'${Album}'} are captured and ignored. Put specific numbered patterns before a catch-all such as {'${Artist}/${Title}'}.</p>
+            <div className="settings-inline-help"><span className="muted">Tried in order on new imports.</span><SettingsHelp label="Filename templates help" text={'Use ${Artist}, ${Title} (or ${Track Name}), ${DJ Code}, ${Track Number} and / for folders. Repeated fields must agree; extra variables are ignored. Put specific patterns first. Existing songs keep their metadata.'} /></div>
             <label>When no template matches<select value={draft.metadataFormat} onChange={event => setDraft({ ...draft, metadataFormat: event.target.value as Settings['metadataFormat'] })}>
               <option value="artist-title">Artist - Title</option><option value="title-artist">Title - Artist</option><option value="filename">Full filename as title</option>
             </select></label>
-            <p className="muted">Used when importing new songs. Existing songs keep their current metadata.</p>
           </div>
         </details>
         <details className="settings-group">
           <summary>Karaoke Services</summary>
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.providerCatalogEnabled} onChange={event => setDraft({ ...draft, providerCatalogEnabled: event.target.checked })} /> Search service catalogs in Song Library</label>
-            <p>KaraFun and Party Tyme offer public catalog search. Sunfly Store offers public title/SKU search; artist search is not verified. These searches need no paid account. Sources also accepts developer profiles for Stingray and the separate Sunfly partner catalog.</p>
-            <p className="muted">Search-only matches show the service name and cannot be queued or played in the booth yet. Existing subscription linking and playback remain separate work.</p>
+            <div className="settings-inline-help"><span>Connect accounts in Sources.</span><SettingsHelp label="Karaoke service search help" text="KaraFun, Party Tyme and Sunfly Store have public catalogs. Sunfly Store artist search is unverified. Stingray and the Sunfly partner catalog need developer profiles. Search-only services cannot be queued until playback is connected." /></div>
             <ul aria-label="Karaoke service availability">
-              <li>KaraFun — Public catalog search; playback pending</li>
+              <li>KaraFun — Public catalog and connected-account playback</li>
               <li>Party Tyme — Public catalog search; playback pending</li>
               <li>Sunfly Store — Public title/SKU search; optional developer catalog profile; playback pending</li>
               <li>Stingray — Catalog access requires a provider profile; playback pending</li>
@@ -123,27 +125,26 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
         <details className="settings-group">
           <summary>Video Downloads & Karaoke Nerds Cache</summary>
           <div className="settings-group__content">
-            <p className="muted">YouTube songs are saved permanently by yt-dlp. Brand/artist bulk subscriptions remain planned.</p>
+            <div className="settings-inline-help"><span className="muted">YouTube downloads are kept on this host.</span><SettingsHelp label="Video download help" text="yt-dlp and FFmpeg must be installed; FFmpeg must be on PATH. A blank folder uses The Proper Volume Karaoke in your Videos folder. Existing files stay where they are. Brand/artist bulk subscriptions remain planned." /></div>
             <label>Base directory for cached videos<input type="text" value={draft.karaokeNerdsCacheDirectory} onChange={event => setDraft({ ...draft, karaokeNerdsCacheDirectory: event.target.value })} placeholder="Choose an absolute directory path" /></label>
             <div><button type="button" onClick={() => { void window.tpv.chooseVideoCacheDirectory().then(directory => { if (directory) setDraft({ ...draft, karaokeNerdsCacheDirectory: directory }); }).catch(() => setError('Could not choose a download folder.')); }}>Choose download folder…</button> <button type="button" onClick={() => { void window.tpv.revealVideoCacheDirectory().catch(() => setError('The saved download folder is not available yet.')); }}>Open saved download folder</button></div>
-            <p className="muted">Leave blank to use “The Proper Volume Karaoke” in your Videos folder. New downloads use this location after saving; existing files stay where they are.</p>
             <label>yt-dlp executable<input type="text" value={draft.ytDlpExecutable} onChange={event => setDraft({ ...draft, ytDlpExecutable: event.target.value })} placeholder="Leave blank to find yt-dlp on PATH" /></label>
-            <p className="muted">Install yt-dlp and FFmpeg before downloading. FFmpeg must also be on PATH; these tools are not bundled with the app.</p>
             <label className="settings-check"><input type="checkbox" checked={draft.karaokeNerdsAutoCache} onChange={event => setDraft({ ...draft, karaokeNerdsAutoCache: event.target.checked })} /> Plan automatic caching when available</label>
             <label>Brands to cache, one per line<textarea rows={3} value={cacheBrands} onChange={event => setCacheBrands(event.target.value)} /></label>
             <label>Artists to cache, one per line<textarea rows={3} value={cacheArtists} onChange={event => setCacheArtists(event.target.value)} /></label>
-            <p className="muted">For selected artists, the planned behavior is the most recently published video for each artist and song.</p>
+            <SettingsHelp label="Automatic video caching help" text="Bulk caching is planned. Selected artists will use the most recently published video for each song, with upload date as fallback." />
           </div>
         </details>
         <details className="settings-group">
           <summary>Queue Management</summary>
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.rotationMode === 'singer'} onChange={event => setDraft({ ...draft, rotationMode: event.target.checked ? 'singer' : 'fifo' })} /> Rotate singers fairly</label>
-            <p className="muted">When enabled, singers get a turn before their next song. Otherwise songs play in request order. A staged song stays locked when changing modes.</p>
+            <SettingsHelp label="Singer rotation help" text="Fair rotation gives each singer a turn before their next song. Turn it off for request order. The prepared next song stays locked when changing modes." />
             <label className="settings-check"><input type="checkbox" checked={draft.autoApprove} onChange={event => setDraft({ ...draft, autoApprove: event.target.checked })} /> Automatically approve new requests</label>
-            <p className="muted">Changing this affects new requests; requests already awaiting review remain pending.</p>
+            <label className="settings-check"><input type="checkbox" checked={draft.autoAdvance} onChange={event => setDraft({ ...draft, autoAdvance: event.target.checked })} /> Automatically play the next song</label>
+            <SettingsHelp label="Automatic queue playback help" text="Approved requests prepare automatically. After a completed or skipped song, the next starts once the pause interval ends and playback is ready. Stop cancels automatic advancement. Requests already awaiting approval stay pending." />
             <label>Future requests per singer<input type="number" min="0" max="50" step="1" required value={draft.maxFutureRequestsPerSinger} onChange={event => setDraft({ ...draft, maxFutureRequestsPerSinger: event.target.valueAsNumber })} /></label>
-            <p className="muted">Includes pending, accepted and staged songs. The current song does not count. Set 0 for no limit; existing requests are kept when you lower the limit.</p>
+            <SettingsHelp label="Future request limits help" text="Counts pending, accepted and prepared songs, excluding the current song. Zero means unlimited. Lowering the limit keeps existing requests." />
           </div>
         </details>
         <details className="settings-group">
@@ -155,9 +156,10 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <div className="settings-group__content">
             <AudioOutputPicker value={draft.audioOutputId} onChange={audioOutputId => setDraft({ ...draft, audioOutputId })} />
             <label>Playback Volume <input type="range" aria-label="Playback Volume" min="0" max="100" step="1" value={Math.round(draft.masterVolume * 100)} onChange={event => setDraft({ ...draft, masterVolume: Number(event.target.value) / 100 })} /><span>{Math.round(draft.masterVolume * 100)}%</span></label>
-            <p className="muted">Controls song and bumper volume. Changes apply when you save.</p>
             <label>Pause Interval (seconds)<input type="number" min="0" max="300" step="1" value={draft.pauseIntervalSeconds} onChange={event => setDraft({ ...draft, pauseIntervalSeconds: Number(event.target.value) })} /></label>
-            <p className="muted">Wait this long after a song ends or is skipped before starting the next. The host still presses Play; 0 disables the interval.</p>
+            <p className="muted">Gap between songs. The next song starts automatically unless disabled in Queue Management.</p>
+            <label className="settings-check"><input type="checkbox" checked={draft.bumperOnLaunch} onChange={event => setDraft({ ...draft, bumperOnLaunch: event.target.checked })} /> Play bumper music when the app opens</label>
+            <label>Bumper Fade-In<span className="settings-range"><input aria-label="Bumper Fade-In" type="range" min="500" max="1700" step="50" value={draft.bumperFadeMs} onChange={event => setDraft({ ...draft, bumperFadeMs: Number(event.target.value) })} /><output>{draft.bumperFadeMs} ms</output></span></label>
             <BumperControls autoBumper={draft.autoBumper} autoBumperTrackId={draft.autoBumperTrackId}
               onAutoChange={(autoBumper, autoBumperTrackId) => setDraft({ ...draft, autoBumper, autoBumperTrackId })} />
           </div>
@@ -167,7 +169,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.singerScreenEnabled} onChange={event => setDraft({ ...draft, singerScreenEnabled: event.target.checked })} /> Share the singer screen with browsers on the local network</label>
             <label>Singer Screen Port<input aria-label="Singer Screen Port" type="number" min="1024" max="65535" step="1" required value={draft.singerScreenPort} onChange={event => setDraft({ ...draft, singerScreenPort: event.target.valueAsNumber })} /></label>
-            <p className="muted">Sharing uses a separate, read-only visual screen. Sound stays on this host. Save, then open Remote Sessions for the addresses and connection status.</p>
+            <SettingsHelp label="Singer screen sharing help" text="Shares a read-only visual screen; sound stays on this host. Save, then open Remote Sessions for connection addresses. Local sharing may require private-network firewall access." />
             <label>Lyric Backdrop<select aria-label="Lyric Backdrop" value={draft.lyricBackdrop} onChange={event => setDraft({ ...draft, lyricBackdrop: event.target.value as Settings['lyricBackdrop'] })}>
               <option value="default">TPV Animated Backdrop (Version 3)</option><option value="none">Solid CDG Background</option><option value="custom">Custom Video</option>
             </select></label>
@@ -175,13 +177,10 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
               <label>Custom Backdrop MP4<input type="text" value={draft.lyricBackdropFile} onChange={event => setDraft({ ...draft, lyricBackdropFile: event.target.value })} placeholder="Choose an MP4 video" /></label>
               <button type="button" onClick={() => { void window.tpv.chooseLyricBackdrop().then(file => { if (file) setDraft(current => ({ ...current, lyricBackdrop: 'custom', lyricBackdropFile: file })); }).catch(reason => setError(String(reason))); }}>Choose Backdrop Video…</button>
             </>}
-            <p className="muted">Loops silently behind lyrics for new CD+G imports. Save before importing; reimport existing CD+G songs to change their backdrop. Future LRC playback will use this preference. Regular videos keep their own picture.</p>
+            <SettingsHelp label="Lyric backdrop help" text="Loops silently behind new CD+G imports. Save before importing; reimport existing CD+G songs to update their backdrop. LRC support is planned. Videos keep their own picture." />
             <label className="settings-check"><input type="checkbox" checked={draft.showNextSingers} onChange={event => setDraft({ ...draft, showNextSingers: event.target.checked })} /> Show the next singers</label>
             <label className="settings-check"><input type="checkbox" checked={draft.singerDisplayFullscreen} onChange={event => setDraft({ ...draft, singerDisplayFullscreen: event.target.checked })} /> Open singer display fullscreen</label>
-            <p className="muted">Applies the next time you open the singer display. The fullscreen button changes the current display without changing this preference.</p>
-            <label className="settings-check"><input type="checkbox" checked={draft.showDisplayLogo} onChange={event => setDraft({ ...draft, showDisplayLogo: event.target.checked })} /> Show custom logo when available</label>
-            <div className="settings-logo-actions"><button type="button" onClick={() => void window.tpv.chooseDisplayLogo().catch(reason => setError(String(reason)))}>Choose logo…</button><button type="button" onClick={() => void window.tpv.clearDisplayLogo().catch(reason => setError(String(reason)))}>Remove logo</button></div>
-            <p className="muted">Choose a PNG or JPEG up to 2 MB. Choosing or removing a logo takes effect immediately; the visibility options apply when you save.</p>
+            <SingerBrandingSettings value={draft} onChange={setDraft} />
           </div>
         </details>
         <details className="settings-group">

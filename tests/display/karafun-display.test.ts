@@ -56,7 +56,9 @@ test('native display isolates video events, serializes recovery, seeks, and cann
     assert.equal(backdrop.muted, true); assert.equal(backdrop.volume, 0); assert.equal(backdrop.loop, true); assert.equal(backdrop.paused, false);
     const beforeStaleEvent = events.length; retiredVideo.dispatchEvent(new Event('ended')); retiredVideo.dispatchEvent(new Event('error'));
     assert.equal(events.length, beforeStaleEvent);
-    await publish({ ...view({ ...native, volume: .4 }), next: ['Another singer'] });
+    await publish({ ...view({ ...native, volume: .4 }), next: ['Another singer'], branding: {
+      boothName: 'New Booth Name', displayLogoSize: 80, bannerEnabled: true, bannerText: 'Welcome!', bannerPosition: 'bottom', bannerExpiresAt: '',
+    } });
     assert.equal(context.sources.length, 1); assert.equal(context.gains[0].gain.value, .4);
     context.currentTime = 2.025; await publish(view({ ...native, status: 'paused' }));
     assert.equal(context.gains[0].gain.value, 0);

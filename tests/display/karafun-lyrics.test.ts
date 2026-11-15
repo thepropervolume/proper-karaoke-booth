@@ -49,7 +49,7 @@ test('lyrics visibility, fades and count-ins derive only from absolute clock, in
 test('canvas draws literal provider text and clips progressive highlight at the current syllable fraction', () => {
   const { context, element } = canvas();
   paintKaraFunLyrics(element, timing(), 2, { pixelRatio: 1 });
-  assert.deepEqual(context.draws.map(draw => [draw.text, draw.color]), [['Hello', '#FFFFFF'], ['Hello', '#00FFFF']]);
+  assert.deepEqual(context.draws.map(draw => [draw.text, draw.color]), [['Hello', '#FFFFFF'], ['Hello', '#d5167a']]);
   assert.equal(context.clips.length, 1); assert.equal(context.clips[0][2], 15);
   const text = timing(); text.pages[0].lines[0].syllables = [{ startSeconds: 1, endSeconds: 3, text: '<script> & "' }];
   paintKaraFunLyrics(element, text, 2, { pixelRatio: 1 });
@@ -83,6 +83,25 @@ test('count-in boxes advance with song time and remain within their supplied bou
   const { context, element } = canvas();
   paintKaraFunLyrics(element, timing(), 5, { pixelRatio: 1 });
   assert.equal(context.bars.length, 4);
-  assert.deepEqual(context.bars.map(bar => bar.color), ['#00FFFF', '#FFFFFF', '#FFFFFF', '#FFFFFF']);
+  assert.deepEqual(context.bars.map(bar => bar.color), ['#d5167a', '#FFFFFF', '#FFFFFF', '#FFFFFF']);
   assert.ok(context.bars.every(bar => bar.args[0] >= 200 && bar.args[0] + bar.args[2] <= 300));
+});
+
+test('the primary singer uses KaraFun pink while another singer retains their provider color', () => {
+  const { context, element } = canvas(), value = timing(), page = value.pages[0];
+  value.tracks = [{ id: 7, caption: 'Primary', fileIndex: null }, { id: 42, caption: 'Second', fileIndex: null }];
+  // The second singer can begin first; declared track order defines the primary.
+  value.pages = [{ ...page, id: 2, trackId: 42, voice: 'Second', activeColor: '#007bff' },
+    { ...page, trackId: 7, voice: 'Primary', activeColor: '#AADD66' }];
+  value.countIns = [];
+  paintKaraFunLyrics(element, value, 2, { pixelRatio: 1 });
+  assert.deepEqual(context.draws.map(draw => draw.color), ['#FFFFFF', '#007bff', '#FFFFFF', '#d5167a']);
+});
+
+test('unidentified older duet pages keep distinct secondary colors and lead-in bars follow the primary color', () => {
+  const { context, element } = canvas(), value = timing(), page = value.pages[0];
+  page.lines[0].leadIn = { x: 50, startSeconds: 0 };
+  value.pages.push({ ...page, id: 2, activeColor: '#007bff' }); value.countIns = [];
+  paintKaraFunLyrics(element, value, .5, { pixelRatio: 1 });
+  assert.deepEqual(context.bars.map(bar => bar.color), ['#d5167a', '#007bff']);
 });

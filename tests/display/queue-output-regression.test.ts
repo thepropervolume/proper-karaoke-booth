@@ -16,11 +16,11 @@ test('queue updates do not interrupt the currently playing output', async () => 
   class FakeMedia extends EventTarget {
     id = ''; src = ''; muted = false; volume = 1; paused = true; playsInline = false;
     currentTime = 0; duration = 60; seekable = { length: 0 };
-    sinkCalls = 0; pauseCalls = 0; playCalls = 0;
+    sinkCalls = 0; pauseCalls = 0; playCalls = 0; loadCalls = 0;
     async setSinkId(_id: string) { this.sinkCalls++; }
     async play() { this.playCalls++; this.paused = false; }
     pause() { this.pauseCalls++; this.paused = true; }
-    load() {}
+    load() { this.loadCalls++; }
     removeAttribute(name: string) { if (name === 'src') this.src = ''; }
     replaceWith(next: FakeMedia) { video = next; }
   }
@@ -70,6 +70,13 @@ test('queue updates do not interrupt the currently playing output', async () => 
     assert.equal(enumerateCount, 1, 'an unrelated queue update must not re-enumerate devices');
     assert.equal(playing.sinkCalls, 1, 'an unrelated queue update must not re-route the active track');
     assert.equal(playing.paused, false);
+    const before = { pause: playing.pauseCalls, play: playing.playCalls, load: playing.loadCalls };
+    playing.currentTime = 23;
+    await publish({ ...view, logo: 'data:image/png;base64,AAAA', branding: { boothName: 'Updated Booth', displayLogoSize: 80,
+      bannerEnabled: true, bannerText: 'Welcome!', bannerPosition: 'top', bannerExpiresAt: '' } });
+    assert.equal(video, playing); assert.equal(playing.currentTime, 23);
+    assert.deepEqual({ pause: playing.pauseCalls, play: playing.playCalls, load: playing.loadCalls }, before,
+      'Branding updates must not pause, restart or reload a playing song.');
   } finally {
     finishEnumeration?.();
     await pending?.catch(() => {});

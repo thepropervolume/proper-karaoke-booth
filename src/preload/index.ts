@@ -109,6 +109,12 @@ contextBridge.exposeInMainWorld('tpv', {
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),
   chooseLyricBackdrop: () => ipcRenderer.invoke('host:choose-lyric-backdrop'),
   clearDisplayLogo: () => ipcRenderer.invoke('host:clear-display-logo'),
+  getDisplayLogo: () => ipcRenderer.invoke('host:get-display-logo'),
+  onDisplayLogo: (callback: (logo: string | null) => void) => {
+    const listener = (_event: unknown, logo: string | null) => callback(logo);
+    ipcRenderer.on('host:display-logo', listener);
+    return () => ipcRenderer.removeListener('host:display-logo', listener);
+  },
   remote: {
     status: () => ipcRenderer.invoke('host:remote-status'),
     subscribe: (callback: (value: unknown) => void) => {

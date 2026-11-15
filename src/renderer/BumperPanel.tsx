@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 
 export type BumperTrackInfo = { id: string; name: string; builtIn: boolean };
 export type BumperStatus = { status: 'stopped' | 'starting' | 'playing'; trackId: string | null };
@@ -25,8 +26,8 @@ export function BumperControls({ autoBumper, autoBumperTrackId, onAutoChange }: 
       {!info.tracks.some(track => track.id === autoBumperTrackId) && <option value={autoBumperTrackId}>Selected track is unavailable</option>}
       {info.tracks.map(track => <option key={track.id} value={track.id}>{track.name}{track.builtIn ? ' (built in)' : ''}</option>)}
     </select></label>
-    <p className="muted">After a completed or skipped song, music starts only after the singer display confirms silence. Choose an explicit output and open the singer display. The host still starts the next song; music stops first. Changes apply when saved.</p>
-    {autoBumper && !info.outputReady && <p role="status">Automatic bumper is waiting for an explicit output and an open singer display.</p>}
+    <Tooltip text="Music fills the gap after a song and stops before the next performance. The singer window can stay closed. Stop cancels automatic song advancement; output loss needs a manual restart after choosing a working device."><button type="button" className="help-button" aria-label="Bumper playback help">?</button></Tooltip>
+    {autoBumper && !info.outputReady && <p role="status">Bumper audio is not ready. Check the output device.</p>}
     {autoBumper && !info.tracks.some(track => track.id === autoBumperTrackId) && <p role="alert">The automatic bumper track is unavailable. Choose another track.</p>}
     <BumperPanel {...info}
       add={async () => { setInfo(await window.tpv.addBumpers()); }}
@@ -53,9 +54,8 @@ export function BumperPanel({ tracks, status, outputReady, karaokeActive, add, r
   const item = tracks.find(track => track.id === selected);
   const customCount = tracks.filter(track => !track.builtIn).length;
   return <section aria-label="Bumper music" className="bumper-panel">
-    <h3>Bumper music</h3>
-    <p className="muted">Choose a track to start. Music continues through the list until stopped or karaoke starts.</p>
-    {!outputReady && <p className="muted">Save an explicit audio output and open the singer display to play bumper music.</p>}
+    <h3>Bumper Music</h3>
+    {!outputReady && <p className="muted">Choose a working audio output to play bumper music.</p>}
     {karaokeActive && <p className="muted">Bumper music is unavailable while a performance is active or paused.</p>}
     <label>Start with <select value={selected} onChange={event => setSelected(event.target.value)} disabled={busy || status.status !== 'stopped'}>
       {tracks.map(track => <option key={track.id} value={track.id}>{track.name}{track.builtIn ? ' (built in)' : ''}</option>)}

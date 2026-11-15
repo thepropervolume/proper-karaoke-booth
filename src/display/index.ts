@@ -5,17 +5,22 @@ import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
 import { paintKaraFunLyrics } from './karafun-lyrics';
 import type { KaraFunTiming } from '../domain/karafun-kit-timing';
+import { createSingerDisplayBranding, type SingerDisplayBranding } from './branding';
 type PlaybackCommon = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: KaraFunTiming; durationSeconds: number; stems: KaraFunStemSource[] }; backdropSrc: string | null };
 type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
 const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
-type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; shortcuts: Shortcuts; bumperVolume: number };
+type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number };
 declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
 const next = document.querySelector<HTMLElement>('#next')!;
-const logos = document.querySelectorAll<HTMLImageElement>('#idle-logo, #header-logo');
+const branding = createSingerDisplayBranding({ root: document.documentElement,
+  names: document.querySelectorAll<HTMLElement>('[data-booth-name]'), logos: document.querySelectorAll<HTMLImageElement>('#idle-logo, #header-logo'),
+  banner: document.querySelector<HTMLElement>('#booth-banner'), bannerText: document.querySelector<HTMLElement>('#booth-banner-text'),
+});
+window.addEventListener('beforeunload', () => branding.dispose());
 const lyrics = document.querySelector<HTMLCanvasElement>('#karafun-lyrics');
 const backdrop = document.querySelector<HTMLVideoElement>('#karafun-backdrop');
 let current: PlaybackState | null = null;
@@ -194,10 +199,7 @@ window.tpvDisplay.subscribe(async (view) => {
   document.body.classList.toggle('idle', !state);
   document.body.classList.toggle('native-karafun', isNative(state));
   next.textContent = view.next.length ? `Coming up: ${view.next.join(' · ')}` : '';
-  logos.forEach(logo => {
-    logo.hidden = !view.logo;
-    if (view.logo) logo.src = view.logo; else logo.removeAttribute('src');
-  });
+  branding.update(view.branding, view.logo);
   if (!state) {
     ++updateSequence;
     const previousGeneration = current?.generation;
