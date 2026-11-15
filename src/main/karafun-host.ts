@@ -64,12 +64,21 @@ export class KaraFunHost {
     this.searchAbort?.abort(); this.receipts = null;
     if (this.closed || this.account.status().state !== 'connected') return { status: 'disconnected', songs: [] };
     if (typeof input !== 'string' || input.trim().length < 2 || input.length > 250) return { status: 'ok', songs: [] };
+    // Show allowlists expose only approved library versions, never fresh external
+    // identities. Local allowed rows remain available through the host library.
+    if (this.ports.state().policy.includeVersionIds !== null) return { status: 'ok', songs: [] };
     const abort = new AbortController(), revision = this.account.revision(); this.searchAbort = abort;
     try {
       const results = await this.account.search(input.trim(), abort.signal);
+      const state = this.ports.state();
+      if (state.policy.includeVersionIds !== null) return { status: 'ok', songs: [] };
       const blacklist = compileSongBlacklist(this.ports.settings());
+      const excludedIds = new Set(state.policy.excludeVersionIds);
+      const excludedSources = new Set(state.versions.flatMap(version => version.source?.provider === 'karafun' && excludedIds.has(version.id)
+        ? [sourceKey(version.source)] : []));
       const songs = results.filter(song =>
-        !blacklist.isBlocked(song) && (!this.ports.state().policy.ageRestricted || song.explicit === false)).slice(0, 1000);
+        !excludedSources.has(sourceKey({ ...song, provider: 'karafun' })) && !blacklist.isBlocked(song) &&
+        (!state.policy.ageRestricted || song.explicit === false)).slice(0, 1000);
       if (abort.signal.aborted || revision !== this.account.revision() || this.closed) return { status: 'unavailable', songs: [] };
       const id = randomUUID();
       this.receipts = { id, revision, until: Date.now() + 600_000, songs: new Map(songs.map(song => [sourceKey({ ...song, provider: 'karafun' }), song])) };

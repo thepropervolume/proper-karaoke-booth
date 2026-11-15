@@ -119,6 +119,45 @@ test('search applies current policy after network completion and abandons supers
   gate = deferred(); const pending = f.host.search('Synthetic'); f.changeAccount(false); gate.resolve();
   assert.notEqual((await pending).status, 'ok'); assert.deepEqual(f.host.status(), []);
 });
+
+test('native discovery is suppressed before any provider call when the show uses an explicit allowlist', async t => {
+  const f = fixture(); t.after(() => f.host.shutdown()); let searches = 0;
+  f.setSearch(async () => { searches++; return [song]; });
+  const previous = await f.host.search('Synthetic'); assert.ok(previous.searchId);
+  f.state().versions.push({ id: 'approved', title: song.title, artist: song.artist, rating: 'clean', source: { provider: 'karafun', catalog: song.catalog, songId: song.songId } });
+  for (const includeVersionIds of [[], ['approved']]) {
+    f.state().policy.includeVersionIds = includeVersionIds;
+    assert.deepEqual(await f.host.search('Synthetic'), { status: 'ok', songs: [] });
+  }
+  assert.equal(searches, 1, 'Only the initial unrestricted search may reach the provider.');
+  assert.equal(f.host.request({ searchId: previous.searchId, songId: song.songId, catalog: song.catalog, singerId: 's', requestId: 'blocked' }).ok, false);
+  assert.equal(f.state().versions[0].id, 'approved', 'The approved local version remains available.');
+  assert.equal(f.state().requests.length, 0); assert.equal(f.calls.length, 0);
+});
+
+test('an excluded known native recording cannot reappear under a new search identity or another source namespace', async t => {
+  const f = fixture(); t.after(() => f.host.shutdown());
+  f.state().versions.push({ id: 'excluded-catalog-version', title: 'Host title override', artist: song.artist, rating: 'clean', source: { provider: 'karafun', catalog: 'catalog', songId: song.songId } },
+    { id: 'unrelated-local', title: 'Unrelated', artist: '', rating: 'clean' });
+  f.state().policy.excludeVersionIds = ['excluded-catalog-version', 'unrelated-local'];
+  f.setSearch(async () => [song, { ...song, catalog: 'community' }, { ...song, songId: '7777' }]);
+  const result = await f.host.search('Synthetic'); assert.equal(result.status, 'ok');
+  assert.deepEqual(result.songs.map(track => [track.catalog, track.songId]), [['community', song.songId], ['catalog', '7777']]);
+  assert.equal(f.host.request({ searchId: result.searchId, songId: song.songId, catalog: 'catalog', singerId: 's', requestId: 'excluded' }).ok, false);
+  assert.equal(f.state().requests.length, 0); assert.equal(f.calls.length, 0);
+});
+
+test('allowlists and known-source exclusions changed during a provider search apply before issuing its receipt', async t => {
+  const f = fixture(); t.after(() => f.host.shutdown()); let gate = deferred();
+  f.setSearch(async () => { await gate.promise; return [song]; });
+  const first = f.host.search('Synthetic'); f.state().policy.includeVersionIds = []; gate.resolve();
+  assert.deepEqual(await first, { status: 'ok', songs: [] });
+  f.state().policy.includeVersionIds = null; gate = deferred();
+  const second = f.host.search('Synthetic');
+  f.state().versions.push({ id: 'newly-excluded', title: song.title, artist: song.artist, rating: 'clean', source: { provider: 'karafun', catalog: song.catalog, songId: song.songId } });
+  f.state().policy.excludeVersionIds.push('newly-excluded'); gate.resolve();
+  assert.deepEqual((await second).songs, []); assert.equal(f.commits(), 0);
+});
 test('sign-out cancels preparation and makes both cached media and earlier search receipts unusable', async t => {
   const f = fixture(); t.after(() => f.host.shutdown());
   f.setGate(async (_call, signal) => { await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true })); });
