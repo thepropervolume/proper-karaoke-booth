@@ -30,6 +30,16 @@ const launch = async () => {
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   const host = await waitForHostWindow(app);
   await waitForHostCondition(host, () => typeof window.tpv?.karaFun?.status === 'function');
+  // Renderer IPC can be ready before Windows has shown the native window.
+  // Await that boundary instead of racing the later visible-window assertions.
+  assert.equal(await app.evaluate(async ({ BrowserWindow }) => {
+    const deadline = Date.now() + 5000;
+    do {
+      if (BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('/renderer/') && window.isVisible())) return true;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    } while (Date.now() < deadline);
+    return false;
+  }), true, 'The packaged host window must become visible.');
   return host;
 };
 const methods = ['status', 'signIn', 'signOut', 'search', 'request', 'preparations', 'retry', 'subscribe'];
