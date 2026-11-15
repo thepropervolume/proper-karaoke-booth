@@ -63,6 +63,8 @@ import { YouTubeDownloads } from './youtube-download';
 import { QueuedVideoDownloads } from './queued-video-downloads';
 import { catalogRequest } from '../domain/catalog-request';
 import { AutomaticBumper } from './automatic-bumper';
+import { ShowAdvance } from './show-advance';
+import { stageNextApproved } from './stage-next';
 import { resolveYtDlpExecutable } from './youtube-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
@@ -73,6 +75,7 @@ import { readKHostBridgeProfile } from './khost-client';
 import { isProviderCatalogId } from '../domain/provider-catalog';
 import { parseHostPolicy } from './host-policy';
 import { KaraFunAccount } from './karafun-account';
+import { KaraFunSessionVault } from './karafun-session-vault';
 import { KaraFunHost } from './karafun-host';
 import { KaraFunMediaCache, type KaraFunPreparedMedia } from './karafun-media';
 
@@ -123,7 +126,7 @@ const singerCapture = new SingerScreenCapture(singerFrames, {
   capture: async () => {
     const window = display;
     if (!window || window.isDestroyed() || !displayReady) return null;
-    const image = await window.webContents.capturePage();
+    const image = await window.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
     if (window !== display || window.isDestroyed() || !displayReady || image.isEmpty()) return null;
     const size = image.getSize(), scale = Math.min(1, 1600 / size.width, 1000 / size.height);
     const scaled = image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: 'best' });
@@ -162,6 +165,9 @@ let bumper: BumperController | null = null;
 let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
+let autoStageSuspended = false;
+let startupBumperPending = true;
+let startingLaunchBumper = false;
 const youtubeAudioGate = new YouTubeAudioGate(isYouTubePlayerActive);
 let importJob: ImportJob | null = null;
 let cdgImport: CdgImport | null = null;
@@ -233,8 +239,10 @@ function syncQueuedDownloads(): void {
     .map(request=>request.versionId).filter(id=>state.versions.find(version=>version.id===id)?.source?.provider==='youtube' && (!store.media(id) || !existsSync(store.media(id)!.path))));
 }
 function automaticBumperEligible(): boolean {
-  return !!settings?.autoBumper && !shuttingDown && !state.playback && !playbackTransition && displayReady && !!bumper &&
-    !!settings.audioOutputId && settings.audioOutputId !== 'default' && bumper.isOutputAvailable() && !youtubeAudioGate.playbackBlocked() &&
+  const launch = startingLaunchBumper && settings?.bumperOnLaunch && state.playback?.status !== 'playing';
+  const interlude = settings?.autoBumper && !state.playback && (!settings.autoAdvance || settings.pauseIntervalSeconds > 0 || !state.stagedRequestId);
+  return !!(launch || interlude) && !shuttingDown && !playbackTransition && displayReady && !!bumper &&
+    bumper.isOutputAvailable() && !youtubeAudioGate.playbackBlocked() &&
     [...builtInBumpers,...(bumperCatalog?.forPlayback() ?? [])].some(track=>track.id===settings.autoBumperTrackId);
 }
 const automaticBumper = new AutomaticBumper(automaticBumperEligible, stillEligible => youtubeAudioGate.startBumper(async()=>{
@@ -244,6 +252,42 @@ const automaticBumper = new AutomaticBumper(automaticBumperEligible, stillEligib
   if(started&&!stillEligible())await bumper.stop();
   return started&&stillEligible();
 }),message=>{bumperError=message;publishBumper();});
+const showAdvance = new ShowAdvance(() => {
+  const request = state?.requests.find(item => item.id === state.stagedRequestId);
+  const version = state?.versions.find(item => item.id === request?.versionId);
+  const media = request && store?.media(request.versionId);
+  const mediaPresent = !!media && existsSync(media.path);
+  let error: string | undefined;
+  if (request && !isVersionAllowed(state, request.versionId, settings)) error = 'The next song is blocked by the show policy. Review the queue and press Play.';
+  if (version?.source?.provider === 'karafun') {
+    const failed = karaFunHost?.status().find(item => item.versionId === version.id && item.phase === 'failed');
+    if (karaFunAccount?.status().state !== 'connected') error = 'Sign in to KaraFun in Sources, then press Play to continue.';
+    else if (failed) error = failed.message || 'The next KaraFun song could not be prepared. Retry it in Sources.';
+    else if (media && !mediaPresent) error = 'The prepared KaraFun recording is missing. Retry its preparation in Sources, then press Play.';
+  } else if (version?.source?.provider === 'youtube') {
+    const failed = queuedDownloads.snapshot().failures.find(item => item.versionId === version.id);
+    if (failed) error = 'The next video could not download. Retry it from the song menu, then press Play.';
+    else if (media && !mediaPresent) error = 'The saved video is missing. Use Download Video / Retry from its song menu, then press Play.';
+  } else if (request && (!media || !existsSync(media.path))) error = 'The next song file is missing. Relink it from the song menu, then press Play.';
+  return { enabled: !!settings?.autoAdvance && !shuttingDown && !outputRecovery,
+    playing: !!state?.playback, requestId: request?.id ?? null, notBeforeMs: state?.nextStartAtMs ?? 0,
+    ready: !!request && mediaPresent && singerAvailable(state, request.singerId, Date.now()) && !error,
+    ...(error ? { error } : {}) };
+}, async (requestId, current) => {
+  await ensureSingerDisplayReady(false);
+  if (!current() || state.stagedRequestId !== requestId) return { ok: false, error: 'The next song changed. Review the queue and press Play.' };
+  return executeHostCommand({ type: 'start', generationId: randomUUID() }, false, null, current);
+}, message => {
+  bumperError = message; publishBumper();
+  if (!shuttingDown && host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Show needs attention', detail: message });
+});
+async function startLaunchBumper(): Promise<void> {
+  if (!startupBumperPending || !displayReady || shuttingDown) return;
+  startupBumperPending = false;
+  if (!settings.bumperOnLaunch || state.playback?.status === 'playing') return;
+  startingLaunchBumper = true;
+  try { await automaticBumper.startIdle(); } finally { startingLaunchBumper = false; }
+}
 type ExplicitVideoRetry = { videoId: string; media: StoredMedia; identity: MediaIdentity };
 type DownloadBaseline = { videoId: string; media: StoredMedia | undefined; retry: ExplicitVideoRetry | undefined };
 const explicitVideoRetries = new Map<string, ExplicitVideoRetry>();
@@ -325,7 +369,7 @@ function guardHost(id: number): void { if (!senderIsHost(id)) throw new Error('O
 function bumperInfo() {
   return { tracks: [...builtInBumpers.map(({ id, name }) => ({ id, name, builtIn: true })), ...(bumperCatalog?.list() ?? []).map(track => ({ ...track, builtIn: false }))],
     status: bumper?.getState() ?? { status: 'stopped', trackId: null, generation: null },
-    outputReady: !!bumper && bumper.isOutputAvailable() && displayReady && !!settings.audioOutputId && settings.audioOutputId !== 'default',
+    outputReady: !!bumper && bumper.isOutputAvailable() && displayReady,
     karaokeActive: !!state.playback || playbackTransition, error: bumperError };
 }
 function publishBumper(): void { if (!shuttingDown && host && !host.isDestroyed()) host.webContents.send('host:bumper-state', bumperInfo()); }
@@ -339,11 +383,16 @@ function refreshAvailabilityDeadline(): void {
 }
 function broadcast(): void {
   if (shuttingDown) return;
+  if (!autoStageSuspended) {
+    const prepared = stageNextApproved(state, settings);
+    if (prepared !== state) { store.save(prepared); state = prepared; }
+  }
   refreshAvailabilityDeadline();
   publishTimeline();
   if (host && !host.isDestroyed()) host.webContents.send('host:state', state);
   publishDisplay();
   publishBumper();
+  showAdvance.changed();
 }
 function publishDisplay(): void {
   if (shuttingDown || !display || display.isDestroyed() || !displayReady) return;
@@ -365,7 +414,9 @@ function publishDisplay(): void {
       backdropSrc: backdrop ? `tpv-media://lyric-backdrop/${encodeURIComponent(playback.generationId)}` : null } : {}),
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
     position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
-  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume });
+  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume,
+    branding: { boothName: settings.boothName, displayLogoSize: settings.displayLogoSize, bannerEnabled: settings.bannerEnabled,
+      bannerText: settings.bannerText, bannerPosition: settings.bannerPosition, bannerExpiresAt: settings.bannerExpiresAt, bannerOnLaunch: settings.bannerOnLaunch } });
 }
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
   const previousGeneration = state.playback?.generationId;
@@ -384,10 +435,12 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   }
   store.save(result.state, [], history);
   state = result.state;
+  if (result.outcome.ok && (command.type === 'pause' || command.type === 'stop' || command.type === 'release')) { showAdvance.cancel(); cancelPendingPlayback(); }
+  if (result.outcome.ok && command.type === 'release') autoStageSuspended = true;
   if (result.outcome.ok && command.type === 'setPolicy') youtubeSearch.cancel();
-  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) { verifiedPlayback = null; activeKaraFun = null; }
+  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) { verifiedPlayback = null; activeKaraFun = null; outputRecovery = null; }
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
-  if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) automaticBumper.arm(previousGeneration);
+  if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) { automaticBumper.arm(previousGeneration); showAdvance.arm(); }
   if (result.outcome.ok && ['request','accept','editRequest','moveRequest','promoteRequest','removeRequest','rejectRequest','setPolicy'].includes(command.type)) syncQueuedDownloads();
   try{broadcast();}catch{/* A closed view must not turn a durable command into a failure. */}
   return result.outcome;
@@ -480,23 +533,33 @@ function createHost(): void {
 let displayCreation: Promise<void> | null = null;
 let lastSingerDisplayId: number | null | undefined;
 const hostTransport = new HostTransport();
+function cancelPendingPlayback(): void { hostTransport.cancel(); for (const check of mediaChecks) check.abort(); }
 function singerDisplayPlacementPath(): string { return join(app.getPath('userData'), 'singer-display-placement.json'); }
 function rememberSingerDisplay(id: number): void {
   lastSingerDisplayId = id;
   try { writeSingerDisplayId(singerDisplayPlacementPath(), id); }
   catch { console.warn('Could not save singer display placement. The current display is still available.'); }
 }
-async function createDisplay(automatic = false): Promise<void> {
+async function createDisplay(automatic = false, hidden = false): Promise<void> {
   if (display && !display.isDestroyed()) {
+    if (hidden) return;
+    if (!display.isVisible()) {
+      const target = host && selectSingerDisplay(screen.getAllDisplays(), host.getBounds(), lastSingerDisplayId);
+      if (target) {
+        display.setBounds({ ...target.workArea, width: Math.min(1280, target.workArea.width), height: Math.min(800, target.workArea.height) });
+        displayId = target.id; displayOutputIds = new Set([target.id]); rememberSingerDisplay(target.id);
+      }
+    }
     if (automatic) display.showInactive(); else { display.show(); display.focus(); }
+    if (settings.singerDisplayFullscreen) displayFullscreen?.set(true);
     return;
   }
-  if (displayCreation) return displayCreation;
-  const creation = createDisplayWindow(automatic);
+  if (displayCreation) { await displayCreation; return createDisplay(automatic, hidden); }
+  const creation = createDisplayWindow(automatic, hidden);
   displayCreation = creation;
   try { await creation; } finally { if (displayCreation === creation) displayCreation = null; }
 }
-async function createDisplayWindow(automatic: boolean): Promise<void> {
+async function createDisplayWindow(automatic: boolean, hidden: boolean): Promise<void> {
   if (!host || host.isDestroyed() || shuttingDown) return;
   let selectedId: number | undefined;
   if (automatic) {
@@ -525,7 +588,8 @@ async function createDisplayWindow(automatic: boolean): Promise<void> {
   displayReady = false;
   display = new BrowserWindow({ x: target.workArea.x, y: target.workArea.y,
     width: Math.min(1280, target.workArea.width), height: Math.min(800, target.workArea.height), title: 'Singer Display',
-    show: !automatic, backgroundColor: '#000000', icon: applicationIcon, webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
+    show: !automatic && !hidden, paintWhenInitiallyHidden: true, backgroundColor: '#000000', icon: applicationIcon,
+    webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false } });
   restrictWindow(display);
   const window = display;
   rememberSingerDisplay(target.id);
@@ -548,26 +612,32 @@ async function createDisplayWindow(automatic: boolean): Promise<void> {
   display.on('move', () => {
     if (display !== window || window.isDestroyed() || displayId === null) return;
     // The window manager can move a window before display-removed arrives.
-    if (!screen.getAllDisplays().some(m => m.id === displayId)) { loseDisplay(); return; }
+    if (!screen.getAllDisplays().some(m => m.id === displayId)) { if (window.isVisible()) loseDisplay(); return; }
     const previous = displayId;
     displayId = screen.getDisplayMatching(window.getBounds()).id;
     displayOutputIds.add(displayId);
     if (displayId !== previous) rememberSingerDisplay(displayId);
+  });
+  // The singer renderer is also the preview/audio authority. Hiding the window
+  // keeps a single player alive instead of duplicating sound in a preview.
+  display.on('close', event => {
+    if (shuttingDown) return;
+    event.preventDefault(); window.hide();
   });
   display.on('closed', () => {
     singerCapture.invalidate(); outputRecovery = null;
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     if (display !== window) return;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear();
-    automaticBumper.cancel(); bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
+    automaticBumper.cancel(); showAdvance.cancel(); bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
     if (pauseForOutputLoss()) warnDisplayLoss(); publishBumper();
   });
   void window.loadFile(join(uiRoot, 'display/index.html')).catch(loseDisplay);
-  if (automatic) window.showInactive();
-  if (settings.singerDisplayFullscreen) fullscreen.set(true);
+  if (automatic && !hidden) window.showInactive();
+  if (!hidden && settings.singerDisplayFullscreen) fullscreen.set(true);
 }
-async function ensureSingerDisplayReady(): Promise<void> {
-  await createDisplay(true);
+async function ensureSingerDisplayReady(showVisible = true): Promise<void> {
+  await createDisplay(true, !showVisible);
   const window = display;
   const deadline = performance.now() + 8000;
   for (;;) {
@@ -579,9 +649,10 @@ async function ensureSingerDisplayReady(): Promise<void> {
   }
 }
 function hostPlayPause(): Promise<TransportResult> {
+  showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false; autoStageSuspended = false;
   const recoveryIntent = outputRecovery ? { ...outputRecovery } : null;
   const playbackIntent = state.playback ? { ...state.playback } : null;
-  return hostTransport.run('playPause', async () => {
+  return hostTransport.run('playPause', async current => {
     if (shuttingDown) return { ok: false, error: 'The application is closing.' };
     if (playbackTimeline.snapshot().seeking) return { ok: false, error: 'Wait for the current seek to finish.' };
     if (playbackIntent?.status === 'playing') {
@@ -592,28 +663,31 @@ function hostPlayPause(): Promise<TransportResult> {
     if (!state.playback && !state.stagedRequestId) {
       const staged = await executeHostCommand({ type: 'stage' }, true);
       if (!staged.ok) return staged;
+      if (!current()) return { ok: false, error: 'Playback was cancelled.' };
     }
     const generation = state.playback?.generationId ?? null;
     const stagedId = state.stagedRequestId;
     const policyError = startPolicyError(state, { type: generation ? 'resume' : 'start' }, stagedId, settings);
     if (policyError) return { ok: false, error: policyError };
     await ensureSingerDisplayReady();
+    if (!current()) return { ok: false, error: 'Playback was cancelled.' };
     if (generation ? state.playback?.generationId !== generation || state.playback.status !== 'paused' : !!state.playback || state.stagedRequestId !== stagedId)
       return { ok: false, error: 'The selected track changed while opening the player. Review the queue and press Play again.' };
-    return executeHostCommand(generation ? { type: 'resume' } : { type: 'start', generationId: randomUUID() }, true, recoveryIntent);
+    return executeHostCommand(generation ? { type: 'resume' } : { type: 'start', generationId: randomUUID() }, true, recoveryIntent, undefined, current);
   });
 }
 function restartCurrentTrack(): Promise<TransportResult> {
   const recoveryIntent = outputRecovery ? { ...outputRecovery } : null;
-  return hostTransport.run('restart', async () => {
+  return hostTransport.run('restart', async current => {
     if (shuttingDown || playbackTransition || !displayReady || !display || display.isDestroyed()) return { ok: false, error: 'The singer player is not ready. Open it and resume the song before restarting.' };
     const generation = state.playback?.generationId;
     if (!generation) return { ok: false, error: 'There is no active song to restart.' };
     timelineState();
     const result = await playbackTimeline.seek({ generation, position: 0 });
+    if (!current()) return { ok: false, error: 'Playback was cancelled.' };
     if (!result.ok) return result;
     if (state.playback?.generationId !== generation) return { ok: false, error: 'The active song changed. Review the player before restarting.' };
-    return state.playback.status === 'paused' ? executeHostCommand({ type: 'resume' }, true, recoveryIntent) : { ok: true };
+    return state.playback.status === 'paused' ? executeHostCommand({ type: 'resume' }, true, recoveryIntent, undefined, current) : { ok: true };
   });
 }
 function isRecord(x: unknown): x is Record<string, unknown> { return !!x && typeof x === 'object' && !Array.isArray(x); }
@@ -661,9 +735,20 @@ function playable(command: Command): string | null {
   if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
 }
-async function executeHostCommand(command: Command, transportOwned = false, observedRecovery?: { generation: string; revision: number } | null): Promise<{ ok: boolean; error?: string }> {
+async function executeHostCommand(command: Command, transportOwned = false, observedRecovery?: { generation: string; revision: number } | null, automaticCurrent?: () => boolean, transportCurrent?: () => boolean): Promise<{ ok: boolean; error?: string }> {
+  // Invalidate delayed work at the host's intent, including while an async file
+  // check is busy, so Stop can never be followed by a late automatic start.
+  if (!automaticCurrent && ['pause', 'stop', 'release', 'start', 'resume'].includes(command.type)) { showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false; }
+  if (['pause', 'stop', 'release'].includes(command.type)) cancelPendingPlayback();
+  const intentCurrent = transportCurrent ?? hostTransport.capture();
+  const current = () => intentCurrent() && (!automaticCurrent || automaticCurrent());
+  if ((command.type === 'start' || command.type === 'resume') && !current()) return { ok: false, error: 'Playback was cancelled.' };
+  if (command.type === 'stop' && !state.playback) {
+    try { await bumper?.stop(); publishBumper(); return { ok: true }; }
+    catch { return { ok: false, error: 'Bumper audio did not confirm stopping. Check the audio output.' }; }
+  }
   const recoveryAtIntent = observedRecovery === undefined ? command.type === 'resume' && outputRecovery ? { ...outputRecovery } : null : observedRecovery;
-  if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'pause', 'stop', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
+  if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
     return { ok: false, error: 'Wait for the current playback transition to finish.' };
   const initialPolicyError = startPolicyError(state, command, undefined, settings);
   if (initialPolicyError) return { ok: false, error: initialPolicyError };
@@ -695,6 +780,7 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       const nativeRevision = karaFunAccount.revision();
       const pinned = command.type === 'resume' && activeKaraFun?.generation === state.playback?.generationId && activeKaraFun?.versionId === versionId ? activeKaraFun.media : undefined;
       const nativeMedia = nativeVersion ? await karaFunHost.authorizeStart(versionId!, pinned) : null;
+      if (!current()) return { ok: false, error: 'Playback was cancelled.' };
       const check = new AbortController(); mediaChecks.add(check);
       let sourceIdentity: MediaIdentity;
       try {
@@ -706,20 +792,27 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
           if (checked.fingerprint !== media.fingerprint) return { ok: false, error: 'The song file has changed since import. Relink the original file before playing.' };
           sourceIdentity = checked.identity;
         }
-      } catch { return { ok: false, error: 'The song file could not be verified. Check its location or relink the original file.' }; }
+      } catch { return { ok: false, error: current() ? 'The song file could not be verified. Check its location or relink the original file.' : 'Playback was cancelled.' }; }
       finally { mediaChecks.delete(check); }
       if (shuttingDown || !await mediaIdentityMatches(media.path, sourceIdentity)) return { ok: false, error: 'The song file changed during verification. Check or relink the original file.' };
+      if (!current()) return { ok: false, error: 'Playback was cancelled.' };
+      if (state.requests.find(item => item.id === requestId)?.versionId !== versionId) return { ok: false, error: 'The selected recording changed. Review the queue and press Play.' };
       const policyBeforeBumper = startPolicyError(state, command, requestId, settings);
       if (policyBeforeBumper) return { ok: false, error: policyBeforeBumper };
+      // A deliberate Play/Resume is also the recovery action after checking the
+      // output. Automatic advancement never re-enables a lost device itself.
+      if (!automaticCurrent) await bumper?.setOutputAvailable(true);
+      if (!current()) return { ok: false, error: 'Playback was cancelled.' };
       await bumper?.karaokeStarting();
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
       const stillMatches = await mediaIdentityMatches(media.path, sourceIdentity);
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
       const reason = startPolicyError(state, command, requestId, settings) || playable(command);
       const currentMedia = versionId && store.media(versionId);
-      if (reason || !currentMedia || currentMedia.path !== media.path || currentMedia.fingerprint !== media.fingerprint || !stillMatches) {
+      if (reason || !currentMedia || currentMedia.path !== media.path || currentMedia.fingerprint !== media.fingerprint || !stillMatches ||
+          state.requests.find(item => item.id === requestId)?.versionId !== versionId || !current()) {
         if (!state.playback) bumper?.karaokeEnded();
-        return { ok: false, error: reason || 'The song file changed during verification. Check or relink the original file.' };
+        return { ok: false, error: !current() ? 'Playback was cancelled.' : reason || 'The song file changed during verification. Check or relink the original file.' };
       }
       if (command.type === 'resume' && outputRecovery) {
         if (!recoveryAtIntent || recoveryAtIntent.generation !== outputRecovery.generation || recoveryAtIntent.revision !== outputRecovery.revision)
@@ -733,7 +826,7 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
         versionId: versionId!, media: nativeMedia, revision: nativeRevision };
       const result = perform(command);
       if (!result.ok) activeKaraFun = previousNative;
-      if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; }
+      if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; outputRecovery = null; }
       if (!result.ok && !state.playback) bumper?.karaokeEnded();
       return result.ok ? { ok: true } : { ok: false, error: result.message };
     } catch (error) {
@@ -882,6 +975,7 @@ else {
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   settingsCreated = !existsSync(settingsPath);
   settings = readSettings(settingsPath);
+  if (!settings.bannerOnLaunch) settings.bannerEnabled = false;
   const localData = process.platform === 'win32' ? process.env.LOCALAPPDATA : process.env.XDG_DATA_HOME || join(app.getPath('home'), '.local', 'share');
   communityBrowser = new LocalCommunityBrowser(join(localData || app.getPath('userData'), 'ProperKaraokeBooth', 'karaokenerds', 'community.sqlite'));
   sharedCatalog = new SharedCatalogConnection(join(app.getPath('userData'), 'shared-catalog-cache', 'queries.json'));
@@ -899,11 +993,11 @@ else {
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
-  karaFunAccount = new KaraFunAccount();
+  karaFunAccount = new KaraFunAccount({ sessionStore: new KaraFunSessionVault(join(app.getPath('userData'), 'karafun-session.bin')) });
   karaFunHost = new KaraFunHost(karaFunAccount, new KaraFunMediaCache(join(app.getPath('userData'), 'karafun-cache')), {
     state: () => state, settings: () => settings, media: id => store.media(id),
     commit: (next, media = []) => { if (shuttingDown) throw new Error('The application is closing.'); store.save(next, media); state = next; try { broadcast(); } catch { /* Durable success survives a closing view. */ } },
-    changed: () => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-preparations', karaFunHost.status()); },
+    changed: () => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-preparations', karaFunHost.status()); showAdvance.changed(); },
   });
   karaFunAccount.subscribe(value => {
     if (activeKaraFun) { pauseForOutputLoss(); activeKaraFun = null; publishDisplay(); }
@@ -956,9 +1050,8 @@ else {
     bumperOutput = new BumperDisplayOutput(request => {
       if (!display || display.isDestroyed() || !displayReady) throw new Error('Open the singer display first.');
       display.webContents.send('display:bumper-command', request);
-    }, () => settings.masterVolume, () => settings.audioOutputId);
+    }, () => settings.masterVolume, () => settings.audioOutputId, 5000, () => settings.bumperFadeMs);
     bumper = new BumperController(bumperOutput, () => [...builtInBumpers, ...(bumperCatalog?.forPlayback() ?? [])], publishBumper);
-    if (state.playback) await bumper.karaokeStarting();
   } catch (error) { bumper = null; bumperOutput = null; bumperError = error instanceof Error ? error.message : String(error); }
   protocol.handle('tpv-media', serveMedia);
   ipcMain.handle('host:cdg-status', event => { guardHost(event.sender.id); return cdgImport?.snapshot() ?? null; });
@@ -1320,6 +1413,7 @@ else {
       const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
       const disablingAutomaticBumper=settings.autoBumper && !proposed.autoBumper;
       if(changingOutput || proposed.autoBumper !== settings.autoBumper || proposed.autoBumperTrackId !== settings.autoBumperTrackId) automaticBumper.cancel();
+      if (changingOutput || !proposed.autoAdvance) showAdvance.cancel();
       if (changingOutput && playbackTransition) throw new Error('Wait for the current playback transition.');
       if (changingOutput) { playbackTransition = true; publishBumper(); }
       try {
@@ -1333,7 +1427,7 @@ else {
         if(disablingAutomaticBumper && bumper?.getState().status !== 'stopped') await bumper?.stop();
         settingsCreated = false;
         publishSettings();
-        if (changingOutput && displayReady) await bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default');
+        if (changingOutput && displayReady) await bumper?.setOutputAvailable(true);
         broadcast();
         if (youtubeSettingsChanged) youtubeSearch.cancel();
         await reconcileSingerScreen();
@@ -1367,15 +1461,18 @@ else {
       if (result.canceled || !result.filePaths[0]) return false;
       logoData = await saveLogo(result.filePaths[0], logoPath);
       publishDisplay();
+      if (host && !host.isDestroyed()) host.webContents.send('host:display-logo', logoData);
       return true;
     } finally { choosingLogo = false; }
   });
+  ipcMain.handle('host:get-display-logo', event => { guardHost(event.sender.id); return logoData; });
   ipcMain.handle('host:clear-display-logo', async event => {
     guardHost(event.sender.id);
     if (choosingLogo) throw new Error('Finish choosing a logo first.');
     try { await unlink(logoPath); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     logoData = null;
     publishDisplay();
+    if (host && !host.isDestroyed()) host.webContents.send('host:display-logo', logoData);
   });
   ipcMain.handle('host:toggle-display-fullscreen', event => {
     guardHost(event.sender.id);
@@ -1405,7 +1502,7 @@ else {
   ipcMain.handle('host:start-bumper', async (event, id: unknown) => {
     guardHost(event.sender.id);
     if (!bumper || typeof id !== 'string' || state.playback || playbackTransition) throw new Error('Bumper music is unavailable while a song or the YouTube player is active.');
-    if (!displayReady || !settings.audioOutputId || settings.audioOutputId === 'default') throw new Error('Choose an explicit audio output and open the singer display first.');
+    await ensureSingerDisplayReady(false);
     return youtubeAudioGate.startBumper(async () => {
       bumperError = '';
       await bumper!.setOutputAvailable(true);
@@ -1436,17 +1533,24 @@ else {
     if (!command) return { ok: false, error: 'Invalid or unsupported command.' };
     return executeHostCommand(command);
   });
-  ipcMain.on('display:ready', event => { if (!shuttingDown && senderIsDisplay(event.sender.id)) { displayReady = true; bumperOutput?.displayReady(); void bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default'); publishDisplay(); publishBumper(); } });
+  ipcMain.on('display:ready', event => {
+    if (!shuttingDown && senderIsDisplay(event.sender.id)) {
+      displayReady = true; bumperOutput?.displayReady();
+      void (bumper?.setOutputAvailable(true) ?? Promise.resolve()).then(startLaunchBumper).catch(error => { bumperError = String(error); publishBumper(); });
+      publishDisplay(); publishBumper(); showAdvance.changed();
+    }
+  });
   ipcMain.on('display:bumper-ack', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) bumperOutput?.acknowledge(value); });
   ipcMain.on('display:bumper-devicechange', event => {
     if (!senderIsDisplay(event.sender.id) || !bumper) return;
-    automaticBumper.cancel();
+    automaticBumper.cancel(); showAdvance.cancel(); startupBumperPending = false; cancelPendingPlayback();
     void bumper.setOutputAvailable(false).catch(error => { bumperError = String(error); }).finally(publishBumper);
   });
   ipcMain.on('display:bumper-event', (event, value: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !bumper || !isRecord(value) || typeof value.generation !== 'string') return;
     if (value.type === 'ended') void bumper.ended(value.generation).catch(error => { bumperError = String(error); publishBumper(); });
     else if (value.type === 'error' && bumper.getState().generation === value.generation) {
+      showAdvance.cancel(); automaticBumper.cancel();
       bumperError = 'Bumper audio could not play or its output changed. Check the output and try again.';
       void bumper.setOutputAvailable(false).catch(error => { bumperError = String(error); }).finally(publishBumper);
     }
@@ -1491,11 +1595,13 @@ else {
     if (!playbackTimeline.snapshot().seeking && typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);
     if (value.type === 'ended' && state.playback.status === 'playing') perform({ type: 'complete', generationId: state.playback.generationId }, 'engine');
     else if (value.type === 'output-error') {
+      showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false;
       if (typeof value.revision === 'number' && Number.isSafeInteger(value.revision) && value.revision > 0) outputRecovery = { generation: state.playback.generationId, revision: value.revision };
       singerCapture.invalidate();
       pauseForOutputLoss();
       if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Audio output needs attention', detail: typeof value.message === 'string' ? value.message.slice(0, 500) : 'Choose the output in Preferences and resume when ready.' });
     } else if (value.type === 'error') {
+      showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false;
       pauseForOutputLoss();
       if (reportedMediaError !== value.generation && host && !host.isDestroyed()) {
         reportedMediaError = value.generation as string;
@@ -1504,13 +1610,16 @@ else {
     }
   });
   screen.on('display-removed', (_event, removed) => {
-    if (displayOutputIds.has(removed.id) && display && !display.isDestroyed()) {
-      displayReady = false;
+    if (displayOutputIds.has(removed.id) && display && !display.isDestroyed() && display.isVisible()) {
+      showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false;
       if (pauseForOutputLoss()) warnDisplayLoss();
-      display.destroy();
+      display.hide();
     }
   });
   createHost();
+  broadcast();
+  void karaFunAccount.restore();
+  void ensureSingerDisplayReady(false).catch(error => { bumperError = error instanceof Error ? error.message : 'The preview player could not start.'; publishBumper(); });
   try { await reconcileLocalControl(); } catch { /* Core local show operation remains available. */ }
   syncQueuedDownloads();
   }).catch(error => {
@@ -1528,13 +1637,14 @@ function waitForImport(job: ImportJob): Promise<boolean> {
   });
 }
 app.on('before-quit', event => {
-  automaticBumper.close();
+  automaticBumper.close(); showAdvance.close();
+  cancelPendingPlayback();
   shuttingDown = true; for (const check of mediaChecks) check.abort();
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.setAudioMuted(true);
   if (display && !display.isDestroyed() && displayReady) display.webContents.send('display:state', { playback: null, next: [], logo: null, shortcuts, bumperVolume: 0 });
   const nativePending = karaFunHost?.needsShutdownWait() ?? false;
   const nativeShutdown = karaFunHost?.shutdown() ?? Promise.resolve();
-  void karaFunAccount?.disconnect(); activeKaraFun = null;
+  void karaFunAccount?.close(); activeKaraFun = null;
   youtubeSearch.cancel(); singerCapture.stop();
   const singerScreenWasActive = singerScreenServer.status().state !== 'stopped';
   const singerScreenShutdown = singerScreenServer.stop().then(() => true, () => false);

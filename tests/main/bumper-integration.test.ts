@@ -23,12 +23,16 @@ test('three original generated WAVs are installed without overwriting existing f
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('explicit sink and a stop acknowledgement are required before karaoke', async () => {
+test('the default sink is allowed, and a stop acknowledgement is required before karaoke', async () => {
   const messages: BumperDisplayRequest[] = [];
   let sink = '';
   const output = new BumperDisplayOutput(message => messages.push(message), () => .5, () => sink, 40);
   output.displayReady();
-  await assert.rejects(output.start({ id: 'x', name: 'X', path: '/x' }, 'g'), /explicit audio output/);
+  const defaultStart = output.start({ id: 'x', name: 'X', path: '/x' }, 'g');
+  const initial = messages.shift()!;
+  assert.equal(initial.action, 'start');
+  if (initial.action === 'start') { assert.equal(initial.deviceId, ''); assert.equal(initial.fadeMs, 1000); }
+  output.acknowledge({ id: initial.id, ok: true }); await defaultStart;
   sink = 'device-id';
   const controller = new BumperController(output, () => [{ id: 'x', name: 'X', path: '/x' }]);
   await controller.setOutputAvailable(true);

@@ -55,3 +55,60 @@ test('retired bumper events cannot affect a newer playing generation', async () 
     else Reflect.deleteProperty(globalThis, 'Audio');
   }
 });
+
+test('startup uses the default output, fades to the live volume, and cannot unmute after device loss', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  let audio!: FakeAudio, now = 0;
+  const ticks = new Set<() => void>();
+  class FakeAudio extends EventTarget {
+    src = ''; volume = 1; muted = false; paused = true; sink = 'initial';
+    constructor() { super(); audio = this; }
+    async setSinkId(id: string) { this.sink = id; }
+    async play() { this.paused = false; }
+    pause() { this.paused = true; }
+    removeAttribute() { this.src = ''; }
+    load() {}
+  }
+  Object.defineProperty(globalThis, 'Audio', { value: FakeAudio, configurable: true });
+  try {
+    let resolve!: (value: { ok: boolean }) => void;
+    const events: string[] = [];
+    const player = createBumperPlayer(value => resolve(value), value => events.push(value.type), {
+      now: () => now, every(tick) { ticks.add(tick); return () => { ticks.delete(tick); }; },
+    });
+    const started = new Promise<{ ok: boolean }>(done => { resolve = done; });
+    player.handle({ id: 'launch', action: 'start', generation: 'launch', src: 'theme', volume: .8, deviceId: 'default', fadeMs: 1000 });
+    assert.equal((await started).ok, true);
+    assert.equal(audio.sink, ''); assert.equal(audio.volume, 0); assert.equal(audio.paused, false);
+    now = 500; for (const tick of [...ticks]) tick(); assert.equal(audio.volume, .4);
+    player.setVolume(.6); assert.equal(audio.volume, .3);
+    now = 1000; for (const tick of [...ticks]) tick(); assert.equal(audio.volume, .6); assert.equal(ticks.size, 0);
+    const next = new Promise<{ ok: boolean }>(done => { resolve = done; });
+    player.handle({ id: 'next', action: 'start', generation: 'next', src: 'theme', volume: .8, deviceId: '', fadeMs: 1000 });
+    await next; assert.equal(ticks.size, 1);
+    player.muteForOutputChange(); assert.equal(ticks.size, 0); assert.equal(audio.muted, true);
+    now = 2000; for (const tick of [...ticks]) tick(); assert.equal(audio.volume, 0); assert.equal(audio.muted, true);
+    assert.deepEqual(events, ['error']);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'Audio', original); else Reflect.deleteProperty(globalThis, 'Audio');
+  }
+});
+
+test('default output works without sink selection support; an unavailable explicit device fails closed', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'Audio');
+  let plays = 0;
+  class FakeAudio extends EventTarget {
+    src = ''; volume = 1; muted = false;
+    async play() { plays++; } pause() {} removeAttribute() {} load() {}
+  }
+  Object.defineProperty(globalThis, 'Audio', { value: FakeAudio, configurable: true });
+  try {
+    let resolve!: (value: { ok: boolean; error?: string }) => void;
+    const player = createBumperPlayer(value => resolve(value), () => {});
+    const run = (deviceId: string) => new Promise<{ ok: boolean; error?: string }>(done => { resolve = done; player.handle({ id: deviceId, action: 'start', generation: deviceId, src: 'theme', volume: .5, deviceId }); });
+    assert.equal((await run('')).ok, true); assert.equal(plays, 1);
+    const failed = await run('missing-device'); assert.equal(failed.ok, false); assert.match(failed.error!, /cannot be selected/); assert.equal(plays, 1);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'Audio', original); else Reflect.deleteProperty(globalThis, 'Audio');
+  }
+});

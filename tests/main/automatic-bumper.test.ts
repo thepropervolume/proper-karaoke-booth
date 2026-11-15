@@ -73,3 +73,12 @@ test('missing silence acknowledgement times out without starting audio', async (
   assert.equal(starts, 0); assert.match(errors[0], /did not confirm silence/);
   assert.equal(await automation.acknowledge('song-1'), false); automation.close();
 });
+
+test('launch bumper needs no old playback acknowledgement and still honours cancellation during startup', async () => {
+  let ready = true, starts = 0, release!: () => void, valid!: () => boolean;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const automation = new AutomaticBumper(() => ready, async current => { starts++; valid = current; await gate; return current(); });
+  const startup = automation.startIdle(); assert.equal(starts, 1); assert.equal(valid(), true);
+  automation.cancel(); assert.equal(valid(), false); release(); assert.equal(await startup, false);
+  ready = false; assert.equal(await automation.startIdle(), false); assert.equal(starts, 1); automation.close();
+});

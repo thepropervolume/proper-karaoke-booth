@@ -32,6 +32,17 @@ export class AutomaticBumper {
     catch (error) { this.report(error instanceof Error ? error.message : 'Automatic bumper could not start.'); return false; }
   }
 
+  /** Startup has no old karaoke generation to silence. The same cancellation
+   * fence prevents a delayed start from surviving Play, Stop or output loss. */
+  async startIdle(): Promise<boolean> {
+    this.cancel();
+    const serial = this.generation;
+    const valid = () => !this.closed && serial === this.generation && this.eligible();
+    if (!valid()) return false;
+    try { return await this.start(valid); }
+    catch (error) { this.report(error instanceof Error ? error.message : 'Bumper music could not start.'); return false; }
+  }
+
   /** Invalidate pending/in-flight automation before output loss, a new song or manual stop. */
   cancel(): void {
     this.generation++;

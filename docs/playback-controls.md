@@ -1,5 +1,9 @@
 # Track position and seeking
 
+Version 0.7.0 prepares approved requests automatically. Press **Play/Pause** to begin the staged first turn; it reveals the singer window on its remembered connected monitor, then the closest non-host screen, then the host screen. Preview works before that window is shown because one hidden singer renderer already exists. Closing the visible window hides it and retains the same preview/audio authority.
+
+Natural completion or confirmed Skip automatically starts the next eligible song after the saved gap and required media preparation when automatic advancement is enabled. Pending requests still need acceptance in moderation mode. A positive gap can play bumper music; zero permits a seamless next start. Stop cancels pending advancement and bumper audio even without an active karaoke generation. Pause retains the active turn. Errors and output/display loss require deliberate recovery; launch/restart never starts karaoke. Startup bumper is a separate enabled-by-default preference.
+
 The host's bottom transport includes a playback-position slider, elapsed and remaining time, and Rewind/Forward 10 seconds. Drag the slider or use its arrow, Page Up/Down, Home and End keys. Controls are disabled until the active player reports a finite duration and seekable media.
 
 Seeking a paused performance keeps it paused. Only the current generation may acknowledge a seek; stale events from an earlier performance cannot update the current position. An acknowledged position is saved through the existing authority and is restored paused after restart. Seeking very near the endpoint can still lead naturally to the song ending when it plays.

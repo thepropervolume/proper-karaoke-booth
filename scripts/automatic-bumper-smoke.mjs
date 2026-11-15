@@ -1,5 +1,6 @@
 // Isolated, muted Electron rehearsal. Builds into a temporary directory and
-// uses a synthetic output device; this does not verify real speakers or routing.
+// exercises the default output without audible sound; this does not verify
+// physical speakers, monitor hot-plug or real hardware routing.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -16,9 +17,14 @@ const { _electron: electron } = require('playwright-core');
 const tempRoot = await realpath(tmpdir()), temp = await mkdtemp(join(tempRoot, 'tpv-auto-bumper-'));
 const profile = join(temp, 'profile'), stage = join(temp, 'stage'); await mkdir(profile); await mkdir(stage);
 const canonicalProfile = await realpath(profile), fixture = join(temp, 'Synthetic Artist - Intermission.mp4');
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false,
+  providerCatalogEnabled: false, youtubeSearchEnabled: false, localControlEnabled: false, singerScreenEnabled: false,
+  hostPreviewPosition: 'above', autoAdvance: true, autoBumper: true, bumperOnLaunch: true, bumperFadeMs: 1000,
+  autoBumperTrackId: 'builtin-sunset', pauseIntervalSeconds: 2, masterVolume: 0, lyricBackdrop: 'none' }));
 const bootstrap = join(temp, 'bootstrap.cjs');
-await writeFile(bootstrap, `const {app}=require('electron'); const fs=require('node:fs'); app.setPath('userData',process.env.TPV_QA_PROFILE); if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_QA_PROFILE))throw Error('Unsafe profile'); require(process.env.TPV_QA_ENTRY);`);
+await writeFile(bootstrap, `const {app,dialog}=require('electron'); const fs=require('node:fs'); app.setPath('userData',process.env.TPV_QA_PROFILE); app.setAppPath(process.env.TPV_QA_REPO); if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_QA_PROFILE))throw Error('Unsafe profile'); globalThis.fetch=async()=>{throw Error('External requests disabled in automation rehearsal');}; dialog.showMessageBox=async()=>({response:0,checkboxChecked:false}); require(process.env.TPV_QA_ENTRY);`);
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: join(stage, 'dist/main/index.cjs'),
+  TPV_QA_REPO: repo,
   APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'), XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data') };
 delete env.ELECTRON_RUN_AS_NODE;
 const args = [bootstrap, `--user-data-dir=${canonicalProfile}`, '--mute-audio'];
@@ -31,8 +37,8 @@ async function poll(read, predicate, description) {
 const launch = async () => {
   app = await electron.launch({ executablePath: require('electron'), args, env, cwd: repo, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile, 'Refusing to use a non-disposable profile.');
-  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false }); });
-  const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv); return host;
+  const host = await poll(async () => app.windows().find(page => page.url().includes('/renderer/')), value => !!value, 'host window');
+  await host.waitForFunction(() => !!window.tpv); return host;
 };
 try {
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=navy:s=320x180:r=10:d=5', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', fixture], { windowsHide: true });
@@ -40,53 +46,58 @@ try {
     rollupOptions: { input: { host: join(repo, 'src/renderer/index.html'), display: join(repo, 'src/display/index.html'), singer: join(repo, 'src/remote/index.html') } } } });
   await Promise.all(['main', 'preload'].map(name => bundle({ entryPoints: [join(repo, `src/${name}/index.ts`)], outfile: join(stage, `dist/${name}/index.cjs`), bundle: true, platform: 'node', format: 'cjs', target: 'node24', external: ['electron'] })));
   let host = await launch();
+  await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'startup bumper on the default output');
+  await poll(() => host.evaluate(() => window.tpv.singerScreens.preview()), frame => !!frame?.image, 'preview with no visible singer window');
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/'))?.isVisible()), false);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'Launch must never start karaoke.');
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, fixture);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   await poll(() => host.evaluate(() => window.tpv.getState()), value => value.versions.length === 1, 'synthetic import');
   const version = (await host.evaluate(() => window.tpv.getState())).versions[0];
   const send = async command => { const result = await host.evaluate(c => window.tpv.command(c), command); assert.equal(result.ok, true, result.error); };
   await send({ type: 'addSinger', singer: { id: 'auto-bumper-singer', name: 'QA Singer' } });
   for (const requestId of ['auto-one', 'auto-two', 'auto-three']) await send({ type: 'request', requestId, singerId: 'auto-bumper-singer', versionId: version.id });
-  const displayPromise = app.waitForEvent('window'); await host.evaluate(() => window.tpv.openDisplay());
-  const display = await displayPromise; await display.locator('video').waitFor({ state: 'attached' });
-  await display.evaluate(() => {
-    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { enumerateDevices: async () => [{ kind: 'audiooutput', deviceId: 'qa-output', label: 'Synthetic output' }] } });
-    Object.defineProperty(HTMLMediaElement.prototype, 'setSinkId', { configurable: true, value: async () => {} });
-  });
-  await host.evaluate(async () => {
-    const { settings } = await window.tpv.getSettings();
-    await window.tpv.saveSettings({ ...settings, audioOutputId: 'qa-output', masterVolume: 0, autoBumper: true, autoBumperTrackId: 'builtin-sunset', pauseIntervalSeconds: 3 });
-  });
-  assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped', 'Enabling preferences must not autoplay.');
-  await send({ type: 'stage' }); await send({ type: 'start', generationId: crypto.randomUUID() });
+  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'auto-one', 'Approved requests prepare automatically.');
+  const display = app.windows().find(page => page !== host); assert.ok(display, 'The hidden singer renderer must exist.');
+  const played = await host.evaluate(() => window.tpv.playPause()); assert.equal(played.ok, true, played.error);
   await display.waitForFunction(() => { const v = document.querySelector('video'); return v && v.videoWidth > 0 && !v.paused; }, null, { timeout: 15000 });
-  await display.locator('video').evaluate(v => { v.currentTime = v.duration - 0.15; });
+  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'auto-two');
+  assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped');
+  // Native Close hides the same renderer. Capturing it must not reopen it or
+  // create a second audio player when the next singer begins.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/')).close());
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/'))?.isVisible()), false);
+  await poll(() => host.evaluate(() => window.tpv.singerScreens.preview()), frame => !!frame?.image, 'playing preview after hiding the singer window');
+  await display.locator('#video').evaluate(v => { v.currentTime = v.duration - 0.15; });
   await poll(() => host.evaluate(() => window.tpv.getState()), s => s.requests.some(r => r.id === 'auto-one' && r.status === 'completed'), 'natural completion');
   const firstBumper = await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'automatic bumper after completion');
   assert.equal(firstBumper.status.trackId, 'builtin-sunset', 'Use the saved automatic track.');
-  assert.equal(await display.locator('video').evaluate(v => v.paused && v.muted), true, 'Bumper must start only after karaoke is silent.');
-  await send({ type: 'stage' });
-  const tooSoon = await host.evaluate(() => window.tpv.command({ type: 'start', generationId: crypto.randomUUID() }));
-  assert.equal(tooSoon.ok, false, 'Pause interval should prevent starting immediately.');
-  await poll(() => host.evaluate(() => window.tpv.getState()), s => Date.now() >= s.nextStartAtMs, 'pause interval');
-  await send({ type: 'start', generationId: crypto.randomUUID() });
+  assert.equal(await display.locator('#video').evaluate(v => v.paused && v.muted), true, 'Bumper must start only after karaoke is silent.');
+  const firstGap = (await host.evaluate(() => window.tpv.getState())).nextStartAtMs;
+  assert.ok(firstGap > Date.now(), 'The gap must remain active while the bumper plays.');
+  await poll(() => host.evaluate(() => window.tpv.getState()), s => s.playback?.requestId === 'auto-two', 'next singer without another Play click');
+  assert.ok(Date.now() >= firstGap, 'Automatic playback must respect the entire gap.');
   assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped', 'Karaoke must wait for bumper silence.');
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/'))?.isVisible()), false, 'Automatic playback must preserve the hidden singer window.');
   const generation = (await host.evaluate(() => window.tpv.getState())).playback.generationId;
   await send({ type: 'skip', generationId: generation, confirmed: true });
   await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'automatic bumper after skip');
-  await send({ type: 'stage' });
-  await poll(() => host.evaluate(() => window.tpv.getState()), s => Date.now() >= s.nextStartAtMs, 'second pause interval');
-  await send({ type: 'start', generationId: crypto.randomUUID() }); await send({ type: 'stop' });
-  await new Promise(resolve => setTimeout(resolve, 250));
-  assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped', 'Stop must not start bumper.');
+  // Stop during an interlude cancels the pending start even though no karaoke
+  // generation is active; the queued request remains staged for a deliberate Play.
+  await send({ type: 'stop' });
+  await new Promise(resolve => setTimeout(resolve, 2300));
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'auto-three');
+  assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped');
+  const resumed = await host.evaluate(() => window.tpv.playPause()); assert.equal(resumed.ok, true, resumed.error);
+  await send({ type: 'pause' });
   await app.close(); app = undefined;
   host = await launch();
-  const afterRestart = await host.evaluate(() => window.tpv.getBumpers());
-  assert.equal(afterRestart.status.status, 'stopped'); assert.equal(afterRestart.outputReady, false, 'Restart must not reopen the output.');
+  const afterRestart = await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'launch bumper with an interrupted paused performance');
+  assert.equal(afterRestart.outputReady, true);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'paused', 'Restart must not resume karaoke.');
   assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.autoBumperTrackId, 'builtin-sunset', 'Selected bumper track must survive restart.');
-  await host.getByRole('button', { name: 'Preferences' }).click(); await host.getByText('Audio Controls', { exact: true }).click();
-  await host.getByText('Automatic bumper is waiting for an explicit output and an open singer display.').waitFor();
-  console.log('PASS: muted synthetic completion and skip trigger acknowledged intermission; pause interval, host-start stop, Stop, restart and unavailable output are guarded. No physical audio was tested.');
+  console.log('PASS: hidden preview and launch bumper use one default-output renderer; approved requests stage; natural completion and Skip advance after an acknowledged bumper gap; Stop fences delayed starts; restart leaves karaoke paused. Audio was muted; physical routing was not tested.');
 } finally {
   if (app) await app.close().catch(() => {});
   const actual = await realpath(temp);

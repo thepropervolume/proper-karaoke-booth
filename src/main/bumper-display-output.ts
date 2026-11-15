@@ -1,19 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { BumperOutput, BumperTrack } from './bumper-controller';
 
-export type BumperDisplayRequest = { id: string; action: 'start'; generation: string; src: string; volume: number; deviceId: string } | { id: string; action: 'stop' };
+export type BumperDisplayRequest = { id: string; action: 'start'; generation: string; src: string; volume: number; deviceId: string; fadeMs: number } | { id: string; action: 'stop' };
 type Pending = { action: 'start' | 'stop'; resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 
 /** Only pass acknowledgements from the currently authorised display renderer. */
 export class BumperDisplayOutput implements BumperOutput {
   private pending = new Map<string, Pending>();
   private attached = false;
-  constructor(private send: (request: BumperDisplayRequest) => void, private volume: () => number, private deviceId: () => string, private timeoutMs = 5000) {}
+  constructor(private send: (request: BumperDisplayRequest) => void, private volume: () => number, private deviceId: () => string, private timeoutMs = 5000, private fadeMs: () => number = () => 1000) {}
   displayReady(): void { this.attached = true; }
   async start(_track: BumperTrack, generation: string): Promise<void> {
-    if (!this.attached || !this.deviceId() || this.deviceId() === 'default') throw new Error('Select an explicit audio output before playing bumper music.');
+    if (!this.attached) throw new Error('The singer player is not ready for bumper music.');
     await this.request({ id: randomUUID(), action: 'start', generation,
-      src: `tpv-media://bumper/${encodeURIComponent(generation)}`, volume: this.volume(), deviceId: this.deviceId() });
+      src: `tpv-media://bumper/${encodeURIComponent(generation)}`, volume: this.volume(), deviceId: this.deviceId(), fadeMs: this.fadeMs() });
   }
   async stop(): Promise<void> { if (this.attached) await this.request({ id: randomUUID(), action: 'stop' }); }
   acknowledge(value: unknown): void {
