@@ -6,7 +6,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { copyFile, mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const [repoArg, fixtureArg] = process.argv.slice(2);
 if (!repoArg || !fixtureArg) throw new Error('Usage: node scripts/second-instance-smoke.mjs <repository> <synthetic-mp4>');
@@ -17,18 +17,24 @@ const { _electron: electron } = requireFromRepo('playwright-core');
 const executablePath = requireFromRepo('electron');
 if (typeof executablePath !== 'string') throw new Error('Platform-native Electron is required.');
 const entry = await realpath(join(repo, 'dist/main/index.cjs'));
-const temp = await mkdtemp(join(tmpdir(), 'tpv-instance-qa-'));
+const temporaryRoot = await realpath(tmpdir()), temp = await mkdtemp(join(temporaryRoot, 'tpv-instance-qa-'));
 const profile = join(temp, 'profile'); await mkdir(profile);
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false, providerCatalogEnabled: false,
+  youtubeSearchEnabled: false, autoBumper: false, bumperOnLaunch: false, autoAdvance: false, singerScreenEnabled: false }));
 const canonicalProfile = await realpath(profile), bootstrap = join(temp, 'bootstrap.cjs'), video = join(temp, 'QA Artist - Synthetic Song.mp4');
 await copyFile(fixture, video);
-await writeFile(bootstrap, `const { app } = require('electron');\nconst fs = require('node:fs');\napp.setPath('userData', process.env.TPV_QA_PROFILE);\nif (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(process.env.TPV_QA_PROFILE)) throw new Error('Unsafe test profile');\nrequire(process.env.TPV_QA_ENTRY);\n`);
+await writeFile(bootstrap, `const { app, session } = require('electron');\nconst fs = require('node:fs');\napp.setPath('userData', process.env.TPV_QA_PROFILE);\nif (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(process.env.TPV_QA_PROFILE)) throw new Error('Unsafe test profile');\nglobalThis.fetch=async()=>{throw Error('External requests disabled for second-instance rehearsal.');};\napp.whenReady().then(()=>session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_details,done)=>done({cancel:true})));\nrequire(process.env.TPV_QA_ENTRY);\n`);
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: entry,
-  XDG_CONFIG_HOME: join(temp, 'xdg-config'), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata') };
+  XDG_CONFIG_HOME: join(temp, 'xdg-config'), XDG_DATA_HOME: join(temp, 'xdg-data'), APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata') };
 delete env.ELECTRON_RUN_AS_NODE;
 const args = [bootstrap, `--user-data-dir=${canonicalProfile}`, '--mute-audio'];
 if (process.env.TPV_TEST_NO_SANDBOX === '1') args.push('--no-sandbox');
 
 let app, second;
+async function hostWindow(instance) {
+  for (let n = 0; n < 300; n++) { const page = instance.windows().find(value => value.url().includes('/renderer/')); if (page) { await page.waitForFunction(() => !!window.tpv); return page; } await new Promise(resolve => setTimeout(resolve, 50)); }
+  throw Error('Host window did not load.');
+}
 const launch = async () => {
   const instance = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await instance.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile, 'Refusing to use a non-disposable profile.');
@@ -46,7 +52,7 @@ const exited = (child, timeoutMs = 15000) => new Promise((resolve, reject) => {
 });
 try {
   app = await launch();
-  const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv);
+  const host = await hostWindow(app);
   await host.evaluate(() => window.tpv.importFiles('files'));
   for (let attempt = 0; attempt < 200; attempt++) {
     if ((await host.evaluate(() => window.tpv.getState())).versions.length === 1) break;
@@ -56,7 +62,7 @@ try {
   await host.evaluate(async () => {
     const current = await window.tpv.getState(), singerId = crypto.randomUUID();
     for (const command of [ { type: 'addSinger', singer: { id: singerId, name: 'QA Singer' } },
-      { type: 'request', requestId: crypto.randomUUID(), singerId, versionId: current.versions[0].id }, { type: 'stage' } ]) {
+      { type: 'request', requestId: crypto.randomUUID(), singerId, versionId: current.versions[0].id } ]) {
       const result = await window.tpv.command(command); if (!result.ok) throw new Error(result.error);
     }
     await window.tpv.openDisplay();
@@ -64,7 +70,7 @@ try {
   let display;
   for (let i = 0; i < 100 && !display; i++) { display = app.windows().find(window => window !== host); if (!display) await new Promise(resolve => setTimeout(resolve, 100)); }
   assert.ok(display, 'Singer display did not open.');
-  await display.locator('video').waitFor({ state: 'attached' });
+  await display.locator('#video').waitFor({ state: 'attached' });
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await display.waitForFunction(() => { const video = document.querySelector('video'); return video && video.videoWidth > 0 && !video.paused; }, null, { timeout: 15000 });
   const before = await host.evaluate(() => window.tpv.getState());
@@ -79,24 +85,28 @@ try {
   assert.equal(after.hostEpoch, before.hostEpoch); assert.equal(after.revision, before.revision);
   assert.deepEqual(after.playback, before.playback); assert.deepEqual(after.requests, before.requests);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), windowCount);
-  assert.equal(await display.locator('video').evaluate(video => video.paused), false, 'Second launch interrupted playback.');
+  assert.equal(await display.locator('#video').evaluate(video => video.paused), false, 'Second launch interrupted playback.');
 
   const firstProcess = app.process(), firstExit = exited(firstProcess);
   if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(firstProcess.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
   else firstProcess.kill('SIGKILL');
   await firstExit; app = undefined;
   app = await launch();
-  const restoredHost = await app.firstWindow(); await restoredHost.waitForFunction(() => !!window.tpv);
+  const restoredHost = await hostWindow(app);
   const restored = await restoredHost.evaluate(() => window.tpv.getState());
   assert.notEqual(restored.hostEpoch, before.hostEpoch);
   assert.equal(restored.playback?.status, 'paused');
   assert.equal(restored.playback?.generationId, before.playback.generationId);
   assert.equal(restored.playback?.requestId, before.playback.requestId);
   assert.deepEqual(restored.requests, before.requests);
-  assert.equal(app.windows().length, 1, 'Restart must not open a singer display or start playback automatically.');
+  for (let n = 0; n < 100 && !app.windows().some(page => page.url().includes('/display/')); n++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(app.windows().length, 2, 'Restart keeps one host and one hidden preview/audio renderer.');
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/'))?.isVisible()), false, 'Recovery must not open a visible singer window.');
+  assert.deepEqual(restored.usedGenerationIds, before.usedGenerationIds, 'Recovery must not allocate a new playback generation.');
   console.log('PASS: a second instance exited during muted playback without changing the active show; forced termination restored the same performance paused with a new host epoch.');
 } finally {
   if (second && second.exitCode === null && second.signalCode === null) { second.kill(); await exited(second).catch(() => {}); }
   if (app) await app.close().catch(() => {});
-  await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
+  const actual = await realpath(temp); if (dirname(actual) !== temporaryRoot || !actual.split(/[\\/]/).at(-1).startsWith('tpv-instance-qa-')) throw Error('Unsafe second-instance cleanup path.');
+  await rm(actual, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
 }

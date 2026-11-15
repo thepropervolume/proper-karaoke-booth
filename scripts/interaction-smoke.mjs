@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, copyFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const [repoArg, fixtureArg] = process.argv.slice(2);
@@ -21,12 +21,13 @@ const { _electron: electron } = requireFromRepo('playwright-core');
 const executablePath = requireFromRepo('electron');
 if (typeof executablePath !== 'string') throw new Error('Platform-native Electron is not installed for this environment.');
 
-const temp = await mkdtemp(join(tmpdir(), 'tpv-ui-qa-'));
+const temporaryRoot = await realpath(tmpdir()), temp = await mkdtemp(join(temporaryRoot, 'tpv-ui-qa-'));
 const profile = join(temp, 'profile');
 await mkdir(profile);
 const canonicalProfile = await realpath(profile);
 // This fixture exercises the seeded local catalog, never the public service.
-await writeFile(join(profile, 'settings.json'), JSON.stringify({ sharedCatalogEnabled: false, providerCatalogEnabled: false }));
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false, providerCatalogEnabled: false,
+  youtubeSearchEnabled: false, autoBumper: false, bumperOnLaunch: false, autoAdvance: false, singerScreenEnabled: false }));
 const localCatalogBase = join(temp, process.platform === 'win32' ? 'localappdata' : 'xdg-data');
 const localCatalogDir = join(localCatalogBase, 'ProperKaraokeBooth', 'karaokenerds');
 await mkdir(localCatalogDir, { recursive: true });
@@ -46,7 +47,7 @@ await writeFile(wrongFixture, 'a different synthetic file');
 const logoFixture = join(temp, 'logo.png');
 await writeFile(logoFixture, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aWQAAAAASUVORK5CYII=', 'base64'));
 // Set and check userData before the real main bundle can open its database.
-await writeFile(bootstrap, `const { app } = require('electron');\nconst fs = require('node:fs');\napp.setPath('userData', process.env.TPV_QA_PROFILE);\nif (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(process.env.TPV_QA_PROFILE)) throw new Error('Unsafe userData path');\nrequire(process.env.TPV_QA_ENTRY);\n`);
+await writeFile(bootstrap, `const { app, session } = require('electron');\nconst fs = require('node:fs');\napp.setPath('userData', process.env.TPV_QA_PROFILE);\nif (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(process.env.TPV_QA_PROFILE)) throw new Error('Unsafe userData path');\nglobalThis.fetch=async()=>{throw Error('External requests disabled for the interaction rehearsal.');};\napp.whenReady().then(()=>session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_details,done)=>done({cancel:true})));\nrequire(process.env.TPV_QA_ENTRY);\n`);
 
 let app;
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: entry,
@@ -54,6 +55,10 @@ const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: en
 delete env.ELECTRON_RUN_AS_NODE;
 const args = [bootstrap, `--user-data-dir=${canonicalProfile}`, '--mute-audio'];
 if (process.env.TPV_TEST_NO_SANDBOX === '1') args.push('--no-sandbox');
+async function hostWindow(instance) {
+  for (let n = 0; n < 300; n++) { const page = instance.windows().find(value => value.url().includes('/renderer/')); if (page) { await page.waitForFunction(() => !!window.tpv); return page; } await new Promise(resolve => setTimeout(resolve, 50)); }
+  throw Error('Host window did not load.');
+}
 
 try {
   app = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
@@ -65,7 +70,7 @@ try {
     dialog.showOpenDialog = async (_window, options) => ({ canceled: false, filePaths: [options?.title === 'Choose singer display logo' ? paths.logo : options?.title === 'Choose bumper music' ? paths.bumper : options?.title === 'Relink original video file' ? globalThis.tpvRelinkChoice : paths.video] });
     dialog.showMessageBox = async (_window, options) => { globalThis.tpvWarnings.push(options); return { response: 0, checkboxChecked: false }; };
   }, { video: copiedFixture, logo: logoFixture, bumper: join(canonicalProfile, 'bumper-builtins', 'builtin-ambient-v1.wav'), wrong: wrongFixture });
-  const host = await app.firstWindow();
+  const host = await hostWindow(app);
   const untilState = async (predicate, description) => {
     for (let attempt = 0; attempt < 200; attempt++) {
       const state = await host.evaluate(() => window.tpv.getState());
@@ -105,7 +110,7 @@ try {
   await templates.fill('${DJ Code} - ${Artist} - ${Track Name}');
   await host.locator('summary').filter({ hasText: /^Singer Display$/ }).click();
   await host.getByLabel('Show the next singers').check();
-  await host.getByRole('button', { name: 'Choose logo…' }).click();
+  await host.getByRole('button', { name: 'Choose Logo…' }).click();
   await host.getByText('Audio Controls', { exact: true }).click();
   await host.getByLabel('Pause Interval (seconds)').fill('2');
   const outputPicker = host.getByRole('combobox', { name: 'Output Device' });
@@ -134,7 +139,7 @@ try {
   await librarySearch.fill('.mp4');
   await songs.getByRole('option').filter({ hasText: 'Popular' }).waitFor();
   await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('missing-artist');
-  await host.getByText('No local or Karaoke Nerds songs match this search or filter.').waitFor();
+  await host.getByText('No matching songs.', { exact: true }).waitFor();
   await host.getByRole('combobox', { name: 'Filter songs' }).selectOption('all');
   await host.getByRole('combobox', { name: 'Sort songs' }).selectOption('title-asc');
   await librarySearch.clear();
@@ -174,24 +179,24 @@ try {
     await dialog.waitFor({ state: 'hidden' });
   };
   await requestSong();
-  await untilState(state => state.requests.some(r => r.status === 'accepted'), 'accepted request');
+  await untilState(state => state.requests.some(r => r.status === 'staged'), 'automatically prepared request');
   const rotation = host.getByRole('listbox', { name: 'Singer Rotation' });
   const queued = rotation.getByRole('option').filter({ hasText: 'QA Singer' });
   await queued.click();
   await songRow.click();
   await host.keyboard.press('Delete');
   await host.waitForTimeout(200);
-  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.filter(r => r.status === 'accepted').length, 1, 'Delete in the song library must not remove the selected queue request.');
-  await host.getByRole('button', { name: 'Stage next' }).focus();
+  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.filter(r => r.status === 'staged').length, 1, 'Delete in the song library must not remove the selected queue request.');
+  await host.getByRole('button', { name: 'Singer display', exact: true }).focus();
   await host.keyboard.press('Delete');
   await host.waitForTimeout(200);
-  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.filter(r => r.status === 'accepted').length, 1, 'Delete on an unrelated button must not remove the selected queue request.');
+  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.filter(r => r.status === 'staged').length, 1, 'Delete on an unrelated button must not remove the selected queue request.');
   await queued.focus();
   await host.keyboard.press('Delete');
   await untilState(state => state.requests.some(r => r.status === 'removed'), 'queue removal');
 
   await requestSong();
-  await untilState(state => state.requests.filter(r => r.status === 'accepted').length === 1, 'second request');
+  await untilState(state => state.requests.filter(r => r.status === 'staged').length === 1, 'second prepared request');
   await host.getByRole('button', { name: 'Singer display', exact: true }).click();
   let display;
   for (let n = 0; n < 100 && !display; n++) {
@@ -200,7 +205,7 @@ try {
   }
   assert.ok(display, 'Singer display did not open.');
   assert.equal(await display.evaluate(async () => { try { await window.tpv.remote.status(); return false; } catch { return true; } }), true, 'The singer window must not access host remote controls.');
-  await display.locator('video').waitFor({ state: 'attached' });
+  await display.locator('#video').waitFor({ state: 'attached' });
   await display.getByText('Coming up: QA Singer').waitFor();
   await display.waitForFunction(() => { const logo = document.querySelector('#idle-logo'); return logo && !logo.hidden && logo.complete && logo.naturalWidth > 0; });
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
@@ -238,14 +243,17 @@ try {
   assert.ok((await app.evaluate(() => globalThis.tpvWarnings)).some(w => w.message === 'Song playback paused' && /codec/i.test(w.detail)), 'Host must receive an actionable playback warning.');
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await untilState(state => state.playback?.status === 'playing', 'resume after playback warning');
-  await display.close();
-  await untilState(state => state.playback?.status === 'paused', 'singer display close pause');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/')).close());
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback?.status, 'playing', 'Closing the visible singer window keeps the single preview/audio renderer playing.');
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/')).isVisible()), false);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/')).destroy());
+  await untilState(state => state.playback?.status === 'paused', 'singer renderer loss pause');
   assert.ok((await app.evaluate(() => globalThis.tpvWarnings)).some(w => w.message === 'Singer display closed'), 'Host must be told how to recover from display loss.');
   await host.getByRole('button', { name: 'Singer display', exact: true }).click();
   display = undefined;
   for (let n = 0; n < 100 && !display; n++) { display = app.windows().find(w => w !== host); if (!display) await new Promise(r => setTimeout(r, 100)); }
   assert.ok(display, 'Singer display did not reopen.');
-  await display.locator('video').waitFor({ state: 'attached' });
+  await display.locator('#video').waitFor({ state: 'attached' });
   await display.getByText('QA Singer · Popular', { exact: true }).waitFor();
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await untilState(state => state.playback?.status === 'playing', 'resume after display reopened');
@@ -256,7 +264,7 @@ try {
   assert.equal(await display.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight), true);
   await display.evaluate(() => navigator.mediaDevices.dispatchEvent(new Event('devicechange')));
   await untilState(state => state.playback?.status === 'paused', 'audio device change pause');
-  assert.equal(await display.locator('video').evaluate(video => video.muted && video.paused), true);
+  assert.equal(await display.locator('#video').evaluate(video => video.muted && video.paused), true);
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await untilState(state => state.playback?.status === 'playing', 'explicit resume after device change');
   await display.bringToFront();
@@ -268,13 +276,13 @@ try {
   await display.waitForFunction(() => document.querySelector('video')?.paused === false);
   await host.bringToFront();
   await requestSong();
-  await untilState(state => state.requests.some(r => r.status === 'accepted'), 'next song queued');
+  await untilState(state => state.requests.some(r => r.status === 'staged'), 'next song prepared');
   await host.getByRole('button', { name: 'Skip', exact: true }).click();
   await untilState(state => state.requests.some(r => r.status === 'skipped'), 'skip');
   await host.waitForFunction(() => document.querySelector('button[aria-label="Play/Pause"]')?.disabled);
   assert.equal(await host.getByRole('button', { name: 'Play/Pause', exact: true }).isDisabled(), true, 'The inter-song interval must block starting the next song.');
   await host.waitForFunction(() => !document.querySelector('button[aria-label="Play/Pause"]')?.disabled, null, { timeout: 5000 });
-  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'Ending the interval must not autoplay.');
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'With automatic advancement explicitly disabled, ending the interval must not autoplay.');
   await host.getByRole('button', { name: 'Playlists', exact: true }).click();
   await host.getByRole('button', { name: 'History', exact: true }).click();
   await host.getByText('QA Singer', { exact: false }).last().waitFor();
@@ -284,7 +292,7 @@ try {
   await app.close(); app = undefined;
   app = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile, 'Refusing restart with an unexpected userData path.');
-  const restored = await app.firstWindow();
+  const restored = await hostWindow(app);
   await restored.waitForFunction(() => !!window.tpv);
   const restoredHistory = (await restored.evaluate(() => window.tpv.getCollections())).history;
   assert.ok(restoredHistory.some(h => h.singerId === singer.id && h.versionId === song.id && h.outcome === 'skipped'), 'History did not persist across restart.');
@@ -292,7 +300,8 @@ try {
 } finally {
   if (app) await app.close().catch(() => {});
   // Only the exact directory created by mkdtemp for this run is removed.
-  await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
+  const actual = await realpath(temp); if (dirname(actual) !== temporaryRoot || !actual.split(/[\\/]/).at(-1).startsWith('tpv-ui-qa-')) throw Error('Unsafe interaction cleanup path.');
+  await rm(actual, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
 }
 
 

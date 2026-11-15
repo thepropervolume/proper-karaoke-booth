@@ -1,11 +1,30 @@
-# Crash and second-instance rehearsal
+# Show reliability rehearsals
 
-Build the app with platform-native Electron, then run the following with a generated synthetic MP4 long enough for the test; do not use a real song:
+Use platform-native Electron and a generated H.264/AAC MP4 at least 20 seconds long. Never use a real song or a host's existing profile. Run desktop checks in a desktop session, or under `xvfb-run` on Linux. Audio is muted; these checks do not verify physical speakers or displays.
+
+Build the current source before running the following scripts:
 
 ```text
+npm run build
+node scripts/rehearsal-smoke.mjs <synthetic-mp4>
+node scripts/interaction-smoke.mjs . <synthetic-mp4>
+node scripts/singer-availability-smoke.mjs
 node scripts/second-instance-smoke.mjs . <synthetic-mp4>
+node scripts/queue-edit-smoke.mjs
 ```
 
-The script creates and verifies a disposable user-data profile, copies the fixture into its own temporary directory, and mutes audio. It imports the fixture, creates a singer and request, opens the singer display, and starts playback. It then starts a second Electron process with the same disposable profile and verifies that it exits while the original show, playback generation and windows remain unchanged. It forcibly terminates only its own first test process, restarts against the same profile, and checks that the same performance and queue are recovered paused under a new host epoch, without opening a singer display or automatically starting playback. Its temporary files are removed when the run finishes.
+These scripts create and verify disposable profiles, disable external provider requests, and remove only their own temporary directories. The playback rehearsal covers the request dialog, automatic preparation, global search and Space shortcuts, uninterrupted playback when the visible singer window is closed, forced termination, paused recovery, natural completion, and stale decoder events. The interaction rehearsal checks focus-specific Delete behavior, metadata templates, changed-file refusal and exact-file relinking, bumper transitions, device-loss recovery, gap behavior with automatic advancement explicitly disabled, and persisted history. The availability rehearsal checks absence, early return, confirmation before releasing a prepared singer, persisted deadlines, and timed reintegration when no prepared song is locked. The queue rehearsal checks reordering and editing both waiting and prepared requests.
 
-This tests the operating-system single-instance path and one interrupted-performance recovery scenario. It does not establish that every crash point, power loss, database corruption, physical audio device, external display or operating-system account has been tested. A separate profile is a separate application instance; this check does not coordinate independent profiles that happen to refer to the same source media. See `scripts/rehearsal-smoke.mjs` for the separate synthetic playback, display-close and stale-media-event rehearsal.
+The second-instance rehearsal launches another process against the same disposable profile during playback. It checks that the duplicate exits without changing the host epoch, revision, queue, playback generation, or windows. It then terminates only its own process tree and verifies that the same performance restores paused under a new host epoch, without allocating a new generation. Recovery creates the hidden singer renderer used for preview and audio; it opens no visible singer window and starts no karaoke playback.
+
+The focused workspace, transport, and automatic-show rehearsals build into isolated temporary directories:
+
+```text
+node scripts/search-workspace-smoke.mjs
+node scripts/transport-display-smoke.mjs
+node scripts/automatic-bumper-smoke.mjs
+```
+
+These cover unified source results, global search from dialogs and other workspaces, immediate branding previews, a preview without a visible singer window, automatic gaps/bumper music, concurrent Play, and cancellation of pending playback by Stop or Pause. No script requires the removed **Stage next** button: approved requests prepare automatically. Closing the visible singer window hides its existing renderer; renderer destruction and output loss remain separate recovery cases.
+
+The four updated playback/interaction/availability/second-instance scripts were run successfully on Windows for 0.7.0 with synthetic media and muted audio. They do not establish that every crash point, power loss, database corruption, codec, operating-system account, physical output, or monitor hot-plug scenario has been verified. Separate profiles are independent application instances, even when they refer to the same media.
