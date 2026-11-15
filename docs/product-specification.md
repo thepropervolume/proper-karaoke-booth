@@ -863,7 +863,7 @@ The owner selected **Microphone Play** on 13 November: a vintage microphone insi
 
 ## Shared Heart Ratings and Current Host Controls
 
-**Available, updated in 0.7.0:** exact recordings receive 1–10-heart host ratings. YouTube/Karaoke Nerds uses its case-sensitive YouTube ID. KaraFun uses `karafun:catalog:NUMERIC_ID` or `karafun:community:NUMERIC_ID` without an imported fingerprint. Client/service validation is implemented; production requires the corresponding validator rollout, without SQL changes. Identified recordings use the authenticated global MySQL-backed service. A source-less file uses its imported SHA256 and stores its vote in local schema-3 `show.sqlite`, works offline and never sends its path or local fingerprint to the shared service. Identical contents share that local score; different converted CDG outputs can have different fingerprints. Provider metadata edits never merge distinct recordings.
+**Available, updated in 0.7.0:** exact recordings receive 1–10-heart host ratings. YouTube/Karaoke Nerds uses its case-sensitive YouTube ID. KaraFun uses `karafun:catalog:NUMERIC_ID` or `karafun:community:NUMERIC_ID` without an imported fingerprint. The matching validator is deployed on Linode III. Live disposable-voter lookup, vote, update and withdrawal checks passed in both namespaces on 15 November, with no retained test votes or SQL changes. Identified recordings use the authenticated global MySQL-backed service. A source-less file uses its imported SHA256 and stores its vote in local schema-3 `show.sqlite`, works offline and never sends its path or local fingerprint to the shared service. Identical contents share that local score; different converted CDG outputs can have different fingerprints. Provider metadata edits never merge distinct recordings.
 
 The host lookup router returns per-key storage/write capability so local votes remain available when a remote profile is absent or shared lookup fails. A failed global write is never reclassified as a successful local save. Global writer identity comes from a separately provisioned private host credential; readers/public lookup cannot vote or see voter identities. One current vote is replaced or cleared explicitly. This is a host-installation vote, not an individual singer account; remote singer voting and cross-device person ownership remain planned.
 
@@ -910,7 +910,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "heading": "KaraFun Account",
   "rows": [
     "Sign In | Official account window",
-    "Session | Memory only; reconnect after restart",
+    "Session | OS-encrypted; verified restore after restart",
     "Library Search | Choose singer and queue",
     "Preparation | Private cache; no autoplay"
   ],
@@ -987,7 +987,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "footer_heading": "Acquisition",
   "footer_rows": [
     "Approved request | Permanent yt-dlp download",
-    "Playback | Host starts deliberately"
+    "Playback | First Play; next songs follow the gap"
   ],
   "detail": "Curated candidates share the global result list and queue menu. Receipts reject stale results; approved requests dispatch yt-dlp and auto-stage. Preparation alone never arms a new show. Video/channel hints do not guarantee quality."
 }
@@ -1051,7 +1051,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "side_rows": [
     "Singer screen | Same captured lyrics",
     "Audio | Host output only",
-    "Display absent | Waiting screen",
+    "Renderer unavailable | Waiting screen",
     "Network loss | Reconnect"
   ],
   "footer_heading": "Separate Request Link",

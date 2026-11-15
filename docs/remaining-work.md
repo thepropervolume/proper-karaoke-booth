@@ -2,7 +2,7 @@
 
 Updated 15 November 2026 for source development 0.7.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The current source is 0.7.0; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, mixing/pitch/tempo and provider distribution/venue terms remain open. KaraFun shared-rating identities are implemented but require the matching production validator rollout. Historical Windows/Linux/macOS 0.6.0 packages are verified from frozen source 6bcb7d5; 0.7.0 packages need separate build receipts. See installation and source-status guides.
+The current source is 0.7.0; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, mixing/pitch/tempo and provider distribution/venue terms remain open. KaraFun shared-rating identities and the matching production validator are deployed; both namespaces passed disposable-voter lookup/vote/update/withdrawal checks on 15 November. Historical Windows/Linux/macOS 0.6.0 packages are verified from frozen source 6bcb7d5; 0.7.0 packages need separate build receipts. See installation and source-status guides.
 
 ## Current foundation
 
@@ -20,7 +20,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Add booth name, immediate logo-picker preview, logo sizing 10–85vw and top/bottom scrolling banner with expiry and opt-in restart persistence.
 - [x] Remember KaraFun sessions through OS encryption where available; validate on restore, preserve account cache identity and forget explicitly on sign-out.
 - [x] Use KaraFun pink for the primary completed native lyric and source-specific numeric shared rating keys without a media fingerprint.
-- [ ] Deploy and verify the matching production KaraFun rating validator; no SQL migration is required, and client support alone does not establish live server acceptance.
+- [x] Deploy and verify the production KaraFun rating validator on Linode III; both namespaces passed live disposable-voter checks with no retained test votes or SQL migration.
 - [x] Bind read-only LAN screens to trusted concrete private interfaces/loopback; require actual Windows Private classification with fail-closed fallback and bounded periodic rechecks.
 - [x] Pass focused tests plus muted source rehearsals for hidden preview, launch/gap automation, Stop/restart, concurrent Play, Previous and readiness recovery; verify Windows encrypted session lifecycle across independent launches.
 - [ ] Build/rehearse 0.7.0 installers from frozen source and retain version-specific receipts; do not reuse 0.6.0 evidence as a new delivery claim.
