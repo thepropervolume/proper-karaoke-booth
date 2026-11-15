@@ -80,3 +80,5 @@ Pitch and tempo, detailed stem faders, alternate vocal arrangements and faithful
 - Verify installers, secret stores, codecs, output recovery and long-show operation on supported hardware. Version and document each delivered increment; reserve 1.0.0 for the approved release.
 
 The implementation is accepted as native KaraFun playback only when Phase 3 has actual account/media evidence. Until then, report protocol research, format tests, account probes and external KHost handoffs as separate capabilities.
+
+Implementation foundation: native recordings now have explicit catalog/community identities, separate from YouTube video IDs. Queue planning creates the recording and request atomically, respects host metadata and policy, and never starts playback. Show schema 4 is a data-format compatibility barrier with unchanged SQL tables: older clients must refuse the show instead of attempting to play a native KIT as a video. KaraFun recording ratings remain unavailable until the shared rating service supports their namespace; they must never be sent as YouTube or local-file votes.

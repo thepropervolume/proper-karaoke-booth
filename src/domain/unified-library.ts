@@ -14,7 +14,7 @@ export function unifiedLibrary(state: ShowState, query: string, filenames: Reado
   const rows: LibrarySearchVersion[] = [];
   const seenVideos = new Set<string>();
   const append = (version: LibrarySearchVersion) => {
-    const videoId = version.source?.videoId;
+    const videoId = version.source?.provider === 'youtube' ? version.source.videoId : undefined;
     if (videoId && seenVideos.has(videoId)) return;
     if (videoId) seenVideos.add(videoId);
     rows.push(version);

@@ -5,7 +5,7 @@ export async function downloadLibrarySong(version: LibrarySearchVersion, bridge:
   addYouTube(input: { url: string; title: string; artist: string; brandSlug?: string }): Promise<{ ok: boolean; versionId?: string; error?: string }>;
   youtubeDownloads: { start(id: string): Promise<unknown> };
 }): Promise<{ ok: boolean; versionId?: string; error?: string }> {
-  if (!version.source) return { ok: false, error: 'Choose a supported online recording.' };
+  if (version.source?.provider !== 'youtube') return { ok: false, error: 'Choose a YouTube recording for this download action.' };
   let id = version.id;
   if (version.catalogTrack) {
     const added = await bridge.addYouTube({ url: `https://www.youtube.com/watch?v=${version.source.videoId}`,

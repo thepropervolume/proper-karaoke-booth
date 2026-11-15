@@ -1,7 +1,9 @@
 /** Transactional application schema versions. The caller owns the sole show database connection. */
 import type { DatabaseSync } from 'node:sqlite';
 
-export const SHOW_SCHEMA_VERSION = 3;
+// Version 4 adds KaraFun source identities to serialized show state. Older
+// clients must refuse the database instead of treating KIT assets as videos.
+export const SHOW_SCHEMA_VERSION = 4;
 const required: Record<string, readonly string[]> = {
   show_state: ['id', 'value'], media: ['id', 'path', 'fingerprint'], checkpoint: ['id', 'generation', 'position'],
   missing_song_requests: ['id', 'singer', 'title', 'artist', 'created_at'], missing_song_request_reviews: ['request_id', 'status', 'updated_at'], playlists: ['id', 'name', 'singer_id'],
@@ -125,7 +127,7 @@ export function migrateShowSchema(db: DatabaseSync): void {
     // IF NOT EXISTS also tolerates a same-named view; verify the complete
     // resulting table layout before declaring this migration successful.
     validateExisting(db, true);
-    db.exec('PRAGMA user_version = 3');
+    db.exec(`PRAGMA user_version = ${SHOW_SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }

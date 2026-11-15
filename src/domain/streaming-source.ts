@@ -1,11 +1,19 @@
-export type StreamingSource = { provider: 'youtube'; videoId: string; brandSlug?: string };
+export type YouTubeSource = { provider: 'youtube'; videoId: string; brandSlug?: string };
+export type KaraFunSource = { provider: 'karafun'; catalog: 'catalog' | 'community'; songId: string };
+export type StreamingSource = YouTubeSource | KaraFunSource;
 
 export function validStreamingSource(value: unknown): value is StreamingSource {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const source = value as Record<string, unknown>;
+  if (source.provider === 'karafun') return Object.keys(source).every(key => ['provider', 'catalog', 'songId'].includes(key)) &&
+    (source.catalog === 'catalog' || source.catalog === 'community') && typeof source.songId === 'string' && /^[1-9]\d{0,11}$/.test(source.songId);
   return Object.keys(source).every(key => ['provider', 'videoId', 'brandSlug'].includes(key)) && source.provider === 'youtube' &&
     typeof source.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(source.videoId) &&
     (source.brandSlug === undefined || (typeof source.brandSlug === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(source.brandSlug)));
+}
+
+export function streamingSourceLabel(source?: StreamingSource): string {
+  return source?.provider === 'karafun' ? 'KaraFun' : source?.provider === 'youtube' ? 'YouTube' : 'Local';
 }
 
 /** Accept only an exact video identity or normal HTTPS YouTube watch/short links. */

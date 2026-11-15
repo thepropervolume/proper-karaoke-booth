@@ -15,7 +15,7 @@ test('streaming source metadata is narrow and preserves existing local versions'
   const original = createInitialState('show','epoch');
   const add = (source?: any) => applyCommand(original, { commandId:'c',showId:'show',hostEpoch:'epoch',expectedRevision:0,actor:{role:'host',id:'host'},command:{type:'addVersion',version:{id:'song',title:'Track',artist:'Artist',rating:'unrated',...(source?{source}: {})}} });
   assert.equal(add().outcome.ok, true);
-  assert.equal(add({provider:'youtube',videoId:'M7lc1UVf-VE'}).state.versions[0].source?.videoId, 'M7lc1UVf-VE');
+  assert.deepEqual(add({provider:'youtube',videoId:'M7lc1UVf-VE'}).state.versions[0].source, {provider:'youtube',videoId:'M7lc1UVf-VE'});
   assert.equal(add({provider:'youtube',videoId:'bad'}).outcome.ok, false);
 });
 

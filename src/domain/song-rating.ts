@@ -21,7 +21,7 @@ export function ratingStorageFor(key: RecordingKey): RatingStorage {
 
 /** Ratings describe an exact recording, never an artist/title approximation. */
 export function recordingKeyFor(source: unknown, fingerprint?: unknown): RecordingKey | null {
-  if (validStreamingSource(source)) return `youtube:${source.videoId}`;
+  if (validStreamingSource(source)) return source.provider === 'youtube' ? `youtube:${source.videoId}` : null;
   return typeof fingerprint === 'string' && /^[a-f0-9]{64}$/.test(fingerprint) ? `sha256:${fingerprint}` : null;
 }
 
