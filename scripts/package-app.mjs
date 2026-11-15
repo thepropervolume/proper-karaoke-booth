@@ -11,6 +11,7 @@ import { build as viteBuild } from 'vite';
 import { build as bundle } from 'esbuild';
 import electronBuilder from 'electron-builder';
 import configuration from '../electron-builder.config.mjs';
+import { productionDependencyNotices } from './production-notices.mjs';
 
 const repo = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const requireFromRepo = createRequire(join(repo, 'package.json'));
@@ -50,17 +51,7 @@ try {
     main: metadata.main, homepage: metadata.homepage,
   }, null, 2) + '\n');
   const lock = JSON.parse(await readFile(join(repo, 'package-lock.json'), 'utf8'));
-  const notices = ['Third-party notices for bundled production dependencies.\nElectron/Chromium notices are included separately with the runtime.'];
-  for (const [directory, dependency] of Object.entries(lock.packages)) {
-    if (!directory || dependency.dev) continue;
-    const dependencyRoot = await realpath(join(repo, directory));
-    if (!dependencyRoot.startsWith(join(repo, 'node_modules') + sep)) throw new Error('Unexpected dependency license location.');
-    const names = (await readdir(dependencyRoot)).filter(name => /^(licen[cs]e|copying|copyright)([._-]|$)/i.test(name)).sort();
-    if (!names.length) throw new Error(`Missing production dependency license: ${directory}`);
-    notices.push(`\n${'='.repeat(72)}\n${directory.replace(/^.*node_modules\//, '')} ${dependency.version} (${dependency.license ?? 'see notice'})`);
-    for (const name of names) notices.push(await readFile(join(dependencyRoot, name), 'utf8'));
-  }
-  await writeFile(join(stage, 'THIRD-PARTY-LICENSES.txt'), notices.join('\n\n') + '\n');
+  await writeFile(join(stage, 'THIRD-PARTY-LICENSES.txt'), await productionDependencyNotices(repo, lock));
   const { build, Platform, Arch } = electronBuilder;
   const target = platform === 'win' ? Platform.WINDOWS : platform === 'linux' ? Platform.LINUX : Platform.MAC;
   const architectures = platform === 'mac' ? [Arch.x64, Arch.arm64] : [Arch.x64];
