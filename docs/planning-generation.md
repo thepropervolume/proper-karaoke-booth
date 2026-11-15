@@ -63,14 +63,14 @@ The later 14 November revision at `d657c17` makes native KaraFun account/playbac
 
 The separate `release/Proper-Karaoke-Booth-0.5.0-native-research-planning-verification.json` preserves this later source/artifact relationship. The initial delivery receipt remains historical evidence rather than being overwritten.
 
-## Verified 0.6.0 Planning Edition
+## Verified 0.7.0 Planning Edition
 
-On 15 November 2026 the canonical Markdown generated a **39-page Word specification** and **45-page Night/Day PDF**, covering 21 screen families, under local `release/planning`. Native LibreOffice 26.8.3 rendered the Word edition. All final pages have visual review coverage: all 39 initial Word pages were inspected, followed by full-resolution review of the nine changed final pages; the other 30 are byte-identical. The eight PDF pages changed across this revision were inspected at full resolution; the other 37 are byte-identical to the previously reviewed edition. Current native KaraFun, public search-only metadata and planned TPV billing labels were corrected together in prose and mockups. Nine generator tests passed.
+On 15 November 2026 the **0.7.0** canonical Markdown generated a **39-page Word specification** and **45-page Night/Day PDF**, covering 21 screen families, under local `release/planning`. Native LibreOffice 26.8.3 rendered the Word edition. All 39 final Word pages were visually inspected in ten contact sheets. All 45 PDF pages have visual review coverage; after the final label correction, seven changed pages were rechecked at full resolution and the other 38 PNGs matched the reviewed edition exactly. Changes include global unified search/provider borders, hidden preview, automatic show transitions, remembered sessions, live KaraFun ratings, booth branding and scrolling banners. Nine generator tests passed.
 
 | Current File | SHA256 |
 | --- | --- |
-| `docs/product-specification.md` | `1dcf96e6055f66c69ddd09c30d31a069f56ef10a9113f475eb1c546568c2bb2f` |
-| `TPV_Karaoke_Product_Specification_Current.docx` | `ad200caf93894ef06c85f5a4424d1ffa08febcf33b9e97f324efc4504621ef49` |
-| `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `a1bcf91a9e7d8f2b5f37c637e273974a62fea69b05e35ee8ad0d87bdd75f1a04` |
+| `docs/product-specification.md` | `716bfd87cd0021dc5e3b16140524f9d12fc45427c208ce57307ae4b315e3b59c` |
+| `TPV_Karaoke_Product_Specification_Current.docx` | `59d2c69619728f8890db6e61c39c592abfa7614344747468538abef495571ab0` |
+| `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `4cad9de4de4fa8318e521d7b57d7305c51f8431a8ac90ee57a022fb1e6a2fbac` |
 
-The local `release/Proper-Karaoke-Booth-0.6.0-planning-verification.json` retains source/artifact hashes and review coverage. The Markdown is committed; generated files and QA images are local build outputs. Historical planning files are preserved.
+The local `release/planning/planning-070-qa.json` retains source/artifact hashes and review coverage. The Markdown is committed; generated files and QA images are local build outputs. Historical planning files are preserved.
