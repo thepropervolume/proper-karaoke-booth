@@ -1,5 +1,7 @@
 # Project documentation
 
+Use a local checkout for active development. On the owner's Windows workstation the active checkout is `C:\Users\hello\Projects\proper-karaoke-booth`. The Dropbox checkout is a user-maintained mirror; do not update it as part of routine development or builds. Generate artifacts under the local checkout's ignored `release` directory.
+
 The maintained product and interface planning source is `docs/product-specification.md`. When app behavior, product requirements, or interface designs change, update that Markdown in the same work, distinguishing shipped features from planned work. Regenerate the Word specification and mockup PDF from it using `docs/planning-generation.md`; do not independently edit generated documents. Update relevant host, singer, and developer help when behavior changes.
 
 Keep changes and their tests and documentation in small, focused commits. Push completed commits to the configured GitHub repository when access permits.

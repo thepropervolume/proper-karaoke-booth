@@ -1,6 +1,8 @@
 # Remaining work
 
-Updated 14 November 2026 for source development 0.5.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation, provider catalog search first, then playable streaming integration. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 15 November 2026 for source development 0.6.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+
+The earlier foundation and release notes below describe their recorded milestones. The 0.6.0 source adds experimental native KaraFun official sign-in, canonical search, ordinary singer/queue requests, private verified KIT acquisition, and synchronized audio/lyrics in TPV. Real account session/search/acquisition and the complete synthetic TPV flow passed. The actual-account muted Windows TPV flow also passed sign-in, queue/download, native clock playback, visible lyric canvas, pause, seek, Previous, sign-out and restart. Persistent login, native community tracks, KaraFun heart ratings, mixing/pitch/tempo controls, provider distribution terms and physical-show verification remain separate work until their evidence is recorded. Existing 0.5.0 installers do not contain this update.
 
 ## Current foundation
 
@@ -10,7 +12,10 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 - [x] Send KaraFun an OEM content/playback API inquiry (owner submitted through Business support on 11 November 2026; reply pending).
 - [x] Inspect the owner-provided Business API specification and test the dashboard token read-only: device listing returned 402 and room-token listing 403; content/playback access remains unverified.
-- [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees; the existing consumer subscription has not been proven usable in this app.
+- [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees. The existing subscription has now authorized one native recording acquisition; this does not settle distribution or venue terms.
+- [x] Implement independent native official-window sign-in, memory-only session lifecycle, canonical search and recording authorization without copying a vendor application key.
+- [x] Queue native catalog recordings with the ordinary singer dialog and durable TPV rotation; prepare verified private KIT media in the background without autoplay.
+- [x] Implement one-clock native stems/timed lyrics and test the complete synthetic TPV queue/player/pause/seek/Previous/sign-out flow.
 - [ ] Implement and test approved KaraFun account linking, secure credential storage, refresh/revocation and entitlement checks.
 - [x] Add host-only KaraFun public catalog metadata search with provider IDs; the inspected 90,284-record CSV parses without login. Search-only results do not establish playback or cross-provider equivalence.
 - [x] Add host-only Party Tyme public catalog metadata search, preserving provider codes from the inspected 44,967-row table; subscription playback remains separate.

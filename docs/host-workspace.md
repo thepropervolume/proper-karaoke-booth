@@ -4,7 +4,7 @@
 
 The interface refresh from `opencode-audit` adds sidebar icons and request counts, clearer Song Library and Host Queue headings, an always-visible compact transport, and Preferences with a sticky header and footer. Informational and success notices clear after eight seconds; error notices remain until dismissed or replaced. **Dismiss message** clears a notice explicitly. Existing sort, filter, queue, rating, double-click and context-menu actions remain available.
 
-Version 0.4.3 adds public Sunfly Store title/SKU search to the provider metadata workspace. Windows 0.4.3 is installed and verified, and Linux AppImage/Debian package checks passed. The update preserves the selected microphone/play identity, existing show/settings and normal local playback. Version 0.4.4 adds macOS DMG/ZIP packages; native Apple silicon launch/restart, branding and CLI help passed on macOS 27.0.1. Intel packages received static checks only. Windows/Linux and this PC remain at 0.4.3. Mac Finder installation, Gatekeeper approval, physical show hardware and real-user Linux installation remain open. See [installation](installation.md).
+Version 0.4.3 added public Sunfly Store title/SKU search; 0.4.4 added macOS packaging. Verified 0.5.0 Windows/Linux/macOS packages preserve those features, while this Windows PC remains installed at 0.4.3. Apple silicon runtime checks passed; Intel Mac runtime, Finder installation, physical show hardware and real-user Linux installation remain open. Native KaraFun below is new 0.6.0 source behavior. See [installation](installation.md) for package-specific evidence.
 
 ## Preview and Resizable Panels
 
@@ -30,6 +30,12 @@ Choose **Preferences → YouTube Search → Approved channels only** for stricte
 
 Open **Remote Sessions → LAN Singer Screens** and start sharing, or save its checkbox and port under **Preferences → Singer Display**. Port 4051 is the default. Copy a displayed address to browsers on the venue network. This is a read-only visual mirror with audio remaining on the host; singer request links are a separate feature. Numeric addresses are the reliable fallback when `.local` resolution is unavailable. See [LAN setup, firewall and limits](singer-screen-sharing.md).
 
+## Native KaraFun in 0.6.0
+
+Open **Sources → KaraFun → Sign In to KaraFun**, then complete the official sign-in window. In **Song Library**, enter at least two characters and choose a connected **KaraFun** result. Choose or enter the singer in the usual dialog and add the request. Accepted/staged requests prepare in the background; manual moderation waits for acceptance. Check **Sources → KaraFun → Song Preparation**, and use **Retry** after a failure. Press **Play/Pause** when ready; preparation does not start or stage a song. The ordinary TPV transport, singer display, silent backdrop, preview and visual LAN mirror handle the performance. KHost is not required.
+
+On **15 November 2026**, the actual TPV app passed a real-account rehearsal: official sign-in, library search, singer selection, queueing, acquisition, native playback, pause, seek, Previous, sign-out and restart without autoplay. It used a muted disposable Windows profile and left the original show untouched. This remains experimental: physical audio, full-song listening, monitor/output recovery and native Linux/macOS playback need verification. Existing 0.5.0 installers do not contain it. Sessions remain in memory only. Sign-out pauses/silences native playback and cancels preparation; after sign-in or app restart, prepare again and press Play deliberately. Private managed KIT files do not confer permanent/offline access, and each start/resume checks current authorization. Native community tracks, pitch/tempo, stem controls and KaraFun heart ratings remain unsupported. An oversized recording reports that a prepared fixed mix is needed; automatic premixing is pending. See [native workflow and limits](karafun-native-integration.md).
+
 ## Optional KaraFun via KHost
 
 **Sources → KaraFun via KHost** uses the independently installed KHost application and optional TPV companion plugin. Sign in and confirm normal KaraFun playback inside KHost first, enable the bridge plugin there, then explicitly select its private connection profile in TPV. **Search KaraFun Through KHost** returns external results; choose the singer in KHost and use **Send to KHost (External Queue)** to hand one over. This affects KHost's queue and may show its prompts. It does not add a playable TPV queue item or start playback here.
@@ -38,7 +44,7 @@ Current content restrictions and song/artist blacklists apply before search/hand
 
 ## Navigation and Menus
 
-The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains Karaoke Nerds discovery, the Custom YouTube Video Importer and Third-Party Services catalog search/configuration. Paid-provider playback is still pending approved access.
+The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains native KaraFun sign-in/preparation, Karaoke Nerds discovery, the Custom YouTube Video Importer and Third-Party Services catalog search/configuration. Other paid-provider playback still needs access and implementation.
 
 Use **File → Import** for **Import Video File**, **Import Custom Directory**, or **Import CD+G / ZIP**. The same three import icons are next to the Song Library heading. CDG conversion progress and cancellation stay visible while a job runs. **Back up show…** is in File; database backups do not include song media or preferences.
 

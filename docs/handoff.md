@@ -1,5 +1,15 @@
 # Development handoff
 
+## 0.6.0 Native KaraFun Work on 15 November 2026
+
+The current source implements experimental native KaraFun account connection through its official sign-in window, canonical library search, ordinary singer selection/queueing, private checksum-verified KIT preparation and TPV audio/lyrics playback. KHost is optional and not part of this path. Sessions stay in memory and each sign-in gets a new cache scope. Starts/resumes require fresh authorization; sign-out pauses and revokes the native player. Native community tracks, shared KaraFun hearts, persistent login, mix/pitch/tempo controls and provider distribution terms remain outstanding.
+
+Real account session/search/acquisition passed for one recording (5,516,449 bytes, three stems, six artwork members and timing). A generated-Ogg Electron player and a complete synthetic TPV UI/queue/player test passed, including a regression requiring `corsEnabled` for the private media protocol. The actual-account TPV Windows rehearsal passed official sign-in, search, singer selection/queueing, verified preparation, native clock playback with visible lyric canvas, pause, seek, Previous, sign-out fencing and restart requiring sign-in without autoplay. It was muted and touched no real show. The complete Windows suite passed 938 tests with eight platform/environment skips and no failures (946 total). Physical audio/display recovery and native Linux/macOS provider playback remain unverified. Schema 4 prevents older versions from opening native recordings incorrectly; preserve a pre-upgrade profile backup for downgrade.
+
+No new API/SDK approvals arrived in the connected TPV mailbox. Stingray's earlier reply requires a commercial partnership. KaraFun's cancellation notice contains no effective end date; successful acquisition proves eligibility for that recording at that time, not a plan expiry. Follow [native integration status](karafun-native-integration.md), [source status](source-status.md) and the canonical specification for current verification. Existing 0.5.0 installers and the historical delivery evidence below remain distinct.
+
+## Previous 0.5.0 Delivery
+
 Updated 14 November 2026 for 0.5.0 delivery. Windows setup/ZIP, Linux AppImage/Debian and macOS Apple silicon/Intel DMG/ZIP package checks passed from frozen runtime `8d4c003`; native arm64 and isolated Linux launches passed. This PC remains installed at 0.4.3; no new Windows installation/upgrade/removal is implied. The original handoff remains historical; newer decisions below govern.
 
 The current planning deliverables have been regenerated from the canonical Markdown and published in the sibling `planning` folder: 38-page Word specification and 45-page Night/Day mockup PDF, covering 21 screen families. Every rendered page was reviewed. Older versioned documents remain historical; the current Markdown and generated editions supersede their earlier moderation and media-preservation defaults. See [planning provenance](planning-generation.md).
