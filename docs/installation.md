@@ -1,6 +1,27 @@
 # Installing The Proper Volume Karaoke Booth
 
-Development version **0.5.0** has verified Windows setup/ZIP, Linux AppImage/Debian and macOS Apple silicon/Intel DMG/ZIP packages from frozen source `8d4c003`. This PC is still installed at 0.4.3: actual Windows 0.5.0 installation/upgrade/removal has not been verified. The official release target remains **1.0.0**. Several focused commits delivered together may share one version.
+Development version **0.6.0** has verified Windows setup/ZIP, Linux AppImage/Debian and separate macOS Apple silicon/Intel DMG/ZIP packages from frozen packaging source `6bcb7d5`. It includes experimental native KaraFun. The official release target remains **1.0.0**. Several focused commits delivered together may share one version. No installed-copy upgrade or removal was performed for this delivery.
+
+## 0.6.0 Packages and Verification
+
+Files are in the local checkout's `release` directory at `C:\Users\hello\Projects\proper-karaoke-booth\release`. The owner maintains the Dropbox checkout separately. Each platform has a build receipt and SHA256 manifest; Linux also records the exact transferred Git archive because its builder ran without a `.git` directory. Application code matches runtime checkpoint `eb1e014`; the later frozen source adds packaging notices and documentation. All three platforms passed the complete suite: **944 passed, eight platform/environment skips, zero failures** (952 total), plus type checking and branding verification.
+
+| Platform | 0.6.0 Package | Verified Scope |
+| --- | --- | --- |
+| Windows x64 | `Proper-Karaoke-Booth-0.6.0-windows-x64-setup.exe` and `Proper-Karaoke-Booth-0.6.0-win-x64.zip` | Packaged launch/restart/no-autoplay, Day/Night branding, minimum-width controls, official sign-in window isolation/cancellation and unchanged show. Three fresh compiled bundles and 45 UI files match the ASAR; 19 ZIP payload files match unpacked output. |
+| Linux x64 | `Proper-Karaoke-Booth-0.6.0-linux-x86_64.AppImage` and `Proper-Karaoke-Booth-0.6.0-linux-amd64.deb` | Both payloads and notices, 112-entry extraction manifest, private offline AppRun restart/branding/CLI/API and synthetic local import/rating checks. Synthetic native-player testing used a separate account fixture; real provider sign-in is unverified. |
+| macOS Apple silicon | `Proper-Karaoke-Booth-0.6.0-mac-arm64.dmg` and ZIP | macOS 27.0.1 arm64 native packaged launch/restart/branding/CLI, deep/strict ad-hoc signatures and matching DMG/ZIP payloads. |
+| macOS Intel | `Proper-Karaoke-Booth-0.6.0-mac-x64.dmg` and ZIP | Architecture, ad-hoc signatures, image validation and matching DMG/ZIP payloads. Intel native execution remains unverified. |
+
+The [successful Mac workflow](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/43680264866) built both architectures. Its downloaded archive digest and every package/blockmap hash were checked locally. Windows is unsigned; Mac bundles use ad-hoc integrity signing without Developer ID/notarization. Regular-user Linux sandbox, installation/upgrade/removal and physical show devices remain verification work.
+
+On Windows, a real subscription passed the complete native KaraFun source flow, including rendered lyric pixels after seeking. The test was muted and private; it does not establish audible mixer routing or real provider playback on Linux/macOS. Use **Sources → KaraFun → Sign In to KaraFun**, then search Song Library, choose a singer and queue the recording. Sessions remain in memory and must reconnect after restarting. See [native setup and limits](karafun-native-integration.md).
+
+Before first 0.6.0 launch, make a validated show backup and preserve the private profile/settings/keybindings/connection files separately. The app migrates to schema 4; older versions refuse that database. Downgrading requires the pre-upgrade profile/database backup. Installers preserve the established app-data location, but package rehearsals are not an installed-copy upgrade test.
+
+## Historical 0.5.0 Delivery
+
+The previous Windows/Linux/macOS packages used frozen source `8d4c003`. The following evidence remains version-specific.
 
 ## 0.5.0 Source Update
 
@@ -18,7 +39,7 @@ Linux AppImage/Debian packages use the same frozen archive, with all 705 tracked
 
 The separate optional `TPV-KHost-Bridge-0.1.0.zip` was built from the same source, SHA256 `567d921d5b2c200be5812dcea0cb93662b9ec2a31dcade1766fb69be92c4a9c3`. It is installed explicitly in a separate KHost application, not bundled or enabled by the TPV installer. Actual KHost loading and authenticated search/handoff remain unverified; see [bridge setup](khost-bridge.md).
 
-## Available packages
+## Historical 0.5.0 Packages
 
 | Platform | Package | Current verification |
 | --- | --- | --- |

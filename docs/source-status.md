@@ -1,6 +1,6 @@
 # Karaoke Source Status
 
-Reviewed 15 November 2026 for experimental source development **0.6.0**. Package verification is recorded separately in [installation](installation.md); existing 0.5.0 installers do not include native KaraFun. A searchable catalog, a consumer subscription and permission to distribute an integration are different capabilities.
+Reviewed 15 November 2026 for experimental source development **0.6.0**. Package verification is recorded separately in [installation](installation.md); 0.6.0 installers are built for Windows, Linux and both Mac architectures. Earlier 0.5.0 installers do not include native KaraFun. A searchable catalog, a consumer subscription and permission to distribute an integration are different capabilities.
 
 | Source | Current TPV capability | Access and remaining work |
 | --- | --- | --- |
