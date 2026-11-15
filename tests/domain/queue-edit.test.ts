@@ -60,9 +60,20 @@ test('only hosts can move or edit; staging cannot be displaced by stale edits or
   for (const command of [
     { type: 'moveRequest', requestId: 'c1', beforeRequestId: 'a1' },
     { type: 'moveRequest', requestId: 'a1', beforeRequestId: null },
-    { type: 'editRequest', requestId: 'a1', singerId: 'b', versionId: 'v2' },
   ] as Command[]) assert.equal(f.send(command).ok, false);
   assert.equal(f.get().stagedRequestId, 'a1');
+});
+
+test('host can correct a prepared request without displacing its locked slot or starting it', () => {
+  const f = fixture(); f.ok({ type: 'stage' });
+  f.ok({ type: 'editRequest', requestId: 'a1', singerId: 'b', versionId: 'v2' });
+  const request = f.get().requests.find(row => row.id === 'a1')!;
+  assert.equal(request.status, 'staged'); assert.equal(request.singerId, 'b'); assert.equal(request.versionId, 'v2');
+  assert.equal(f.get().stagedRequestId, 'a1'); assert.equal(f.ids()[0], 'a1'); assert.equal(f.get().playback, null);
+  assert.equal(request.round, 2, 'recipient already has a first-round song');
+  f.ok({ type: 'start', generationId: 'corrected' });
+  assert.equal(f.send({ type: 'editRequest', requestId: 'a1', singerId: 'a', versionId: 'v1' }).ok, false);
+  assert.equal(f.get().playback?.generationId, 'corrected');
 });
 
 test('request edits retain identity and manual slot but assign the recipient a free round', () => {

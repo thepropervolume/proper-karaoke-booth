@@ -277,7 +277,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     case 'editRequest': {
       const request = state.requests.find(r => r.id === cmd.requestId);
-      if (!request || !['pending', 'accepted'].includes(request.status)) reject('LOCKED', 'Release the staged song or stop the active performance before editing');
+      if (!request || !['pending', 'accepted', 'staged'].includes(request.status)) reject('LOCKED', 'Stop the active performance before editing');
       else if (!state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
       else {
@@ -289,7 +289,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
           if (changingSinger) {
             request.singerId = cmd.singerId;
             // Reassign to the recipient's next free round; retain an explicit host slot.
-            if (request.status === 'accepted') { request.round = null; request.order = null; acceptRequest(state, request); }
+            if (request.status === 'accepted' || request.status === 'staged') { const previous = request.status; request.round = null; request.order = null; acceptRequest(state, request); request.status = previous; }
           }
         }
       }
