@@ -6,7 +6,7 @@ Approved requests prepare and stage automatically. Press Play to start the show;
 
 Native KaraFun remains experimental. Complete the official sign-in under **Sources → KaraFun**, then search and queue through the usual singer dialog. Remembered sessions use operating-system encryption where available, retain their account cache identity and are checked before reuse. Sign-out forgets them. Each start/resume still needs current authorization. Physical audio, full-song synchronization, device recovery, native Linux/macOS provider playback and distribution/venue terms remain open. Other paid services expose search-only metadata until their playback integration is connected. See [source status](docs/source-status.md).
 
-Windows/Linux/macOS **0.6.0** packages were verified from frozen source `6bcb7d5`; that historical evidence does not establish a built or installed 0.7.0 package. See [installation evidence](docs/installation.md) for delivered artifacts and limits. Updates use `0.x.y`; **1.0.0** is reserved for the approved official release.
+Windows/Linux/macOS **0.7.0** packages are built and verified from frozen runtime source `f57fd9a`; macOS adds the tests-only portability fix `9522b0c`. Native Apple silicon execution passed on macOS 27.0.1; Intel verification is static. No installed-copy upgrade was performed. See [installation evidence](docs/installation.md) for delivered artifacts and limits. Updates use `0.x.y`; **1.0.0** is reserved for the approved official release.
 
 ## Run or Install
 
@@ -30,7 +30,7 @@ Private credentials, song media, yt-dlp, FFmpeg and LibreOffice are not bundled.
 4. Use Previous to restart the same song, scrub the bottom timeline, adjust volume or edit/reorder future requests. A staged request can change track/singer while keeping its identity and place; a playing performance is protected. Stop returns the current request to the queue and cancels advancement. Restart restores it paused.
 5. Set the booth name, logo size and scrolling announcement under **Preferences → Singer Display**. Logo selection has an immediate preview. Banners can expire; persistence across launches is opt-in. Configure launch/interlude music and a 0–300-second gap in Audio Controls.
 
-Right-click rows for queue, playlist, rating, metadata, file/relink or blacklist actions where supported. Hearts are per recording: source-less files use local SHA256 votes; identified recordings use the authenticated shared service. KaraFun catalog/community keys are implemented in 0.7.0; the live rating service requires the matching validator deployment before accepting them. Failure is reported rather than saved under a fake local identity.
+Right-click rows for queue, playlist, rating, metadata, file/relink or blacklist actions where supported. Hearts are per recording: source-less files use local SHA256 votes; identified recordings use the authenticated shared service. KaraFun catalog/community keys are implemented in 0.7.0; the matching live validator is deployed and both namespaces passed disposable-voter checks. Failure is reported rather than saved under a fake local identity.
 
 ## Remote and Configuration
 

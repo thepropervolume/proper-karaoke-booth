@@ -1,5 +1,28 @@
 # Installing The Proper Volume Karaoke Booth
 
+Development **0.7.0** has Windows x64 setup/ZIP, Linux x64 AppImage/Debian and separate Apple silicon/Intel macOS DMG/ZIP packages. The official release target remains **1.0.0**. This delivery did not install, upgrade or remove the owner's existing app or modify the Dropbox mirror.
+
+## 0.7.0 Packages and Verification
+
+All files, build receipts, verification receipts and SHA256 manifests are in `C:\Users\hello\Projects\proper-karaoke-booth\release`. Windows/Linux use frozen source `f57fd9a`; macOS uses `9522b0c`, which changes only multi-interface test portability. Runtime source is unchanged between those commits. All three platforms passed **1,007 tests, eight intentional skips and zero failures** (1,015 total). Type checking, focused integration checks and nine document-generator tests also pass.
+
+| Platform | Package | Verified Scope |
+| --- | --- | --- |
+| Windows x64 | `Proper-Karaoke-Booth-0.7.0-windows-x64-setup.exe` or `Proper-Karaoke-Booth-0.7.0-win-x64.zip` | Actual packaged launch/restart, branding/minimum-width controls, official account-window isolation/cancellation. Three fresh source bundles, 45 UI files, notices and 19 ZIP payload files match. Installer/ZIP/blockmap hashes verified. |
+| Linux x64 | `Proper-Karaoke-Booth-0.7.0-linux-x86_64.AppImage` or `Proper-Karaoke-Booth-0.7.0-linux-amd64.deb` | Exact transferred Git archive, complete suite, both payload formats and private AppRun checks; see the Linux verification receipt for precise scope and headless/runtime flags. |
+| macOS Apple silicon | `Proper-Karaoke-Booth-0.7.0-mac-arm64.dmg` or `.zip` | macOS 27.0.1 native launch/restart/branding and bundled CLI without Node, matching DMG/ZIP payloads and deep/strict ad-hoc signatures. |
+| macOS Intel | `Proper-Karaoke-Booth-0.7.0-mac-x64.dmg` or `.zip` | Payload/architecture/signature checks; native Intel execution remains unverified. |
+
+The [successful macOS 27 build](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/43685975891) and all downloaded package hashes are verified. Windows is unsigned. Mac apps are ad-hoc signed without Developer ID/notarization; Finder/Gatekeeper installation remains a separate check. Linux headless verification uses a private Xvfb session and root-only test flags; ordinary desktop sandbox/install/upgrade/removal checks remain. Physical listening, mixer routing and display/device hot-plug are unverified by these muted rehearsals.
+
+Source rehearsals additionally passed global sidebar search, unified provider borders/context menus, hidden preview, logo/banner preferences, automatic staging/gaps/next tracks, launch bumper/fade, prepared-request editing, native synthetic KaraFun playback and cancellation of delayed Play/Previous. Windows OS-protected session restoration passed across four independent launches. The shared KaraFun rating validator is deployed on Linode III; live disposable-voter checks passed without altering human ratings.
+
+Launch bumper and between-song music default on, with a 1000 ms fade; **Preferences → Audio Controls** changes them. Approved songs prepare automatically. First Play starts a show; completion/confirmed Skip advances after the configured gap and ready media. **Stop** cancels delayed playback. Restart never starts karaoke. **Sources → KaraFun** remembers an accepted session where secure OS storage is available, validates it on restart, and asks for ordinary sign-in after expiry/revocation. See [host workflow](host-workspace.md) and [native limits](karafun-native-integration.md).
+
+Back up the show before upgrading from older versions and preserve preferences/keybindings/private connection files separately. The show database remains schema 4 in this update; older schema-3 apps refuse it. Downgrading across that boundary requires the pre-upgrade profile backup. yt-dlp and FFmpeg remain external dependencies; LibreOffice is only needed for generating the planning documents.
+
+## Historical 0.6.0 Delivery
+
 Development version **0.6.0** has verified Windows setup/ZIP, Linux AppImage/Debian and separate macOS Apple silicon/Intel DMG/ZIP packages from frozen packaging source `6bcb7d5`. It includes experimental native KaraFun. The official release target remains **1.0.0**. Several focused commits delivered together may share one version. No installed-copy upgrade or removal was performed for this delivery.
 
 ## 0.6.0 Packages and Verification

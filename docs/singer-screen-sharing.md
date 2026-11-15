@@ -20,6 +20,8 @@ Use the numeric address when a name such as `proper-computer.local` does not res
 
 Windows may ask whether to allow the application on **Private networks**. An inbound private-network firewall allowance may be needed for the chosen port. Guest-network client isolation can prevent devices from reaching one another even when they share Wi-Fi. Check these network settings with the venue; the app does not silently change firewall rules.
 
+The owner's 15 November Windows prompt was inspected without changing policy; see the [read-only firewall findings and recovery guidance](windows-firewall-diagnosis.md). The organisation label's exact origin remains unconfirmed.
+
 Keep this listener private to the venue. It is not an internet relay and should not be port-forwarded publicly. The service accepts directly connected private, link-local or loopback peers, validates request hosts/origins and offers only read-only display assets/status. It does not expose the show database, file paths, credentials, media-file URLs or host-control actions.
 
 ## Viewing Is Separate from Requesting
