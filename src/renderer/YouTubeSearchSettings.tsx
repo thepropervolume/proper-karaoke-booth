@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Settings } from '../domain/settings';
-import type { YouTubeSearchBridge } from './YouTubeSearchPanel';
+import type { YouTubeSearchBridge } from '../domain/youtube-search';
 
 export function YouTubeSearchSettings({ value, onChange, bridge }: { value: Settings; onChange(next: Settings): void; bridge: YouTubeSearchBridge }) {
   const [message, setMessage] = useState(''), [importing, setImporting] = useState(false);

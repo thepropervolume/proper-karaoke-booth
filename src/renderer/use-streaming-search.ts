@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { KaraFunAccountStatus, KaraFunBridge, KaraFunSearchReply } from '../domain/karafun';
-import type { YouTubeSearchBridge } from './YouTubeSearchPanel';
+import type { YouTubeSearchBridge } from '../domain/youtube-search';
 import type { YouTubeSearchResult } from '../domain/youtube-search';
 // A query alone is not enough to identify a result: account and policy changes
 // invalidate its request receipt too. The key hides stale replies immediately,

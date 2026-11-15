@@ -35,7 +35,7 @@ import { SettingsDialog } from './SettingsDialog';
 import { PanelSeparator } from './PanelSeparator';
 import { SingerPreview, type SingerScreenBridge } from './SingerPreview';
 import { SingerScreensPanel } from './SingerScreensPanel';
-import type { YouTubeSearchBridge } from './YouTubeSearchPanel';
+import type { YouTubeSearchBridge } from '../domain/youtube-search';
 import { EditMetadataDialog } from './EditMetadataDialog';
 import type { BumperInfo } from './BumperPanel';
 import type { HostRemoteBridge } from '../remote/host-control';

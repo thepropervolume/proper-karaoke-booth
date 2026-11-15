@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { KaraFunAccountStatus, KaraFunBridge, KaraFunPreparation, KaraFunSearchReply, KaraFunSong } from '../domain/karafun';
+import type { KaraFunAccountStatus, KaraFunBridge, KaraFunPreparation } from '../domain/karafun';
 import type { Version } from '../domain';
 export function useKaraFunAccount(bridge: KaraFunBridge) {
   const [status, setStatus] = useState<KaraFunAccountStatus>({ state: 'disconnected', revision: 0, persistence: 'memory-only' });
@@ -25,28 +25,5 @@ export function KaraFunPanel({ bridge, status, versions }: { bridge: KaraFunBrid
       {item.message && <p role="alert">{item.message}</p>}
       {item.phase === 'failed' && <button type="button" onClick={() => void bridge.retry(item.versionId).catch(() => setError('Sign in and retry this recording.'))}>Retry</button>}
     </div>)}</div>}
-  </section>;
-}
-export function KaraFunResults({ bridge, account, query, scope, disabled, onChoose }: {
-  bridge: KaraFunBridge; account: KaraFunAccountStatus; query: string; scope: string; disabled: boolean;
-  onChoose(song: KaraFunSong, searchId: string): void;
-}) {
-  const [result, setResult] = useState<{ key: string; reply: KaraFunSearchReply } | null>(null), [loading, setLoading] = useState(false);
-  const key = JSON.stringify([query.trim(), scope, account.revision]);
-  useEffect(() => {
-    let alive = true; setResult(null); setLoading(false);
-    if (account.state !== 'connected' || query.trim().length < 2) return () => { alive = false; };
-    const timer = window.setTimeout(() => { setLoading(true); void bridge.search(query).then(reply => { if (alive) setResult({ key, reply }); }).catch(() => { if (alive) setResult({ key, reply: { status: 'unavailable', songs: [], message: 'KaraFun search is unavailable. Check Sources.' } }); }).finally(() => { if (alive) setLoading(false); }); }, 500);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [bridge, key, account.state]);
-  if (account.state !== 'connected' || query.trim().length < 2) return null;
-  const reply = result?.key === key ? result.reply : null;
-  return <section aria-label="KaraFun search results" className="provider-catalog-results"><h3>KaraFun</h3>
-    {loading && <p role="status">Searching KaraFun…</p>}
-    {reply?.status !== 'ok' && reply?.message && <p role="status">{reply.message}</p>}
-    {reply?.songs.map(song => <button type="button" className="track-row" key={`${song.catalog}:${song.songId}`} disabled={disabled || !reply.searchId} onClick={() => onChoose(song, reply.searchId!)}>
-      <span><strong>{song.artist} — {song.title}</strong><small>KaraFun · Choose Singer and Queue</small></span>
-    </button>)}
-    {reply?.status === 'ok' && !reply.songs.length && <p>No KaraFun matches.</p>}
   </section>;
 }

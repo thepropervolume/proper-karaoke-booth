@@ -64,6 +64,12 @@ export type YouTubeSearchStatus = 'ok' | 'disabled' | 'invalid-input' | 'configu
 export type YouTubeSearchResult = { provider: 'youtube'; status: YouTubeSearchStatus; searchId: string | null;
   songs: YouTubeKaraokeSong[]; counts: YouTubeSearchFilterCounts; message: string; qualityNote: string };
 
+export type YouTubeSearchBridge = {
+  search(query: string): Promise<YouTubeSearchResult>; cancel(): Promise<void>;
+  request(input: { searchId: string; videoId: string; singerId: string | null; requestId: string }): Promise<{ ok: boolean; error?: string; notice?: string; versionId?: string }>;
+  importSubscriptions(): Promise<{ channels: string[]; ignored: number } | null>;
+};
+
 const safeText = (value: unknown, maximum = 500): string | null => typeof value === 'string' && value.trim() &&
   value.length <= maximum && !/[\x00-\x1f\x7f]/.test(value) ? value.trim() : null;
 

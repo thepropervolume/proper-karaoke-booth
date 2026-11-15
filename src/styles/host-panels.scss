@@ -41,13 +41,6 @@
 .blacklist-settings__list li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
 .blacklist-settings__list li span { min-width: 0; overflow-wrap: anywhere; }
 .blacklist-settings__list button { flex: 0 0 auto; }
-.youtube-search-results { margin-top: 22px; }
-.youtube-song { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.youtube-song > div:first-child { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.youtube-song strong, .youtube-song small { display: block; }
-.youtube-song small { margin-top: 4px; font-size: .78rem; }
-.youtube-song__actions { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
-.youtube-song__actions button { font-size: .8rem; min-height: 34px; }
 @media (min-width: 851px) {
   .app[data-layout='rotation'] { grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr) 6px var(--queue-width); }
   .app[data-layout='library'] { grid-template-columns: var(--sidebar-width) 6px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) 6px minmax(100px, var(--library-queue-height)) auto; }

@@ -28,9 +28,6 @@
 .song-option__identity small { display: block; font-size: .94rem; line-height: 1.4; margin-top: 2px; }
 .song-option__actions { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; }
 .song-source { color: var(--muted); font-size: .76rem; white-space: nowrap; }
-.library-selection-actions { display: flex; gap: 12px; align-items: center; border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
-.library-selection-actions button { min-height: 34px; }
-.library-selection-actions > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: .87rem; }
 .missing-song-request { font-size: .8rem; max-height: 35%; overflow: auto; }
 .missing-song-request summary, .queue-advanced summary { cursor: pointer; color: var(--muted); }
 .missing-song-request .request-form { margin-top: 8px; }
