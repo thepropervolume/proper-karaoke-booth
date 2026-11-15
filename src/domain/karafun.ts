@@ -3,7 +3,7 @@ export type KaraFunAccountStatus = {
   state: 'disconnected' | 'connecting' | 'connected' | 'expired';
   revision: number;
   message?: string;
-  persistence: 'memory-only';
+  persistence: 'memory-only' | 'os-protected';
 };
 export type KaraFunSong = {
   songId: string; catalog: 'catalog' | 'community'; title: string; artist: string;

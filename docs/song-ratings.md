@@ -1,6 +1,6 @@
 # Song ratings
 
-Source development **0.5.0** separates shared recording votes from local-file votes. YouTube/Karaoke Nerds recordings can have a community average from 1–10 hearts and a vote count; a provisioned host can set **Your Host Rating**. Files without a provider recording ID save **Your Local Rating** in the host database and work offline without a remote profile. Saving replaces the current vote, and clearing removes it. Hearts are distinct from clean/explicit content-policy ratings.
+Development **0.7.0** extends the 0.5 local/shared split with native KaraFun IDs and separates shared recording votes from local-file votes. YouTube/Karaoke Nerds and native KaraFun recordings can have a community average from 1–10 hearts and a vote count; a provisioned host can set **Your Host Rating**. Files without a provider recording ID save **Your Local Rating** in the host database and work offline without a remote profile. Saving replaces the current vote, and clearing removes it. Hearts are distinct from clean/explicit content-policy ratings.
 
 The shared service stores provider-identified votes/aggregates in its MySQL database behind `apps.thepropervolume.com`; the desktop never writes MySQL directly. The service derives voter identity from a dedicated per-host credential. Catalog-reader tokens and public lookup cannot submit votes. Local source-less votes stay in schema-3 `show.sqlite`, with their fingerprint and score never sent to the shared service. Full singer accounts and cross-device person ownership are not implemented; a host installation is not a verified individual singer account.
 
@@ -47,3 +47,8 @@ The pre-0.5.0 muted Electron app also passed `npx tsx scripts/song-ratings-integ
 ## 0.5.0 Verification
 
 Focused tests cover SQLite migration/persistence, local/global routing, mixed failures and per-key capabilities. The private host UI rehearsal saves a seven-heart local rating without a writer profile. A separate provisioned QA voter passed global set/repeat/update/clear checks without changing existing human votes, credentials or service processes. The earlier imported-MP4 remote-vote rehearsal is historical evidence for the former remote-SHA flow, not the 0.5.0 local routing contract. Final complete-suite and packaged results remain part of the release closeout; physical show hardware is separate.
+
+
+## Native KaraFun identities in 0.7.0
+
+Native search results and queued songs use `karafun:catalog:<id>` or `karafun:community:<id>` directly, with canonical positive numeric IDs up to 12 digits. No download or imported fingerprint is needed. Catalog and community IDs stay separate. Existing YouTube IDs and local SHA-256 ratings retain their routing and existing votes. Shared keys require the authenticated global rating profile; provider account login does not grant voting permissions. The shared service validator must accept the new keys before client voting succeeds; no MySQL migration is required. See deploy/song-ratings/API.md for exact contract and deployment evidence.

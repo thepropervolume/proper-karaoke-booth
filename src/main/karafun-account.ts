@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron';
 import type { KaraFunAccountStatus, KaraFunSong } from '../domain/karafun';
 import type { KaraFunSource } from '../domain/streaming-source';
 import { karaFunElements, karaFunEnvelopeOk, karaFunSignedRequest, karaFunValue, parseKaraFunXml, type KaraFunXml } from './karafun-account-protocol';
+import type { KaraFunRememberedSession, KaraFunSessionStore } from './karafun-session-vault';
 
 /** Private account material is never an IPC DTO, show-state field or cache sidecar. */
 export type KaraFunAccountSession = { sessionKey: string; clientId?: string; dispose?(): Promise<void> | void };
@@ -28,23 +29,73 @@ export class KaraFunAccount {
   private scope: string | null = null;
   private signingIn: Promise<KaraFunAccountStatus> | null = null;
   private controller: AbortController | null = null;
+  private persistence: KaraFunAccountStatus['persistence'] = 'memory-only';
   constructor(private readonly dependencies: {
     onChange?: (value: KaraFunAccountStatus) => void;
     authenticate?: (parent?: BrowserWindow, signal?: AbortSignal) => Promise<KaraFunAccountSession>;
     fetch?: typeof fetch; clock?: () => number; timeoutMs?: number;
+    sessionStore?: KaraFunSessionStore;
   } = {}) {}
   status(): KaraFunAccountStatus { return { ...this.current }; }
   revision(): number { return this.current.revision; }
   accountScope(): string | null { return this.current.state === 'connected' ? this.scope : null; }
   subscribe(callback: (value: KaraFunAccountStatus) => void): () => void { this.listeners.add(callback); return () => this.listeners.delete(callback); }
   private publish(state: KaraFunAccountStatus['state'], message?: string): void {
-    this.current = { state, revision: this.current.revision + 1, persistence: 'memory-only', ...(message ? { message } : {}) };
+    this.current = { state, revision: this.current.revision + 1, persistence: this.persistence, ...(message ? { message } : {}) };
     for (const callback of [this.dependencies.onChange, ...this.listeners]) try { callback?.(this.status()); } catch { /* A view cannot invalidate an account operation. */ }
   }
   private async forget(): Promise<void> { const material = this.material; this.material = null; this.scope = null; try { await material?.dispose?.(); } catch {} }
-  async disconnect(): Promise<KaraFunAccountStatus> { this.controller?.abort(); this.controller = null; this.signingIn = null; this.publish('disconnected'); await this.forget(); return this.status(); }
+  async disconnect(): Promise<KaraFunAccountStatus> {
+    this.controller?.abort(); this.controller = null; this.signingIn = null;
+    // Enqueue forgetting before any new connection can save its own session.
+    const clearing = this.dependencies.sessionStore?.clear().then(() => true, () => false);
+    this.persistence = 'memory-only'; this.publish('disconnected'); await this.forget();
+    if (await clearing === false) this.publish('disconnected', 'Signed out for this launch. Saved sign-in could not be removed.');
+    return this.status();
+  }
+  /** App shutdown disposes the live browser/session but preserves OS protection. */
+  async close(): Promise<void> {
+    this.controller?.abort(); this.controller = null; this.signingIn = null;
+    this.persistence = 'memory-only'; this.publish('disconnected'); await this.forget();
+  }
   signOut(): Promise<KaraFunAccountStatus> { return this.disconnect(); }
   signIn(parent?: BrowserWindow, signal?: AbortSignal): Promise<KaraFunAccountStatus> { return this.connect(parent, signal); }
+  /** Startup restores only an already accepted owned session, then validates it.
+   * It never opens a browser, resumes a show or retries a password. */
+  restore(signal?: AbortSignal): Promise<KaraFunAccountStatus> {
+    if (this.current.state === 'connected' || !this.dependencies.sessionStore) return Promise.resolve(this.status());
+    if (this.signingIn) return this.signingIn;
+    const controller = new AbortController(); this.controller = controller;
+    const combined = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+    this.persistence = 'memory-only'; this.publish('connecting'); const revision = this.revision();
+    const task = (async () => {
+      let saved: KaraFunRememberedSession | null = null;
+      try {
+        saved = await this.dependencies.sessionStore!.load(combined);
+        if (combined.aborted || revision !== this.revision()) return this.status();
+        if (!saved) { this.publish('disconnected'); return this.status(); }
+        if (!/^[A-Za-z0-9._~-]{1,4096}$/.test(saved.sessionKey) || !/^[a-f0-9]{64}$/.test(saved.accountScope) ||
+            saved.clientId !== undefined && !/^\d{1,5}$/.test(saved.clientId)) throw failure('invalid-response');
+        const response = await this.read('session/info', saved.clientId ? { client: saved.clientId } : {}, saved.sessionKey, combined);
+        if (!karaFunEnvelopeOk(response)) throw failure('expired');
+        if (combined.aborted || revision !== this.revision()) return this.status();
+        // Re-encrypt after validation so safeStorage key rotation can be adopted.
+        try { await this.dependencies.sessionStore!.save(saved, combined); } catch { /* Existing encrypted record remains usable. */ }
+        if (combined.aborted || revision !== this.revision()) return this.status();
+        this.material = { sessionKey: saved.sessionKey, ...(saved.clientId ? { clientId: saved.clientId } : {}) };
+        this.scope = saved.accountScope; this.persistence = 'os-protected'; this.publish('connected');
+      } catch (error) {
+        if (combined.aborted || revision !== this.revision()) return this.status();
+        if (error instanceof KaraFunAccountError && error.code === 'expired') {
+          try { await this.dependencies.sessionStore!.clear(saved?.accountScope); } catch {}
+          if (revision === this.revision()) this.publish('expired', messages.expired);
+        } else this.publish('disconnected', error instanceof KaraFunAccountError && error.code === 'unavailable'
+          ? 'Saved sign-in could not be checked. Check the connection and retry.' : 'Saved sign-in could not be opened. Sign in again.');
+      } finally { if (this.controller === controller) this.controller = null; }
+      return this.status();
+    })();
+    this.signingIn = task; void task.finally(() => { if (this.signingIn === task) this.signingIn = null; }); return task;
+  }
   connect(parent?: BrowserWindow, signal?: AbortSignal): Promise<KaraFunAccountStatus> {
     if (this.current.state === 'connected') return Promise.resolve(this.status());
     if (this.signingIn) return this.signingIn;
@@ -53,7 +104,10 @@ export class KaraFunAccount {
     this.publish('connecting'); const revision = this.revision();
     const task = (async () => {
       let material: KaraFunAccountSession | null = null;
+      let savedScope: string | null = null;
       try {
+        if (this.dependencies.sessionStore) await this.dependencies.sessionStore.clear();
+        if (combined.aborted || revision !== this.revision()) throw failure('cancelled');
         const authenticate = this.dependencies.authenticate ?? (async (parent, signal) => (await import('./karafun-account-auth')).authenticateKaraFunAccount(parent, signal));
         material = await authenticate(parent, combined);
         if (!material || !/^[A-Za-z0-9._~-]{1,4096}$/.test(material.sessionKey) || material.clientId !== undefined && !/^\d{1,5}$/.test(material.clientId)) throw failure('invalid-response');
@@ -61,10 +115,19 @@ export class KaraFunAccount {
         const response = await this.read('session/info', material.clientId ? { client: material.clientId } : {}, material.sessionKey, combined);
         if (!karaFunEnvelopeOk(response)) throw failure('expired');
         if (combined.aborted || revision !== this.revision()) throw failure('cancelled');
-        this.material = material; material = null; this.scope = randomBytes(32).toString('hex'); this.publish('connected');
+        const scope = randomBytes(32).toString('hex'); let remembered = false;
+        if (this.dependencies.sessionStore) {
+          savedScope = scope;
+          try { remembered = await this.dependencies.sessionStore.save({ sessionKey: material.sessionKey,
+            ...(material.clientId ? { clientId: material.clientId } : {}), accountScope: scope }, combined); } catch { /* Sign-in still works for this launch. */ }
+        }
+        if (combined.aborted || revision !== this.revision()) throw failure('cancelled');
+        this.material = material; material = null; this.scope = scope; this.persistence = remembered ? 'os-protected' : 'memory-only';
+        this.publish('connected', this.dependencies.sessionStore && !remembered ? 'Signed in for this launch. Secure storage is unavailable.' : undefined);
         return this.status();
       } catch (error) {
         try { await material?.dispose?.(); } catch {}
+        if (savedScope) try { await this.dependencies.sessionStore?.clear(savedScope); } catch {}
         if (revision === this.revision()) {
           const message = error instanceof KaraFunAccountError ? error.message : combined.aborted ? messages.cancelled : messages.unavailable;
           this.publish('disconnected', message);
@@ -110,7 +173,10 @@ export class KaraFunAccount {
     const context = this.context();
     try { const value = await task(context); this.assertCurrent(context); return value; }
     catch (error) {
-      if (error instanceof KaraFunAccountError && error.code === 'expired' && context.scope === this.accountScope()) { this.publish('expired', messages.expired); await this.forget(); }
+      if (error instanceof KaraFunAccountError && error.code === 'expired' && context.scope === this.accountScope()) {
+        this.persistence = 'memory-only'; this.publish('expired', messages.expired); await this.forget();
+        try { await this.dependencies.sessionStore?.clear(context.scope); } catch {}
+      }
       throw error instanceof KaraFunAccountError ? error : failure('invalid-response');
     }
   }
