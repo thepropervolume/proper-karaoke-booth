@@ -14,6 +14,8 @@ Sharing is off by default. The default port is **4051**; Preferences accepts por
 
 ## Addresses and Network Access
 
+Development 0.7 binds separate listeners to verified private interfaces plus loopback, rather than every interface. On Windows the adapter must have an actual **Private** network profile; if that check fails, only this computer (127.0.0.1) is available. Other platforms use locally assigned private/link-local IPv4 addresses. **Refresh Addresses** discovers changes immediately; periodic checks retire a removed or no-longer-private interface every 30 seconds plus up to five seconds of discovery time. The app never modifies firewall rules or organization policies.
+
 Use the numeric address when a name such as `proper-computer.local` does not resolve. The application does not install an mDNS service or make a hostname work on every venue network. Changing Wi-Fi, interfaces or host addresses may require copying a fresh address.
 
 Windows may ask whether to allow the application on **Private networks**. An inbound private-network firewall allowance may be needed for the chosen port. Guest-network client isolation can prevent devices from reaching one another even when they share Wi-Fi. Check these network settings with the venue; the app does not silently change firewall rules.

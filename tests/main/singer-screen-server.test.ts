@@ -27,9 +27,9 @@ async function read(port: number, path: string, options: RequestOptions = {}) {
     req.on('error', reject); req.end();
   });
 }
-async function openStream(port: number) {
+async function openStream(port: number, hostname = '127.0.0.1') {
   return new Promise<{ response: IncomingMessage; frames: Buffer[]; close: () => void }>((resolve, reject) => {
-    const req = request({ hostname: '127.0.0.1', port, path: '/stream' }, response => {
+    const req = request({ hostname, port, path: '/stream' }, response => {
       const frames: Buffer[] = []; let buffered = Buffer.alloc(0), started = false;
       const boundary = Buffer.from('--tpv-singer-frame\r\n'), nextPart = Buffer.from('\r\n--tpv-singer-frame\r\n');
       response.on('error', () => {});
@@ -222,5 +222,80 @@ test('port conflicts fail with an actionable error and a later start can recover
 test('invalid start options never replace an existing listener', async () => fixture(async (_hub, server, port) => {
   await assert.rejects(server.start({ port: -1 }), /valid local/);
   await assert.rejects(server.start({ port: 4051, bind: 'attacker.example' }), /valid local/);
+  await assert.rejects(server.start({ port: 4051, bind: '0.0.0.0' }), /valid local/);
+  await assert.rejects(server.start({ port: 4051, bind: '::' }), /valid local/);
   assert.equal(server.status().port, port); assert.equal((await read(port, '/status')).response.statusCode, 200);
 }));
+
+test('default listeners bind only approved interfaces and loopback, with one shared viewer budget and generation', async () => {
+  const server = new SingerScreenServer(new SingerScreenFrameHub(), {
+    discoverAddresses: async () => ['127.0.0.2', '8.8.8.8', '0.0.0.0'], maxViewers: 1,
+  });
+  try {
+    const status = await server.start({ port: 0 });
+    assert.equal(status.bind, 'private');
+    assert.deepEqual(status.urls, [`http://127.0.0.2:${status.port}`, `http://127.0.0.1:${status.port}`]);
+    const a = JSON.parse((await read(status.port!, '/status')).body);
+    const b = JSON.parse((await read(status.port!, '/status', { hostname: '127.0.0.2' })).body);
+    assert.equal(a.streamId, b.streamId);
+    assert.equal((await read(status.port!, '/status', { headers: { Host: `127.0.0.3:${status.port}` } })).response.statusCode, 403);
+    const viewer = await openStream(status.port!, '127.0.0.2');
+    try { assert.equal((await read(status.port!, '/stream')).response.statusCode, 503); }
+    finally { viewer.close(); }
+  } finally { await server.stop(); }
+});
+
+test('profile query failure leaves a usable loopback-only display without advertising LAN addresses', async () => {
+  const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => { throw new Error('Unavailable'); } });
+  try {
+    const status = await server.start({ port: 0 });
+    assert.deepEqual(status.urls, [`http://127.0.0.1:${status.port}`]);
+    assert.equal((await read(status.port!, '/')).response.statusCode, 200);
+  } finally { await server.stop(); }
+});
+
+test('network trust is rechecked automatically and a removed or public interface loses its socket', async () => {
+  let approved = ['127.0.0.2'];
+  const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => approved, networkCheckMs: 40 });
+  try {
+    const status = await server.start({ port: 0 }), port = status.port!;
+    const viewer = await openStream(port, '127.0.0.2');
+    approved = [];
+    try {
+      await until(() => server.status().urls.length === 1);
+      assert.deepEqual(server.status().urls, [`http://127.0.0.1:${port}`]);
+      assert.equal((await read(port, '/')).response.statusCode, 200);
+      const probe = createServer();
+      await new Promise<void>((resolve, reject) => { probe.once('error', reject); probe.listen(port, '127.0.0.2', resolve); });
+      await new Promise<void>(resolve => probe.close(() => resolve()));
+    } finally { viewer.close(); }
+  } finally { await server.stop(); }
+});
+
+test('a failed second interface rolls back every listener and a retry uses the current approved addresses', async () => {
+  const occupied = createServer();
+  await new Promise<void>((resolve, reject) => { occupied.once('error', reject); occupied.listen(0, '127.0.0.2', resolve); });
+  const address = occupied.address(); assert.ok(address && typeof address !== 'string');
+  let approved = ['127.0.0.2'];
+  const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => approved });
+  try {
+    await assert.rejects(server.start({ port: address.port }), /already in use/);
+    assert.equal(server.status().state, 'failed'); assert.deepEqual(server.status().urls, []);
+    const probe = createServer();
+    await new Promise<void>((resolve, reject) => { probe.once('error', reject); probe.listen(address.port, '127.0.0.1', resolve); });
+    await new Promise<void>(resolve => probe.close(() => resolve()));
+    approved = [];
+    assert.equal((await server.start({ port: address.port })).state, 'listening');
+  } finally { await server.stop(); await new Promise<void>(resolve => occupied.close(() => resolve())); }
+});
+
+test('an explicitly selected interface is closed when its network is no longer approved', async () => {
+  let approved = ['127.0.0.2'];
+  const server = new SingerScreenServer(new SingerScreenFrameHub(), { discoverAddresses: async () => approved });
+  try {
+    const first = await server.start({ port: 0, bind: '127.0.0.2' });
+    approved = [];
+    await assert.rejects(server.start({ port: first.port!, bind: '127.0.0.2' }), /private network/);
+    assert.equal(server.status().state, 'stopped'); assert.deepEqual(server.status().urls, []);
+  } finally { await server.stop(); }
+});

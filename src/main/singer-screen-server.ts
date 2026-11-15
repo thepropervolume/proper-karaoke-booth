@@ -1,8 +1,9 @@
 /** Read-only visual mirror of the authoritative singer display. No media or host API. */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { hostname, networkInterfaces } from 'node:os';
+import { hostname } from 'node:os';
 import { isIP, type Socket } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { discoverSingerScreenAddresses } from './singer-screen-network';
 
 export type SingerScreenFrame = Readonly<{ jpeg: Buffer; width: number; height: number; sequence: number }>;
 type FrameListener = (frame: SingerScreenFrame | null) => void;
@@ -69,13 +70,9 @@ export function isLanSingerScreenPeer(address: string | undefined): boolean {
   return isIP(value) === 6 && (value === '::1' || /^f[cd]/.test(value) || /^fe[89ab]/.test(value));
 }
 
-function interfaceAddresses(): string[] {
-  return [...new Set(Object.values(networkInterfaces()).flat().filter(item => item && !item.internal && item.family === 'IPv4' && isLanSingerScreenPeer(item.address)).map(item => item!.address))];
-}
-
 /** Explicitly started, read-only LAN visual sharing; never changes firewall or mDNS. */
 export class SingerScreenServer {
-  private server: Server | null = null;
+  private readonly servers = new Map<string, Server>();
   private readonly sockets = new Set<Socket>();
   private readonly clients = new Set<Client>();
   private unsubscribe: (() => void) | null = null;
@@ -86,17 +83,26 @@ export class SingerScreenServer {
   private streamId = '';
   private readonly maxViewers: number;
   private readonly slowClientMs: number;
-  constructor(private readonly hub: SingerScreenFrameHub, options: { maxViewers?: number; slowClientMs?: number } = {}) {
+  private readonly discoverAddresses: () => Promise<string[]>;
+  private readonly networkCheckMs: number;
+  private networkTimer: ReturnType<typeof setTimeout> | null = null;
+  constructor(private readonly hub: SingerScreenFrameHub, options: {
+    maxViewers?: number; slowClientMs?: number; discoverAddresses?: () => Promise<string[]>; networkCheckMs?: number;
+  } = {}) {
     this.maxViewers = options.maxViewers ?? 64; this.slowClientMs = options.slowClientMs ?? 3000;
+    this.discoverAddresses = options.discoverAddresses ?? discoverSingerScreenAddresses;
+    this.networkCheckMs = options.networkCheckMs ?? 30_000;
     if (!Number.isInteger(this.maxViewers) || this.maxViewers < 1 || this.maxViewers > 256 ||
-      !Number.isInteger(this.slowClientMs) || this.slowClientMs < 10 || this.slowClientMs > 30_000) throw new Error('Invalid singer screen server limits.');
+      !Number.isInteger(this.slowClientMs) || this.slowClientMs < 10 || this.slowClientMs > 30_000 ||
+      !Number.isInteger(this.networkCheckMs) || this.networkCheckMs < 10 || this.networkCheckMs > 300_000) throw new Error('Invalid singer screen server limits.');
   }
   status(): SingerScreenServerStatus {
     const port = this.boundPort;
-    const addresses = this.bind === '127.0.0.1' ? ['127.0.0.1'] : this.bind === '::1' ? ['[::1]'] :
-      this.bind && this.bind !== '0.0.0.0' && this.bind !== '::' ? [this.bind.includes(':') ? `[${this.bind}]` : this.bind] : interfaceAddresses();
-    return { state: this.server?.listening ? 'listening' : this.failure ? 'failed' : 'stopped', port, bind: this.bind,
-      urls: port === null ? [] : (addresses.length ? addresses : ['127.0.0.1']).map(address => `http://${address}:${port}`), viewers: this.clients.size,
+    const addresses = [...this.servers].filter(([, server]) => server.listening)
+      .sort(([a], [b]) => Number(a === '127.0.0.1' || a === '::1') - Number(b === '127.0.0.1' || b === '::1'))
+      .map(([address]) => address.includes(':') ? `[${address}]` : address);
+    return { state: addresses.length ? 'listening' : this.failure ? 'failed' : 'stopped', port, bind: this.bind,
+      urls: port === null ? [] : addresses.map(address => `http://${address}:${port}`), viewers: this.clients.size,
       maxViewers: this.maxViewers, frameAvailable: this.hub.current !== null, ...(this.failure ? { error: this.failure } : {}) };
   }
   start(options: SingerScreenStartOptions = {}): Promise<SingerScreenServerStatus> {
@@ -108,47 +114,78 @@ export class SingerScreenServer {
     this.transition = operation.catch(() => {}); return operation;
   }
   private async startNow(options: SingerScreenStartOptions): Promise<SingerScreenServerStatus> {
-    const port = options.port ?? 4051, bind = options.bind ?? '0.0.0.0';
-    if (!Number.isInteger(port) || port < 0 || port > 65535 || !isIP(bind) ||
-      !['0.0.0.0', '::', '127.0.0.1', '::1', ...interfaceAddresses()].includes(bind)) throw new Error('Choose a valid local singer-screen address and port.');
-    if (this.server?.listening && this.boundPort === port && this.bind === bind) return this.status();
+    const port = options.port ?? 4051, bind = options.bind ?? 'private';
+    if (!Number.isInteger(port) || port < 0 || port > 65535 ||
+      bind !== 'private' && (!isIP(bind) || !isLanSingerScreenPeer(bind)) || bind === '0.0.0.0' || bind === '::')
+      throw new Error('Choose a valid local singer-screen address and port.');
+    let approved: string[] = [];
+    if (bind !== '127.0.0.1' && bind !== '::1') {
+      try { approved = [...new Set(await this.discoverAddresses())].filter(address => isIP(address) === 4 && isLanSingerScreenPeer(address)).sort(); }
+      catch { /* Keep only loopback if network profiles cannot be verified. */ }
+    }
+    if (bind !== 'private' && !['127.0.0.1', '::1', ...approved].includes(bind)) {
+      // Trust may have changed since this explicit interface was selected.
+      if (this.bind === bind) await this.stopNow();
+      throw new Error('Choose a valid local singer-screen address on a private network.');
+    }
+    const addresses = bind === 'private' ? [...new Set(['127.0.0.1', ...approved])] : [bind];
+    if (this.servers.size && this.boundPort === port && this.bind === bind &&
+      addresses.length === this.servers.size && addresses.every(address => this.servers.get(address)?.listening)) {
+      this.scheduleNetworkCheck(options); return this.status();
+    }
     await this.stopNow(); this.failure = undefined;
-    const server = createServer({ maxHeaderSize: 8192 }, (request, response) => this.handle(request, response));
-    server.requestTimeout = 5000; server.headersTimeout = 5000; server.keepAliveTimeout = 5000;
-    server.maxConnections = Math.max(32, this.maxViewers * 3 + 16); server.maxRequestsPerSocket = 100;
-    server.on('connection', socket => { this.sockets.add(socket); socket.on('close', () => this.sockets.delete(socket)); });
-    server.on('clientError', (_error, socket) => { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); });
-    this.server = server; this.bind = bind;
+    this.bind = bind;
     try {
-      await new Promise<void>((resolve, reject) => {
-        const failed = (error: Error) => { server.off('listening', ready); reject(error); };
-        const ready = () => { server.off('error', failed); resolve(); };
-        server.once('error', failed); server.once('listening', ready); server.listen({ port, host: bind });
-      });
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('Invalid listener address.');
-      this.boundPort = address.port;
+      for (const address of addresses) await this.listen(address, this.boundPort ?? port);
       this.streamId = randomUUID();
       this.unsubscribe = this.hub.subscribe(frame => this.broadcast(frame));
-      // Handle errors after successful listen without an unhandled EventEmitter error.
-      server.on('error', () => {
-        if (this.server !== server) return;
-        void this.stop().then(() => { if (!this.server) this.failure = 'listen-failed'; });
-      });
+      this.scheduleNetworkCheck(options);
       return this.status();
     } catch (error) {
       await this.stopNow(); this.failure = (error as NodeJS.ErrnoException).code === 'EADDRINUSE' ? 'port-in-use' : 'listen-failed';
       throw new Error(this.failure === 'port-in-use' ? 'Singer screen port is already in use. Choose another port.' : 'Singer screen could not start. Check the local network address and port.');
     }
   }
+  private async listen(address: string, port: number): Promise<void> {
+    const server = createServer({ maxHeaderSize: 8192 }, (request, response) => this.handle(request, response));
+    server.requestTimeout = 5000; server.headersTimeout = 5000; server.keepAliveTimeout = 5000;
+    server.maxConnections = Math.max(32, this.maxViewers * 3 + 16); server.maxRequestsPerSocket = 100;
+    server.on('connection', socket => { this.sockets.add(socket); socket.on('close', () => this.sockets.delete(socket)); });
+    server.on('clientError', (_error, socket) => { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); });
+    this.servers.set(address, server);
+    await new Promise<void>((resolve, reject) => {
+      const failed = (error: Error) => { server.off('listening', ready); reject(error); };
+      const ready = () => { server.off('error', failed); resolve(); };
+      server.once('error', failed); server.once('listening', ready); server.listen({ port, host: address });
+    });
+    const actual = server.address();
+    if (!actual || typeof actual === 'string') throw new Error('Invalid listener address.');
+    this.boundPort = actual.port;
+    server.on('error', () => {
+      if (this.servers.get(address) !== server) return;
+      void this.stop().then(() => { if (!this.servers.size) this.failure = 'listen-failed'; });
+    });
+  }
+  private scheduleNetworkCheck(options: SingerScreenStartOptions): void {
+    if (this.networkTimer) clearTimeout(this.networkTimer);
+    if (options.bind === '127.0.0.1' || options.bind === '::1') return;
+    this.networkTimer = setTimeout(() => {
+      this.networkTimer = null;
+      if (!this.servers.size || this.boundPort === null) return;
+      // Recheck trust on retry and periodically; public/removed interfaces lose their listener.
+      void this.start({ ...options, port: this.boundPort }).catch(() => {});
+    }, this.networkCheckMs);
+    this.networkTimer.unref();
+  }
   private async stopNow(): Promise<void> {
-    const server = this.server; this.server = null; this.boundPort = null; this.bind = null; this.failure = undefined;
+    if (this.networkTimer) clearTimeout(this.networkTimer); this.networkTimer = null;
+    const servers = [...this.servers.values()]; this.servers.clear(); this.boundPort = null; this.bind = null; this.failure = undefined;
     this.unsubscribe?.(); this.unsubscribe = null;
     for (const client of [...this.clients]) { this.removeClient(client); client.response.destroy(); }
-    if (server) {
-      const closed = new Promise<void>(resolve => server.close(() => resolve()));
+    if (servers.length) {
+      const closed = servers.map(server => new Promise<void>(resolve => server.close(() => resolve())));
       for (const socket of this.sockets) socket.destroy();
-      server.closeAllConnections(); await closed;
+      for (const server of servers) server.closeAllConnections(); await Promise.all(closed);
     }
   }
   private hostAllowed(request: IncomingMessage): boolean {
@@ -157,7 +194,7 @@ export class SingerScreenServer {
     try {
       const url = new URL('http://' + raw), name = url.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
       const local = hostname().toLowerCase();
-      const allowed = new Set(['localhost', '127.0.0.1', '::1', local, `${local}.local`, ...interfaceAddresses()]);
+      const allowed = new Set(['localhost', '127.0.0.1', '::1', local, `${local}.local`, ...this.servers.keys()]);
       if (Number(url.port || 80) !== this.boundPort || !allowed.has(name)) return false;
       const origin = request.headers.origin;
       return !origin || origin === url.origin;
