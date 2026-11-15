@@ -1,18 +1,30 @@
-# Native KaraFun Integration Investigation
+# Native KaraFun Integration
 
-Reviewed 14 November 2026 against KaraFun plugin commit `9abc10886597cd6e182cd4e1792979a0a5bdabac` and KHost commit `b397bdd8aa7a3c4e2a0ddced43567b3278424c6e`. Both were the current upstream main revisions when checked. This is an engineering investigation for the application after **0.5.0**, not a claim that direct KaraFun sign-in or native playback has shipped.
+Reviewed 14 November 2026 for the experimental **0.6.0** source implementation, against KaraFun plugin commit `9abc10886597cd6e182cd4e1792979a0a5bdabac` and KHost commit `b397bdd8aa7a3c4e2a0ddced43567b3278424c6e`. Both were the current upstream main revisions when checked. Existing 0.5.0 installers do not contain this implementation. Real-account acquisition passed for one recording; complete actual-account TPV playback remains pending verification.
 
 ## Direction and Current Evidence
 
-The goal is to sign into an existing eligible KaraFun account within TPV, find songs in the ordinary library, queue them for TPV singers and play them through TPV's transport and singer display. A second KHost queue or player is not the target experience.
+The source implementation connects an existing eligible account to TPV's library, singer dialog, durable queue, private KIT preparation and native singer renderer. KHost is not required for this path. The optional external KHost bridge remains separate and is never selected as a hidden fallback.
 
 The 0.5.0 KHost bridge was our interim architectural choice. It is not a demonstrated technical requirement. The upstream plugin separates its network/session provider from its `.kit` media and timed-lyric adapters; those responsibilities can be investigated for an independent implementation. The owner reports that their normal subscription login and playback work in KHost. That establishes their KHost setup works, not that the same account has passed a direct TPV implementation.
 
 There is no KaraFun OEM binary SDK dependency in the inspected plugin project. It uses .NET 10, public KHost contracts, logging and Protocol Buffers for its optional guest connection. An ordinary HTTP client, strict XML parsing and a new TPV media adapter are a plausible native route. This is a source-based feasibility assessment, not live-provider verification. See the [plugin dependencies](https://github.com/ezhalden/KHost.Plugins.KaraFun/blob/9abc10886597cd6e182cd4e1792979a0a5bdabac/src/KHost.Plugins.KaraFun/KHost.Plugins.KaraFun.csproj#L17-L38) and [provider/rendering separation](https://github.com/ezhalden/KHost.Plugins.KaraFun/blob/9abc10886597cd6e182cd4e1792979a0a5bdabac/docs/how-it-works.md#L5-L18).
 
-An isolated HTTP probe confirmed normal sign-in to KaraFun's official website using the owner's supplied account. The authenticated page's credentials callback matched the supplied login in memory. Credentials and cookies remained in memory and were neither logged nor saved. This establishes website authentication, not a TPV API session, eligible media acquisition or playback.
+An isolated account probe passed normal official website sign-in, the official web engine's session opening, and independent native `session/info` and search requests using that owned session. Native requests used an honest TPV user agent; no embedded macOS client key or application identity was copied. Credentials, session material and cookies remained private and were not logged or committed. The earlier probe without stage markers was inconclusive; the subsequent instrumented probe supplies the successful session/search evidence.
 
-A separate isolated, muted Electron web-engine probe ended at its outer 100-second deadline without returning stage markers. Its child was terminated and its validated private temporary profile removed. Whether that process submitted its permitted login or reached an API request is unknown. This is an inconclusive startup/observability result, not evidence of a provider denial, challenge or mandatory OEM-only route. No successful direct TPV API login, session inspection, signed search, acquisition or native playback is claimed. The next account experiment needs reliable stage markers before observing the official web engine's normal session flow or testing independently accepted client identification.
+Synthetic KIT/timing, acquisition-cache and host-authority tests passed. A muted generated-Ogg player rehearsal passed clock, pause/resume, seek, Stop, generation and output-recovery checks. The full synthetic TPV library/singer/queue/cache/player flow passed as well. A real account authorized and acquired one 5,516,449-byte recording, verified size/MD5/SHA256 and parsed three audio stems, six artwork members and timing. Complete actual-account TPV playback is a separate gate. A KaraFun cancellation email supplied no effective access end date; successful acquisition establishes that recording's eligibility at that time, not plan duration.
+
+## Experimental Host Workflow and Limits
+
+1. Open **Sources → KaraFun**, choose **Sign In to KaraFun** and complete the official sign-in window. Its audio is muted; sign-in does not create a show, request a recording or start playback.
+2. Search at least two characters in **Song Library**. Connected native results appear under **KaraFun**, alongside other library sources. Choose a result, then choose or enter the singer in TPV's normal dialog and add it to the queue.
+3. Accepted or staged requests dispatch private background preparation. With manual moderation, accept the request first. Check **Sources → KaraFun → Song Preparation** and use **Retry** after a reported failure. Completion never stages or starts the song.
+4. Press **Play/Pause** when ready. Each start/resume obtains a fresh account media authorization; a cached path alone cannot authorize playback. TPV supplies the transport, one audio clock, timed lyrics, selected silent backdrop, preview and visual LAN mirror. Stop returns the ordinary request to the queue.
+5. Sign out to revoke local account use and cancel preparation. An active native performance is paused and silenced. Restarting also retains the show paused and requires signing in again and deliberately preparing/resuming.
+
+Sessions are **memory-only**. This increment does not remember passwords or sessions in an OS vault. A new sign-in uses a fresh opaque cache scope until stable authenticated account identity is verified, so re-signing in requires new preparation even if earlier KIT files remain. Account files supplied by the owner are neither removed nor modified. KITs live in a private managed app cache, separate from permanent YouTube MP4 downloads; retention is not a promise of permanent or offline entitlement.
+
+Acquisition is bounded to 128 MiB per KIT, with at most two prepared entries and a 128 MiB aggregate memory target; the active performance is pinned separately. The player bounds decoded audio to 512 MiB. An oversized recording reports that a prepared fixed mix is required; automatic premixing is not implemented. Native community recordings, pitch/tempo, host stem/voice controls and global KaraFun heart ratings remain unsupported. A provider authorization failure keeps the queue intact and offers retry/account recovery rather than starting cached audio or switching players.
 
 ## Authentication and Application Identity
 
@@ -38,7 +50,7 @@ The plugin DLL is not a drop-in Electron module. It expects .NET dependency inje
 
 The inspected `.kit` reader describes an unencrypted chunked container with XML timing, Ogg audio members and artwork. Parsing that container must not be described as DRM decryption. Stem roles come from the timing's labels, not solely from stream numbers; duets can contain separate lead voices. The plugin hands stems and timed lyrics to KHost, which owns mixing, clocks, display and transport. See the [container](https://github.com/ezhalden/KHost.Plugins.KaraFun/blob/9abc10886597cd6e182cd4e1792979a0a5bdabac/src/KHost.Plugins.KaraFun/Kit/KitContainer.cs#L5-L63), [stem labels](https://github.com/ezhalden/KHost.Plugins.KaraFun/blob/9abc10886597cd6e182cd4e1792979a0a5bdabac/src/KHost.Plugins.KaraFun/Kit/KitStems.cs#L6-L69) and [renderer handoff](https://github.com/ezhalden/KHost.Plugins.KaraFun/blob/9abc10886597cd6e182cd4e1792979a0a5bdabac/src/KHost.Plugins.KaraFun/KaraFunKitRenderer.cs#L38-L79).
 
-TPV should implement this route through its existing authority:
+The experimental implementation follows this route through TPV's existing authority; full real-account acceptance still requires the evidence below:
 
 1. Store a distinct KaraFun recording identity and provider provenance, separate from local/YouTube IDs and from any community-song namespace.
 2. Resolve an authorized media request, acquire into a managed temporary location, validate length/container/integrity, then publish without silent overwrite. Do not claim permanent caching or offline entitlement without verified provider/account behavior.
@@ -50,6 +62,8 @@ TPV should implement this route through its existing authority:
 Pitch and tempo, detailed stem faders, alternate vocal arrangements and faithful recreation of every provider visual effect are later phases. The first useful result is a complete song played through TPV's normal queue and singer screen with reliable timing and recovery.
 
 ## Phases and Acceptance Evidence
+
+Bounded account/search, independent format/cache/queue handling and synthetic native-player foundations are implemented. The verified real-account evidence currently stops at session inspection/search. Protected credential persistence, full real-song queue/playback and supported-hardware checks remain acceptance work; the phase lists distinguish those requirements from the current proof.
 
 ### Phase 1 Read Only Account and Search Proof
 
