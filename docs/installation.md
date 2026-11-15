@@ -1,8 +1,10 @@
 # Installing The Proper Volume Karaoke Booth
 
+Download installers from [GitHub Releases](https://github.com/thepropervolume/proper-karaoke-booth/releases). Version changes on the default branch trigger verified builds for every supported desktop platform; [release automation](releasing.md) explains tags, assets and recovery. Each release includes its own exact source commit and checksums. The local verification history below remains version-specific.
+
 Development **0.8.0** adds independent KaraFun instrumental, lead and backing channel volumes, including separate duet/choir parts when supplied. **Vocal Mix** is beside the transport during native playback. Mix changes survive pause/seek/Previous and reset for a new performance; lead starts muted. The official release target remains **1.0.0**.
 
-All packages below use frozen runtime source `c0795b8`. Files and verification receipts are in local `C:\Users\hello\Projects\proper-karaoke-booth\release`. The installed app and Dropbox mirror were not changed by this delivery.
+The locally verified 0.8.0 packages described below use frozen runtime source `c0795b8`. Their files and verification receipts are in local `C:\Users\hello\Projects\proper-karaoke-booth\release`. The installed app and Dropbox mirror were not changed by that delivery.
 
 ## 0.8.0 Packages and Checks
 

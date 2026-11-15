@@ -1,0 +1,133 @@
+name: Release on version change
+run-name: Release ${{ github.ref_name }} at ${{ github.sha }}
+
+on:
+  push:
+    branches: [main, master]
+    paths: [package.json, package-lock.json]
+  # Seed the current version once, or retry an unpublished version without a bump.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      version: ${{ steps.plan.outputs.version }}
+      commit: ${{ steps.plan.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Check version change and existing releases
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/github-release.mjs plan
+
+  windows:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    uses: ./.github/workflows/release-build.yml
+    with:
+      platform: win
+      runner: windows-latest
+      commit: ${{ needs.plan.outputs.commit }}
+  linux:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    uses: ./.github/workflows/release-build.yml
+    with:
+      platform: linux
+      runner: ubuntu-24.04
+      commit: ${{ needs.plan.outputs.commit }}
+  macos:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    uses: ./.github/workflows/release-build.yml
+    with:
+      platform: mac
+      runner: xcode-27
+      commit: ${{ needs.plan.outputs.commit }}
+
+  planning:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install planning dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y poppler-utils
+          python -m pip install -r scripts/planning-requirements.txt
+      - name: Generate planning editions from canonical Markdown
+        run: |
+          python -m unittest discover -s tests/docs
+          python scripts/generate-planning.py --output-dir release/planning
+          node scripts/github-release.mjs planning
+      - id: artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-planning-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/ci-assets/planning/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [plan, windows, linux, macos, planning]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    # Serialize only publication of the same version; never cancel an upload.
+    concurrency:
+      group: release-${{ needs.plan.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      # Exact IDs prevent a rerun from accidentally mixing another attempt's files.
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.windows.outputs.artifact-id }},${{ needs.linux.outputs.artifact-id }},${{ needs.macos.outputs.artifact-id }},${{ needs.planning.outputs.artifact-id }}
+          path: release-assets
+          merge-multiple: true
+      - name: Verify all assets and publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/github-release.mjs publish

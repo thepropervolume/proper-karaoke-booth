@@ -1,0 +1,67 @@
+name: Build verified release packages
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      commit:
+        required: true
+        type: string
+    outputs:
+      artifact-id:
+        value: ${{ jobs.package.outputs.artifact-id }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
+    outputs:
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+    env:
+      TPV_RELEASE_PLATFORM: ${{ inputs.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Install Linux packaging and headless test libraries
+        if: inputs.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libsecret-1-0 libnotify4 libuuid1 libdrm2 libx11-xcb1 xvfb xauth dpkg fakeroot
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Test application, release rules and branding
+        run: |
+          npm run test:ci
+          npm run test:release
+          node scripts/verify-brand-assets.mjs
+      - name: Package native platform
+        run: npm run "package:$TPV_RELEASE_PLATFORM"
+      - name: Verify source, payloads and packaged app
+        run: node scripts/github-release.mjs platform "$TPV_RELEASE_PLATFORM"
+      - name: Retain only verified release assets
+        id: artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-${{ inputs.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/ci-assets/${{ inputs.platform }}/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
