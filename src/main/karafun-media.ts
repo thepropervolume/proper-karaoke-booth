@@ -9,13 +9,13 @@ export type KaraFunMediaDescriptor = { url: string; expectedBytes: number | null
 export type KaraFunPreparedMedia = { path: string; fingerprint: string; accountScope: string; source: KaraFunSource; kit: KaraFunKit; md5: string; bytes: number };
 export type KaraFunMediaProgress = { phase: 'authorizing' | 'downloading' | 'checking' | 'ready'; received: number; total: number | null };
 export class KaraFunMediaError extends Error {
-  constructor(readonly code: 'cancelled' | 'unavailable' | 'invalid-media' | 'cache-unavailable' | 'cleanup-required', message: string) {
+  constructor(readonly code: 'cancelled' | 'unavailable' | 'invalid-media' | 'cache-unavailable' | 'cache-miss' | 'cleanup-required', message: string) {
     super(message); this.name = 'KaraFunMediaError';
   }
 }
 const invalid = () => new KaraFunMediaError('invalid-media', 'The KaraFun song was incomplete or could not be verified. Retry preparation.');
 const allowedCdn = (host: string) => ['karafun.com', 'recis.io', 'amazonaws.com'].some(domain => host === domain || host.endsWith('.' + domain));
-const maximumBytes = 512 * 1024 * 1024;
+const maximumBytes = 128 * 1024 * 1024;
 
 function privateUrl(value: string): URL {
   try {
@@ -41,11 +41,11 @@ export class KaraFunMediaCache {
 
   prepare(source: KaraFunSource, accountScope: string,
     authorize: (signal: AbortSignal) => Promise<KaraFunMediaDescriptor>, options: {
-      signal: AbortSignal; previousPath?: string; progress?: (value: KaraFunMediaProgress) => void;
+      signal: AbortSignal; previousPath?: string; existingOnly?: boolean; progress?: (value: KaraFunMediaProgress) => void;
     }): Promise<KaraFunPreparedMedia> {
     if (!/^[a-f0-9]{64}$/.test(accountScope) || !/^[1-9]\d{0,11}$/.test(source.songId) || !['catalog', 'community'].includes(source.catalog))
       return Promise.reject(invalid());
-    const key = `${accountScope}:${source.catalog}:${source.songId}`;
+    const key = `${accountScope}:${source.catalog}:${source.songId}:${!!options.existingOnly}`;
     const existing = this.pending.get(key);
     if (existing) return existing;
     const task = this.acquire(source, accountScope, authorize, options).finally(() => { if (this.pending.get(key) === task) this.pending.delete(key); });
@@ -53,7 +53,7 @@ export class KaraFunMediaCache {
   }
 
   private async acquire(source: KaraFunSource, scope: string, authorize: (signal: AbortSignal) => Promise<KaraFunMediaDescriptor>,
-    options: { signal: AbortSignal; previousPath?: string; progress?: (value: KaraFunMediaProgress) => void }): Promise<KaraFunPreparedMedia> {
+    options: { signal: AbortSignal; previousPath?: string; existingOnly?: boolean; progress?: (value: KaraFunMediaProgress) => void }): Promise<KaraFunPreparedMedia> {
     const timeout = AbortSignal.timeout(this.dependencies.timeoutMs ?? 300_000);
     const signal = AbortSignal.any([options.signal, timeout]);
     const report = (phase: KaraFunMediaProgress['phase'], received = 0, total: number | null = null) => { try { options.progress?.({ phase, received, total }); } catch {} };
@@ -94,6 +94,7 @@ export class KaraFunMediaCache {
     for (const path of new Set([...(options.previousPath ? [options.previousPath] : []), canonical])) {
       const retained = await inspect(path); if (retained) { report('ready', retained.bytes, retained.bytes); return retained; }
     }
+    if (options.existingOnly) throw new KaraFunMediaError('cache-miss', 'The KaraFun recording needs preparation before playback.');
     aborted(signal);
     const stage = await mkdtemp(join(folder, '.prepare-')), stageIdentity = await lstat(stage), temporary = join(stage, 'song.kit');
     let output: Awaited<ReturnType<typeof open>> | undefined, published: KaraFunPreparedMedia | null = null;
@@ -110,12 +111,12 @@ export class KaraFunMediaCache {
         }
         break;
       }
-      if (!response?.ok || !response.body || ![200].includes(response.status)) throw new KaraFunMediaError('unavailable', 'KaraFun did not provide the song. Check the account and retry preparation.');
-      const encoding = response.headers.get('content-encoding'); if (encoding && encoding !== 'identity') throw invalid();
+      if (!response?.ok || !response.body || ![200].includes(response.status)) { await response?.body?.cancel(); throw new KaraFunMediaError('unavailable', 'KaraFun did not provide the song. Check the account and retry preparation.'); }
+      const encoding = response.headers.get('content-encoding'); if (encoding && encoding !== 'identity') { await response.body.cancel(); throw invalid(); }
       const length = response.headers.get('content-length');
       const stated = length === null ? null : /^\d+$/.test(length) ? Number(length) : NaN;
       if (stated !== null && (!Number.isSafeInteger(stated) || stated <= 0 || stated > maximumBytes ||
-          descriptor.expectedBytes !== null && stated !== descriptor.expectedBytes)) throw invalid();
+          descriptor.expectedBytes !== null && stated !== descriptor.expectedBytes)) { await response.body.cancel(); throw invalid(); }
       const md5 = createHash('md5'), sha256 = createHash('sha256'); let received = 0;
       report('downloading', 0, descriptor.expectedBytes ?? stated);
       const reader = response.body.getReader();

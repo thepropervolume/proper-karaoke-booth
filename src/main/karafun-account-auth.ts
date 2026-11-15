@@ -60,7 +60,7 @@ export async function authenticateKaraFunAccount(parent?: BrowserWindow, signal?
     try {
       if (method === 'Network.requestWillBeSent') {
         const url = new URL(params.request.url);
-        if (url.origin !== 'https://api.karafun.com' || url.pathname !== '/session/open' || params.request.method !== 'POST') return;
+        if (url.origin !== 'https://api.karafun.com' || url.pathname !== '/session/open' || !['GET', 'POST'].includes(params.request.method)) return;
         let login = url.searchParams.get('login');
         if (!login && typeof params.request.postData === 'string' && params.request.postData.length <= 16_384) login = new URLSearchParams(params.request.postData).get('login');
         const client = url.searchParams.get('client');

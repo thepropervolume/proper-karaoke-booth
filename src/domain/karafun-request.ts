@@ -3,7 +3,7 @@ import type { Settings } from './settings';
 import { validStreamingSource, type KaraFunSource } from './streaming-source';
 import { compileSongBlacklist } from './song-blacklist';
 
-export type KaraFunRequestTrack = { songId: string; catalog: 'catalog' | 'community'; title: string; artist: string };
+export type KaraFunRequestTrack = { songId: string; catalog: 'catalog' | 'community'; title: string; artist: string; explicit?: boolean | null };
 type Result = { ok: boolean; versionId?: string; error?: string };
 const text = (value: unknown, empty = false): value is string => typeof value === 'string' && (empty || !!value.trim()) &&
   value.length <= 500 && !/[\x00-\x1f\x7f]/.test(value);
@@ -13,7 +13,8 @@ const text = (value: unknown, empty = false): value is string => typeof value ==
 export function karaFunRequest(state: ShowState, track: KaraFunRequestTrack, singerId: string, requestId: string,
   settings: Settings, ids: { versionId: string; commandId: string }, now: number): { state: ShowState; result: Result } {
   const refuse = (error: string) => ({ state, result: { ok: false, error } });
-  if (!track || Object.keys(track).some(key => !['songId', 'catalog', 'title', 'artist'].includes(key)) ||
+  if (!track || Object.keys(track).some(key => !['songId', 'catalog', 'title', 'artist', 'explicit'].includes(key)) ||
+      track.explicit !== undefined && track.explicit !== null && typeof track.explicit !== 'boolean' ||
       !text(track.title) || !text(track.artist, true) || !text(singerId) || !text(requestId)) return refuse('Choose a valid KaraFun recording and singer.');
   const source: KaraFunSource = { provider: 'karafun', songId: track.songId, catalog: track.catalog };
   if (!validStreamingSource(source)) return refuse('The KaraFun recording identity is invalid.');
@@ -26,7 +27,7 @@ export function karaFunRequest(state: ShowState, track: KaraFunRequestTrack, sin
   const repeated = state.requests.find(request => request.id === requestId);
   if (repeated) return existing && repeated.singerId === singerId && repeated.versionId === existing.id
     ? { state, result: { ok: true, versionId: existing.id } } : refuse('That request identifier is already in use.');
-  const version: Version = existing ?? { id: ids.versionId, title: track.title.trim(), artist: track.artist.trim(), rating: 'unrated', source };
+  const version: Version = existing ?? { id: ids.versionId, title: track.title.trim(), artist: track.artist.trim(), rating: track.explicit === false ? 'clean' : track.explicit === true ? 'explicit' : 'unrated', source };
   let next = state;
   const send = (command: Command, suffix: string) => applyCommand(next, { commandId: ids.commandId + suffix,
     showId: next.showId, hostEpoch: next.hostEpoch, expectedRevision: next.revision, actor: { role: 'host', id: 'host' }, command }, settings, now);

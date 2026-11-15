@@ -100,3 +100,17 @@ test('accounts have separate private caches even for the same recording', async 
   const second = await cache.prepare(source, 'b'.repeat(64), async () => descriptor, options());
   assert.notEqual(first.path, second.path); assert.notEqual(first.accountScope, second.accountScope);
 }));
+
+test('start-time hydration verifies an existing authorized cache without initiating a new download', async () => isolated(async dir => {
+  let downloads = 0, authorized = 0;
+  const cache = new KaraFunMediaCache(dir, { parse, fetch: async () => { downloads++; return new Response(bytes); } });
+  const authorize = async () => { authorized++; return descriptor; };
+  await assert.rejects(cache.prepare(source, scope, authorize, { ...options(), existingOnly: true }), { code: 'cache-miss' });
+  assert.equal(downloads, 0);
+  const saved = await cache.prepare(source, scope, authorize, options());
+  const hydrated = await cache.prepare(source, scope, authorize, { ...options(), existingOnly: true, previousPath: saved.path });
+  assert.equal(hydrated.path, saved.path); assert.equal(downloads, 1); assert.equal(authorized, 3);
+  await writeFile(saved.path, 'damaged retained file');
+  await assert.rejects(cache.prepare(source, scope, authorize, { ...options(), existingOnly: true }), { code: 'cache-miss' });
+  assert.equal(downloads, 1); assert.equal(await readFile(saved.path, 'utf8'), 'damaged retained file');
+}));

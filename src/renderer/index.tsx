@@ -50,6 +50,9 @@ import { LibraryCatalogStatus } from './LibraryCatalogStatus';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { ProviderCatalogPanel, ProviderCatalogResults } from './ProviderCatalogPanel';
 import { KHostBridgePanel } from './KHostBridgePanel';
+import { KaraFunPanel, KaraFunResults, useKaraFunAccount } from './KaraFunPanel';
+import type { KaraFunBridge } from '../domain/karafun';
+import { streamingSourceLabel } from '../domain/streaming-source';
 import type { KHostBridgeApi } from '../domain/khost-bridge';
 import { useProviderCatalogSearch } from './use-provider-catalog-search';
 import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogStatus } from '../domain/provider-catalog';
@@ -70,7 +73,7 @@ import '../styles/host-panels.scss';
 type Screen = 'library' | 'sources' | 'requests' | 'singers' | 'playlists' | 'remote';
 type NoticeTone = 'info' | 'success' | 'error';
 type Result = { ok: boolean; error?: string; cancelled?: boolean; notice?: string };
-type QueueSelection = LibrarySearchVersion & { youtubeSearchReceipt?: { searchId: string; videoId: string } };
+type QueueSelection = LibrarySearchVersion & { youtubeSearchReceipt?: { searchId: string; videoId: string }; karaFunReceipt?: { searchId: string; songId: string; catalog: 'catalog' | 'community' } };
 declare global {
   interface Window {
     tpv: {
@@ -109,6 +112,7 @@ declare global {
       rateSong: (key: RecordingKey, value: number | null) => Promise<HostRatingVote>;
       singerScreens: SingerScreenBridge;
       youtubeSearch: YouTubeSearchBridge;
+      karaFun: KaraFunBridge;
       khostBridge: KHostBridgeApi;
       chooseRatingProfile: () => Promise<string | null>;
       ratingProfileStatus: (file?: string) => Promise<SongRatingsLookup>;
@@ -158,6 +162,7 @@ declare global {
 }
 
 function App() {
+  const karaFunAccount = useKaraFunAccount(window.tpv.karaFun);
   const [appVersion, setAppVersion] = useState('');
   const [state, setState] = useState<ShowState | null>(null);
   useEffect(() => { let alive = true; void window.tpv.getAppVersion().then(value => {if(alive)setAppVersion(value);}).catch(() => {});return()=>{alive=false;}; }, []);
@@ -685,8 +690,8 @@ function App() {
               onClick={() => setSelectedVersionId(version.id)} onDoubleClick={() => { setSelectedVersionId(version.id); setQueueVersion(version); }}
               onContextMenu={event => { event.preventDefault(); setSelectedVersionId(version.id); setContextMenu({ version, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 250)) }); }}
               onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); setSelectedVersionId(version.id); setQueueVersion(version); } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="option"]'); const i = Math.max(0, Math.min(filtered.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))); next?.[i]?.focus(); setSelectedVersionId(filtered[i]?.id ?? ''); } }}>
-              <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'} · {version.source?.provider === 'youtube' ? `${cachedVideoIds.includes(version.id) ? 'Saved locally' : version.catalogTrack ? 'Downloads when queued · Found on Karaoke Nerds' : 'Download needed'}` : [version.djCode,version.trackNumber].filter(Boolean).join('-') || 'Local'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
-              {version.source && <span className="badge">YouTube</span>}
+              <div><strong>{version.title}</strong><small>{version.artist || 'Unknown artist'} · {version.source?.provider === 'karafun' ? 'KaraFun' : version.source?.provider === 'youtube' ? `${cachedVideoIds.includes(version.id) ? 'Saved locally' : version.catalogTrack ? 'Downloads when queued · Found on Karaoke Nerds' : 'Download needed'}` : [version.djCode,version.trackNumber].filter(Boolean).join('-') || 'Local'}{version.metadataAmbiguous ? ' · Review metadata' : ''}</small></div>
+              {version.source && <span className="badge">{streamingSourceLabel(version.source)}</span>}
               {ratingButton(version)}
             </div>)}
             {!filtered.length && <div className="empty-state">
@@ -696,7 +701,11 @@ function App() {
                 ? <button type="button" onClick={() => { setSearch(''); setLibraryFilter('all'); }}>Clear search and filters</button>
                 : <div className="empty-state__actions"><button type="button" className="primary" onClick={() => void beginImport('files')} disabled={busy || importActive || importPickerBusy}>Import videos</button><button type="button" onClick={() => setScreen('sources')}>Browse Karaoke Nerds</button></div>}
             </div>}
-          </div><ProviderCatalogResults state={providerSearch} openSong={window.tpv.openProviderCatalogSong} />
+          </div>
+            {libraryFilter === 'all' && <KaraFunResults bridge={window.tpv.karaFun} account={karaFunAccount} query={search} disabled={busy}
+              scope={JSON.stringify([state.policy, settings.songBlacklist, settings.artistBlacklist])}
+              onChoose={(song, searchId) => setQueueVersion({ id: `karafun-search:${song.catalog}:${song.songId}`, title: song.title, artist: song.artist, rating: song.explicit === false ? 'clean' : song.explicit === true ? 'explicit' : 'unrated', source: { provider: 'karafun', catalog: song.catalog, songId: song.songId }, karaFunReceipt: { searchId, songId: song.songId, catalog: song.catalog } })} />}
+            <ProviderCatalogResults state={{ ...providerSearch, results: karaFunAccount.state === 'connected' ? providerSearch.results?.filter(result => result.provider !== 'karafun') ?? null : providerSearch.results }} openSong={window.tpv.openProviderCatalogSong} />
             {libraryFilter === 'all' && <YouTubeSearchPanel bridge={window.tpv.youtubeSearch} query={search} settings={settings} policy={state.policy} disabled={busy}
               onSave={async patch => setSettings(await window.tpv.saveSettings(patch))}
               onChoose={(song, searchId) => setQueueVersion({ id: `youtube-search:${song.videoId}`, title: song.title, artist: song.artist || '', rating: 'unrated', source: { provider: 'youtube', videoId: song.videoId }, youtubeSearchReceipt: { searchId, videoId: song.videoId } })} />}
@@ -725,7 +734,7 @@ function App() {
             </form>
           </section>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -824,8 +833,9 @@ function App() {
       {!contextMenu.version.catalogTrack && <>
         <button role="menuitem" onClick={() => { setPlaylistVersion(contextMenu.version); setContextMenu(null); }}>Add to Playlist</button>
         <button role="menuitem" onClick={() => { setEditingVersion(contextMenu.version); setContextMenu(null); }}>Edit Metadata</button>
-        {contextMenu.version.source && <button role="menuitem" onClick={() => { const version = contextMenu.version; setContextMenu(null); void run(async () => { const result = await downloadLibrarySong(version, window.tpv); if (result.ok && result.versionId) setSelectedVersionId(result.versionId); return result; }); }}>Download Video / Retry</button>}
-        <button role="menuitem" disabled={relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
+        {contextMenu.version.source?.provider === 'karafun' && <button role="menuitem" onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(async () => { await window.tpv.karaFun.retry(id); return { ok: true }; }); }}>Prepare KaraFun Song / Retry</button>}
+        {contextMenu.version.source?.provider === 'youtube' && <button role="menuitem" onClick={() => { const version = contextMenu.version; setContextMenu(null); void run(async () => { const result = await downloadLibrarySong(version, window.tpv); if (result.ok && result.versionId) setSelectedVersionId(result.versionId); return result; }); }}>Download Video / Retry</button>}
+        {contextMenu.version.source?.provider !== 'karafun' && <button role="menuitem" disabled={relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>}
         <button role="menuitem" disabled={!!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files...</button>
       </>}
     </div>}
@@ -836,7 +846,9 @@ function App() {
         addSinger: singer => window.tpv.command({ type: 'addSinger', singer }),
         singerCreated,
         addRequest: async singerId => {
-          const result = queueVersion.youtubeSearchReceipt
+          const result = queueVersion.karaFunReceipt
+            ? await window.tpv.karaFun.request({ ...queueVersion.karaFunReceipt, singerId, requestId: crypto.randomUUID() })
+            : queueVersion.youtubeSearchReceipt
             ? await window.tpv.youtubeSearch.request({ ...queueVersion.youtubeSearchReceipt, singerId, requestId: crypto.randomUUID() })
             : await requestLibrarySong(queueVersion, singerId, crypto.randomUUID(), window.tpv);
           if (result.ok && result.versionId) setSelectedVersionId(result.versionId);

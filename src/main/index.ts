@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, screen, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { unlink, readFile, lstat } from 'node:fs/promises';
+import { unlink, readFile, lstat, open } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
@@ -72,14 +72,20 @@ import { KHostBridgeConnection } from './khost-connection';
 import { readKHostBridgeProfile } from './khost-client';
 import { isProviderCatalogId } from '../domain/provider-catalog';
 import { parseHostPolicy } from './host-policy';
+import { KaraFunAccount } from './karafun-account';
+import { KaraFunHost } from './karafun-host';
+import { KaraFunMediaCache, type KaraFunPreparedMedia } from './karafun-media';
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 let host: BrowserWindow | null = null;
 let display: BrowserWindow | null = null;
 let displayFullscreen: DisplayFullscreen | null = null;
 let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
+let karaFunAccount: KaraFunAccount;
+let karaFunHost: KaraFunHost;
+let activeKaraFun: { generation: string; versionId: string; media: KaraFunPreparedMedia; revision: number } | null = null;
 let hostRatings: HostSongRatings;
 let communityBrowser: LocalCommunityBrowser | null = null;
 let sharedCatalog: SharedCatalogConnection | null = null;
@@ -220,6 +226,7 @@ const queuedDownloads = new QueuedVideoDownloads(async versionId => {
 });
 function syncQueuedDownloads(): void {
   if (shuttingDown || !store || !settings) return;
+  karaFunHost?.sync();
   const active=youtubeDownloads?.snapshot();
   if(active && !isVersionAllowed(state, active.versionId, settings))youtubeDownloads?.cancel(active.id);
   queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state, request.versionId, settings))
@@ -244,7 +251,7 @@ const activeDownloadBaselines = new Map<string, DownloadBaseline>();
 async function startYouTubeDownload(versionId: string) {
   if (shuttingDown || preparingDownload) throw new Error('A video download is being prepared. Try again shortly.');
   const version = state.versions.find(item => item.id === versionId);
-  if (!version?.source || !isVersionAllowed(state, versionId, settings)) throw new Error('This video is unavailable.');
+  if (version?.source?.provider !== 'youtube' || !isVersionAllowed(state, versionId, settings)) throw new Error('This video is unavailable.');
   const existingJob = youtubeDownloads?.snapshot();
   if (youtubeDownloads?.active()) {
     if (existingJob?.versionId === versionId) return existingJob;
@@ -261,7 +268,7 @@ async function startYouTubeDownload(versionId: string) {
     const executable = await resolveYtDlpExecutable(settings.ytDlpExecutable);
     if (shuttingDown) throw new Error('The application is closing.');
     const current=state.versions.find(item=>item.id===versionId);
-    if(!current?.source || current.source.videoId!==version.source.videoId || !isVersionAllowed(state, versionId, settings))throw new Error('This video selection is no longer available.');
+    if(current?.source?.provider !== 'youtube' || current.source.videoId!==version.source.videoId || !isVersionAllowed(state, versionId, settings))throw new Error('This video selection is no longer available.');
     const currentMedia = store.media(versionId);
     if (!sameStoredMedia(originalMedia, currentMedia)) throw new Error('The saved video link changed while preparing this download.');
     if (retry && !cachedVideoIdentityMatches(retry.media.path, retry.identity)) throw new Error('The saved video changed after it was checked. Retry after file changes finish.');
@@ -270,7 +277,7 @@ async function startYouTubeDownload(versionId: string) {
     if (!youtubeDownloads || config !== youtubeDownloadConfig) {
       youtubeDownloads = new YouTubeDownloads(directory, executable, asset => {
         const current = state.versions.find(item => item.id === asset.versionId);
-        if (shuttingDown || current?.source?.videoId !== asset.videoId || !isVersionAllowed(state, asset.versionId, settings)) throw new Error('The video selection changed or is no longer available under the show policy.');
+        if (shuttingDown || current?.source?.provider !== 'youtube' || current.source.videoId !== asset.videoId || !isVersionAllowed(state, asset.versionId, settings)) throw new Error('The video selection changed or is no longer available under the show policy.');
         const previous = store.media(asset.versionId);
         const active = state.requests.find(request => request.id === state.playback?.requestId);
         if (active?.versionId === asset.versionId) throw new Error('Stop this performance first, then Retry and Play. Your request stays in the queue.');
@@ -321,7 +328,7 @@ function bumperInfo() {
     outputReady: !!bumper && bumper.isOutputAvailable() && displayReady && !!settings.audioOutputId && settings.audioOutputId !== 'default',
     karaokeActive: !!state.playback || playbackTransition, error: bumperError };
 }
-function publishBumper(): void { if (host && !host.isDestroyed()) host.webContents.send('host:bumper-state', bumperInfo()); }
+function publishBumper(): void { if (!shuttingDown && host && !host.isDestroyed()) host.webContents.send('host:bumper-state', bumperInfo()); }
 let availabilityTimer: NodeJS.Timeout | undefined;
 function refreshAvailabilityDeadline(): void {
   if (availabilityTimer) clearTimeout(availabilityTimer);
@@ -331,6 +338,7 @@ function refreshAvailabilityDeadline(): void {
   if (Number.isFinite(next)) { availabilityTimer = setTimeout(() => { if (!shuttingDown) broadcast(); }, Math.min(2147483647, Math.max(1, next - now))); availabilityTimer.unref(); }
 }
 function broadcast(): void {
+  if (shuttingDown) return;
   refreshAvailabilityDeadline();
   publishTimeline();
   if (host && !host.isDestroyed()) host.webContents.send('host:state', state);
@@ -338,7 +346,7 @@ function broadcast(): void {
   publishBumper();
 }
 function publishDisplay(): void {
-  if (!display || display.isDestroyed() || !displayReady) return;
+  if (shuttingDown || !display || display.isDestroyed() || !displayReady) return;
   const playback = state.playback;
   const request = state.requests.find(r => r.id === playback?.requestId);
   const version = state.versions.find(v => v.id === request?.versionId);
@@ -346,7 +354,15 @@ function publishDisplay(): void {
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
     .filter(r => singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
-  const current = playback && request && version && singer && store.media(version.id) ? { generation: playback.generationId, status: playback.status,
+  const native = activeKaraFun?.generation === playback?.generationId && activeKaraFun?.versionId === version?.id &&
+    activeKaraFun?.revision === karaFunAccount?.revision() && version?.source?.provider === 'karafun' &&
+    version.source.catalog === activeKaraFun.media.source.catalog && version.source.songId === activeKaraFun.media.source.songId ? activeKaraFun : null;
+  const backdrop = native ? lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }) : undefined;
+  const current = playback && request && version && singer && store.media(version.id) && (version.source?.provider !== 'karafun' || native) ? { generation: playback.generationId, status: playback.status,
+    kind: native ? 'karafun' : 'video',
+    ...(native ? { karaFun: { timing: native.media.kit.timing, durationSeconds: native.media.kit.timing.durationSeconds,
+      stems: native.media.kit.stems.map(stem => ({ id: stem.id, role: stem.role, voice: stem.voice, src: `tpv-media://karafun-stem/${encodeURIComponent(playback.generationId)}/${stem.id}` })) },
+      backdropSrc: backdrop ? `tpv-media://lyric-backdrop/${encodeURIComponent(playback.generationId)}` : null } : {}),
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
     position: store.position(playback.generationId), title: version.title, singer: singer.name, volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
   display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume });
@@ -369,7 +385,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   store.save(result.state, [], history);
   state = result.state;
   if (result.outcome.ok && command.type === 'setPolicy') youtubeSearch.cancel();
-  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) verifiedPlayback = null;
+  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) { verifiedPlayback = null; activeKaraFun = null; }
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
   if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) automaticBumper.arm(previousGeneration);
   if (result.outcome.ok && ['request','accept','editRequest','moveRequest','promoteRequest','removeRequest','rejectRequest','setPolicy'].includes(command.type)) syncQueuedDownloads();
@@ -654,6 +670,10 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
   if (command.type === 'start' || command.type === 'resume') {
     const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
     const version = state.versions.find(item => item.id === state.requests.find(request => request.id === requestId)?.versionId);
+    if (version?.source?.provider === 'karafun' && !store.media(version.id)) {
+      try { karaFunHost.retry(version.id); return { ok: false, error: 'Preparing this KaraFun recording. Follow progress in Sources, then press Play when ready.' }; }
+      catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Sign in to KaraFun in Sources.' }; }
+    }
     if (version?.source?.provider === 'youtube' && !store.media(version.id)) {
       try {
         queuedDownloads.enqueue(version.id,true);
@@ -671,6 +691,10 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       const versionId = state.requests.find(item => item.id === requestId)?.versionId;
       const media = versionId && store.media(versionId);
       if (!media) return { ok: false, error: 'The source file is unavailable. Relink the song in Song Library.' };
+      const nativeVersion = state.versions.find(version => version.id === versionId)?.source?.provider === 'karafun';
+      const nativeRevision = karaFunAccount.revision();
+      const pinned = command.type === 'resume' && activeKaraFun?.generation === state.playback?.generationId && activeKaraFun?.versionId === versionId ? activeKaraFun.media : undefined;
+      const nativeMedia = nativeVersion ? await karaFunHost.authorizeStart(versionId!, pinned) : null;
       const check = new AbortController(); mediaChecks.add(check);
       let sourceIdentity: MediaIdentity;
       try {
@@ -702,7 +726,13 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
           return { ok: false, error: 'The audio output changed while checking the song. Check the output and press Play again.' };
         display?.webContents.send('display:output-recovery', recoveryAtIntent);
       }
+      if (nativeMedia && (nativeRevision !== karaFunAccount.revision() || karaFunAccount.accountScope() !== nativeMedia.accountScope))
+        return { ok: false, error: 'The KaraFun account changed. Sign in and press Play again.' };
+      const previousNative = activeKaraFun;
+      if (nativeMedia) activeKaraFun = { generation: command.type === 'start' ? command.generationId : state.playback!.generationId,
+        versionId: versionId!, media: nativeMedia, revision: nativeRevision };
       const result = perform(command);
+      if (!result.ok) activeKaraFun = previousNative;
       if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; }
       if (!result.ok && !state.playback) bumper?.karaokeEnded();
       return result.ok ? { ok: true } : { ok: false, error: result.message };
@@ -733,9 +763,39 @@ const pendingMediaCertificates = new Map<string, Promise<PlaybackCertificate>>()
 async function serveMedia(request: Request): Promise<Response> {
   const url = new URL(request.url);
   if (url.hostname === 'bumper') return bumper ? serveBumper(request, bumper.getState(), [...builtInBumpers, ...(bumperCatalog?.forPlayback() ?? [])]) : new Response(null, { status: 404 });
+  if (url.hostname === 'karafun-stem' || url.hostname === 'lyric-backdrop') {
+    const native = activeKaraFun, parts = url.pathname.split('/');
+    const origin = request.headers.get('origin');
+    if (origin && origin !== 'null' && origin !== 'file://') return new Response(null, { status: 403 });
+    const source = state.versions.find(version => version.id === native?.versionId)?.source;
+    if (request.method !== 'GET' || !native || shuttingDown || native.generation !== state.playback?.generationId ||
+        native.revision !== karaFunAccount.revision() || karaFunAccount.status().state !== 'connected' ||
+        source?.provider !== 'karafun' || source.catalog !== native.media.source.catalog || source.songId !== native.media.source.songId ||
+        parts[1] !== encodeURIComponent(native.generation)) return new Response(null, { status: 404 });
+    if (url.hostname === 'karafun-stem') {
+      const stem = parts.length === 3 && /^\d+$/.test(parts[2]) ? native.media.kit.stems.find(stem => String(stem.id) === parts[2]) : null;
+      if (!stem) return new Response(null, { status: 404 });
+      return new Response(stem.data.slice() as BodyInit, { headers: { 'Content-Type': 'audio/ogg', 'Content-Length': String(stem.data.length), 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } });
+    }
+    const path = parts.length === 2 && lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath });
+    if (!path) return new Response(null, { status: 404 });
+    let file: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      file = await open(path, 'r'); const info = await file.stat();
+      if (!info.isFile() || info.size <= 0 || info.size > 512 * 1024 * 1024) return new Response(null, { status: 404 });
+      const range = mediaRange(request.headers.get('range'), info.size);
+      if (!range) return new Response(null, { status: 416 });
+      const { start, end, partial } = range;
+      const headers: Record<string, string> = { 'Content-Type': 'video/mp4', 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
+      if (partial) headers['Content-Range'] = `bytes ${start}-${end}/${info.size}`;
+      const stream = file.createReadStream({ start, end, autoClose: true }); file = undefined;
+      return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, { status: partial ? 206 : 200, headers });
+    } catch { return new Response(null, { status: 404 }); } finally { await file?.close().catch(() => {}); }
+  }
   const playback = state.playback;
   if (request.method !== 'GET' || url.hostname !== 'play' || !playback || url.pathname !== `/${encodeURIComponent(playback.generationId)}`) return new Response(null, { status: 404 });
   const song = state.requests.find(r => r.id === playback.requestId);
+  if (state.versions.find(version => version.id === song?.versionId)?.source?.provider === 'karafun') return new Response(null, { status: 404 });
   const media = song && store.media(song.versionId);
   if (!media) return new Response(null, { status: 404 });
   const currentMediaMatches = () => {
@@ -839,6 +899,17 @@ else {
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
+  karaFunAccount = new KaraFunAccount();
+  karaFunHost = new KaraFunHost(karaFunAccount, new KaraFunMediaCache(join(app.getPath('userData'), 'karafun-cache')), {
+    state: () => state, settings: () => settings, media: id => store.media(id),
+    commit: (next, media = []) => { if (shuttingDown) throw new Error('The application is closing.'); store.save(next, media); state = next; try { broadcast(); } catch { /* Durable success survives a closing view. */ } },
+    changed: () => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-preparations', karaFunHost.status()); },
+  });
+  karaFunAccount.subscribe(value => {
+    if (activeKaraFun) { pauseForOutputLoss(); activeKaraFun = null; publishDisplay(); }
+    karaFunHost.accountChanged();
+    if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-account', value);
+  });
   const commitImported = (path: string, fingerprint: string, metadataPath = path, parsing = importParsing ?? settings) => {
     if (shuttingDown) throw new Error('Import is unavailable.');
     if (store.byFingerprint(fingerprint)) return { outcome: 'duplicate' as const };
@@ -916,6 +987,13 @@ else {
   ipcMain.handle('host:singer-screen-status', event => { guardHost(event.sender.id); return singerScreenStatus(); });
   ipcMain.handle('host:singer-screen-retry', async event => { guardHost(event.sender.id); await reconcileSingerScreen(); return singerScreenStatus(); });
   ipcMain.handle('host:singer-screen-copy', (event, url: unknown) => { guardHost(event.sender.id); if (typeof url !== 'string' || !singerScreenStatus().urls.includes(url)) throw new Error('Choose a current singer-screen address.'); clipboard.writeText(url); });
+  ipcMain.handle('host:karafun-status', event => { guardHost(event.sender.id); return karaFunAccount.status(); });
+  ipcMain.handle('host:karafun-connect', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.connect(host ?? undefined); });
+  ipcMain.handle('host:karafun-disconnect', event => { guardHost(event.sender.id); return karaFunAccount.disconnect(); });
+  ipcMain.handle('host:karafun-search', (event, query: unknown) => { guardHost(event.sender.id); return karaFunHost.search(query); });
+  ipcMain.handle('host:karafun-request', (event, input: unknown) => { guardHost(event.sender.id); return karaFunHost.request(input); });
+  ipcMain.handle('host:karafun-preparations', event => { guardHost(event.sender.id); return karaFunHost.status(); });
+  ipcMain.handle('host:karafun-retry', (event, id: unknown) => { guardHost(event.sender.id); if (typeof id !== 'string' || id.length > 500) throw new Error('Choose a recording.'); karaFunHost.retry(id); });
   ipcMain.handle('host:youtube-search', (event, query: unknown) => { guardHost(event.sender.id); if (shuttingDown) return { status: 'unavailable', songs: [] }; return youtubeSearch.search(query); });
   ipcMain.handle('host:youtube-search-cancel', event => { guardHost(event.sender.id); youtubeSearch.cancel(); });
   ipcMain.handle('host:youtube-subscriptions-import', async event => {
@@ -942,6 +1020,7 @@ else {
     if (shuttingDown) throw new Error('The application is closing.');
     if (queuedDownloads.snapshot().activeVersionId === versionId) return youtubeDownloads?.snapshot() ?? null;
     const version = state.versions.find(item => item.id === versionId)!;
+    if (version.source?.provider !== 'youtube') throw new Error('Choose a YouTube recording to download.');
     const original = store.media(versionId);
     let retry: ExplicitVideoRetry | undefined;
     if (original && existsSync(original.path)) {
@@ -949,7 +1028,7 @@ else {
       let checked: Awaited<ReturnType<typeof inspectCachedVideo>>;
       try { checked = await inspectCachedVideo(original, check.signal); } finally { mediaChecks.delete(check); }
       const current = state.versions.find(item => item.id === versionId);
-      if (shuttingDown || current?.source?.videoId !== version.source?.videoId || !isVersionAllowed(state, versionId, settings) ||
+      if (shuttingDown || current?.source?.provider !== 'youtube' || current.source.videoId !== version.source.videoId || !isVersionAllowed(state, versionId, settings) ||
           !sameStoredMedia(original, store.media(versionId)) || !cachedVideoIdentityMatches(original.path, checked.identity))
         throw new Error('The song or saved video changed while checking it. Review the selection and retry.');
       if (checked.valid) return null;
@@ -1357,7 +1436,7 @@ else {
     if (!command) return { ok: false, error: 'Invalid or unsupported command.' };
     return executeHostCommand(command);
   });
-  ipcMain.on('display:ready', event => { if (senderIsDisplay(event.sender.id)) { displayReady = true; bumperOutput?.displayReady(); void bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default'); publishDisplay(); publishBumper(); } });
+  ipcMain.on('display:ready', event => { if (!shuttingDown && senderIsDisplay(event.sender.id)) { displayReady = true; bumperOutput?.displayReady(); void bumper?.setOutputAvailable(!!settings.audioOutputId && settings.audioOutputId !== 'default'); publishDisplay(); publishBumper(); } });
   ipcMain.on('display:bumper-ack', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) bumperOutput?.acknowledge(value); });
   ipcMain.on('display:bumper-devicechange', event => {
     if (!senderIsDisplay(event.sender.id) || !bumper) return;
@@ -1391,6 +1470,9 @@ else {
   });
   ipcMain.on('display:event', (event, value: unknown) => {
     if (!senderIsDisplay(event.sender.id) || !isRecord(value)) return;
+    // Closing a decoder can emit one last checkpoint/ended event. The store
+    // must remain closed once the shutdown drain has completed.
+    if (storeClosed || shuttingDown && value.type !== 'seek-result') return;
     if(value.type==='silenced' && typeof value.generation==='string'){void automaticBumper.acknowledge(value.generation);return;}
     if(!state.playback || value.generation !== state.playback.generationId) return;
     if (value.type === 'timeline') {
@@ -1448,6 +1530,11 @@ function waitForImport(job: ImportJob): Promise<boolean> {
 app.on('before-quit', event => {
   automaticBumper.close();
   shuttingDown = true; for (const check of mediaChecks) check.abort();
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.setAudioMuted(true);
+  if (display && !display.isDestroyed() && displayReady) display.webContents.send('display:state', { playback: null, next: [], logo: null, shortcuts, bumperVolume: 0 });
+  const nativePending = karaFunHost?.needsShutdownWait() ?? false;
+  const nativeShutdown = karaFunHost?.shutdown() ?? Promise.resolve();
+  void karaFunAccount?.disconnect(); activeKaraFun = null;
   youtubeSearch.cancel(); singerCapture.stop();
   const singerScreenWasActive = singerScreenServer.status().state !== 'stopped';
   const singerScreenShutdown = singerScreenServer.stop().then(() => true, () => false);
@@ -1460,9 +1547,9 @@ app.on('before-quit', event => {
   // Abort first, synchronously preventing guest calls even if startup is still in progress.
   const convertingCdg = !!cdgImport?.active();
   const cdgShutdown = cdgImport?.shutdown() ?? Promise.resolve();
-  const downloading = !!youtubeDownloads?.active() || preparingDownload || !!queuedDownloads.snapshot().activeVersionId;
+  const downloading = !!youtubeDownloads?.active() || preparingDownload || !!queuedDownloads.snapshot().activeVersionId || nativePending;
   const controlShutdown = localControl?.stop().then(() => true, () => false) ?? Promise.resolve(true);
-  const downloadShutdown = Promise.race([Promise.all([queuedDownloads.shutdown(),youtubeDownloads?.shutdown()]).then(() => true, () => false), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
+  const downloadShutdown = Promise.race([Promise.all([queuedDownloads.shutdown(),youtubeDownloads?.shutdown(),nativeShutdown]).then(() => true, () => false), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
   const wait = singerScreenWasActive || !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
   const internetShutdown=internetQueue?.shutdown() ?? Promise.resolve(true);
@@ -1483,5 +1570,5 @@ app.on('before-quit', event => {
       app.exit(1); return;
     }
     quitReady = true; closeStore(); app.quit();
-  });
+  }).catch(() => { app.exit(1); });
 });

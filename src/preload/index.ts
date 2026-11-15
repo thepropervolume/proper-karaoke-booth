@@ -2,6 +2,16 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 contextBridge.exposeInMainWorld('tpv', {
+  karaFun: {
+    status: () => ipcRenderer.invoke('host:karafun-status'),
+    signIn: () => ipcRenderer.invoke('host:karafun-connect'),
+    signOut: () => ipcRenderer.invoke('host:karafun-disconnect'),
+    search: (query: string) => ipcRenderer.invoke('host:karafun-search', query),
+    request: (input: unknown) => ipcRenderer.invoke('host:karafun-request', input),
+    preparations: () => ipcRenderer.invoke('host:karafun-preparations'),
+    retry: (id: string) => ipcRenderer.invoke('host:karafun-retry', id),
+    subscribe: (callback: (value: unknown) => void) => { const listener = (_event: unknown, value: unknown) => callback(value); ipcRenderer.on('host:karafun-account', listener); return () => ipcRenderer.removeListener('host:karafun-account', listener); },
+  },
   getAppVersion: () => ipcRenderer.invoke('host:app-version'),
   appReady: () => ipcRenderer.invoke('host:ui-ready'),
   refreshMenu: () => ipcRenderer.invoke('host:refresh-menu'),
