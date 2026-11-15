@@ -74,3 +74,15 @@ On 15 November 2026 the **0.7.1** canonical Markdown generated a **40-page Word 
 | `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `e6910221dfaa3215b38102aa9a5f1ee90567c556426718cc20739eb7455916b8` |
 
 The local `release/planning/planning-071-qa.json` retains source/artifact hashes and review coverage. The Markdown is committed; generated files and QA images are local build outputs. Historical planning files are preserved.
+
+## Verified 0.8.0 Planning Edition
+
+On 15 November 2026, canonical source `c0795b8` generated a **41-page Word specification** and **47-page Night/Day PDF**, covering **22 screen families**. D01 includes Vocal Mix; the new D18 describes individual instrumental, lead and backing levels. The prose distinguishes current-performance mixing from planned saved presets and physical show verification. Native LibreOffice rendered the Word edition. All 19 changed Word pages and all six changed PDF pages were visually reviewed at full resolution; the other 22 Word pages and 41 PDF pages exactly match the previously reviewed edition. Nine generator tests passed.
+
+| Current File | SHA256 |
+| --- | --- |
+| `docs/product-specification.md` | `5a6e3c547cbefc5b556524ade60bae4908a6d783227ff18c043141756ffd696e` |
+| `TPV_Karaoke_Product_Specification_Current.docx` | `a89df918cf6ed1df46af9be445d8bd414c76d0f7aabc523496babf1d8fbf0d64` |
+| `TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf` | `b14136018568c7ade644050018f2ab339d459e9d4303d6a671cc17aaab991b07` |
+
+The local `release/planning/planning-080-qa.json` records source hashes and page comparison coverage. Generated files and page images remain local outputs; Dropbox was not updated.
