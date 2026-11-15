@@ -10,6 +10,8 @@
     "build:electron": "node scripts/build-electron.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
+    "test:ci": "tsx --test --test-concurrency=4 tests/**/*.test.ts",
+    "test:release": "node --test tests/releasing/*.test.mjs",
     "start": "electron .",
     "package:win": "npm run typecheck && node scripts/package-app.mjs win",
     "package:linux": "npm run typecheck && node scripts/package-app.mjs linux",
