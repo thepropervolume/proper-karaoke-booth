@@ -5,9 +5,10 @@ import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
 import { paintKaraFunLyrics } from './karafun-lyrics';
 import type { KaraFunTiming } from '../domain/karafun-kit-timing';
+import type { KaraFunStemVolumes } from '../domain/karafun-mix';
 import { createSingerDisplayBranding, type SingerDisplayBranding } from './branding';
 type PlaybackCommon = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
-type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: KaraFunTiming; durationSeconds: number; stems: KaraFunStemSource[] }; backdropSrc: string | null };
+type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: KaraFunTiming; durationSeconds: number; stems: KaraFunStemSource[]; stemVolumes: KaraFunStemVolumes }; backdropSrc: string | null };
 type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
 const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number };
@@ -227,9 +228,10 @@ window.tpvDisplay.subscribe(async (view) => {
       output.invalidate(video); video.removeAttribute('src'); video.load();
       nativeLoading = { generation: state.generation, promise: nativePlayer.load({ generation: state.generation,
         stems: state.karaFun.stems, durationSeconds: state.karaFun.durationSeconds, position: state.position,
-        volume: state.volume, outputId: state.outputId }) };
+        volume: state.volume, outputId: state.outputId, stemVolumes: state.karaFun.stemVolumes }) };
     } else {
       nativePlayer.setVolume(state.generation, state.volume);
+      nativePlayer.setStemVolumes(state.generation, state.karaFun.stemVolumes);
       if (previousOutput !== state.outputId)
         nativePlayer.invalidateOutput('The audio output changed. Check Preferences and press Play again.');
     }

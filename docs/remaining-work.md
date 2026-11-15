@@ -2,7 +2,7 @@
 
 Updated 15 November 2026 for source development 0.7.1. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The current source is 0.7.1; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, mixing/pitch/tempo and provider distribution/venue terms remain open. KaraFun shared-rating identities and the matching production validator are deployed; both namespaces passed disposable-voter lookup/vote/update/withdrawal checks on 15 November. Windows/Linux/macOS 0.7.1 packages have separate verified receipts; installation/upgrade and physical-show gates remain. Earlier evidence stays version-specific. See installation and source-status guides.
+The current source is 0.8.0; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, pitch/tempo and provider distribution/venue terms remain open. Per-channel KaraFun vocal mixing is implemented in 0.8.0; physical output checks remain open. KaraFun shared-rating identities and the matching production validator are deployed; both namespaces passed disposable-voter lookup/vote/update/withdrawal checks on 15 November. Windows/Linux/macOS 0.7.1 packages have separate verified receipts; installation/upgrade and physical-show gates remain. Earlier evidence stays version-specific. See installation and source-status guides.
 
 ## Current foundation
 
@@ -139,7 +139,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Evaluate and add useful KaraFun Player 2 formats separately from MP4 and CDG support.
 - [x] Add seek, elapsed/remaining time and acknowledged resume checkpoints; verify audio/sync on real hardware separately.
 - [ ] Add pitch/key and tempo controls with per-song and per-singer defaults and reset.
-- [ ] Support separate lead and backing vocal controls only when the source provides compatible stems or multiplex audio.
+- [x] Add independent instrumental, lead and backing stem levels for native KaraFun, including multiple supplied duet/choir voices; preserve through pause/seek and reset per performance.
+- [ ] Verify real-recording/full-song mixing on show hardware and evaluate other compatible stem/multiplex sources.
 - [x] Add enabled-by-default launch/interlude bumper, saved theme, default output, cancellable fade-in and acknowledged silence before karaoke.
 - [ ] Verify audible bumper routing on show hardware; add fade-out, separate filler volume and richer intermission policies. Fade-in is implemented.
 - [ ] Verify the inter-song pause interval on physical show hardware for finish, skip and restart.

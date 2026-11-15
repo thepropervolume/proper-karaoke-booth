@@ -37,3 +37,7 @@ Use availability to step away for 1–60 minutes or return immediately. While aw
 Hearts rate recording quality from 1–10, not your singing or Clean/Explicit classification. YouTube/Karaoke Nerds votes use the shared service; source-less file votes stay on this host. Version 0.7 also identifies KaraFun catalog/community recordings for shared ratings; the matching production validator is deployed and verified. Remote singer voting, personal accounts, favorites and self-service data management remain planned.
 
 Singer/request information stays in the host show; internet requests also pass through the relay. Installers exclude private profiles, song media, yt-dlp and FFmpeg. Development versions remain `0.x.y`; `1.0.0` is the approved official-release target.
+
+## Vocal Assistance
+
+For native KaraFun recordings, ask the host to adjust **Vocal Mix** if you want guide vocals or different backing levels. Separate duet/choir controls appear only when the recording supplies separate audio channels. Singers cannot change these host controls remotely.

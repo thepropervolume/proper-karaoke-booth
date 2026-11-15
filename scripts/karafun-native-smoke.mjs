@@ -25,10 +25,11 @@ function kit(parts) {
 let app, qaHost;
 try {
   const ogg = join(dir, 'synthetic.ogg');
-  const made = spawnSync('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=18', '-ar', '24000', '-ac', '1', '-c:a', 'libvorbis', ogg], { windowsHide: true });
+  const made = spawnSync('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=45', '-ar', '24000', '-ac', '1', '-c:a', 'libvorbis', ogg], { windowsHide: true });
   assert.equal(made.status, 0, 'Synthetic audio needs FFmpeg.');
-  const xml = Buffer.from('<root><files><file index="7" label="ins.ogg"/></files><karaoke duration="18"><page fadeinstart="00:00:00,000" fadeoutstart="00:00:17,000" fadeoutduration="00:00:01,000"><line><position x="20" y="120" width="600" height="80"/><word><syllabe><start>00:00:00,500</start><end>00:00:16,000</end><text>Synthetic karaoke lyric</text></syllabe></word></line></page></karaoke></root>');
-  const media = kit([[1, xml], [7, await readFile(ogg)]]), mediaPath = join(dir, 'synthetic.kit'); await writeFile(mediaPath, media);
+  const xml = Buffer.from('<root><files><file index="7" label="ins.ogg"/><file index="8" label="bv_High.ogg"/><file index="9" label="bv_Low.ogg"/><file index="10" label="ld_Alice.ogg"/><file index="11" label="ld_Bob.ogg"/></files><karaoke duration="45"><page fadeinstart="00:00:00,000" fadeoutstart="00:00:44,000" fadeoutduration="00:00:01,000"><line><position x="20" y="120" width="600" height="80"/><word><syllabe><start>00:00:00,500</start><end>00:00:43,000</end><text>Synthetic karaoke lyric</text></syllabe></word></line></page></karaoke></root>');
+  const audio = await readFile(ogg);
+  const media = kit([[1, xml], ...[7, 8, 9, 10, 11].map(id => [id, audio])]), mediaPath = join(dir, 'synthetic.kit'); await writeFile(mediaPath, media);
   const md5 = createHash('md5').update(media).digest('hex');
   await build({ entryPoints: [join(repo, 'src/main/index.ts')], outfile: join(stage, 'main/index.cjs'), bundle: true, platform: 'node', format: 'cjs', target: 'node24', external: ['electron'],
     plugins: [{ name: 'synthetic-account-only', setup(builder) {
@@ -37,6 +38,17 @@ try {
     } }] });
   await cp(join(repo, 'dist/preload'), join(stage, 'preload'), { recursive: true });
   await cp(join(repo, 'dist/ui'), join(stage, 'ui'), { recursive: true });
+  // Instrument only the disposable display bundle to observe real Web Audio
+  // gains/source counts. There is no production debug global or account hook.
+  const displayHtml = join(stage, 'ui/src/display/index.html');
+  await build({ entryPoints: [join(repo, 'src/display/index.ts')], outfile: join(stage, 'ui/assets/native-mix-qa.js'), bundle: true, platform: 'browser', format: 'esm',
+    banner: { js: `globalThis.__tpvAudioContexts=[];const NativeContext=globalThis.AudioContext;globalThis.AudioContext=class extends NativeContext {
+constructor(...args){super(...args);this.qaGains=[];this.qaSources=[];globalThis.__tpvAudioContexts.push(this);}
+createGain(){const gain=super.createGain();this.qaGains.push(gain);return gain;}
+createBufferSource(){const source=super.createBufferSource();this.qaSources.push(source);return source;}};` } });
+  const originalHtml = await readFile(displayHtml, 'utf8');
+  assert.match(originalHtml, /src="[^"]*display-[^"]+\.js"/);
+  await writeFile(displayHtml, originalHtml.replace(/src="[^"]*display-[^"]+\.js"/, 'src="../../assets/native-mix-qa.js"'));
   const bootstrap = join(dir, 'bootstrap.cjs');
   await writeFile(bootstrap, `const {app,dialog,ipcMain}=require('electron');const fs=require('node:fs');
 app.setPath('userData',process.env.TPV_NATIVE_QA_PROFILE);app.setAppPath(process.env.TPV_NATIVE_QA_REPO);
@@ -70,7 +82,7 @@ require(process.env.TPV_NATIVE_QA_ENTRY);`);
   await dialog.getByRole('button', { name: 'Add to Queue', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.karaFun.preparations()).some(item => item.phase === 'ready'));
   let show = await host.evaluate(() => window.tpv.getState());
-  assert.equal(show.requests.length, 1); assert.equal(show.requests[0].status, 'staged'); assert.equal(show.playback, null); assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => window.isVisible()).length), 1);
+  assert.equal(show.requests.length, 1); assert.equal(show.requests[0].status, 'staged'); assert.equal(show.playback, null); assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => window.webContents.getURL().includes('/display/') && window.isVisible()).length), 0);
   assert.equal(show.versions[0].source.provider, 'karafun'); assert.equal(JSON.stringify(show).includes('synthetic-test-session'), false); assert.equal(JSON.stringify(show).includes('https://'), false);
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
   await waitForHostCondition(host, async () => { const timeline = await window.tpv.getTimeline(); return timeline.seekable && timeline.position > .2; }, undefined, {timeout:10000});
@@ -78,20 +90,47 @@ require(process.env.TPV_NATIVE_QA_ENTRY);`);
   assert.equal(await singer.locator('#karafun-lyrics').isVisible(), true);
   show = await host.evaluate(() => window.tpv.getState()); const generation = show.playback.generationId;
   assert.equal(show.playback.status, 'playing');
+  const firstMix = await host.evaluate(() => window.tpv.karaFunMix.status());
+  assert.deepEqual(firstMix.stems.map(stem => stem.volume), [1, 1, 1, 0, 0]);
+  await host.getByRole('button', { name: 'Vocal Mix', exact: true }).click();
+  const mixDialog = host.getByRole('dialog', { name: 'Vocal Mix', exact: true });
+  assert.equal(await mixDialog.getByRole('slider').count(), 5);
+  const sourcesBefore = await singer.evaluate(() => globalThis.__tpvAudioContexts.find(context => context.qaSources.length === 5).qaSources.length);
+  await mixDialog.getByRole('slider', { name: 'Lead Vocals 1 · Alice Volume', exact: true }).press('End');
+  await mixDialog.getByRole('slider', { name: 'Backing Vocals 1 · High Volume', exact: true }).press('Home');
+  await waitForHostCondition(host, async () => { const mix = await window.tpv.karaFunMix.status(); return mix.stems.find(stem => stem.id === 10).volume === 1 && mix.stems.find(stem => stem.id === 8).volume === 0; });
+  await host.evaluate(() => window.tpv.saveSettings({ masterVolume: .31 }));
+  await singer.waitForFunction(() => { const context = globalThis.__tpvAudioContexts.find(context => context.qaSources.length === 5); return context && Math.abs(context.qaGains[4].gain.value - 1) < .001 && Math.abs(context.qaGains[2].gain.value) < .001; });
+  const levels = await singer.evaluate(() => { const context = globalThis.__tpvAudioContexts.find(context => context.qaSources.length === 5); return { levels: context.qaGains.map(node => node.gain.value), sources: context.qaSources.length }; });
+  assert.deepEqual(levels.levels.slice(1), [1, 0, 1, 1, 0]); assert.ok(Math.abs(levels.levels[0] - .31) < .001); assert.equal(levels.sources, sourcesBefore);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'playing', 'Mix and volume leave transport playing');
+  // Keyboard changes also work when the preview's singer window is hidden.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/')).close());
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'playing', 'Hiding singer display leaves transport playing');
+  await mixDialog.getByRole('slider', { name: 'Lead Vocals 2 · Bob Volume', exact: true }).press('End');
+  await waitForHostCondition(host, async () => (await window.tpv.karaFunMix.status()).stems.find(stem => stem.id === 11).volume === 1);
+  if (process.env.TPV_KARAFUN_QA_SCREENSHOT) await host.screenshot({ path: process.env.TPV_KARAFUN_QA_SCREENSHOT });
+  await mixDialog.getByRole('button', { name: 'Done', exact: true }).click();
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'playing', 'Closing Vocal Mix leaves transport playing');
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'paused');
   const seek = await host.evaluate(generation => window.tpv.seek({ generation, position: 5 }), generation);
   assert.equal(seek.ok, true, JSON.stringify({ seek, timeline: await host.evaluate(() => window.tpv.getTimeline()), playback: (await host.evaluate(() => window.tpv.getState())).playback }));
+  assert.deepEqual((await host.evaluate(() => window.tpv.karaFunMix.status())).stems.map(stem => stem.volume), [1, 0, 1, 1, 1]);
+  await host.evaluate(generation => window.tpv.karaFunMix.set({ generation, reset: true }), generation);
+  assert.deepEqual((await host.evaluate(() => window.tpv.karaFunMix.status())).stems.map(stem => stem.volume), [1, 1, 1, 0, 0]);
   assert.equal((await host.evaluate(() => window.tpv.restartTrack())).ok, true);
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
   await host.evaluate(() => window.tpv.karaFun.signOut());
+  assert.equal(await host.evaluate(() => window.tpv.karaFunMix.status()), null);
+  assert.equal(await host.evaluate(async generation => { try { await window.tpv.karaFunMix.set({ generation, stemId: 10, volume: 1 }); return false; } catch { return true; } }, generation), true);
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'paused');
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, false);
   assert.equal(await singer.locator('#waiting').isVisible(), true);
   const counters = await app.evaluate(() => ({ ...globalThis.nativeQa }));
   assert.equal(counters.downloads, 1); assert.ok(counters.authorizations >= 3);
   assert.deepEqual(counters.dialogs, []);
-  console.log('Native KaraFun synthetic account → library → singer → durable queue → private KIT → audio/lyrics → pause/seek/Previous → sign-out fencing passed. No provider or real show was accessed.');
+  console.log('Native KaraFun synthetic account → library → queue → five independent duet/backing stems, live gains without restarting, hidden preview, pause/seek/reset/Previous → sign-out fencing passed. No provider or real show was accessed.');
 } catch (error) {
   if (qaHost) { await qaHost.screenshot({ path: join(root, 'tpv-karafun-native-failure.png') }).catch(() => {}); console.error((await qaHost.locator('body').ariaSnapshot().catch(() => '')).slice(-10000)); console.error('Events',JSON.stringify(await app.evaluate(()=>globalThis.nativeQa.events))); }
   throw error;

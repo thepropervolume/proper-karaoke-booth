@@ -81,7 +81,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Add a seekable timeline, elapsed/remaining time and reliable resume position.
 - [ ] Add volume and explicit audio-output device selection, with loss and rerouting behavior tested on real hardware.
 - [ ] Add pitch/key and tempo controls, with per-song and per-singer defaults and reset.
-- [ ] Support independent lead/backing vocal controls only for sources that actually provide separate stems or compatible multiplex audio.
+- [x] Add independent native KaraFun instrumental/lead/backing stem volumes, including supplied duet/choir parts (0.8.0); physical output validation and other stem/multiplex sources remain open.
 - [ ] Extend the experimental, manually started bumper music with automatic intermission scheduling, transitions and fade controls; verify playback and output changes on real hardware. Three synthesized themes and up to five custom files are available in Audio Controls.
 - [ ] Verify the configurable inter-song gap on actual show hardware, including completion, skip and restart. The original countdown required manual next starts. Source 0.7.0 now advances an already running show after completion/confirmed Skip, gap and media readiness by default; Stop/Pause/errors cancel it and restart remains paused.
 - [ ] Offer fullscreen, monitor selection and configurable idle/now-playing/next-up singer screens.

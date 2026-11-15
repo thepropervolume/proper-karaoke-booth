@@ -80,6 +80,7 @@ import { KaraFunAccount } from './karafun-account';
 import { KaraFunSessionVault } from './karafun-session-vault';
 import { KaraFunHost } from './karafun-host';
 import { KaraFunMediaCache, type KaraFunPreparedMedia } from './karafun-media';
+import { KaraFunMixer } from './karafun-mixer';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 let host: BrowserWindow | null = null;
@@ -403,7 +404,22 @@ function broadcast(): void {
 // This projection is for our trusted singer renderer, not the guest network API.
 // Local protocol URLs bind media to a playback generation without exposing the
 // provider URL or account session to the host UI or remote singers.
+function currentNativeKaraFun(): typeof activeKaraFun {
+  const playback = state.playback;
+  const request = state.requests.find(item => item.id === playback?.requestId);
+  const version = state.versions.find(item => item.id === request?.versionId);
+  return activeKaraFun?.generation === playback?.generationId && activeKaraFun?.versionId === version?.id &&
+    activeKaraFun?.revision === karaFunAccount?.revision() && version?.source?.provider === 'karafun' &&
+    version.source.catalog === activeKaraFun.media.source.catalog && version.source.songId === activeKaraFun.media.source.songId ? activeKaraFun : null;
+}
+const karaFunMixer = new KaraFunMixer(() => {
+  const native = currentNativeKaraFun();
+  return native ? { generation: native.generation, versionId: native.versionId, stems: native.media.kit.stems } : null;
+});
 function publishDisplay(): void {
+  // Mix publications update gains only. They never arm playback or advance a turn.
+  const mix = karaFunMixer.status();
+  if (host && !host.isDestroyed()) host.webContents.send('host:karafun-mix', mix);
   if (shuttingDown || !display || display.isDestroyed() || !displayReady) return;
   const playback = state.playback;
   const request = state.requests.find(r => r.id === playback?.requestId);
@@ -412,13 +428,12 @@ function publishDisplay(): void {
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
     .filter(r => r.singerId !== null && singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
-  const native = activeKaraFun?.generation === playback?.generationId && activeKaraFun?.versionId === version?.id &&
-    activeKaraFun?.revision === karaFunAccount?.revision() && version?.source?.provider === 'karafun' &&
-    version.source.catalog === activeKaraFun.media.source.catalog && version.source.songId === activeKaraFun.media.source.songId ? activeKaraFun : null;
+  const native = currentNativeKaraFun();
   const backdrop = native ? lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }) : undefined;
   const current = playback && request && version && store.media(version.id) && (version.source?.provider !== 'karafun' || native) ? { generation: playback.generationId, status: playback.status,
     kind: native ? 'karafun' : 'video',
     ...(native ? { karaFun: { timing: native.media.kit.timing, durationSeconds: native.media.kit.timing.durationSeconds,
+      stemVolumes: Object.fromEntries(mix?.stems.map(stem => [stem.id, stem.volume]) ?? []),
       stems: native.media.kit.stems.map(stem => ({ id: stem.id, role: stem.role, voice: stem.voice, src: `tpv-media://karafun-stem/${encodeURIComponent(playback.generationId)}/${stem.id}` })) },
       backdropSrc: backdrop ? `tpv-media://lyric-backdrop/${encodeURIComponent(playback.generationId)}` : null } : {}),
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
@@ -1092,6 +1107,11 @@ else {
   ipcMain.handle('host:singer-screen-retry', async event => { guardHost(event.sender.id); await reconcileSingerScreen(); return singerScreenStatus(); });
   ipcMain.handle('host:singer-screen-copy', (event, url: unknown) => { guardHost(event.sender.id); if (typeof url !== 'string' || !singerScreenStatus().urls.includes(url)) throw new Error('Choose a current singer-screen address.'); clipboard.writeText(url); });
   ipcMain.handle('host:karafun-status', event => { guardHost(event.sender.id); return karaFunAccount.status(); });
+  ipcMain.handle('host:karafun-mix-status', event => { guardHost(event.sender.id); return karaFunMixer.status(); });
+  ipcMain.handle('host:karafun-mix-set', (event, input: unknown) => {
+    guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.');
+    const result = karaFunMixer.set(input); publishDisplay(); return result;
+  });
   ipcMain.handle('host:karafun-connect', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.connect(host ?? undefined); });
   ipcMain.handle('host:karafun-disconnect', event => { guardHost(event.sender.id); return karaFunAccount.disconnect(); });
   ipcMain.handle('host:karafun-search', (event, query: unknown) => { guardHost(event.sender.id); return karaFunHost.search(query); });

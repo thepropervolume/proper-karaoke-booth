@@ -25,6 +25,8 @@ import type { CollectionsAction, CollectionsSnapshot } from '../domain/collectio
 import { Icon } from './Icon';
 import { CollectionsPanel } from './CollectionsPanel';
 import { PlaybackTimeline } from './PlaybackTimeline';
+import { KaraFunMixControl } from './KaraFunMixControl';
+import type { KaraFunMixBridge } from '../domain/karafun-mix';
 import type { PlaybackTimelineState, PlaybackSeek, PlaybackSeekResult } from '../domain/playback-timeline';
 import { AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { SongRequestDialog } from './SongRequestDialog';
@@ -116,6 +118,7 @@ declare global {
       singerScreens: SingerScreenBridge;
       youtubeSearch: YouTubeSearchBridge;
       karaFun: KaraFunBridge;
+      karaFunMix: KaraFunMixBridge;
       khostBridge: KHostBridgeApi;
       chooseRatingProfile: () => Promise<string | null>;
       ratingProfileStatus: (file?: string) => Promise<SongRatingsLookup>;
@@ -748,6 +751,7 @@ function App() {
     <footer className="transport" aria-label="Playback controls">
       <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Staged' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Add a song to begin'}</small></div>
       <div className="transport__controls">
+        <KaraFunMixControl bridge={window.tpv.karaFunMix} generation={state?.playback?.generationId ?? null} />
         <Tooltip text={shortcutHint('Previous — Restart Current Song', 'previous')}><button className="icon-button" aria-label="Previous — Restart Current Song" disabled={busy || !active} onClick={() => void run(() => window.tpv.restartTrack())}><Icon name="previous" /></button></Tooltip>
         <Tooltip text={!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (stagedBlocked || pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text={shortcutHint('Stop', 'stop')}><button className="icon-button" aria-label="Stop" disabled={!state} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>

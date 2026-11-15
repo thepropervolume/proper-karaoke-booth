@@ -1,11 +1,11 @@
 import { AudioOutputRouter } from './audio-output';
+import { DEFAULT_KARAFUN_MIX, validStemVolume, type KaraFunStemRole, type KaraFunMix, type KaraFunStemVolumes } from '../domain/karafun-mix';
 
-export type KaraFunStemRole = 'instrumental' | 'backing' | 'lead' | 'other';
-export type KaraFunMix = Record<KaraFunStemRole, number>;
+export type { KaraFunStemRole, KaraFunMix } from '../domain/karafun-mix';
 export type KaraFunStemSource = { id: number; role: KaraFunStemRole; src: string; voice?: string | null };
 export type KaraFunPlaybackInput = {
   generation: string; stems: readonly KaraFunStemSource[]; durationSeconds: number;
-  position?: number; volume: number; outputId: string; mix?: Partial<KaraFunMix>;
+  position?: number; volume: number; outputId: string; mix?: Partial<KaraFunMix>; stemVolumes?: KaraFunStemVolumes;
 };
 export type KaraFunPlayerSnapshot = {
   generation: string; status: 'loading' | 'paused' | 'playing' | 'ended' | 'error';
@@ -19,7 +19,7 @@ export type KaraFunPlayerEvent =
 
 type DecodedAudio = Pick<AudioBuffer, 'duration' | 'length' | 'numberOfChannels'>;
 // These narrow ports also let the timing tests run without a physical audio device.
-type Gain = { gain: { value: number }; connect(destination: any): unknown; disconnect(): void };
+type Gain = { gain: { value: number; cancelAndHoldAtTime?(time: number): unknown; linearRampToValueAtTime?(value: number, time: number): unknown }; connect(destination: any): unknown; disconnect(): void };
 type Source = { buffer: DecodedAudio | null; onended: (() => void) | null; connect(destination: any): unknown; start(when: number, offset: number): void; stop(): void; disconnect(): void };
 export type KaraFunAudioContext = {
   readonly currentTime: number; readonly state: string; readonly destination: unknown;
@@ -27,7 +27,7 @@ export type KaraFunAudioContext = {
   resume(): Promise<void>; close(): Promise<void>; setSinkId?: (id: string) => Promise<void>;
 };
 type LoadedStem = { input: KaraFunStemSource; buffer: DecodedAudio };
-type Current = KaraFunPlayerSnapshot & { savedPosition: number; anchor: number; outputId: string; signature: string; stems: LoadedStem[] };
+type Current = KaraFunPlayerSnapshot & { savedPosition: number; anchor: number; outputId: string; signature: string; stems: LoadedStem[]; stemIds: Set<number> };
 export type KaraFunPlayerOptions = {
   onEvent(event: KaraFunPlayerEvent): void;
   createContext?: () => KaraFunAudioContext;
@@ -41,7 +41,7 @@ export class KaraFunPlayerError extends Error {
   constructor(readonly code: 'decode' | 'requires-premix', message: string) { super(message); }
 }
 
-const DEFAULT_MIX: KaraFunMix = { instrumental: 1, backing: 1, lead: 0, other: 1 };
+const DEFAULT_MIX = DEFAULT_KARAFUN_MIX;
 const MAX_ENCODED_BYTES = 32 * 1024 * 1024;
 const level = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 const replaced = () => new DOMException('The prepared performance was replaced.', 'AbortError');
@@ -79,7 +79,7 @@ export class KaraFunPlayer {
   private context: KaraFunAudioContext | null = null;
   private master: Gain | null = null;
   private current: Current | null = null;
-  private nodes: { source: Source; gain: Gain; role: KaraFunStemRole }[] = [];
+  private nodes: { source: Source; gain: Gain; role: KaraFunStemRole; id: number }[] = [];
   private controller: AbortController | null = null;
   // epoch invalidates asynchronous loading; action invalidates transport intents
   // within the same song (for example Pause while AudioContext.resume awaits).
@@ -88,6 +88,7 @@ export class KaraFunPlayer {
   private muted = true;
   private volume = 1;
   private mix: KaraFunMix = { ...DEFAULT_MIX };
+  private stemVolumes: KaraFunStemVolumes = {};
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly output: AudioOutputRouter;
   private readonly maximumDecodedBytes: number;
@@ -156,11 +157,13 @@ export class KaraFunPlayer {
         throw new Error('Invalid prepared KaraFun stem.');
       ids.add(stem.id);
     }
+    this.validateStemVolumes(ids, input.stemVolumes ?? {});
     const signature = JSON.stringify([input.durationSeconds, input.stems.map(({ id, role, src }) => [id, role, src])]);
     if (this.current?.generation === input.generation) {
       if (this.current.signature !== signature) throw new Error('A playback generation cannot change its prepared recording.');
       this.setVolume(input.generation, input.volume);
       if (input.mix) this.setMix(input.generation, input.mix);
+      if (input.stemVolumes) this.setStemVolumes(input.generation, input.stemVolumes);
       if (this.current.outputId !== input.outputId && !this.current.outputBlocked)
         this.invalidateOutput('The chosen audio output changed. Resume deliberately after checking it.');
       return;
@@ -168,12 +171,13 @@ export class KaraFunPlayer {
     this.stop();
     const epoch = ++this.epoch, context = this.ensureContext(), controller = new AbortController();
     this.controller = controller; this.volume = level(input.volume); this.mix = { ...DEFAULT_MIX };
+    this.stemVolumes = { ...input.stemVolumes };
     if (input.mix) for (const role of Object.keys(DEFAULT_MIX) as KaraFunStemRole[]) {
       if (input.mix[role] !== undefined) this.mix[role] = level(input.mix[role]!);
     }
     const current: Current = { generation: input.generation, status: 'loading', position: 0,
       savedPosition: input.position ?? 0, anchor: 0, duration: input.durationSeconds, ready: false,
-      outputBlocked: false, outputRevision: 0, outputId: input.outputId, signature, stems: [] };
+      outputBlocked: false, outputRevision: 0, outputId: input.outputId, signature, stems: [], stemIds: ids };
     this.current = current;
     let decodedBytes = 0, encodedBytes = 0;
     try {
@@ -238,9 +242,9 @@ export class KaraFunPlayer {
       for (const stem of current.stems) {
         if (stem.buffer.duration <= current.savedPosition) continue;
         const gain = context.createGain(), source = context.createBufferSource();
-        gain.gain.value = this.mix[stem.input.role]; source.buffer = stem.buffer;
+        gain.gain.value = this.stemVolumes[stem.input.id] ?? this.mix[stem.input.role]; source.buffer = stem.buffer;
         source.connect(gain); gain.connect(this.master);
-        const node = { source, gain, role: stem.input.role }; this.nodes.push(node);
+        const node = { source, gain, role: stem.input.role, id: stem.input.id }; this.nodes.push(node);
         source.onended = () => { if (this.current === current && this.nodes.includes(node)) this.tick(); };
         source.start(when, current.savedPosition);
       }
@@ -273,7 +277,31 @@ export class KaraFunPlayer {
   setMix(generation: string, mix: Partial<KaraFunMix>): void {
     if (!this.matches(generation)) return;
     for (const role of Object.keys(DEFAULT_MIX) as KaraFunStemRole[]) if (mix[role] !== undefined && Number.isFinite(mix[role])) this.mix[role] = level(mix[role]!);
-    for (const node of this.nodes) node.gain.gain.value = this.mix[node.role];
+    this.applyStemVolumes();
+  }
+
+  private validateStemVolumes(ids: ReadonlySet<number>, volumes: KaraFunStemVolumes): void {
+    if (!volumes || typeof volumes !== 'object' || Array.isArray(volumes) ||
+        Object.entries(volumes).some(([id, value]) => !/^(?:0|[1-9]\d{0,2})$/.test(id) || !ids.has(Number(id)) || !validStemVolume(value)))
+      throw new Error('Invalid prepared KaraFun channel volumes.');
+  }
+  setStemVolumes(generation: string, volumes: KaraFunStemVolumes): void {
+    const current = this.matches(generation);
+    if (!current) return;
+    this.validateStemVolumes(current.stemIds, volumes);
+    // Replace the full projection, including Reset. It can arrive during decode;
+    // available IDs come from the manifest rather than only decoded buffers.
+    this.stemVolumes = { ...volumes }; this.applyStemVolumes();
+  }
+  private applyStemVolumes(): void {
+    const now = this.context?.currentTime ?? 0;
+    for (const node of this.nodes) {
+      const value = this.stemVolumes[node.id] ?? this.mix[node.role], parameter = node.gain.gain;
+      // A short gain ramp avoids clicks without restarting a source or its clock.
+      if (parameter.cancelAndHoldAtTime && parameter.linearRampToValueAtTime) {
+        parameter.cancelAndHoldAtTime(now); parameter.linearRampToValueAtTime(value, now + .015);
+      } else parameter.value = value;
+    }
   }
 
   invalidateOutput(message = 'Audio devices changed. Check the output and resume deliberately.'): number {

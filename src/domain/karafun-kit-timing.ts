@@ -130,8 +130,8 @@ function box(node: Element | undefined): KaraFunBox | null {
 /** Role facts are taken from labels, never guessed from numeric stream IDs. */
 export function describeKaraFunStemLabel(label: string, caption: string | null = null): { role: 'instrumental' | 'backing' | 'lead' | 'other'; voice: string | null } {
   const base = label.trim().split(/[\\/]/).at(-1)!.replace(/\.[^.]*$/, '');
-  if (base.toLowerCase() === 'ins') return { role: 'instrumental', voice: null };
-  if (base.toLowerCase() === 'bv') return { role: 'backing', voice: null };
+  if (/^ins(?:_|$)/i.test(base)) return { role: 'instrumental', voice: null };
+  if (/^bv(?:_|$)/i.test(base)) return { role: 'backing', voice: caption?.trim() || base.slice(3).trim() || null };
   if (/^ld(?:_|$)/i.test(base)) return { role: 'lead', voice: caption?.trim() || base.slice(3).trim() || null };
   return { role: 'other', voice: null };
 }

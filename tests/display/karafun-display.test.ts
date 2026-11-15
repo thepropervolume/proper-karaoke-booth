@@ -45,13 +45,16 @@ test('native display isolates video events, serializes recovery, seeks, and cann
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
   const view = (playback: any) => ({ playback, next: [], logo: null, shortcuts: DEFAULT_SHORTCUTS, bumperVolume: .5 });
   const common = { generation: 'first', src: 'tpv-media://play/first', status: 'playing', singer: 'QA', title: 'Native', position: 0, volume: .8, outputId: '' };
-  const native = { ...common, kind: 'karafun', karaFun: { durationSeconds: 10, timing: { durationSeconds: 10, bounds: { x: 0, y: 0, width: 640, height: 360 }, pages: [], countIns: [], tracks: [], files: [], rightToLeft: false },
+  const native = { ...common, kind: 'karafun', karaFun: { durationSeconds: 10, stemVolumes: { 1: 1 }, timing: { durationSeconds: 10, bounds: { x: 0, y: 0, width: 640, height: 360 }, pages: [], countIns: [], tracks: [], files: [], rightToLeft: false },
     stems: [{ id: 1, role: 'instrumental', src: 'tpv-media://karafun-stem/first/1' }] }, backdropSrc: 'tpv-media://lyric-backdrop/first' };
   try {
     await import('../../src/display/index');
     await publish(view({ ...common, generation: 'legacy' })); const retiredVideo = video;
     await publish(view(native)); const context = contexts[0];
     assert.equal(context.sources.length, 1); assert.equal(context.sources[0].started, true);
+    await publish(view({ ...native, karaFun: { ...native.karaFun, stemVolumes: { 1: .35 } } }));
+    assert.equal(context.sources.length, 1); assert.equal(context.gains[1].gain.value, .35);
+    assert.equal(context.gains[0].gain.value, .8);
     assert.equal(video.muted, true); assert.equal(video.paused, true);
     assert.equal(backdrop.muted, true); assert.equal(backdrop.volume, 0); assert.equal(backdrop.loop, true); assert.equal(backdrop.paused, false);
     const beforeStaleEvent = events.length; retiredVideo.dispatchEvent(new Event('ended')); retiredVideo.dispatchEvent(new Event('error'));

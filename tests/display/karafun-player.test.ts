@@ -169,3 +169,60 @@ test('stop aborts pending fetch and invalid identities cannot mutate a generatio
   assert.equal(fresh.player.pause('other'), false); assert.equal(fresh.player.stop('other'), false);
   await fresh.player.dispose();
 });
+
+test('duet and backing voices change independently without restarting, seeking or changing global volume', async () => {
+  const { player, context } = setup();
+  const duet = { ...input(), stems: [...input().stems,
+    { id: 4, role: 'lead' as const, voice: 'Second Voice', src: 'tpv-media://karafun-stem/show/4' },
+    { id: 5, role: 'backing' as const, voice: 'Second Choir', src: 'tpv-media://karafun-stem/show/5' }] };
+  await player.load(duet); await player.play('show:1'); context.currentTime = 7.025;
+  const sources = [...context.sources];
+  player.setStemVolumes('show:1', { 3: .6, 4: .2, 2: .4 });
+  assert.deepEqual(context.gains.slice(1).map(gain => gain.gain.value), [1, .4, .6, .2, 1]);
+  assert.equal(context.gains[0].gain.value, .8); assert.equal(player.snapshot()?.position, 7);
+  assert.deepEqual(context.sources, sources); assert.ok(sources.every(source => !source.stopped));
+  // Stale and malformed projections cannot partly modify the live mix.
+  player.setStemVolumes('old-performance', { 3: 1 });
+  const invalidVolumes: Record<string, number>[] = [{ 3: .1, 99: 1 }, { 3: NaN }, { 3: 2 }, { '03': .5 }];
+  for (const value of invalidVolumes)
+    assert.throws(() => player.setStemVolumes('show:1', value), /Invalid prepared/);
+  assert.deepEqual(context.gains.slice(1).map(gain => gain.gain.value), [1, .4, .6, .2, 1]);
+  player.pause('show:1'); player.setStemVolumes('show:1', { 3: .7, 4: .3 });
+  assert.equal(context.gains[0].gain.value, 0);
+  await player.seek('show:1', 12); await player.play('show:1');
+  assert.deepEqual(context.gains.slice(-5).map(gain => gain.gain.value), [1, 1, .7, .3, 1]);
+  assert.ok(context.sources.slice(-5).every(source => source.started?.offset === 12));
+  player.setStemVolumes('show:1', {});
+  assert.deepEqual(context.gains.slice(-5).map(gain => gain.gain.value), [1, 1, 0, 0, 1]);
+  await player.load({ ...duet, generation: 'show:2' }); await player.play('show:2');
+  assert.deepEqual(context.gains.slice(-5).map(gain => gain.gain.value), [1, 1, 0, 0, 1]);
+  await player.dispose();
+});
+
+test('a mix arriving during decode is applied on first play and a same-generation refresh never reloads audio', async () => {
+  const gate = deferred<ArrayBuffer>(); let reads = 0;
+  const { player, context } = setup({ fetchAudio: async () => { ++reads; return reads === 1 ? gate.promise : Uint8Array.of(60).buffer; } });
+  const loading = player.load({ ...input(), stemVolumes: { 3: .1 } });
+  player.setStemVolumes('show:1', { 2: .5, 3: .9 }); gate.resolve(Uint8Array.of(60).buffer); await loading;
+  assert.equal(context.sources.length, 0);
+  await player.play('show:1'); assert.deepEqual(context.gains.slice(1).map(gain => gain.gain.value), [1, .5, .9]);
+  await player.load({ ...input(), stemVolumes: { 3: .4 } });
+  assert.equal(reads, 3); assert.equal(context.sources.length, 3);
+  assert.deepEqual(context.gains.slice(1).map(gain => gain.gain.value), [1, 1, .4]);
+  await player.dispose();
+});
+
+test('live channel adjustments ramp over 15 ms on the existing audio clock', async () => {
+  const { player, context } = setup(); const calls: [string, number, number?][] = [];
+  const gain = context.createGain.bind(context);
+  context.createGain = () => {
+    const node = gain();
+    Object.assign(node.gain, { cancelAndHoldAtTime: (time: number) => calls.push(['hold', time]),
+      linearRampToValueAtTime: (value: number, time: number) => calls.push(['ramp', value, time]) });
+    return node;
+  };
+  await player.load(input()); await player.play('show:1'); context.currentTime = 2;
+  player.setStemVolumes('show:1', { 3: .5 });
+  assert.deepEqual(calls, [['hold', 2], ['ramp', 1, 2.015], ['hold', 2], ['ramp', 1, 2.015], ['hold', 2], ['ramp', .5, 2.015]]);
+  assert.equal(context.sources.length, 3); assert.equal(player.snapshot()?.status, 'playing'); await player.dispose();
+});

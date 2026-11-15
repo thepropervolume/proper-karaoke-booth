@@ -1,6 +1,6 @@
 # Native KaraFun Integration
 
-Reviewed 15 November 2026 for the experimental **0.7.0** source implementation, against KaraFun plugin commit `9abc10886597cd6e182cd4e1792979a0a5bdabac` and KHost commit `b397bdd8aa7a3c4e2a0ddced43567b3278424c6e`. Both were the current upstream main revisions when checked. Native playback was delivered in 0.6.0; the remembered-session and workflow changes below are new in 0.7.0. Consult installation.md for actually built packages. The actual-account TPV Windows rehearsal passed for one eligible recording in a muted disposable profile. Physical sound/display recovery and native Linux/macOS provider playback remain unverified.
+Reviewed 15 November 2026 for the experimental **0.8.0** source implementation, against KaraFun plugin commit `9abc10886597cd6e182cd4e1792979a0a5bdabac` and KHost commit `b397bdd8aa7a3c4e2a0ddced43567b3278424c6e`. Both were the current upstream main revisions when checked. Native playback was delivered in 0.6.0; the remembered-session and workflow changes below are new in 0.7.0. Consult installation.md for actually built packages. The actual-account TPV Windows rehearsal passed for one eligible recording in a muted disposable profile. Physical sound/display recovery and native Linux/macOS provider playback remain unverified.
 
 ## Direction and Current Evidence
 
@@ -28,7 +28,13 @@ Sessions are remembered in an **OS-encrypted vault**, containing only the accept
 
 `KaraFunSessionVault` writes a bounded versioned encrypted file under userData, using a private temporary file, fsync and atomic replacement with identity checks. The public renderer receives only persistence status, never session material. Account revision fences prevent a late restore from undoing sign-out. Unit tests and a synthetic Windows Electron rehearsal across four independent launches verify encrypted close/restore, stable cache scope, sign-out removal and no later restore. Real provider session longevity and native Linux/macOS keyring behavior remain hardware/integration checks.
 
-Acquisition is bounded to 128 MiB per KIT, with at most two prepared entries and a 128 MiB aggregate memory target; the active performance is pinned separately. The player bounds decoded audio to 512 MiB. An oversized recording reports that a prepared fixed mix is required; automatic premixing is not implemented. Native community recordings, pitch/tempo, host stem/voice controls remain unsupported. KaraFun heart ratings use stable global keys `karafun:catalog:<id>` (or the distinct community namespace), including search results before importing or preparing; the shared service must run the matching validator. No local media fingerprint is required for native IDs. Primary singer lyric highlighting uses KaraFun pink `#d5167a`; secondary singer colors are retained. A provider authorization failure keeps the queue intact and offers retry/account recovery rather than starting cached audio or switching players.
+Acquisition is bounded to 128 MiB per KIT, with at most two prepared entries and a 128 MiB aggregate memory target; the active performance is pinned separately. The player bounds decoded audio to 512 MiB. An oversized recording reports that a prepared fixed mix is required; automatic premixing is not implemented. Native community recordings and pitch/tempo remain unsupported. Version 0.8.0 adds per-channel host vocal/instrumental controls for the stems actually supplied. KaraFun heart ratings use stable global keys `karafun:catalog:<id>` (or the distinct community namespace), including search results before importing or preparing; the shared service must run the matching validator. No local media fingerprint is required for native IDs. Primary singer lyric highlighting uses KaraFun pink `#d5167a`; secondary singer colors are retained. A provider authorization failure keeps the queue intact and offers retry/account recovery rather than starting cached audio or switching players.
+
+## Per-Channel Vocal Mix (0.8.0)
+
+**Vocal Mix** beside the host transport exposes every supplied native audio stem, grouped as Instrumental, Backing Vocals, Lead Vocals or Other Audio. Captioned duet and backing parts remain independent. Lead defaults to 0%, others to 100%; Master Volume remains the overall output level. A single mixed audio stem cannot yield separately adjustable voices.
+
+Current-performance levels are held only in memory. Pause, seek and Previous preserve them; Reset This Song, a new performance, Stop and sign-out clear them. Host commands validate exact generation, supplied ID and finite 0–1 volume before broadcasting. Per-stem GainNodes ramp for 15 ms beneath the existing master, without source recreation or clock changes; updates during decode are retained. Nothing in this control bypasses authorization or resumes playback. `scripts/karafun-native-smoke.mjs` validates five real decoded synthetic Ogg stems, keyboard controls, actual gain values, unchanged source count, hidden preview, seek/reset and revoked access. Audible real-recording output is not established by that muted rehearsal.
 
 ## Authentication and Application Identity
 
@@ -93,7 +99,7 @@ Bounded account/search, independent format/cache/queue handling and synthetic na
 
 ### Phase 4 Playback Depth and Distribution
 
-- Add stem/voice controls, pitch/tempo and their per-song/per-singer defaults only after synchronized basic playback is dependable.
+- Verify the implemented current-performance stem controls on actual recordings/output; add saved per-song/per-singer mix defaults and pitch/tempo separately.
 - Establish application identification, account/territory/venue eligibility, caching/retention, concurrency and any reporting obligations for distribution. Record confirmed terms rather than inferring them from consumer pricing or upstream plugin behavior.
 - Verify installers, secret stores, codecs, output recovery and long-show operation on supported hardware. Version and document each delivered increment; reserve 1.0.0 for the approved release.
 

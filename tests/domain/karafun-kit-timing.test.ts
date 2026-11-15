@@ -33,6 +33,10 @@ test('timing does not infer stem roles from member numbers and sanitizes labels 
   assert.deepEqual(describeKaraFunStemLabel('ld_Two.ogg'), { role: 'lead', voice: 'Two' });
   assert.deepEqual(describeKaraFunStemLabel('ld.ogg', 'User Caption'), { role: 'lead', voice: 'User Caption' });
   assert.deepEqual(describeKaraFunStemLabel('bv.ogg'), { role: 'backing', voice: null });
+  assert.deepEqual(describeKaraFunStemLabel('bv_High.ogg'), { role: 'backing', voice: 'High' });
+  assert.deepEqual(describeKaraFunStemLabel('bv_Low.ogg', 'Second Choir'), { role: 'backing', voice: 'Second Choir' });
+  assert.deepEqual(describeKaraFunStemLabel('ins_Strings.ogg'), { role: 'instrumental', voice: null });
+  assert.deepEqual(describeKaraFunStemLabel('bvague.ogg'), { role: 'other', voice: null });
   assert.deepEqual(describeKaraFunStemLabel('unknown.ogg'), { role: 'other', voice: null });
 });
 test('timing rejects DTDs, external/custom entities, malformed XML, duplicate XML attributes and duplicate IDs', () => {

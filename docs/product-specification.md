@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 15 November 2026. **Application milestone:** 0.7.1 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 15 November 2026. **Application milestone:** 0.8.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -51,6 +51,12 @@ Focused automation/fade/capture/staging tests and isolated muted Electron rehear
 Host queueing defaults to no singer assignment: leave **Singer (optional)** empty or select/create a singer. Requests store `singerId: null`; no placeholder Singer is created. The host queue shows **Unassigned**, while singer-display captions omit a missing name. Host/staff may submit unassigned requests; only host may assign/change/clear an eligible request later, including a prepared one without changing its request ID or staged/manual slot. Authenticated remote requests stay bound to their own singer identity.
 
 Each unassigned request has an independent FIFO place in the current eligible fair round, or the next round after its final turn begins. It has no shared singer limit or absence state. Schema 5 transactionally makes performance-history singer IDs nullable while preserving assigned legacy shows/history; older apps refuse it, so back up before upgrade and retain that backup for downgrade. Search uses one outer focus ring, with the inherited inner input glow disabled.
+
+### 0.8.0 KaraFun Vocal Mix
+
+**Experimental:** Vocal Mix beside the host transport shows a 0–100% control for each actual native KaraFun audio stem. Instrumental, backing and lead groups include individual duet/choir channels and provider voice labels when present; unknown channels remain Other Audio. Lead vocals default to 0%, the others to 100%. Master Volume controls their combined output. A mixed stem cannot be separated into additional voices.
+
+Host-only commands validate the current authorized performance and channel ID. Slider changes use 15 ms gain ramps without decoding again, seeking or restarting playback, and work while the singer window is hidden. Pause/seek/Previous retain the current mix. Reset This Song restores defaults; a new performance, Stop or sign-out clears it. Per-song/per-singer saved mix defaults are planned. Source tests and a muted synthetic five-stem desktop rehearsal cover independence, unchanged source count, hidden preview, seek/reset and stale/sign-out rejection. Real-recording listening and physical mixer validation remain open.
 
 ## 2. People, interfaces and navigation
 
@@ -124,7 +130,7 @@ The singer video is bounded to the full window viewport (maximum 100vh/100vw) wi
 
 **Available:** the bottom timeline shows elapsed/remaining time, supports dragging or keyboard scrubbing and ten-second rewind/forward. Seeking preserves play/pause state and saves acknowledged positions; stale-generation events are rejected. It supports local MP4s, converted CDG, downloaded YouTube videos and the native KaraFun audio clock. Previous restarts the current generation from zero and resumes a paused performance without consuming a turn. Per-range verified file handles reject observed source replacement and pause the same performance with a recovery path. Real-hardware synchronization and recovery remain unverified.
 
-**Planned:** physical recovery verification, key/tempo with per-song/per-singer defaults, user lead/backing mixing where real stems/multiplex exist, separate filler volume, fade-out/richer intermission scheduling and richer output presets. Existing fade-in is implemented; older proposed 1.5-second in/1.0-second out values are historical candidates, not current defaults. Never overlap audible karaoke streams or start filler merely because a performance is paused. Source MP4/CDG text is not restyled by native KaraFun colors.
+**Planned:** physical recovery verification, key/tempo with per-song/per-singer defaults, mixing for other compatible sources, separate filler volume, fade-out/richer intermission scheduling and richer output presets. Existing fade-in is implemented; older proposed 1.5-second in/1.0-second out values are historical candidates, not current defaults. Never overlap audible karaoke streams or start filler merely because a performance is paused. Source MP4/CDG text is not restyled by native KaraFun colors.
 
 **LRC foundation only:** timed-lyric parsing and VTT conversion are integrated. Full LRC import/playback, shared backdrop rendering and its timing/seek/resume verification remain unfinished. Do not present the parser as a playable source.
 
@@ -232,7 +238,7 @@ Add to Queue uses the usual optional-singer dialog; the host may leave it empty,
 
 **Experimental native KaraFun integration, introduced in 0.6.0 and extended in 0.7.0:** connect an existing account through the official, isolated sign-in window in **Sources → KaraFun**. Its first-party engine opens the session; TPV's independent account client checks the session, searches canonical catalog metadata and requests eligible recordings without an embedded vendor application key. Signed-in library results show **KaraFun**, open the ordinary singer dialog and become durable TPV requests. Approved requests prepare and auto-stage without arming a new show. Host Play uses a fresh authorization, verified account-scoped KIT media, one Web Audio clock for its Ogg stems, and timed canvas lyrics over a muted optional backdrop in TPV's singer screen. Pause, resume, seek, Previous, Stop, output recovery, preview and the visual browser mirror share the normal show authority. The optional KHost bridge remains separate and is unnecessary for this native path.
 
-Remembered sessions use Electron safeStorage only when OS-backed encryption is available; Linux basic_text/plaintext fallback is refused. Restore validates an accepted saved session without opening a browser and retains its opaque account/cache scope. Normal close preserves the encrypted vault; explicit sign-out forgets it and silences native playback. Expiry/revocation offers reconnect; every performance still requires current authorization. Private cached KITs do not establish permanent/offline rights. Acquisition is bounded to 128 MiB, retained prepared data targets 128 MiB with a pinned active performance, and decoded audio to 512 MiB. Native community playback, user stem mixing, pitch/tempo, fixed-mix fallback and distribution/venue terms remain open. Global ratings now use numeric catalog/community keys without imported fingerprints; production needs the compatible validator deployment and no SQL migration. Schema 5 retains schema 4’s native-asset distinction and adds nullable request/history singer identity; older clients refuse the upgraded database.
+Remembered sessions use Electron safeStorage only when OS-backed encryption is available; Linux basic_text/plaintext fallback is refused. Restore validates an accepted saved session without opening a browser and retains its opaque account/cache scope. Normal close preserves the encrypted vault; explicit sign-out forgets it and silences native playback. Expiry/revocation offers reconnect; every performance still requires current authorization. Private cached KITs do not establish permanent/offline rights. Acquisition is bounded to 128 MiB, retained prepared data targets 128 MiB with a pinned active performance, and decoded audio to 512 MiB. Version 0.8.0 adds current-performance per-stem Vocal Mix. Native community playback, pitch/tempo, fixed-mix fallback and distribution/venue terms remain open. Global ratings now use numeric catalog/community keys without imported fingerprints; production needs the compatible validator deployment and no SQL migration. Schema 5 retains schema 4’s native-asset distinction and adds nullable request/history singer identity; older clients refuse the upgraded database.
 
 Verification separates real account evidence from simulated flows: ordinary official sign-in, session information, canonical search and acquisition of one eligible 5,516,449-byte recording passed, including size/MD5/SHA256 verification and parsing three stems, six artwork members and timing. Generated Ogg playback passed a real muted Electron audio-clock/lyrics test. The complete TPV synthetic account/search/singer/queue/download/player/pause/seek/Previous/sign-out flow also passed. The actual-account TPV Windows rehearsal also passed official sign-in, search, singer selection, queueing, verified preparation, native audio-clock playback with rendered lyrics, pause, seek to 35 seconds, Previous, sign-out fencing and restart without autoplay. It was muted and used a disposable profile; audible sound, full-song listening, physical display/output recovery and native Linux/macOS playback remain separate acceptance gates. The connected TPV mailbox has no new API/SDK approvals; KaraFun's cancellation email gives no access end date, and successful acquisition does not prove plan duration. See the [native integration guide](karafun-native-integration.md).
 
@@ -354,7 +360,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "footer_heading": "Now Playing",
   "footer_rows": [
     "Alex | Popular",
-    "01:20 / 03:45 | Seek | -10s / +10s | Volume 45%"
+    "01:20 / 03:45 | Seek +/-10s | Volume 45% | Vocal Mix"
   ],
   "transport_icons": [
     "previous",
@@ -1068,5 +1074,37 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Remote Session | Use invitation to request"
   ],
   "detail": "Concrete private-interface listeners plus loopback. Windows requires actual Private classification; unknown/Public is loopback-only. Trust rechecks every 30s with 5s classification bound; no firewall rule is installed. Hidden preview works without visible singer window."
+}
+```
+
+```mockup
+{
+  "id": "D18",
+  "title": "KaraFun vocal mix",
+  "status": "Partial",
+  "description": "Independent live levels for each stem actually supplied by a native KaraFun recording.",
+  "layout": "panels",
+  "toolbar": "Host Transport | Vocal Mix",
+  "heading": "Vocal Mix - Current Recording",
+  "rows": [
+    "Instrumental | 100%",
+    "Backing Vocals 1 - High | 65%",
+    "Backing Vocals 2 - Low | 100%",
+    "Lead Vocals 1 - Alex | 40%",
+    "Lead Vocals 2 - Casey | 0%"
+  ],
+  "side_heading": "Per-Performance Controls",
+  "side_rows": [
+    "Live levels | Keep one playback clock",
+    "Master Volume | Whole output",
+    "Pause / seek / Previous | Retain mix",
+    "New performance / Stop | Reset"
+  ],
+  "footer_heading": "This Song Only",
+  "footer_rows": [
+    "Reset This Song | Instrumental/backing 100%, lead 0%",
+    "Done | Keep playing with current levels"
+  ],
+  "detail": "Host-only, authorized current generation. Unknown stems remain Other Audio; mixed voices cannot be separated. Synthetic five-stem audio and hidden-window controls verified. Physical mixer and real duet listening remain acceptance work."
 }
 ```
