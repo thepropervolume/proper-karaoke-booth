@@ -1,5 +1,24 @@
 # Installing The Proper Volume Karaoke Booth
 
+Development **0.8.0** adds independent KaraFun instrumental, lead and backing channel volumes, including separate duet/choir parts when supplied. **Vocal Mix** is beside the transport during native playback. Mix changes survive pause/seek/Previous and reset for a new performance; lead starts muted. The official release target remains **1.0.0**.
+
+All packages below use frozen runtime source `c0795b8`. Files and verification receipts are in local `C:\Users\hello\Projects\proper-karaoke-booth\release`. The installed app and Dropbox mirror were not changed by this delivery.
+
+## 0.8.0 Packages and Checks
+
+| Platform | Package | Verified Scope |
+| --- | --- | --- |
+| Windows x64 | `Proper-Karaoke-Booth-0.8.0-windows-x64-setup.exe` or `Proper-Karaoke-Booth-0.8.0-win-x64.zip` | 1,028 tests passed / 8 skips; packaged launch/restart, branding and official sign-in cancellation; exact source/UI/notices and 19 matching ZIP payloads. A separate muted source rehearsal verifies five decoded synthetic stems, live independent gains without source restart, hidden-window control, seek/reset and sign-out fencing. |
+| Linux x64 | `Proper-Karaoke-Booth-0.8.0-linux-x86_64.AppImage` or `Proper-Karaoke-Booth-0.8.0-linux-amd64.deb` | 1,024 tests passed / 12 skips; verified archive/source, matching payloads, packaged launch/restart, branding, search/hidden preview, API/CLI navigation and optional-singer playback/history in private offline namespaces. Four additional TCP cases require a private NIC absent on the build server. |
+| macOS Apple silicon | `Proper-Karaoke-Booth-0.8.0-mac-arm64.dmg` or `.zip` | macOS 27.0.1: 1,028 tests passed / 8 skips; native launch/restart/branding and bundled CLI, strict ad-hoc signatures, matching DMG/ZIP payloads. |
+| macOS Intel | `Proper-Karaoke-Booth-0.8.0-mac-x64.dmg` or `.zip` | Architecture, payload and ad-hoc signature checks; native Intel execution remains unverified. |
+
+All suites contain 1,036 tests with zero failures. The [macOS workflow](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/43696706037) passed; all eight Mac artifact hashes and the downloaded GitHub archive digest match. Linux and Windows application ASAR hashes match. The reviewed planning edition contains 41 Word pages and 47 PDF pages across 22 screen families.
+
+These are development packages: Windows/Linux are unsigned, Mac uses ad-hoc signing without Developer ID/notarization, and Linux GUI checks use test-only root sandbox flags. Actual installation/upgrade/removal, ordinary Linux desktop sandbox behavior, physical audio/device/display recovery and real-recording mix listening remain acceptance work. No new database migration is introduced in 0.8.0: existing profiles remain schema 5. When upgrading from an older schema, follow the backup guidance below; media, private configuration and preferences require separate backups.
+
+## Historical 0.7.1 Delivery
+
 Development **0.7.1** adds optional singer assignment and a single outer search focus ring. Windows, Linux and macOS packages are built from frozen source `0c0aa3a`. Packages, build/verification receipts and SHA256 manifests are in local `C:\Users\hello\Projects\proper-karaoke-booth\release`; the Dropbox mirror and the owner's installed app were not modified. The official release target remains **1.0.0**.
 
 ## 0.7.1 Packages and Checks
