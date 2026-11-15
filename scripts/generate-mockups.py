@@ -75,6 +75,12 @@ def load(path: Path) -> tuple[dict, list[dict], str]:
             raise ValueError(f"Duplicate ID or invalid status: {item['id']}.")
         if item['layout'] not in ('desktop', 'phones', 'display', 'settings', 'panels'):
             raise ValueError(f"Invalid layout: {item['layout']}.")
+        if 'sidebar_search' in item and (not isinstance(item['sidebar_search'], str) or not item['sidebar_search'].strip()):
+            raise ValueError(f"Screen {item['id']} needs a sidebar search label.")
+        if 'row_sources' in item and (not isinstance(item['row_sources'], list) or not all(isinstance(source, str) for source in item['row_sources'])):
+            raise ValueError(f"Screen {item['id']} needs valid result provider identities.")
+        if 'provider_colors' in item and (not isinstance(item['provider_colors'], dict) or not all(isinstance(key, str) and isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color) for key, color in item['provider_colors'].items())):
+            raise ValueError(f"Screen {item['id']} needs valid provider colors.")
         if item['layout'] == 'phones':
             if not all(isinstance(item.get(key), list) and len(item[key]) == 2 for key in ('phone_titles', 'phone_subtitles', 'phone_rows')) or not all(isinstance(rows, list) and all(isinstance(row, str) for row in rows) for rows in item['phone_rows']):
                 raise ValueError(f"Screen {item['id']} must define two phone panels.")
@@ -270,9 +276,13 @@ def desktop(c, item, p, product, actions, settings=False):
     top_bar(c, x, y + h - 44, w, p, 'KARAOKE HOST', product, actions)
     nav_w = 190
     rect(c, x, y, nav_w, h - 44, p['panel'])
-    line(c, 'WORKSPACE' if not settings else 'PREFERENCES', x + 18, y + h - 74, 'TPVBold', 10, p['muted'])
+    search_offset = 38 if item.get('sidebar_search') and not settings else 0
+    if search_offset:
+        rect(c, x + 10, y + h - 85, nav_w - 20, 28, p['card'], 5)
+        line(c, item['sidebar_search'], x + 18, y + h - 76, size=9, fill=p['muted'], max_width=nav_w - 36)
+    line(c, 'WORKSPACE' if not settings else 'PREFERENCES', x + 18, y + h - 74 - search_offset, 'TPVBold', 10, p['muted'])
     for index, entry in enumerate(item.get('navigation', [])[:8]):
-        ny = y + h - 112 - index * 38
+        ny = y + h - 112 - index * 38 - search_offset
         selected = entry == item.get('selected_navigation')
         if selected:
             rect(c, x + 10, ny - 7, nav_w - 20, 30, p['card'], 5)
@@ -294,7 +304,12 @@ def desktop(c, item, p, product, actions, settings=False):
     rect(c, bx, y + h - 122, main_w, 30, p['card'], 5)
     line(c, item.get('toolbar', 'Settings and controls'), bx + 11, y + h - 112, size=10, fill=p['muted'], max_width=main_w - 20)
     for index, entry in enumerate(item.get('rows', [])[:5]):
-        row(c, bx, y + h - 176 - index * 51, main_w, entry, p, index == 0)
+        ry = y + h - 176 - index * 51
+        row(c, bx, ry, main_w, entry, p, index == 0)
+        sources = item.get('row_sources', [])
+        color = item.get('provider_colors', {}).get(sources[index]) if index < len(sources) else None
+        if color:
+            rect(c, bx, ry, 3, 47, color, 1)
     sx, sw = bx + main_w + 28, bw - main_w - 28
     line(c, item['side_heading'], sx, y + h - 80, 'TPVBold', 16, p['text'], sw)
     for index, entry in enumerate(item.get('side_rows', [])[:5]):

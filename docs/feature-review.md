@@ -1,14 +1,29 @@
 # Product review and work list
 
-Reviewed 6 November 2026 against the local working files based on commit `d258d12`, and KaraFun's published Windows and Player 2 documentation. The application is an early local rehearsal foundation, not yet a live-show replacement. Items below are independently actionable; unchecked items are proposals or work still to verify, not claims that the feature exists. See the implementation notes in this document and the source for the current state.
+**Historical baseline, reviewed 6 November 2026 against the local working files based on commit `d258d12`, and KaraFun's then-published Windows and Player 2 documentation.** Checklist states below record that review and selected early follow-ups, rather than current completion status. The maintained [remaining-work list](remaining-work.md), [specification](product-specification.md) and [source status](source-status.md) supersede them. The application still requires physical-show validation before it is a dependable replacement.
 
-## Changes made during this review
+## Current 0.7.0 Progress Against This Baseline
+
+- [x] Connect experimental native KaraFun official sign-in, canonical search, normal singer/queue requests, authorized KIT preparation and TPV lyric/stem playback; KHost is optional and separate.
+- [x] Remember accepted KaraFun sessions with OS encryption where available, validate restore and forget on explicit sign-out. Cached media never bypasses current authorization.
+- [x] Use global sidebar search and one dominant provider-labeled/color-bordered result list with shared context actions.
+- [x] Automatically stage approved requests; preserve manual moderation and the same staged request identity during host edits.
+- [x] Advance after natural completion/confirmed Skip when the configured gap and media are ready; cancellation/restart fences prevent unintended karaoke.
+- [x] Supply preview from a hidden persistent singer renderer; start optional launch/interlude bumper on the default output with configurable fade-in.
+- [x] Add booth name, adjustable logo with picker preview, expiring top/bottom banner and concrete-private-interface LAN screen listeners.
+- [x] Implement recording-specific global KaraFun rating keys; live service rollout is tracked separately in the current source status.
+- [ ] Complete provider distribution/venue terms, remaining paid services, full CLI/API mutations, roles/profiles, metadata write-back and the other current remaining-work items.
+- [ ] Validate audible mixers/speakers, physical display/audio hot-plug, full-song timing, supported-platform installation and real venue/phone behavior. Source rehearsals are not physical-show evidence.
+
+The remainder is retained as the original comparison inventory. An unchecked historical item may now be implemented or partly complete; use the current checklist before assigning new work. Original limits such as manual bumper, no internet relay or unbuilt macOS describe those earlier milestones.
+
+## Historical Changes During This Review
 
 On 7 November the host gained collapsible preferences, ordered filename/folder templates with ambiguity indicators, selectable songs and queue items, double-click requests, playlist/history views, volume and output selection, and optional next-singer and logo display. A Windows build and isolated, muted synthetic rehearsals passed; physical output and hot-plug tests remain open. The host can set a 0–300 second inter-song gap and manually start experimental bumper music on an explicitly selected output. An experimental opt-in local singer room supports browsing and requests; internet access, genre metadata, and physical phone/network verification remain open. Bumper audio and device loss still need physical verification.
 
 The working copy now includes singer-display Space and cross-window search shortcuts, accessible transport/display icons, file and recursive folder import, inline singer creation, preferences and three layouts, default auto-approval, FIFO and singer-rotation choices, local artist/title edits and filename parsing options, and missing-song requests from the host or an admitted local-network singer into SQLite. It also creates a keybindings JSON file for search and play/pause. These changes have domain/database tests, type checking and isolated Windows Electron rehearsals; they still require real Windows display, audio and network testing. The checklist retains items that need that verification or further work. In particular, metadata edits do not yet write embedded file tags and shortcut customization does not yet cover every action.
 
-## What exists today
+## What Existed at the Original Review
 
 - Local MP4 import with content fingerprinting and duplicate detection; filename-derived artist/title; local SQLite state and paused recovery.
 - Singer records, pending requests, a three-future-request limit, simple round-based rotation, staged songs and host transport controls.
@@ -68,7 +83,7 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Add pitch/key and tempo controls, with per-song and per-singer defaults and reset.
 - [ ] Support independent lead/backing vocal controls only for sources that actually provide separate stems or compatible multiplex audio.
 - [ ] Extend the experimental, manually started bumper music with automatic intermission scheduling, transitions and fade controls; verify playback and output changes on real hardware. Three synthesized themes and up to five custom files are available in Audio Controls.
-- [ ] Verify the configurable inter-song gap on actual show hardware, including completion, skip and restart. The current countdown requires the host to start the next song manually.
+- [ ] Verify the configurable inter-song gap on actual show hardware, including completion, skip and restart. The original countdown required manual next starts. Source 0.7.0 now advances an already running show after completion/confirmed Skip, gap and media readiness by default; Stop/Pause/errors cancel it and restart remains paused.
 - [ ] Offer fullscreen, monitor selection and configurable idle/now-playing/next-up singer screens.
 - [ ] Add accessibility coverage for keyboard-only use, focus order, screen readers, high contrast and text scaling.
 - [ ] Add automated integration tests for display focus, shortcuts, recovery, import and end-to-end queue flows.
@@ -89,6 +104,6 @@ The working copy now includes singer-display Space and cross-window search short
 - [ ] Evaluate legal offline downloads, device synchronization, parental controls and cross-device playlists if a provider supports them.
 - [ ] Consider quizzes, games, green-screen display and other entertainment modes after core show reliability.
 
-## Comparison notes
+## Historical KaraFun Benchmark — 6 November 2026
 
-KaraFun's current Windows application advertises catalog search, playlists, favorites, offline use and history; its [Windows page](https://www.karafun.com/karaoke-windows/) and [rotation documentation](https://www.karafun.com/help/windows_448.html) describe relevant benchmarks. Its [remote-control documentation](https://www.karafun.com/help/windows_404.html), [second-screen instructions](https://www.karafun.com/help/windows_405.html), and [keyboard shortcuts](https://www.karafun.com/help/windows_791.html) cover additional workflows. Current KaraFun and legacy Player 2 have different local-media capabilities: KaraFun says [version 3 no longer plays local files directly](https://www.karafun.com/help/general_97.html), while [Player 2 supports several local audio, karaoke and video formats](https://www.karafun.com/help/features_102.html). Player 2's [metadata settings](https://www.karafun.com/help/advanced_170.html) describe tags and filename patterns. Catalog, subscription and stem-dependent features require separate sources and rights; local MP4 playback alone does not provide them.
+At the review date KaraFun's Windows application advertised catalog search, playlists, favorites, offline use and history; its [Windows page](https://www.karafun.com/karaoke-windows/) and [rotation documentation](https://www.karafun.com/help/windows_448.html) describe relevant benchmarks. Its [remote-control documentation](https://www.karafun.com/help/windows_404.html), [second-screen instructions](https://www.karafun.com/help/windows_405.html), and [keyboard shortcuts](https://www.karafun.com/help/windows_791.html) cover additional workflows. The reviewed contemporary KaraFun and legacy Player 2 documentation described different local-media capabilities: KaraFun says [version 3 no longer plays local files directly](https://www.karafun.com/help/general_97.html), while [Player 2 supports several local audio, karaoke and video formats](https://www.karafun.com/help/features_102.html). Player 2's [metadata settings](https://www.karafun.com/help/advanced_170.html) describe tags and filename patterns. Catalog, subscription and stem-dependent features require separate sources and rights; local MP4 playback alone does not provide them.

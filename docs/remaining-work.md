@@ -1,25 +1,43 @@
 # Remaining work
 
-Updated 15 November 2026 for source development 0.6.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 15 November 2026 for source development 0.7.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The earlier foundation and release notes below describe their recorded milestones. The 0.6.0 source adds experimental native KaraFun official sign-in, canonical search, ordinary singer/queue requests, private verified KIT acquisition, and synchronized audio/lyrics in TPV. Real account session/search/acquisition and the complete synthetic TPV flow passed. The actual-account muted Windows TPV flow also passed sign-in, queue/download, native clock playback, rendered lyric pixels, pause, seek, Previous, sign-out and restart. Persistent login, native community tracks, KaraFun heart ratings, mixing/pitch/tempo controls, provider distribution terms and physical-show verification remain separate work until their evidence is recorded. Windows/Linux/macOS 0.6.0 packages are built and verified from frozen source 6bcb7d5; real provider playback remains Windows-verified only. See the installation guide for exact platform limits.
+The current source is 0.7.0; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, mixing/pitch/tempo and provider distribution/venue terms remain open. KaraFun shared-rating identities are implemented but require the matching production validator rollout. Historical Windows/Linux/macOS 0.6.0 packages are verified from frozen source 6bcb7d5; 0.7.0 packages need separate build receipts. See installation and source-status guides.
 
 ## Current foundation
 
 The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, change settings and configure common action shortcuts through the grouped editor. The host has implemented shared catalog connection/preferences and offline query-cache support, with public read-only shared discovery on fresh installs and a legacy local-catalog mode when shared discovery is disabled. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. Experimental native KaraFun is now connected; other paid-provider playback remains pending. Windows 0.4.2 adds verified public KaraFun/Party Tyme metadata search plus profile-configured Sunfly/Stingray adapters; those results remain search-only. Linux 0.4.2 AppImage/Debian package checks also passed.
+
+## 0.7.0 Current Update
+
+- [x] Put an always-visible global search above Workspace; focus it from every host area using the assigned shortcut.
+- [x] Combine local, Karaoke Nerds, YouTube, native KaraFun and public metadata into one dominant readable list with shared context menus and capability-disabled actions.
+- [x] Identify sources with labels and 3px provider-color borders; shorten repeated guidance and move details into help tooltips.
+- [x] Keep one hidden singer renderer for preview, karaoke and bumper audio; Close hides it without creating another player.
+- [x] Automatically stage approved requests while preserving manual moderation and same-request staged edits.
+- [x] Advance a running show after completion/confirmed Skip, gap and ready media; cancel on Stop/Pause/errors/device loss and never start karaoke on launch.
+- [x] Start configurable launch/between-song bumper with default output support and 1000 ms fade-in (500–1700 ms configurable).
+- [x] Add booth name, immediate logo-picker preview, logo sizing 10–85vw and top/bottom scrolling banner with expiry and opt-in restart persistence.
+- [x] Remember KaraFun sessions through OS encryption where available; validate on restore, preserve account cache identity and forget explicitly on sign-out.
+- [x] Use KaraFun pink for the primary completed native lyric and source-specific numeric shared rating keys without a media fingerprint.
+- [ ] Deploy and verify the matching production KaraFun rating validator; no SQL migration is required, and client support alone does not establish live server acceptance.
+- [x] Bind read-only LAN screens to trusted concrete private interfaces/loopback; require actual Windows Private classification with fail-closed fallback and bounded periodic rechecks.
+- [x] Pass focused tests plus muted source rehearsals for hidden preview, launch/gap automation, Stop/restart, concurrent Play, Previous and readiness recovery; verify Windows encrypted session lifecycle across independent launches.
+- [ ] Build/rehearse 0.7.0 installers from frozen source and retain version-specific receipts; do not reuse 0.6.0 evidence as a new delivery claim.
+- [ ] Verify audible mixer output, physical display/device recovery and full-song/native-provider synchronization on supported platforms.
 
 ## Priority 0 — streaming and catalog
 
 - [x] Send KaraFun an OEM content/playback API inquiry (owner submitted through Business support on 11 November 2026; reply pending).
 - [x] Inspect the owner-provided Business API specification and test the dashboard token read-only: device listing returned 402 and room-token listing 403; content/playback access remains unverified.
 - [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees. The existing subscription has now authorized one native recording acquisition; this does not settle distribution or venue terms.
-- [x] Implement independent native official-window sign-in, memory-only session lifecycle, canonical search and recording authorization without copying a vendor application key.
+- [x] Implement native official-window sign-in, OS-protected remembered session/restore/sign-out, canonical search and per-performance authorization without copying a vendor application key.
 - [x] Queue native catalog recordings with the ordinary singer dialog and durable TPV rotation; prepare verified private KIT media in the background without autoplay.
 - [x] Implement one-clock native stems/timed lyrics and test the complete synthetic TPV queue/player/pause/seek/Previous/sign-out flow.
-- [ ] Implement and test approved KaraFun account linking, secure credential storage, refresh/revocation and entitlement checks.
+- [ ] Finalize provider-approved KaraFun account-linking/distribution terms and broader expiry/revocation testing; experimental linking, encrypted session storage and fresh authorization are implemented.
 - [x] Add host-only KaraFun public catalog metadata search with provider IDs; the inspected 90,284-record CSV parses without login. Search-only results do not establish playback or cross-provider equivalence.
 - [x] Add host-only Party Tyme public catalog metadata search, preserving provider codes from the inspected 44,967-row table; subscription playback remains separate.
-- [ ] Integrate approved KaraFun playback with the singer display, queue, transport, reporting and permitted offline behavior; handle failures without losing a turn.
+- [ ] Complete KaraFun reporting/permitted-offline terms and physical verification; experimental native singer-display, queue and transport playback already works and retains turns on failure.
 - [x] Send Stingray a catalog/playback partnership inquiry covering per-user access, private parties and commercial events (owner sent on 11 November 2026; commercial-partnership reply received 12 November).
 - [x] Read Stingray's 12 November reply: API access is through commercial partnerships; send an authorized follow-up requesting the appropriate team.
 - [ ] Obtain Stingray partner credentials, price, existing-subscription and public-use terms; its fixture-tested developer login/search tools are not a playable service.
@@ -33,10 +51,10 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Keep app billing and each provider subscription separate; do not assume one grants another.
 - [x] Unify local and Karaoke Nerds search in Song Library, preserving exact recording identity, host edits, filters and offline local results.
 - [x] Queue a catalog recording with singer selection in one host-authority operation; approved requests dispatch serial yt-dlp acquisition without autoplay.
-- [x] Add a separate service-metadata section to Song Library and Sources, showing service names, bounded results, configuration/errors and explicit non-playable status.
+- [x] Put public service metadata in the unified library list and Sources, with names/colors, bounded results/errors and explicit search-only status.
 - [ ] Verify real Sunfly and Stingray developer catalog access; their desktop metadata adapters are fixture-tested only.
-- [ ] Make eligible streaming results requestable and queueable with singer selection and normal rotation rules.
-- [ ] Route eligible provider playback to the singer display and selected audio output with stage/play/pause/stop/skip and safe transition handling.
+- [x] Make connected native KaraFun and eligible YouTube/Karaoke Nerds results requestable through normal singer/rotation rules; other paid playback remains pending.
+- [x] Route experimental native KaraFun and acquired YouTube/Karaoke Nerds to the normal display/output/transport; extend to other approved playable providers when available.
 - [ ] Handle expired links, network failure, provider unavailability, rate limits, ads and unsupported or region-blocked recordings without consuming a singer's turn.
 - [x] Add permanent yt-dlp downloads, progress/cancel/retry, exact-ID hash-verified reuse and local/offline playback through the regular queue and singer display.
 - [ ] Verify the installed application identity, visible-player and referrer requirements for the separate distributed YouTube preview; queued performances now use downloaded local media.
@@ -70,7 +88,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add a guided missing/moved-file review and relinking workflow; current relinking accepts an exact original only.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [ ] Add restore from a checked backup; existing backup does not restore or include media/settings.
-- [x] Add versioned SQLite migrations (current schema v2) with upgrade, interrupted-write and rollback tests.
+- [x] Add versioned SQLite migrations (current schema 4) with upgrade, interrupted-write and rollback tests.
 - [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
@@ -81,7 +99,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 - [x] Allow the host to promote one waiting request without displacing the staged song.
 - [x] Add persisted manual request reordering without unexpectedly changing the staged song.
-- [x] Edit a waiting request’s track or singer with next-free-round reassignment and preserved manual slot.
+- [x] Edit waiting or staged track/singer with the same request identity/staged status, next-free-round reassignment and preserved manual slot; active playback stays protected.
 - [ ] Add actor/reason audit history for queue edits.
 - [x] Add timed singer absence and return (1–60 minutes), one future request while away, authenticated self-service and tested return fairness.
 - [ ] Add indefinite singer hold and skip-turn controls.
@@ -113,10 +131,10 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Add seek, elapsed/remaining time and acknowledged resume checkpoints; verify audio/sync on real hardware separately.
 - [ ] Add pitch/key and tempo controls with per-song and per-singer defaults and reset.
 - [ ] Support separate lead and backing vocal controls only when the source provides compatible stems or multiplex audio.
-- [x] Add opt-in automatic bumper music after completion/Skip, with saved theme, display-silence acknowledgement and safe stop before karaoke.
-- [ ] Verify audible bumper routing on show hardware and add fades, separate volume and richer intermission policies.
+- [x] Add enabled-by-default launch/interlude bumper, saved theme, default output, cancellable fade-in and acknowledged silence before karaoke.
+- [ ] Verify audible bumper routing on show hardware; add fade-out, separate filler volume and richer intermission policies. Fade-in is implemented.
 - [ ] Verify the inter-song pause interval on physical show hardware for finish, skip and restart.
-- [ ] Add configurable idle, now-playing and next-up singer-display screens, and test layouts/fullscreen across monitors.
+- [ ] Extend configurable display presets and test physical fullscreen/monitor behavior; booth name, logo size, next singers and timed scrolling banner are implemented.
 - [ ] Add keyboard-only, screen-reader, high-contrast and text-scaling accessibility coverage.
 
 ## Priority 2 — singers, remote use and administration
@@ -274,7 +292,7 @@ Windows/Linux latest delivered packages and the installed PC remain 0.4.3; this 
 - [x] Integrate the timed-LRC parser and VTT foundation.
 - [x] Implement the optional TPV/KHost external search/handoff bridge and host controls, with protected profile selection, current-policy/blacklist checks and original-ID uncertain-outcome recovery; KHost owns sign-in, acquisition and playback.
 - [ ] Verify loading the compiled bridge and authenticated search/handoff on the owner's actual KHost machine; their successful separate KHost subscription test does not establish this integration.
-- [ ] Prioritize the [native KaraFun integration](karafun-native-integration.md): establish an accepted account/client login, validate session/expiry behavior and search, then implement authorized KIT acquisition, bounded container/XML decoding and synchronized playback through TPV's own queue, transport and singer screen. The external KHost bridge is optional interim work, not a requirement for this path.
+- [x] Implement experimental [native KaraFun](karafun-native-integration.md) login, validated session/search, authorized bounded KIT/Ogg/timing playback and ordinary TPV queue/transport; the optional KHost bridge is separate. Remaining physical/provider-term work is listed above.
 - [ ] Obtain approved paid-provider playback access, pricing and subscription-linking terms; consumer subscriptions alone do not confirm this integration.
 - [ ] Connect full LRC import/playback, seek/resume and the chosen lyric backdrop.
 - [ ] Add a Google Drive application source, with identity, indexing, download and cache rules; local synced-folder import is a different path.

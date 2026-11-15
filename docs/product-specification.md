@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 15 November 2026. **Application milestone:** 0.6.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 15 November 2026. **Application milestone:** 0.7.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -14,7 +14,7 @@ The Proper Volume Karaoke is intended to be a dependable, local-first karaoke ho
 
 The host computer is the single authority for show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. Companion interfaces must never become a second playback or queue authority. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
 
-**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started preview, host-only service catalog metadata search, native KaraFun account/queue/playback, and the initial authenticated local API/CLI for reads and settings navigation. **Planned:** the full native companion apps, complete general local API, complete access-control model, additional paid-provider playback and paid subscriptions. The app is not yet validated as a live-show replacement.
+**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started YouTube preview, unified host-only service catalog metadata search, native KaraFun account/queue/playback, and the initial authenticated local API/CLI for reads and settings navigation. **Planned:** the full native companion apps, complete general local API, complete access-control model, additional paid-provider playback and paid subscriptions. The app is not yet validated as a live-show replacement.
 
 ### Development versions and installers
 
@@ -28,9 +28,23 @@ The 0.4.4 update delivers separate Apple silicon/Intel macOS DMG and ZIP package
 
 ### 0.5.0 Source Integration
 
-The reviewed `opencode-audit` interface is integrated with the newer Mac packaging fixes retained. The source now has persisted pointer/keyboard panel resizing, a silent actual-singer-window preview above/below Host Queue, host-wide song/artist blacklists, curated YouTube discovery and optional read-only LAN lyric screens. Source-less file heart ratings use local database schema 3; exact YouTube/Karaoke Nerds identities retain the authenticated shared MySQL service. At the 0.5.0 milestone native paid-provider playback remained pending. An optional independently written KHost companion bridge implements external search/handoff to a separately installed KHost; authenticated end-to-end use on the owner's target machine remains unverified.
+The reviewed `opencode-audit` interface is integrated with the newer Mac packaging fixes retained. At that milestone the source had persisted pointer/keyboard panel resizing, a silent actual-singer-window preview above/below Host Queue, host-wide song/artist blacklists, curated YouTube discovery and optional read-only LAN lyric screens. Source-less file heart ratings use local database schema 3; exact YouTube/Karaoke Nerds identities retain the authenticated shared MySQL service. At the 0.5.0 milestone native paid-provider playback remained pending. An optional independently written KHost companion bridge implements external search/handoff to a separately installed KHost; authenticated end-to-end use on the owner's target machine remains unverified.
 
 Private muted UI rehearsals cover panel persistence, all layouts keeping the transport visible, preview placement, blacklist save/cancel/removal and local rating saves without a remote writer profile. A separate QA voter passed shared set/repeat/update/clear without changing human votes, credentials or service processes. Initial 0.5.0 core verification passed 857 tests with eight platform/environment skips and zero failures (865 total); type checking passed. A real silent synthetic MP4 played in the actual source app, and the host preview plus two isolated LAN browsers decoded matching singer-window pixels. Stop, display-close, reconnect, port migration and shutdown checks passed. An owner-profile read-only rating IPC check reported readiness/write capability with an empty lookup, left its protected profile hash unchanged and submitted no vote. The installation guide records subsequent complete-suite runs, package receipts and native packaged checks. Source rehearsals do not establish installation, physical audio/display behavior or live-show readiness. Prior 0.4.3/0.4.4 evidence remains version-specific.
+
+### 0.7.0 Search, Show Automation and Display
+
+The current source gives search the main workspace: a persistent sidebar field, one readable result list, common selection/context menus and three-pixel source borders. Colors are local/imported purple `#601CE9`, Karaoke Nerds blue `#007bff`, YouTube red `#ff0033` and KaraFun pink `#d5167a`. Search-only results retain disabled queue actions. Ctrl/Cmd+F or its assigned shortcut focuses global search from every workspace; extended guidance belongs in brief help/tooltips.
+
+Approved requests auto-stage. Play begins the show; automatic advancement defaults on for subsequent completion/confirmed Skip, waiting for the configured gap and ready media without consuming failed turns. Stop/Pause, media/output/display errors and host cancellation fence delayed starts. Launch/restart never starts karaoke. Launch bumper is separately enabled by default, as is between-song music; default output works and fade-in defaults to 1000 ms (500–1700 ms). Gap zero permits a next start without a filler flash.
+
+One persistent hidden singer renderer supplies the actual preview and audio. Close hides that window; capture stays hidden and never duplicates a player. Booth name, immediate logo-picker preview, logo size 10–85vw and top/bottom scrolling banners with optional expiry/persistence customize the display. Unless persistence is selected, banner display resets on next launch while saved text remains.
+
+Remembered KaraFun sessions are OS-encrypted where safeStorage is usable, validated on restore and retain their opaque account cache scope. Linux plaintext fallback is rejected. Normal quit preserves the session; explicit sign-out forgets it. Fresh start/resume authorization remains required. Primary completed native lyrics use KaraFun pink. Numeric KaraFun catalog/community recording keys are supported for global ratings without SQL changes; production requires the matching validator deployment. Community playback itself remains planned.
+
+Read-only LAN screens bind concrete trusted private interfaces and loopback. On Windows, the interface must also be classified Private; unknown/Public results remain loopback-only. Network trust is checked every 30 seconds with a 5-second classification bound, closing untrusted listeners. No firewall/organisation policy is changed.
+
+Focused automation/fade/capture/staging tests and isolated muted Electron rehearsals passed hidden preview, default-output launch music, completion/Skip gaps, Stop, paused restart, concurrent Play, Previous and readiness timeout/retry. Windows protected-session persistence passed independent-launch checks. Physical sound, real monitor/device hot-plug, full-song timing, native Linux/macOS provider playback and new platform packages remain separate acceptance gates. Earlier package/planning evidence below remains version-specific.
 
 ## 2. People, interfaces and navigation
 
@@ -46,13 +60,13 @@ On 13 November 2026 the owner selected the supplied orange/pink/navy vintage mic
 
 ### Visual and interaction principles
 
-Use The Proper Volume branding, Nunito Sans and the Avenir Next, Avenir and Novecento Sans fallback stack. Night, Day and Follow system are appearance options. The toolbar palette button opens Appearance preferences. View → Choose Accent Color and the Appearance settings offer blue, pink and purple independently of Day/Night/system appearance. Accent cycling remains an assignable action. The choice persists in `settings.json` and older settings default to blue. Night uses background `#090E18`, panel `#101724`, text `#F4F2E9`, and blue/pink/purple accents `#0EB7FF` / `#FF92BF` / `#C7ADFF`; Day uses background `#FDFEF8`, panel `#F3F2E9`, text `#1C1A18`, and accents `#1765A6` / `#A91E5C` / `#5B35AA`. Themes retain the same controls and behavior. Source video and provider-protected lyrics are not recolored by the application theme.
+Use The Proper Volume branding, Nunito Sans and the Avenir Next, Avenir and Novecento Sans fallback stack. Night, Day and Follow system appearances share the same controls. The palette opens Appearance; View and Preferences offer blue/pink/purple accents. Night uses background `#090E18`, panel `#101724`, text `#F4F2E9`, accents `#0EB7FF` / `#FF92BF` / `#C7ADFF`; Day uses `#FDFEF8`, `#F3F2E9`, `#1C1A18`, accents `#1765A6` / `#A91E5C` / `#5B35AA`. Source videos/CDG keep their original colors; native TPV-rendered KaraFun uses pink `#d5167a` for the primary completed lyric rather than pale green.
 
 Use clear status words alongside color, strong headings, visible keyboard focus and accessible names. Primary touch targets should be at least 44 by 44 CSS pixels; phone transport should target 48 pixels. Keep critical transport visible when browsing a long library. Icons reveal immediate, prominent tooltip labels; where an action has a configured shortcut, show that shortcut in the hint. Modal actions keep the user's work and return focus appropriately. Provide keyboard and touch alternatives to drag and drop. Full accessibility, contrast, reduced-motion and screen-reader verification remain planned.
 
 ## 3. Host workspace and settings
 
-**Available:** the main screen has a library, visible singer rotation, import controls, current/staged status and a persistent Play/Pause, Stop, Skip and volume area. A song is selectable without playback. Double-click or Enter opens an Add to Queue dialog for an existing singer or a new singer name; submitting adds a request rather than starting a song. The contextual menu offers Add to Queue, Add to Playlist, Edit Metadata, Relink File and Show in Files. Queue rows are selectable and Delete removes an eligible request; an active performance is protected. Search is accessible from both host and singer windows. These queue actions apply to local files, Karaoke Nerds recordings, YouTube candidates and connected native KaraFun; public service-catalog matches are labeled Search Only / Playback Pending and cannot become queue items.
+**Available:** global sidebar search stays visible in every host workspace and focuses via the assigned shortcut. One dominant readable result list combines local, Karaoke Nerds, curated YouTube, connected KaraFun and public-service metadata. A provider label and 3px source border identify each row. Selection, double-click/Enter and right-click use a common flow; source capabilities disable unsupported operations. Add to Queue selects/creates a singer and commits a request without directly starting a new show. The context menu offers queue, playlist, rating, metadata, file/relink and blacklist actions where supported. Queue rows are selectable; Delete protects active playback. Transport/volume remain visible; extended explanation moves to concise help/tooltips.
 
 **Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Song Ratings, Appearance, Song and Artist Blacklist, YouTube Search, Library Settings, Karaoke Services, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display, Keyboard Shortcuts, Local API and CLI, and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
 
@@ -60,7 +74,7 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Planned:** complete settings coverage, migrations and helpful error recovery; layout variants including a genuinely compact single-screen show; complete shortcut coverage for remaining specialized actions; and a global action/command interface. Appearance changes must not interrupt a show. Confirm skip and other show-interrupting actions; routine pause, volume and valid queue edits should not require repeated confirmation. Undo of eligible queue edits is a proposed feature, with any expiry and conflict behavior to be specified.
 
-**Available in 0.5.0 source:** the host preview mirrors the real singer window as silent JPEG frames, without another player or audio sink. Appearance places it above/below Host Queue or hides it. Sidebar/library, library/queue and preview/queue separators accept pointer dragging, focused arrow keys with larger Shift steps and double-click reset. Wide Song Library uses a horizontal queue-height separator. Commits save `hostPanelSizes`; viewport fitting does not overwrite saved desktop dimensions. Appearance also offers Reset Panel Sizes. The combined library/service/YouTube result area scrolls while transport stays visible.
+**Available in 0.7.0 source:** one persistent hidden singer renderer provides karaoke/bumper audio and silent JPEG preview, even before the singer window is shown. Closing it hides the same renderer. Capture uses stayHidden/stayAwake and background painting, never a second player. Preview may sit above/below Host Queue or be hidden. Sidebar/library, library/queue and preview/queue separators accept dragging, focused arrows/Shift steps and reset; saved dimensions survive viewport clamps. Combined results scroll while transport stays visible.
 
 ## 4. Library, import and metadata
 
@@ -70,7 +84,7 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Available:** configurable filename/folder templates are tried in order, with metadata ambiguity marked for review and a fallback format. Supported fields include `${Artist}`, `${Title}`, `${Track Name}`, `${DJ Code}` and `${Track Number}`. Examples include `${DJ Code} - ${Artist} - ${Title}`, `${Track Number}.${Artist} - ${Title}`, `${Artist}/${Track Name}.mp4` and `${Title} - ${Artist}`. Host artist/title corrections currently update the local library only.
 
-**Planned:** source selection and precedence across embedded tags, filename/path patterns and manual overrides; safe preview, rescan and batch review; alias indexing; version grouping without losing the exact chosen recording; ratings and provenance; folder watch and duplicate review; and optional regular-expression parsing if a validated design is chosen. Template priority and ambiguous matches must be clear; no silent guess may overwrite an existing host correction.
+**Planned:** source selection and precedence across embedded tags, filename/path patterns and manual overrides; safe preview, rescan and batch review; alias indexing; version grouping without losing the exact chosen recording; source confidence and provenance; folder watch and duplicate review; and optional regular-expression parsing if a validated design is chosen. Template priority and ambiguous matches must be clear; no silent guess may overwrite an existing host correction.
 
 **Confirmed requirement, not implemented:** each metadata edit lets the host choose whether to also write supported embedded file tags. The default is local-only. Import, rescan and ordinary edits never silently change media or filenames. If an explicitly requested write is unsupported or fails, preserve the local edit and clearly report the file outcome. A safe implementation needs source-change checks, format support, backup/recovery, updating the whole-file fingerprint and tests for interruption, permissions and conflicting tags. See the metadata write-back design in the repository.
 
@@ -80,31 +94,31 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Available:** a host can add or select a singer, submit a song and remove eligible requests. New requests are automatically approved by default; switching to host moderation affects new requests and does not silently approve existing pending ones. In Requests the host can accept or reject pending requests and view recent terminal request history. The separate missing-song form saves singer, title and optional artist to a local review table; the host may mark it Pending, Reviewing, Fulfilled or Declined. Saving a missing-song request does not add a recording or create a rotation turn.
 
-**Available:** the host chooses arrival-order FIFO or a fair singer-rotation mode. The rotation gives eligible singers turns and keeps an explicitly staged song locked until released or removed. The host may promote one eligible waiting request ahead of other waiting requests; an already staged song remains first. Promotion preserves assigned rounds and remains in effect through Stop unless replaced or invalidated; completion or skip consumes it. The default maximum is three future requests per singer identity; hosts may set 0 for unlimited or 1–50. Pending, accepted and staged requests count; the currently playing song does not. Lowering the limit preserves existing requests. A rejection explains the limit. A different guest or duplicate singer identity has its own count; the limit is not proof of a unique person.
+**Available:** FIFO and fair singer rotation use the same durable queue. Approved eligible requests automatically stage, including preparing the next turn while another performance plays; pending moderation waits for Accept. A staged request stays locked through reorder, promotion, policy or mode changes. Its host edit may replace track/singer while preserving the same request ID and staged status. Accepted future requests may be manually reordered/promoted, with automatic-order reset. Future limits default to three per singer (0 unlimited, 1–50 configurable); pending/accepted/staged count and playback does not. Lowered limits preserve existing requests. Duplicate identities are not proof of unique people.
 
 Authenticated local singers may withdraw their own pending or accepted request. Staged and playing requests remain locked to the singer; a guest cannot manipulate another singer's requests, the room-wide queue, transport or outputs. Completed, skipped, removed, rejected and withdrawn request records remain in show state; the host view and guest snapshot show a bounded recent subset. Completed and skipped performance history is saved for generations recorded since the history feature was added; it is not backfilled.
 
-**Required queue invariants:** a completed or explicitly confirmed skipped performance consumes its turn exactly once; pause and failed preparation consume none. New singers join the remaining current-round tail while an unstarted turn exists; after the final turn begins they enter the next round. A staged song is not silently displaced by a late request, policy change or mode switch. If a policy makes it ineligible, it remains staged and Start refuses it until the policy permits it or the host releases it. Preparing a song never starts audible karaoke. Transport and generation-specific callbacks must not consume a newer song's turn. Switching queue modes must preserve requests.
+**Required queue invariants:** completion or confirmed Skip consumes exactly one turn; pause, failed preparation and stale callbacks consume none. New singers join the remaining current-round tail while a turn remains, otherwise the next round. A staged request is never silently displaced; policy-blocked stages remain for explicit recovery. Preparing alone never starts a new show, although an already armed running show can advance when its gap/media become ready. Start verification rechecks the selected recording and account. Switching modes preserves requests; Stop/Pause intent invalidates delayed playback.
 
 **Available:** the host may drag or move accepted waiting requests, reset to automatic order, and right-click to change a waiting track or singer. Staged and playing songs remain locked. Manual order persists and new arrivals follow the explicit list; reassignment respects request limits and assigns the recipient’s next free round while retaining a manual slot. Duets and an actor/reason audit trail remain planned.
 
-**Available:** hosts and authenticated local singers may mark a singer unavailable for 1–60 whole minutes or return immediately. While absent, at most one future request is allowed; existing extras stay but block additions. Available singers are scheduled first, absent singers by return time; expiry restores existing FIFO/fair order subject to manual order and the staged lock, without autoplay. Deadlines persist. A guest cannot release staged/playing requests; the host must explicitly confirm a staged release. The host may mark the active singer away for future scheduling without interrupting their current performance. Distinct indefinite hold/skip-turn policies and duplicate same-singer/version handling remain planned.
+**Available:** hosts and authenticated local singers may mark a singer unavailable for 1–60 whole minutes or return immediately. While absent, at most one future request is allowed; existing extras stay but block additions. Available singers are scheduled first, absent singers by return time; expiry restores eligibility in the existing FIFO/fair order subject to manual order and staged lock; it does not arm a new show. Deadlines persist. A guest cannot release staged/playing requests; the host must explicitly confirm a staged release. The host may mark the active singer away for future scheduling without interrupting their current performance. Distinct indefinite hold/skip-turn policies and duplicate same-singer/version handling remain planned.
 
 **Planned:** indefinite holds and skip-turn rules; actor/reason audit history and touch coverage; own-song ordering without advancing one's turn; per-request key/tempo and private notes; duplicate same-singer/version handling; duet/group invitations and accepted membership; and approximate queue and wait-time projections. A group performance belongs to one lead singer and consumes one turn; invitees do not lose their own place. Wait estimates must state assumptions, use ranges where appropriate, recalculate after changes and show unavailable during unbounded pauses or intermission. Pre-arrival lists do not reserve a turn.
 
 ## 6. Playback, audio and singer display
 
-**Available:** Play/Pause stages the next eligible request when needed and starts or pauses/resumes the performance. Stop returns the current request to the queue; confirmed Skip consumes the active turn. Playback has a generation identity, checkpoints position and restarts paused after an interrupted session. Start and resume are deliberate host actions. On a reported output-device or display loss the application pauses and asks the host to resolve the issue; actual hardware behavior still needs testing.
+**Available:** approved requests stage automatically. Play/Pause begins the show or pauses/resumes an active performance. Automatic advancement defaults on after natural completion/confirmed Skip and waits for the saved gap and ready media. Stop returns the active request to the queue, cancels delayed advancement and stops interlude music even without active karaoke. Pause retains the active turn and cancels advancement. Failed/missing media stays staged for Retry/Relink. Generation identity/checkpoints survive restart paused; startup never resumes karaoke. Output/device/display errors cancel automation and ask for deliberate recovery; physical behavior remains unverified.
 
-**Available:** the host chooses an audio output or the operating-system default and can adjust global volume. Play automatically opens a ready singer window on the saved connected monitor, otherwise the closest non-host monitor, otherwise the host screen. Explicit Singer Display still offers a chooser; hosts can toggle fullscreen or set the next-open fullscreen preference. Optional singer-display settings show upcoming names and a custom PNG/JPEG logo. The configured inter-song pause interval is 0–300 seconds after completion or confirmed skip; staging may occur while the clock runs, the deadline persists across restart, and the host still starts the next song. A zero interval is the default.
+**Available:** global volume and explicit/system-default output are supported. First Play reveals the persistent singer window on its saved connected monitor, otherwise the nearest non-host monitor, otherwise the host screen. The host can show/fullscreen it explicitly; Close hides it while preview/audio continue. Singer Display settings include upcoming names, a booth name, PNG/JPEG logo with immediate picker preview and 10–85vw size, plus scrolling top/bottom text with optional ISO expiry. Banner display resets at launch unless persistence is selected; saved text remains. The inter-song gap is 0–300 seconds, default zero; completion/Skip commits its deadline. An already running automatic show advances after that deadline and media readiness; restart remains paused.
 
 The singer video is bounded to the full window viewport (maximum 100vh/100vw) with aspect ratio preserved and no vertical scrolling. Landscape, 4:3 and portrait sources use letterboxing/pillarboxing as needed. Branding, caption and next-singer information overlay the viewport instead of adding height. The separate embedded preview uses its own bounded layout and retains visible native controls.
 
-**Experimental:** bumper music requires a ready singer display and an explicitly selected output; system default is not accepted. Three generated instrumental themes and up to five custom audio files are available. Audio Controls saves an opt-in automatic-between-songs checkbox and selected theme; its default is off. Successful natural completion or confirmed Skip arms an intermission only after the current singer display acknowledges karaoke silence. The host can also start/stop music manually. Karaoke start/resume waits for acknowledged bumper stop. Stop, pause, launch, changed settings and output recovery never automatically start music; loss or change of output cancels automation. The pause interval remains a minimum gap before the host may start the next song. Tracks may continue through the bumper list until stopped or karaoke starts. Retired bumper players are silenced and their delayed callbacks cannot affect a newer track. Physical audible routing and device-loss verification remain required; muted integration tests do not prove what a mixer receives.
+**Experimental in 0.7.0:** launch bumper and between-song bumper default on with separate preferences. The system default output is accepted and the hidden singer renderer needs no visible window. Three original themes and up to five custom audio files are available. Fade-in defaults to 1000 ms, configurable 500–1700 ms, follows global volume and cancels before stop/output loss. Between-song music requires the old generation silence acknowledgement; karaoke start/resume waits for bumper-stop acknowledgement. A positive gap plays music until the next turn is ready; zero avoids filler flash. Stop/Pause/error/output-loss cancel delayed karaoke; settings/recovery alone never starts it. Retired player callbacks cannot affect a new generation. Physical audible routing remains an acceptance gate.
 
 **Available:** the bottom timeline shows elapsed/remaining time, supports dragging or keyboard scrubbing and ten-second rewind/forward. Seeking preserves play/pause state and saves acknowledged positions; stale-generation events are rejected. It supports local MP4s, converted CDG, downloaded YouTube videos and the native KaraFun audio clock. Previous restarts the current generation from zero and resumes a paused performance without consuming a turn. Per-range verified file handles reject observed source replacement and pause the same performance with a recovery path. Real-hardware synchronization and recovery remain unverified.
 
-**Planned:** further recovery verification, key and tempo with per-song and per-singer settings, independent lead/backing vocals only where stems or compatible multiplex data exist, richer intermission scheduling, separate filler volume and fades, and richer waiting/ready/playing/paused/error output screens. The earlier proposed filler fade values of 1.5 seconds in and 1.0 second out are design candidates, not implemented or hardware-verified defaults. Never overlap two audible karaoke streams; pause alone must not automatically start filler. No source MP4 or CDG text is reflowed, translated or restyled unless a separate licensed renderer expressly supports it.
+**Planned:** physical recovery verification, key/tempo with per-song/per-singer defaults, user lead/backing mixing where real stems/multiplex exist, separate filler volume, fade-out/richer intermission scheduling and richer output presets. Existing fade-in is implemented; older proposed 1.5-second in/1.0-second out values are historical candidates, not current defaults. Never overlap audible karaoke streams or start filler merely because a performance is paused. Source MP4/CDG text is not restyled by native KaraFun colors.
 
 **LRC foundation only:** timed-lyric parsing and VTT conversion are integrated. Full LRC import/playback, shared backdrop rendering and its timing/seek/resume verification remain unfinished. Do not present the parser as a playable source.
 
@@ -128,7 +142,7 @@ The singer video is bounded to the full window viewport (maximum 100vh/100vw) wi
 
 A planned saved list outside a show is personal preparation, not a reserved turn. If a host opens requests early, show received, approved, checked-in and eligible as distinct states; revalidate the exact version, policy, access and key support when submitting. Approval and check-in rules remain host-configurable product decisions. A proposed heartbeat every two seconds and disabled controls after five seconds without a host update require actual network measurement before adoption. On reconnection a fresh snapshot precedes new actions; the relay must not queue stale actions for surprising later execution.
 
-**Available in 0.5.0 source — LAN visual screens:** a separate opt-in read-only listener defaults to port 4051. Remote Sessions shows its private-network numeric addresses; Singer Display preferences configure enabled state and port. Up to 64 browser streams mirror the authoritative singer window using bounded multipart JPEG frames; sound remains on the host. It is a viewing surface, not queue admission, a host API or an internet relay. Request links remain separate. Anyone able to reach the private LAN listener can view the screen while enabled.
+**Available, updated in 0.7.0 — LAN visual screens:** a separate opt-in read-only listener defaults to port 4051 and binds concrete trusted private interfaces plus loopback. Windows requires actual Private classification; Public/unknown stays loopback-only. A 30-second trust recheck and 5-second classification bound remove untrusted listeners without changing firewall policy. Remote Sessions shows its private-network numeric addresses; Singer Display preferences configure enabled state and port. Up to 64 browser streams mirror the authoritative singer window using bounded multipart JPEG frames; sound remains on the host. It is a viewing surface, not queue admission, a host API or an internet relay. Request links remain separate. Anyone able to reach the private LAN listener can view the screen while enabled.
 
 Capture polling is approximately 125 ms, deduplicates static frames and never overlaps capture work. Generation fences reject late old-window images; no demand, failures and display invalidation clear stale pixels. Slow-viewer data is bounded and reconnects; the page fits its viewport. Host/origin/method validation, private-peer checks, connection limits, port-conflict recovery and serialized shutdown/reconfiguration are covered by source tests. Numeric addresses are the fallback when `.local` names do not resolve; the app installs no mDNS service or firewall rule. Windows may need a Private-network allowance. Physical multi-device/venue-network latency and endurance remain unverified.
 
@@ -208,9 +222,9 @@ Choose Singer uses the usual existing/new-name dialog. Submission validates an o
 
 **Optional external KHost route:** the owner reports KaraFun subscription login/playback works in their separate KHost installation. TPV's independently written public-contract bridge implements external search/handoff; account sign-in, acquisition and playback stay in KHost. Host setup explicitly selects the bridge's protected connection profile, searches through the installed provider and offers **Send to KHost (External Queue)**. Search receipts, current policy/blacklists and the selected profile are checked before dispatch; uncertain outcomes retain the original handoff ID for read-only recovery. These results never become playable TPV queue entries. Actual plugin loading and authenticated search/handoff on the owner's target machine remain unverified. KHost core uses Shield and the separate KaraFun plugin has no explicit license grant in the reviewed repository. Their implementation was not copied; the separately MIT-licensed contracts are the adapter boundary. No consumer-client identity/signing scheme, password-equivalent storage or private protocol was copied. Confirm applicable permissions before broader distribution. The [bridge guide](khost-bridge.md) owns setup and exact verification status.
 
-**Experimental native KaraFun integration in 0.6.0 source:** connect an existing account through the official, isolated sign-in window in **Sources → KaraFun**. Its first-party engine opens the session; TPV's independent account client checks the session, searches canonical catalog metadata and requests eligible recordings without an embedded vendor application key. Signed-in library results show **KaraFun**, open the ordinary singer dialog and become durable TPV requests. Accepted/staged requests prepare in the background without autoplay. Host Play uses a fresh authorization, verified account-scoped KIT media, one Web Audio clock for its Ogg stems, and timed canvas lyrics over a muted optional backdrop in TPV's singer screen. Pause, resume, seek, Previous, Stop, output recovery, preview and the visual browser mirror share the normal show authority. The optional KHost bridge remains separate and is unnecessary for this native path.
+**Experimental native KaraFun integration, introduced in 0.6.0 and extended in 0.7.0:** connect an existing account through the official, isolated sign-in window in **Sources → KaraFun**. Its first-party engine opens the session; TPV's independent account client checks the session, searches canonical catalog metadata and requests eligible recordings without an embedded vendor application key. Signed-in library results show **KaraFun**, open the ordinary singer dialog and become durable TPV requests. Approved requests prepare and auto-stage without arming a new show. Host Play uses a fresh authorization, verified account-scoped KIT media, one Web Audio clock for its Ogg stems, and timed canvas lyrics over a muted optional backdrop in TPV's singer screen. Pause, resume, seek, Previous, Stop, output recovery, preview and the visual browser mirror share the normal show authority. The optional KHost bridge remains separate and is unnecessary for this native path.
 
-Sessions are memory-only; restart/sign-out requires another official sign-in. Each connection currently receives a new private cache scope, so reconnecting prepares media again rather than sharing it across accounts. Cached files do not establish permanent download or unrestricted offline rights. KIT acquisition is bounded to 128 MiB, retained prepared data targets 128 MiB with an independently pinned active performance, and decoded audio is bounded to 512 MiB; recordings beyond player limits fail clearly instead of losing stems silently. Native community recordings, user-facing stem mixing, pitch/tempo, persistent login, shared KaraFun heart ratings and confirmed distribution/venue terms remain outstanding. Show schema 4 prevents older clients from treating native media as MP4 while preserving existing state and SQL tables.
+Remembered sessions use Electron safeStorage only when OS-backed encryption is available; Linux basic_text/plaintext fallback is refused. Restore validates an accepted saved session without opening a browser and retains its opaque account/cache scope. Normal close preserves the encrypted vault; explicit sign-out forgets it and silences native playback. Expiry/revocation offers reconnect; every performance still requires current authorization. Private cached KITs do not establish permanent/offline rights. Acquisition is bounded to 128 MiB, retained prepared data targets 128 MiB with a pinned active performance, and decoded audio to 512 MiB. Native community playback, user stem mixing, pitch/tempo, fixed-mix fallback and distribution/venue terms remain open. Global ratings now use numeric catalog/community keys without imported fingerprints; production needs the compatible validator deployment and no SQL migration. Schema 4 prevents older clients from mistaking native assets for MP4.
 
 Verification separates real account evidence from simulated flows: ordinary official sign-in, session information, canonical search and acquisition of one eligible 5,516,449-byte recording passed, including size/MD5/SHA256 verification and parsing three stems, six artwork members and timing. Generated Ogg playback passed a real muted Electron audio-clock/lyrics test. The complete TPV synthetic account/search/singer/queue/download/player/pause/seek/Previous/sign-out flow also passed. The actual-account TPV Windows rehearsal also passed official sign-in, search, singer selection, queueing, verified preparation, native audio-clock playback with rendered lyrics, pause, seek to 35 seconds, Previous, sign-out fencing and restart without autoplay. It was muted and used a disposable profile; audible sound, full-song listening, physical display/output recovery and native Linux/macOS playback remain separate acceptance gates. The connected TPV mailbox has no new API/SDK approvals; KaraFun's cancellation email gives no access end date, and successful acquisition does not prove plan duration. See the [native integration guide](karafun-native-integration.md).
 
@@ -226,7 +240,7 @@ Before a live-show release, verify Windows 11 x64, an agreed Linux desktop and m
 
 Proposed targets, not measured guarantees: local search p95 below 150 ms for 100,000 indexed versions; committed desktop queue edits under 100 ms; remote p95 below 500 ms on a healthy network; staged local start to audible output under one second; a four-hour show without lost turns or growing drift; audio/lyric synchronization within 100 ms after pause/seek; desktop target 1280 × 800 logical pixels with a usable compact 1024 × 720 mode; and companion layouts from 320 to 1024 CSS pixels. Verify 200% text scaling and WCAG 2.2 AA as design targets.
 
-Acceptance must include: safe local import and relinking; MP3/CDG and ZIP pairing diagnostics; deterministic rounds, holds and manual overrides; no turn loss on preparation failure or repeated callbacks; separate display and explicit recovery; no unintended audio after restart; persistent acknowledgements and concurrent-edit rejection; guest ownership and staged-item locks; LAN and internet disconnect/reconnect behavior; policy enforcement through every route; provider entitlement and capability checks; private-data redaction; and keyboard/touch accessibility. Paid release additionally requires verified subscription, offline-grant and event-replay behavior without cutting a running show.
+Acceptance must include: safe local import and relinking; MP3/CDG and ZIP pairing diagnostics; deterministic rounds, holds and manual overrides; no turn loss on preparation failure or repeated callbacks; separate display and explicit recovery; no unintended karaoke after restart, with configured launch bumper treated separately; persistent acknowledgements and concurrent-edit rejection; guest ownership and staged-item locks; LAN and internet disconnect/reconnect behavior; policy enforcement through every route; provider entitlement and capability checks; private-data redaction; and keyboard/touch accessibility. Paid release additionally requires verified subscription, offline-grant and event-replay behavior without cutting a running show.
 
 ## 14. Remaining decisions and maintenance
 
@@ -238,7 +252,7 @@ The current implementation, tests and host/singer help should be reviewed whenev
 
 This section is the editable source for the generated Night and Day mockup deck. Each `mockup` block describes a screen; the generator draws both themes from the same content. These are design representations, not screenshots. A **Current** badge denotes a screen in the desktop or local singer application; **Partial** includes current behavior plus clearly identified future ideas; **Planned** is not shipped. The native mobile app is an offline preview. The experimental internet relay is deployed and public browser rehearsals passed; physical-phone, venue-network and long-show checks remain. The examples below are fictional and do not imply licensed catalog access.
 
-Maintain the accepted desktop structure: a host workspace and persistent player, a clear singer rotation, uncomplicated singer display, and paired Night and Day designs. Source video and lyric colors are not recolored. Tooltips appear immediately and include assigned shortcuts when available. Host-only and singer-facing data remain separate.
+Maintain the accepted desktop structure: a host workspace and persistent player, a clear singer rotation, uncomplicated singer display, and paired Night and Day designs. Source video/CDG colors stay unchanged; native primary completed lyrics use KaraFun pink. Tooltips appear immediately and include assigned shortcuts when available. Host-only and singer-facing data remain separate.
 
 ```mockup-theme
 {
@@ -292,7 +306,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "D01",
   "title": "Desktop host",
   "status": "Current",
-  "description": "Resizable host workspace with silent singer preview, curated discovery and fixed transport.",
+  "description": "Dominant unified search, global sidebar field, hidden singer preview and automatic show transitions.",
   "layout": "desktop",
   "navigation": [
     "Library",
@@ -301,7 +315,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   ],
   "selected_navigation": "Library",
   "heading": "Song Library",
-  "toolbar": "Search local + Karaoke Nerds + YouTube + services     Sort     Filter",
+  "toolbar": "Sort     Filter",
   "import_actions": [
     {
       "icon": "importVideo",
@@ -317,17 +331,17 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     }
   ],
   "rows": [
-    "Popular | Nada Surf | PVOL-002 | 8.2/10 hearts",
-    "Example Song | Sample Artist | YouTube | 9.0/10 hearts",
-    "Another Example | Sample Artist",
-    "Catalog Example | Sample Artist | KaraFun | Choose Singer"
+    "Popular | Nada Surf | Local | 8.2/10 hearts",
+    "Example Song | Sample Artist | Karaoke Nerds",
+    "Another Example | Sample Artist | YouTube",
+    "Catalog Example | Sample Artist | KaraFun"
   ],
   "side_heading": "Singer Preview / Host Queue",
   "side_rows": [
-    "PREVIEW | Actual singer window, silent mirror",
-    "DRAG | Resize preview and queue",
+    "PREVIEW | Works while singer window is hidden",
     "ON STAGE | Alex - Popular",
-    "NEXT | Casey - Example Song"
+    "NEXT | Casey - Example Song",
+    "Automatic next after gap + ready media"
   ],
   "footer_heading": "Now Playing",
   "footer_rows": [
@@ -340,12 +354,25 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "stop",
     "skip"
   ],
-  "detail": "Drag panel separators or use focused arrow keys. Preview can be above/below queue or hidden. Combined results scroll while transport stays visible. Connected KaraFun can queue; other public metadata stays search-only.",
+  "detail": "One readable list and shared right-click actions; provider capability disables unsupported actions. Approved turns auto-stage; Play begins the show. Hidden preview creates no duplicate audio.",
   "host_navigation": [
     "Requests",
     "Singers",
     "Remote Sessions"
-  ]
+  ],
+  "sidebar_search": "Search Songs · Ctrl/Cmd+F",
+  "row_sources": [
+    "local",
+    "karaokenerds",
+    "youtube",
+    "karafun"
+  ],
+  "provider_colors": {
+    "local": "#601CE9",
+    "karaokenerds": "#007bff",
+    "youtube": "#ff0033",
+    "karafun": "#d5167a"
+  }
 }
 ```
 ```mockup
@@ -387,7 +414,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "stop",
     "skip"
   ],
-  "detail": "Current: drag reorder, edit track/singer, timed absence and return. Staged songs stay locked. Duets and audit history remain planned.",
+  "detail": "Approved requests auto-stage; pending moderation waits. Reorder future turns and edit track/singer on the same staged request. Completion/Skip advances after gap/readiness; Stop cancels. Duets and fuller audit remain planned.",
   "host_navigation": [
     "Requests",
     "Singers",
@@ -506,12 +533,12 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "O01",
   "title": "Singer display",
   "status": "Current",
-  "description": "Presentation-only output keeps the karaoke video prominent and leaves source colors unchanged.",
+  "description": "Custom booth identity and scrolling announcement overlay a viewport-fitted singer screen.",
   "layout": "display",
-  "display_title": "SINGER VIDEO",
-  "display_subtitle": "Lyrics and video appear here",
-  "display_next": "Coming up: Casey  /  Jordan",
-  "detail": "Video fits the viewport without cropping or scrolling; captions and branding overlay it. Monitor hot-plug still needs verification."
+  "display_title": "THE PROPER VOLUME",
+  "display_subtitle": "Your host booth name · Logo size 50vw",
+  "display_next": "Coming up: Casey / Jordan · Scrolling banner at top or bottom",
+  "detail": "Hidden renderer supplies preview before opening this screen. Logo 10–85vw, banner expiry and optional restart persistence are settings. Native completed primary lyrics are pink; source video/CDG stays unchanged. Physical hot-plug remains unverified."
 }
 ```
 
@@ -519,7 +546,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
 {
   "id": "D08",
   "title": "Preferences and audio controls",
-  "status": "Partial",
+  "status": "Current",
   "description": "Grouped, collapsible preferences keep essential show controls in the workspace.",
   "layout": "settings",
   "navigation": [
@@ -538,25 +565,25 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "heading": "Audio Controls",
   "rows": [
     "Output Device | Explicit device or system default",
-    "Playback Volume | 45%",
-    "Pause Interval | 0 seconds",
-    "Automatic bumper | Opt-in between songs",
-    "Bumper theme | Soft Ambient",
-    "Custom audio | up to 5 files"
+    "Pause Interval | 2 seconds · Automatic next on",
+    "Bumper on launch | Enabled",
+    "Bumper between songs | Enabled",
+    "Fade-in | 1000 ms · Range 500–1700",
+    "Theme | Soft Ambient · Up to 5 custom files"
   ],
   "side_heading": "Other groups",
   "side_rows": [
-    "Appearance | Theme, accent and layout",
+    "Appearance | Theme, accent, layout, preview",
     "Queue | Rotation, approval, singer limit",
-    "Keyboard Shortcuts | Multiple bindings, capture and reset",
-    "Singer Display | Lyric backdrop, logo, next singers"
+    "Keyboard Shortcuts | Multiple bindings and reset",
+    "Singer Display | Booth name, logo size, banner"
   ],
   "footer_heading": "Preferences",
   "footer_rows": [
     "Cancel",
     "Save preferences"
   ],
-  "detail": "Automatic bumper is opt-in and waits for karaoke silence on the selected output. Fades and physical-device verification remain planned."
+  "detail": "One hidden singer renderer handles preview/audio. Launch music needs no visible window. Completion/Skip waits for silence; next karaoke waits for bumper stop and media readiness. Physical sound remains unverified."
 }
 ```
 
@@ -830,13 +857,13 @@ The owner selected **Microphone Play** on 13 November: a vintage microphone insi
     "Cancel",
     "Save preferences"
   ],
-  "detail": "The TPV animation is bundled and loops behind the original CDG lyrics. Reimport existing CDG conversions to change their backdrop; ordinary videos keep their own picture."
+  "detail": "Bundled animation loops behind original CDG lyrics; reimport existing conversions to change backdrop. Ordinary video stays unchanged. Singer Display also offers booth name, live logo preview/10–85vw sizing and timed top/bottom banner."
 }
 ```
 
 ## Shared Heart Ratings and Current Host Controls
 
-**Available in 0.5.0 source:** exact recordings receive 1–10-heart host ratings. A YouTube/Karaoke Nerds source uses its case-sensitive YouTube identity and the existing authenticated global MySQL-backed service. A source-less file uses its imported SHA256 and stores its vote in local schema-3 `show.sqlite`, works offline and never sends its path or local fingerprint to the shared service. Identical contents share that local score; different converted CDG outputs can have different fingerprints. Provider metadata edits never merge distinct recordings.
+**Available, updated in 0.7.0:** exact recordings receive 1–10-heart host ratings. YouTube/Karaoke Nerds uses its case-sensitive YouTube ID. KaraFun uses `karafun:catalog:NUMERIC_ID` or `karafun:community:NUMERIC_ID` without an imported fingerprint. Client/service validation is implemented; production requires the corresponding validator rollout, without SQL changes. Identified recordings use the authenticated global MySQL-backed service. A source-less file uses its imported SHA256 and stores its vote in local schema-3 `show.sqlite`, works offline and never sends its path or local fingerprint to the shared service. Identical contents share that local score; different converted CDG outputs can have different fingerprints. Provider metadata edits never merge distinct recordings.
 
 The host lookup router returns per-key storage/write capability so local votes remain available when a remote profile is absent or shared lookup fails. A failed global write is never reclassified as a successful local save. Global writer identity comes from a separately provisioned private host credential; readers/public lookup cannot vote or see voter identities. One current vote is replaced or cleared explicitly. This is a host-installation vote, not an individual singer account; remote singer voting and cross-device person ownership remain planned.
 
@@ -900,7 +927,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Sunfly Store | Title / SF SKU",
     "Stingray | Developer key needed"
   ],
-  "detail": "Native KaraFun is experimental and checks account eligibility per performance. YouTube candidates are curated heuristically; Karaoke Nerds, developer profiles and external KHost remain separate."
+  "detail": "KaraFun remembered sign-in uses OS encryption where available and validates on restart; explicit sign-out forgets it. Each start/resume checks authorization. All discoveries use the unified library; public service metadata remains search-only."
 }
 ```
 ```mockup
@@ -930,7 +957,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Profiles | Sources picker",
     "Playback | Pending"
   ],
-  "detail": "Synthetic data. Sunfly Store shows up to five first-page songs; store IDs/SKUs are not streaming identities. Unknown artists stay unknown. Provider matches cannot enter the local queue or play."
+  "detail": "Provider metadata appears in the shared library with source color/label and the common context menu. Unsupported queue/edit actions are disabled. Sunfly Store remains five first-page songs; store IDs/SKUs never prove streaming access."
 }
 ```
 
@@ -962,7 +989,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Approved request | Permanent yt-dlp download",
     "Playback | Host starts deliberately"
   ],
-  "detail": "Synthetic candidates. Video/channel hints do not guarantee quality. Current-search receipts prevent stale metadata from becoming a playable queue record."
+  "detail": "Curated candidates share the global result list and queue menu. Receipts reject stale results; approved requests dispatch yt-dlp and auto-stage. Preparation alone never arms a new show. Video/channel hints do not guarantee quality."
 }
 ```
 
@@ -1032,6 +1059,6 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Viewing address | No queue or host controls",
     "Remote Session | Use invitation to request"
   ],
-  "detail": "Synthetic network details. Numeric addresses are the fallback; mDNS and firewall rules are not installed automatically. Venue-device latency and physical output remain unverified."
+  "detail": "Concrete private-interface listeners plus loopback. Windows requires actual Private classification; unknown/Public is loopback-only. Trust rechecks every 30s with 5s classification bound; no firewall rule is installed. Hidden preview works without visible singer window."
 }
 ```
