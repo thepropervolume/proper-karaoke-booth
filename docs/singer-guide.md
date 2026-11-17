@@ -6,7 +6,7 @@ Tell the host your name and the song or artist you would like to sing. They can 
 
 The host's global search combines local files, Karaoke Nerds, curated YouTube, connected native KaraFun and public service metadata in one list. A colored edge and source label identify the recording. Search-only results cannot be queued or played. The singer page browses the host's published library rather than directly searching every provider.
 
-KaraFun appears only while the host is signed in. YouTube discovery appears last and hides songs already found in another source; different recordings saved in the host's library remain available.
+KaraFun appears only while the host is signed in. Generic YouTube results appear last and hide songs already found in another source. Stored recordings remain in the library; the fallback rule changes search visibility only.
 
 The host double-clicks a playable result or chooses **Add to Queue**. They may leave the optional singer empty, select your existing name or enter a new one. An unnamed request shows **Unassigned** and can be assigned later. Approved requests prepare and stage automatically; manual moderation waits for acceptance. Karaoke Nerds/YouTube requests download through yt-dlp, while native KaraFun prepares privately through the host's account. Failed preparation keeps your turn for recovery.
 

@@ -55,19 +55,21 @@ export function unifiedSongResults(library: readonly LibrarySearchVersion[], sav
     resultProvider: song.provider, persisted: false, catalogOnly: song, durationSeconds: song.durationSeconds,
   });
   const discovery = (row: SongResult) => !!row.youtubeSearchReceipt;
-  const availableSongs = new Set(rows.filter(row => !discovery(row)).map(row => songKey(row.artist, row.title)).filter((key): key is string => key !== null));
+  const availableSongs = new Set(rows.filter(row => row.resultProvider !== 'youtube').map(row => songKey(row.artist, row.title)).filter((key): key is string => key !== null));
+  const savedYouTubeSongs = new Set(rows.filter(row => row.resultProvider === 'youtube' && !discovery(row)).map(row => songKey(row.artist, row.title)).filter((key): key is string => key !== null));
   const youtubeMetadata = new Map(input.youtube?.songs.map(song => [song.videoId, song]) ?? []);
   const visible = rows.filter(row => {
-    if (!row.youtubeSearchReceipt) return true;
-    const song = youtubeMetadata.get(row.youtubeSearchReceipt.videoId);
+    if (row.resultProvider !== 'youtube') return true;
+    const song = row.youtubeSearchReceipt ? youtubeMetadata.get(row.youtubeSearchReceipt.videoId) : undefined;
     const key = songKey(row.artist, row.title);
     // Video-title parsing is a guess: creators use both "Artist - Title" and
     // "Title - Artist". Check both only for that heuristic, never verified tags.
     const reverse = song?.metadataSource === 'video-title' ? songKey(row.title, row.artist) : null;
-    return !(key && availableSongs.has(key) || reverse && availableSongs.has(reverse));
+    return !(key && (availableSongs.has(key) || discovery(row) && savedYouTubeSongs.has(key)) || reverse && (availableSongs.has(reverse) || discovery(row) && savedYouTubeSongs.has(reverse)));
   });
+  const priority = (row: SongResult) => row.resultProvider !== 'youtube' ? 0 : discovery(row) ? 2 : 1;
   const compare = (a: string, b: string) => a.localeCompare(b, 'en-US', { sensitivity: 'base', numeric: true });
-  return visible.sort((a, b) => Number(discovery(a)) - Number(discovery(b)) ||
+  return visible.sort((a, b) => priority(a) - priority(b) ||
     (input.sort.startsWith('title-') ? (input.sort === 'title-desc' ? -1 : 1) * (compare(a.title, b.title) || compare(a.artist, b.artist)) :
       input.sort.startsWith('artist-') ? (input.sort === 'artist-desc' ? -1 : 1) * (compare(a.artist, b.artist) || compare(a.title, b.title)) : 0));
 }
