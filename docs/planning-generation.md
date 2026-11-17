@@ -33,6 +33,16 @@ python scripts/generate-specification.py --source docs/product-specification.md 
 
 The scripts fail on invalid or missing required mockup information. Do not treat a successful command as visual approval: render the Word document and PDF to page images and inspect every page for readability, spacing and accurate statuses. Run the documentation generator tests with `python -m unittest discover -s tests/docs`.
 
+## Plain Language QA Guide
+
+`docs/qa/qa-test-guide.md` is the editable source for the separate tester guide. It explains the specialist findings, setup, manual steps, expected results and remaining device checks without requiring source-code knowledge. Generate its Word edition with:
+
+```sh
+python scripts/generate-specification.py --source docs/qa/qa-test-guide.md --kind qa --output release/planning/TPV_Karaoke_QA_Test_Guide.docx
+```
+
+The QA document profile supplies the correct header/metadata and restarts steps for each test. Render and inspect every page before sharing, as for the specification. The 17 November edition has seven reviewed pages and 15 manual test scenarios; the 38 original specialist findings remain traceable. A guide describes what to test and does not establish that those manual tests were run. Its generated Word file stays under ignored local `release/planning`; the Markdown and generator are committed.
+
 The optional `brand_logos` entries in the Markdown theme bind the local Night/Day horizontal PNGs to exact SHA256 hashes. Update those hashes when the selected identity changes. The generator refuses an unexpected path, absent image or mismatched digest; all other screen text/palettes still come from the Markdown blocks.
 
 ## Windows Word Rendering

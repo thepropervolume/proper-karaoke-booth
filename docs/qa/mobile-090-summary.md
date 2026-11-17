@@ -2,6 +2,8 @@
 
 Three specialized reviewers independently audited the initial mobile draft on 17 November 2026. Their original evidence and findings are retained in [protocol](mobile-090-protocol.md), [usability](mobile-090-ux.md) and [native/platform](mobile-090-native.md) reports. The tables below supersede initial “fix requested” statuses without erasing the reproduced failures. Overlapping findings are retained under their original IDs.
 
+For test execution and a plain-language explanation of all 38 findings, use the separate [QA test guide](qa-test-guide.md). It includes 15 scenarios, expected outcomes, known limitations and bug-report guidance. It does not turn unperformed device checks into completed tests.
+
 | Findings | Resolution and verification |
 | --- | --- |
 | MP-01–04 | Room close/new generation resets credentials and epoch. Unknown/cancelled opens retain identity for recovery and close late successful opens. Expired reply envelopes resume polling without replaying mutations. Sixteen lifecycle fault tests pass. |

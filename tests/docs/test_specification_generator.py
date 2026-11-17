@@ -18,6 +18,22 @@ PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4
 
 
 class SpecificationGeneratorTest(unittest.TestCase):
+    def test_qa_guide_uses_its_own_labels_and_restarts_each_test_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'qa.md'
+            source.write_text('# QA guide\n\n## First test\n\n1. Open.\n2. Close.\n\n## Second test\n\n1. Retry.\n2. Check.\n', encoding='utf-8')
+            output = root / 'qa.docx'
+            generator.render(source, output, document_kind='qa')
+            doc = Document(output)
+            self.assertIn('QA TEST GUIDE', doc.sections[0].header.paragraphs[0].text)
+            self.assertIn('repository QA guide', doc.sections[0].footer.paragraphs[0].text)
+            self.assertEqual(doc.core_properties.subject, 'Karaoke application QA test guide')
+            steps = [p._p.pPr.numPr.numId.val for p in doc.paragraphs if p.style.name == 'List Number']
+            self.assertEqual(steps[0], steps[1])
+            self.assertEqual(steps[2], steps[3])
+            self.assertNotEqual(steps[0], steps[2])
+
     def test_figures_and_prose_come_from_markdown(self):
         screen = {'id': 'TEST', 'title': 'Singer view', 'status': 'Planned', 'description': 'A planned singer view'}
         content = '# Test specification\n\nCurrent prose.\n\n```mockup\n' + json.dumps(screen) + '\n```\n'

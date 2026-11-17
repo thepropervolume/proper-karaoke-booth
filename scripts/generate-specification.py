@@ -95,7 +95,9 @@ def inline(paragraph, text: str):
         set_font(paragraph.add_run(text[position:]))
 
 
-def configure(document):
+def configure(document, document_kind="product"):
+    if document_kind not in ("product", "qa"):
+        raise ValueError("Choose a product specification or QA guide.")
     section = document.sections[0]
     section.page_width = Inches(8.5); section.page_height = Inches(11)
     section.top_margin = Inches(.75); section.bottom_margin = Inches(.7)
@@ -125,12 +127,12 @@ def configure(document):
         styles[name].paragraph_format.space_after = Pt(3)
     header = section.header.paragraphs[0]
     header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    set_font(header.add_run("THE PROPER VOLUME  /  PRODUCT SPECIFICATION"), size=8, color="000000")
+    set_font(header.add_run("THE PROPER VOLUME  /  " + ("QA TEST GUIDE" if document_kind == "qa" else "PRODUCT SPECIFICATION")), size=8, color="000000")
     footer = section.footer.paragraphs[0]
-    set_font(footer.add_run("Generated from the repository specification  |  "), size=8, color="59636E")
+    set_font(footer.add_run("Generated from the repository " + ("QA guide" if document_kind == "qa" else "specification") + "  |  "), size=8, color="59636E")
     field = OxmlElement("w:fldSimple"); field.set(qn("w:instr"), "PAGE"); footer._p.append(field)
     document.core_properties.author = "The Proper Volume"
-    document.core_properties.subject = "Karaoke application product specification"
+    document.core_properties.subject = "Karaoke application " + ("QA test guide" if document_kind == "qa" else "product specification")
 
 
 def cells(line: str) -> list[str]:
@@ -215,14 +217,14 @@ def append_mockups(document, text: str, folder: Path):
         set_font(caption.add_run(f"{screen['description']} Night theme; see the mockup PDF for both themes and full-size detail."), size=9)
 
 
-def render(source: Path, output: Path, mockups_dir: Path | None = None):
+def render(source: Path, output: Path, mockups_dir: Path | None = None, document_kind="product"):
     text = source.read_text(encoding="utf-8-sig")
     lines = text.replace("\r\n", "\n").split("\n")
-    document = Document(); configure(document)
+    document = Document(); configure(document, document_kind)
     document.core_properties.title = "The Proper Volume Karaoke Product Specification"
     document.core_properties.created = datetime.datetime(2000, 1, 1)
     document.core_properties.modified = datetime.datetime(2000, 1, 1)
-    index = 0; first_title = True
+    index = 0; first_title = True; qa_numbering = None
     while index < len(lines):
         line = lines[index]
         if not line.strip(): index += 1; continue
@@ -262,6 +264,22 @@ def render(source: Path, output: Path, mockups_dir: Path | None = None):
             indent, marker, content = item.groups()
             style = "List Number" if marker[0].isdigit() else "List Bullet"
             paragraph = document.add_paragraph(style=style)
+            if document_kind == "qa" and marker[0].isdigit():
+                # Each test case has its own steps. Word's shared List Number
+                # style otherwise continues numbering across unrelated tests.
+                if int(marker[:-1]) == 1 or qa_numbering is None:
+                    numbering = document.part.numbering_part.element
+                    base_id = document.styles["List Number"].element.pPr.numPr.numId.val
+                    base = numbering.xpath(f'./w:num[@w:numId="{base_id}"]')[0]
+                    number = numbering.add_num(base.abstractNumId.val)
+                    number.add_lvlOverride(ilvl=0).add_startOverride(1)
+                    qa_numbering = number.numId
+                props = paragraph._p.get_or_add_pPr().get_or_add_numPr()
+                props.get_or_add_ilvl().val = 0
+                props.get_or_add_numId().val = qa_numbering
+                paragraph.paragraph_format.left_indent = Inches(.25)
+                paragraph.paragraph_format.first_line_indent = Inches(-.25)
+                paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(.25))
             if indent: paragraph.paragraph_format.left_indent = Inches(.25 + min(len(indent), 8) * .10)
             inline(paragraph, content); index += 1; continue
         if line.lstrip().startswith(">"):
@@ -304,5 +322,6 @@ if __name__ == "__main__":
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--mockups-dir", type=Path, help="Directory containing Night PNGs generated from the same Markdown mockup PDF")
+    parser.add_argument("--kind", choices=("product", "qa"), default="product", help="Document header and metadata; prose always comes from --source")
     args = parser.parse_args()
-    render(args.source, args.output, args.mockups_dir)
+    render(args.source, args.output, args.mockups_dir, args.kind)
