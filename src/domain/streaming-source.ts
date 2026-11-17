@@ -1,10 +1,13 @@
 export type YouTubeSource = { provider: 'youtube'; videoId: string; brandSlug?: string };
 export type KaraFunSource = { provider: 'karafun'; catalog: 'catalog' | 'community'; songId: string };
-export type StreamingSource = YouTubeSource | KaraFunSource;
+export type PartyTymeSource = { provider: 'partytyme'; catalog: 'consumer'; videoId: string };
+export type StreamingSource = YouTubeSource | KaraFunSource | PartyTymeSource;
 
 export function validStreamingSource(value: unknown): value is StreamingSource {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const source = value as Record<string, unknown>;
+  if (source.provider === 'partytyme') return Object.keys(source).every(key => ['provider', 'catalog', 'videoId'].includes(key)) &&
+    source.catalog === 'consumer' && typeof source.videoId === 'string' && /^[1-9]\d{0,11}$/.test(source.videoId);
   if (source.provider === 'karafun') return Object.keys(source).every(key => ['provider', 'catalog', 'songId'].includes(key)) &&
     (source.catalog === 'catalog' || source.catalog === 'community') && typeof source.songId === 'string' && /^[1-9]\d{0,11}$/.test(source.songId);
   return Object.keys(source).every(key => ['provider', 'videoId', 'brandSlug'].includes(key)) && source.provider === 'youtube' &&
@@ -13,7 +16,7 @@ export function validStreamingSource(value: unknown): value is StreamingSource {
 }
 
 export function streamingSourceLabel(source?: StreamingSource): string {
-  return source?.provider === 'karafun' ? 'KaraFun' : source?.provider === 'youtube' ? 'YouTube' : 'Local';
+  return source?.provider === 'karafun' ? 'KaraFun' : source?.provider === 'partytyme' ? 'Party Tyme' : source?.provider === 'youtube' ? 'YouTube' : 'Local';
 }
 
 /** Accept only an exact video identity or normal HTTPS YouTube watch/short links. */

@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createInitialState } from '../../src/domain';
+import { DEFAULT_SETTINGS } from '../../src/domain/settings';
+import { partyTymeRequest } from '../../src/domain/partytyme-request';
+import { recordingKeyFor } from '../../src/domain/song-rating';
+import { isRecordingKey as serverKey } from '../../src/ratings/schema';
+const song = { videoId: '34962', title: 'Wonderwall', artist: 'Oasis', durationSeconds: 258, explicit: null };
+const ids = { versionId: 'party-song', commandId: 'party-command' };
+test('Party Tyme queueing is atomic, permits no singer, preserves identity and does not start playback', () => {
+    const original = createInitialState('show', 'epoch'), planned = partyTymeRequest(original, song, null, 'r', DEFAULT_SETTINGS, ids, 1000);
+    assert.equal(planned.result.ok, true);
+    assert.equal(planned.state.requests[0].singerId, null);
+    assert.equal(planned.state.playback, null);
+    assert.equal(original.versions.length, 0);
+    assert.deepEqual(planned.state.versions[0].source, { provider: 'partytyme', catalog: 'consumer', videoId: '34962' });
+    assert.equal(partyTymeRequest(planned.state, song, null, 'r', DEFAULT_SETTINGS, ids, 2000).state, planned.state);
+    planned.state.versions[0].title = 'Host title';
+    const next = partyTymeRequest(planned.state, song, null, 'r2', DEFAULT_SETTINGS, { versionId: 'unused', commandId: 'c2' }, 2000);
+    assert.equal(next.state.versions.length, 1);
+    assert.equal(next.state.versions[0].title, 'Host title');
+    const key = recordingKeyFor(planned.state.versions[0].source);
+    assert.equal(key, 'partytyme:consumer:34962');
+    assert.equal(serverKey(key), true);
+    assert.equal(serverKey('partytyme:pro:34962'), false);
+});
+test('Party Tyme singer, age, identity and blacklist refusals leave no orphan recording', () => {
+    const state = createInitialState('show', 'epoch');
+    assert.equal(partyTymeRequest(state, song, 'missing', 'r', DEFAULT_SETTINGS, ids, 0).state, state);
+    assert.equal(partyTymeRequest(state, song, null, 'r', { ...DEFAULT_SETTINGS, artistBlacklist: ['Oasis'] }, ids, 0).result.ok, false);
+    state.policy.ageRestricted = true;
+    assert.equal(partyTymeRequest(state, song, null, 'r', DEFAULT_SETTINGS, ids, 0).result.ok, false);
+    assert.equal(partyTymeRequest(state, { ...song, videoId: 'https://bad.test' }, null, 'r', DEFAULT_SETTINGS, ids, 0).result.ok, false);
+});

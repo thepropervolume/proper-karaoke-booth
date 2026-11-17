@@ -2,7 +2,7 @@
 export type RecordingRating = { recordingKey: string; average: number | null; count: number; ownVote: number | null };
 export const MAX_RATING_LOOKUP_KEYS = 100;
 export function isRecordingKey(value: unknown): value is string {
-  return typeof value === 'string' && /^(?:youtube:[A-Za-z0-9_-]{11}|karafun:(?:catalog|community):[1-9]\d{0,11}|sha256:[a-f0-9]{64})$/.test(value);
+  return typeof value === 'string' && /^(?:youtube:[A-Za-z0-9_-]{11}|karafun:(?:catalog|community):[1-9]\d{0,11}|partytyme:consumer:[1-9]\d{0,11}|sha256:[a-f0-9]{64})$/.test(value);
 }
 export function isVoterId(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);

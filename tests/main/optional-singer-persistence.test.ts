@@ -29,7 +29,7 @@ function legacy(db: DatabaseSync) {
 const version = (db: DatabaseSync) => (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 const nullable = (db: DatabaseSync) => (db.prepare('PRAGMA table_info(performance_history)').all() as { name: string; notnull: number }[]).find(row => row.name === 'singer_id')!.notnull === 0;
 
-test('schema 4 history migrates to schema 5 without changing assigned show/history bytes or explicit indexes/triggers', () => {
+test('schema 4 history migrates to the current schema without changing assigned show/history bytes or explicit indexes/triggers', () => {
   const db = new DatabaseSync(':memory:');
   try {
     legacy(db);
@@ -37,7 +37,7 @@ test('schema 4 history migrates to schema 5 without changing assigned show/histo
       CREATE TRIGGER history_observer AFTER INSERT ON performance_history BEGIN SELECT 1; END;`);
     const before = db.prepare('SELECT * FROM performance_history').all(), show = db.prepare('SELECT value FROM show_state').get();
     migrateShowSchema(db);
-    assert.equal(SHOW_SCHEMA_VERSION, 5); assert.equal(version(db), 5); assert.equal(nullable(db), true);
+    assert.equal(version(db), SHOW_SCHEMA_VERSION); assert.equal(nullable(db), true);
     assert.deepEqual(db.prepare('SELECT * FROM performance_history').all(), before);
     assert.deepEqual(db.prepare('SELECT value FROM show_state').get(), show);
     assert.deepEqual((db.prepare("SELECT name FROM sqlite_schema WHERE name IN ('history_singer','history_observer') ORDER BY name").all() as { name: string }[]).map(row => row.name), ['history_observer', 'history_singer']);
@@ -56,7 +56,7 @@ test('an interrupted history-table rebuild rolls back data, old constraints and 
     assert.equal(version(db), 4); assert.equal(nullable(db), false);
     assert.deepEqual(db.prepare('SELECT * FROM performance_history').all(), before);
     assert.equal(db.prepare("SELECT name FROM sqlite_schema WHERE name='performance_history_v5'").get(), undefined);
-    migrateShowSchema(db); assert.equal(version(db), 5); assert.equal(nullable(db), true);
+    migrateShowSchema(db); assert.equal(version(db), SHOW_SCHEMA_VERSION); assert.equal(nullable(db), true);
   } finally { db.close(); }
 });
 

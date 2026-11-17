@@ -75,6 +75,7 @@ export function inspectShowSnapshot(db: DatabaseSync): SnapshotSummary {
   const state: unknown = JSON.parse(row.value);
   const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
   if (!validState(state, version >= 5) || !record(state)) throw new Error('Backup show state is incomplete or incompatible.');
+  if (version < 6 && (state.versions as Record<string,unknown>[]).some(item=>record(item.source)&&item.source.provider==='partytyme')) throw new Error('Backup show state is incomplete or incompatible.');
   return { revision: state.revision as number, singers: (state.singers as unknown[]).length, songs: (state.versions as unknown[]).length, requests: (state.requests as unknown[]).length };
 }
 
