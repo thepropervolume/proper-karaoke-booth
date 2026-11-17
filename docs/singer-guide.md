@@ -22,6 +22,8 @@ For a local room, connect to the venue network and open the private invitation. 
 
 For an internet session, open the host's `queue.thepropervolume.com` link over Wi-Fi or mobile internet. Public browser recovery rehearsals passed; real iOS/Android and venue checks remain. After an uncertain connection result, check its outcome, then explicitly retry the original action if offered. Ending the session revokes access.
 
+The [mobile web app](https://queue.thepropervolume.com/app/) offers **Full Host Mode** for your own player/show and **Piggyback Mode** to join another host and request songs. A detected room still needs your **Join Room** choice. Native apps use local network discovery; browser suggestions share the internet connection and may include another venue. Manual room names/links also work. See the [mobile guide](mobile-app.md) for local storage, phone hosting and platform limits.
+
 ## Watch the Singer Screen
 
 If the host enables LAN Singer Screens, open their address, such as `http://192.168.1.20:4051`, on the venue network. It is a silent visual mirror; sound stays on the host. It works while the separate singer window is hidden. A `.local` name works only if the network resolves it. Viewing does not join the request queue.

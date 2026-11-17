@@ -26,6 +26,7 @@ Run checks with `npm test`. YouTube downloads require yt-dlp; CD+G conversion al
 ## Documentation
 
 - [Host guide](docs/host-workspace.md) · [Singer guide](docs/singer-guide.md)
+- [Mobile Host and Piggyback modes](docs/mobile-app.md)
 - [Sources](docs/source-status.md) · [Remote singer screens](docs/singer-screen-sharing.md)
 - [Architecture](docs/architecture.md) · [Remaining work](docs/remaining-work.md)
 - [Automatic releases](docs/releasing.md)
