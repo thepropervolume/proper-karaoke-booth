@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     await store.initializeRuntime();
     const broker = new RelayBroker(store);
     const service = await startQueueRelayService({ publicOrigin, owners: parsed.owners as RelayOwner[], broker, staticHandler, trustProxy: true,
-      port: Number(rawPort), closeDependencies: () => pool.end(), isReady: () => store.isAvailable(),
+      port: Number(rawPort), closeDependencies: () => pool.end(), isReady: () => store.isAvailable(), mobileEnabled: process.env.TPV_QUEUE_MOBILE === 'yes',
       onFailure: () => { process.exitCode = 1; console.error('Queue relay stopped unexpectedly.'); } });
     started = true;
     console.log('Queue relay listening on loopback.');

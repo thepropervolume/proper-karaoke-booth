@@ -1,7 +1,7 @@
 /** Bounded relay DTOs. No host control, file path, or provider credential belongs on this wire. */
 export const RELAY_OPERATIONS = ['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request'] as const;
 export type RelayOperation = typeof RELAY_OPERATIONS[number];
-export const RESERVED_SLUGS = ['api', 'v1', 'assets', 'singer', 'healthz', 'admin', 'host', 'login', 'logout', 'account', 'settings', 'status', 'help', 'support', 'robots', 'favicon'] as const;
+export const RESERVED_SLUGS = ['api', 'v1', 'assets', 'singer', 'healthz', 'admin', 'host', 'login', 'logout', 'account', 'settings', 'status', 'help', 'support', 'robots', 'favicon', 'app', 'mobile'] as const;
 export const MAX_GUEST_BODY_BYTES = 8192;
 export const MAX_GUEST_RESPONSE_BYTES = 2 * 1024 * 1024;
 export const MAX_HOST_REPLY_BYTES = 2 * 1024 * 1024;

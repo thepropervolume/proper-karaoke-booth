@@ -21,7 +21,7 @@ export type InternetSessionBridge = {
 export function validateSessionSlug(value: unknown): string | null {
   if (typeof value !== 'string' || value.length < 3 || value.length > 48 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value))
     return 'Use 3–48 lowercase letters, numbers or hyphens, with a letter or number at each end.';
-  if (new Set(['api', 'v1', 'assets', 'singer', 'healthz', 'admin', 'host', 'login', 'logout', 'account', 'settings', 'status', 'help', 'support', 'robots', 'favicon']).has(value))
+  if (new Set(['api', 'v1', 'assets', 'singer', 'healthz', 'admin', 'host', 'login', 'logout', 'account', 'settings', 'status', 'help', 'support', 'robots', 'favicon', 'app', 'mobile']).has(value))
     return 'That session name is reserved. Choose another name.';
   return null;
 }

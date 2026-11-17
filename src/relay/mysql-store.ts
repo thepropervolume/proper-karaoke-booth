@@ -254,7 +254,12 @@ export class MySqlRelayStore implements RelayStoreApi {
       if (!occupied.length) {
         const [ownerCount] = await connection.execute<(RowDataPacket & { total: string | number })[]>('SELECT COUNT(*) AS total FROM relay_leases WHERE owner_id=?', [ownerId]);
         const [globalCount] = await connection.query<(RowDataPacket & { total: string | number })[]>('SELECT COUNT(*) AS total FROM relay_leases');
-        if (millis(ownerCount[0]?.total) >= 4) throw new RelayError(429, 'owner-reservation-limit');
+        const mobile = ownerId.startsWith('f17e0001-');
+        if (millis(ownerCount[0]?.total) >= (mobile ? 1 : 4)) throw new RelayError(429, 'owner-reservation-limit');
+        if (mobile) {
+          const [mobileCount] = await connection.query<(RowDataPacket & { total: string | number })[]>("SELECT COUNT(*) AS total FROM relay_leases WHERE owner_id LIKE 'f17e0001-%'");
+          if (millis(mobileCount[0]?.total) >= 50) throw new RelayError(503, 'mobile-reservation-capacity');
+        }
         if (millis(globalCount[0]?.total) >= 200) throw new RelayError(503, 'reservation-capacity');
       }
       const [old] = await connection.execute<LeaseRow[]>('SELECT slug,owner_id,room_id,generation,expires_at,active FROM relay_leases WHERE owner_id=? AND active=1 FOR UPDATE', [ownerId]);

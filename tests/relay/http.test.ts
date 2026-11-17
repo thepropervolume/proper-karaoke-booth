@@ -13,10 +13,39 @@ const ownerId = randomUUID(), otherId = randomUUID();
 const owners = [{ id: ownerId, tokenSha256: createHash('sha256').update(token).digest('hex') },
   { id: otherId, tokenSha256: createHash('sha256').update(second).digest('hex') }];
 
-async function fixture(run: (call: (path: string, value?: unknown, options?: { token?: string; origin?: string; host?: string; headers?: Record<string,string>; method?: string }) => Promise<Response>) => Promise<void>, trustProxy = false) {
+test('mobile endpoints remain disabled unless explicitly enabled', async () => fixture(async call => {
+  assert.equal((await call('/v1/mobile/hosts', {}, { origin })).status, 404);
+  assert.equal((await call('/v1/mobile/nearby')).status, 404);
+}));
+test('mobile hosts require exact origins, get isolated temporary capabilities and share the singer protocol', async () => fixture(async call => {
+  assert.equal((await call('/v1/mobile/hosts', {})).status, 403);
+  assert.equal((await call('/v1/mobile/hosts', {}, { origin: 'https://attacker.test' })).status, 403);
+  const access = await (await call('/v1/mobile/hosts', {}, { origin })).json();
+  assert.match(access.token, /^[A-Za-z0-9_-]{43}$/);
+  const opened = await (await call('/v1/relay/host/open', { slug: 'phone-karaoke', openId: randomUUID() }, { token: access.token, headers: { 'x-tpv-room-discovery': 'yes' } })).json();
+  assert.equal(opened.publicUrl, origin + '/phone-karaoke');
+  const identity = { roomId: opened.roomId, generation: opened.generation };
+  assert.equal((await call('/v1/relay/host/poll', identity, { token })).status, 403);
+  await call('/v1/relay/host/poll', identity, { token: access.token, headers: { 'x-tpv-room-discovery': 'yes' } });
+  const nearby = await (await call('/v1/mobile/nearby')).json();
+  assert.equal(nearby.rooms.length, 1); assert.equal(nearby.rooms[0].slug, 'phone-karaoke');
+  assert.ok(!JSON.stringify(nearby).includes(access.token)); assert.ok(!JSON.stringify(nearby).includes('127.0.0.1'));
+  await call('/v1/relay/host/close', identity, { token: access.token });
+  assert.equal((await (await call('/v1/mobile/nearby')).json()).rooms.length, 0);
+}, false, true));
+test('mobile catalog is bounded read-only search and never an arbitrary URL proxy', async () => fixture(async call => {
+  assert.equal((await call('/v1/mobile/catalog', { query: 'Oasis' })).status, 403);
+  assert.equal((await call('/v1/mobile/catalog', { query: 'Oasis', url: 'http://private.test' }, { origin })).status, 400);
+  assert.equal((await call('/v1/mobile/catalog', { query: 'O' }, { origin })).status, 400);
+  const response = await call('/v1/mobile/catalog', { query: 'Oasis' }, { origin });
+  assert.equal(response.status, 200); assert.equal((await response.json()).items[0].title, 'Oasis');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+}, false, true));
+
+async function fixture(run: (call: (path: string, value?: unknown, options?: { token?: string; origin?: string; host?: string; headers?: Record<string,string>; method?: string }) => Promise<Response>) => Promise<void>, trustProxy = false, mobileEnabled = false) {
   const db = new DatabaseSync(':memory:');
   const broker = new RelayBroker(new RelayStore(db, { publicOrigin: origin }), { pollTimeoutMs: 500, rpcTimeoutMs: 1000, offlineAfterMs: 2000 });
-  const service = await startQueueRelayService({ publicOrigin: origin, owners, broker, trustProxy, port: 0,
+  const service = await startQueueRelayService({ publicOrigin: origin, owners, broker, trustProxy, port: 0, mobileEnabled, mobileCatalog: async query => ({ items: [{ id: 'youtube_Video123456', title: query, artist: 'Artist', provider: 'karaokenerds', videoId: 'Video123456' }] }),
     staticHandler: async (request, response) => {
       if (request.url !== '/singer/' && request.url !== '/assets/singer-test.js') return false;
       response.writeHead(200, { 'Content-Type': request.url.endsWith('.js') ? 'text/javascript' : 'text/html' });

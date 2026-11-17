@@ -7,10 +7,13 @@ import type { SingerStaticHandler } from '../main/remote-static';
 import { RelayBroker } from './broker';
 import { RelayError } from './store';
 import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGuestRequest, parseHostOpen, parseRoomIdentity } from './protocol';
+import { MobileHostAccess, NearbyRooms } from './mobile-access';
+import { searchMobileCatalog } from './mobile-catalog';
 
 export type RelayOwner = { id: string; tokenSha256: string };
 type Options = { publicOrigin: string; owners: readonly RelayOwner[]; broker: RelayBroker; staticHandler: SingerStaticHandler;
-  trustProxy?: boolean; rateNow?: () => number; bodyTimeoutMs?: number; onFailure?: () => void; isReady?: () => boolean };
+  trustProxy?: boolean; rateNow?: () => number; bodyTimeoutMs?: number; onFailure?: () => void; isReady?: () => boolean;
+  mobileEnabled?: boolean; mobileCatalog?: typeof searchMobileCatalog };
 const POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const HOST_ROUTE = /^\/v1\/relay\/host\/(open|poll|reply|close)$/;
 const GUEST_ROUTE = /^\/v1\/relay\/rooms\/([^/]+)\/([^/]+)\/guest\/([a-z-]+)$/;
@@ -89,6 +92,7 @@ export function createQueueRelayHandler(options: Options) {
     ids.add(owner.id); hashes.add(owner.tokenSha256); return { id: owner.id, hash: Buffer.from(owner.tokenSha256, 'hex') };
   });
   const limits = new RelayRateLimits(options.rateNow);
+  const mobile = new MobileHostAccess(), nearby = new NearbyRooms();
   const bodyTimeout = options.bodyTimeoutMs ?? 5_000;
   if (!Number.isSafeInteger(bodyTimeout) || bodyTimeout < 1 || bodyTimeout > 10_000) throw new Error('Invalid relay configuration.');
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -108,6 +112,10 @@ export function createQueueRelayHandler(options: Options) {
       if (!limits.take('global', 12_000) || !limits.take('ip:' + client, 6_000)) throw new HttpError(429, 'RATE_LIMITED');
       const path = request.url;
       if (request.method === 'GET') {
+        if (path === '/v1/mobile/nearby' && options.mobileEnabled) {
+          if (!limits.take('nearby:' + client, 60)) throw new HttpError(429, 'RATE_LIMITED');
+          respond(response, 200, { rooms: await nearby.discover(client, slug => options.broker.lookup(slug)), method: 'same-egress' }); return;
+        }
         if (path === '/healthz') {
           const ready = options.isReady?.() ?? true;
           respond(response, ready ? 200 : 503, { status: ready ? 'ok' : 'unavailable', version: '0.3.0' }); return;
@@ -133,24 +141,41 @@ export function createQueueRelayHandler(options: Options) {
         throw new HttpError(404, 'NOT_FOUND');
       }
       if (request.method !== 'POST') throw new HttpError(405, 'METHOD_NOT_ALLOWED');
+      if ((path === '/v1/mobile/hosts' || path === '/v1/mobile/catalog') && options.mobileEnabled) {
+        if (request.headers.origin !== origin.origin) throw new HttpError(403, 'ORIGIN_REQUIRED');
+        if (!limits.take(path + ':' + client, path.endsWith('/hosts') ? 5 : 60, path.endsWith('/hosts') ? 60 * 60_000 : 60_000) ||
+            !limits.take(path, path.endsWith('/hosts') ? 200 : 600)) throw new HttpError(429, 'RATE_LIMITED');
+        const input = await readJson(request, 2048, bodyTimeout);
+        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'INVALID_REQUEST');
+        if (path.endsWith('/hosts')) {
+          if (Object.keys(input).length) throw new HttpError(400, 'INVALID_REQUEST');
+          respond(response, 200, mobile.issue()); return;
+        }
+        if (Object.keys(input).join(',') !== 'query' || !('query' in input) || typeof input.query !== 'string' || input.query.trim().length < 2 || input.query.length > 200 || /[\x00-\x1f\x7f]/.test(input.query)) throw new HttpError(400, 'INVALID_QUERY');
+        respond(response, 200, await (options.mobileCatalog ?? searchMobileCatalog)(input.query.trim(), controller.signal)); return;
+      }
       const host = HOST_ROUTE.exec(path);
       if (host) {
         const token = bearer(request);
         const digest = createHash('sha256').update(token ?? '').digest();
         let ownerId: string | undefined;
         for (const owner of owners) if (timingSafeEqual(digest, owner.hash)) ownerId = owner.id;
+        if (!ownerId && token && options.mobileEnabled) ownerId = mobile.authenticate(token);
         if (!token || !ownerId) { if (!limits.take('failed-host:' + client, 30)) throw new HttpError(429, 'RATE_LIMITED'); throw new HttpError(401, 'UNAUTHORIZED'); }
         if (!limits.take('owner:' + ownerId, 3_000) || host[1] === 'open' && !limits.take('open:' + ownerId, 120, 3_600_000)) throw new HttpError(429, 'RATE_LIMITED');
         const input = await readJson(request, host[1] === 'reply' ? MAX_HOST_REPLY_BYTES : 8192, bodyTimeout);
         if (controller.signal.aborted) return;
         if (host[1] === 'open') {
           const value = parseHostOpen(input); if (!value) throw new HttpError(400, 'INVALID_OPEN');
-          respond(response, 200, await options.broker.open(ownerId, value)); return;
+          const room = await options.broker.open(ownerId, value);
+          nearby.record(room, client, request.headers['x-tpv-room-discovery'] === 'yes');
+          respond(response, 200, room); return;
         }
         if (host[1] === 'reply') { respond(response, 200, await options.broker.reply(ownerId, input)); return; }
         const identity = parseRoomIdentity(input); if (!identity) throw new HttpError(400, 'INVALID_ROOM');
-        if (host[1] === 'close') { respond(response, 200, await options.broker.close(ownerId, identity)); return; }
+        if (host[1] === 'close') { respond(response, 200, await options.broker.close(ownerId, identity)); nearby.forget(identity.roomId); return; }
         const result = await options.broker.poll(ownerId, identity, controller.signal);
+        nearby.refresh(identity, client, request.headers['x-tpv-room-discovery'] === 'yes');
         respond(response, 200, { ...identity, ...result }); return;
       }
       const guest = GUEST_ROUTE.exec(path);

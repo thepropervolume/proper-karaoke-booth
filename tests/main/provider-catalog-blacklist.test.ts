@@ -10,7 +10,7 @@ const result = (provider: ProviderCatalogId): ProviderCatalogSearchResult => ({ 
   { provider, id: 'two', artist: 'NADA SURF', title: 'AMATEUR', durationSeconds: 200, language: null, webUrl: page, playbackAvailable: false },
   { provider, id: 'three', artist: 'Other Artist', title: 'Amateur', durationSeconds: 200, language: null, webUrl: page, playbackAvailable: false },
 ] });
-const scope = () => ({ ...parseSettings({}), policy: createInitialState('show', 'epoch').policy });
+const scope = () => ({ ...parseSettings({}), policy: createInitialState('show', 'epoch').policy, karaFunConnected: true });
 
 test('all provider results and registered external links honor global identities without mutating cached source data', async () => {
   const current = scope(), originals = new Map<ProviderCatalogId, ProviderCatalogSearchResult>();

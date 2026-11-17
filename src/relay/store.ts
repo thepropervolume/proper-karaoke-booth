@@ -143,7 +143,10 @@ export class RelayStore {
       if (occupied && occupied.owner_id !== ownerId) throw new RelayError(409, 'slug-unavailable');
       if (!occupied) {
         const count = Number((this.db.prepare('SELECT COUNT(*) AS total FROM relay_leases WHERE owner_id=?').get(ownerId) as { total: number }).total);
-        if (count >= 4) throw new RelayError(429, 'owner-reservation-limit');
+        const mobile = ownerId.startsWith('f17e0001-');
+        if (count >= (mobile ? 1 : 4)) throw new RelayError(429, 'owner-reservation-limit');
+        if (mobile && Number((this.db.prepare("SELECT COUNT(*) AS total FROM relay_leases WHERE owner_id LIKE 'f17e0001-%'").get() as { total: number }).total) >= 50)
+          throw new RelayError(503, 'mobile-reservation-capacity');
         if (Number((this.db.prepare('SELECT COUNT(*) AS total FROM relay_leases').get() as { total: number }).total) >= 200)
           throw new RelayError(503, 'reservation-capacity');
       }
