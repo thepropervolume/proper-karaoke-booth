@@ -8,6 +8,14 @@ const reply: KaraFunSearchReply = { status: 'ok', searchId: 'receipt', songs: [
   { catalog: 'catalog', songId: '123', title: 'Provider Title', artist: 'Provider Artist', durationSeconds: 200, explicit: false },
   { catalog: 'community', songId: '123', title: 'Another Recording', artist: 'Same Artist', durationSeconds: 210, explicit: null },
 ] };
+
+test('authenticated Party Tyme results use normal rows, hide when signed out and supersede its Pro metadata catalog',()=>{
+  const partyTyme={status:'ok' as const,searchId:'party-receipt',songs:[{videoId:'34962',title:'Wonderwall',artist:'Oasis',durationSeconds:258,explicit:null}]};
+  const catalogs=[{provider:'partytyme',label:'Party Tyme',status:'ok',message:'',songs:[{provider:'partytyme',id:'PH123',title:'Wonderwall',artist:'Oasis',durationSeconds:258,language:'English',webUrl:null,playbackAvailable:false}]}] as ProviderCatalogSearchResult[];
+  const connected=unifiedSongResults([],new Set(),{karaFunConnected:false,partyTymeConnected:true,partyTyme,catalogs,sort:'import-oldest'});
+  assert.equal(connected.length,1);assert.equal(connected[0].catalogOnly,undefined);assert.deepEqual(connected[0].partyTymeReceipt,{searchId:'party-receipt',videoId:'34962'});assert.equal(connected[0].resultProvider,'partytyme');
+  const signedOut=unifiedSongResults(connected,new Set(),{karaFunConnected:false,partyTymeConnected:false,partyTyme,sort:'import-oldest'});assert.deepEqual(signedOut,[]);
+});
 test('exact source identity merges search matches with the host library, preserving host edits and distinct catalogs', () => {
   const rows = unifiedSongResults([{ id: 'host-edited', title: 'Host Title', artist: 'Host Artist', rating: 'unrated', source: { provider: 'karafun', catalog: 'catalog', songId: '123' } }], new Set(['host-edited']), { karaFun: reply, karaFunConnected: true, sort: 'import-oldest' });
   assert.equal(rows.length, 2); assert.equal(rows[0].id, 'host-edited'); assert.equal(rows[0].title, 'Host Title'); assert.equal(rows[0].persisted, true);

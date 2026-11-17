@@ -1,5 +1,9 @@
 # Development Handoff
 
+## Party Tyme consumer handoff
+
+17 November 2026 — development 0.9.1 adds consumer Party Tyme Premium to desktop Sources, unified search, normal queue/context actions, private MP4 preparation and the existing transport/display. The provided credentials work on the consumer OTT service, not its separate Pro player. A real 1280×720 muted Windows recording, protected session restart, fresh reauthorization and sign-out refusal passed. Initial connection selects the private credentials file; interactive browser sign-in remains follow-up. Source IDs and ratings use the consumer namespace. Local schema 6 preserves JSON source compatibility; back up before upgrading and use that backup to downgrade. The source guide owns precise limits: `docs/partytyme-consumer-integration.md`. The plain-language tester document is generated from `docs/qa/qa-test-guide.md`. Physical audio/full-song acceptance and provider distribution/hosting rights remain open.
+
 ## Current mobile handoff
 
 Delivery verification: version 0.9.0 Windows setup/ZIP from clean `8c5ffea` passed source/payload checks and isolated packaged launch/restart/branding. Final source tests: 1,076 pass, eight explicit skips, zero failures; 20 release-rule checks pass. Generated planning has 44 reviewed Word pages and 51 reviewed PDF pages. GitHub Actions artifact quota blocks mobile downloads and automatic 0.9.0 desktop release publication; published 0.8.0 remains intact. The local Windows files remain in the ignored release directory. The owner's installed app and Dropbox mirror were not changed. See [installation](installation.md) and [QA resolution index](qa/mobile-090-summary.md).

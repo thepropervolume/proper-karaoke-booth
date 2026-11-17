@@ -1,8 +1,17 @@
 # Remaining work
 
-Updated 17 November 2026 for source development 0.9.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 17 November 2026 for source development 0.9.1. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The current source is 0.9.0; dated release sections below retain historical evidence. Native desktop KaraFun playback, OS-protected remembered sign-in and per-channel mixing are experimental. Signed-out KaraFun results are now hidden, and generic YouTube results defer to other song sources. The mobile web app is deployed with Full Host/Piggyback modes and real YouTube streaming; Android and iOS development builds compile, while GitHub Actions artifact uploads currently hit the account storage quota. Installation and physical-show gates remain separate. See installation, mobile and source-status guides.
+The current source is 0.9.1; dated release sections below retain historical evidence. Native desktop KaraFun playback, OS-protected remembered sign-in and per-channel mixing are experimental. Signed-out KaraFun results are now hidden, and generic YouTube results defer to other song sources. The mobile web app is deployed with Full Host/Piggyback modes and real YouTube streaming; Android and iOS development builds compile, while GitHub Actions artifact uploads currently hit the account storage quota. Installation and physical-show gates remain separate. See installation, mobile and source-status guides.
+
+## Party Tyme Consumer Playback
+
+- [x] Connect the provided consumer Premium account; keep the separate Pro catalog and account system distinct.
+- [x] Add authenticated unified results, common context actions and optional-singer queueing with automatic background preparation.
+- [x] Require fresh playback approval, remember accepted sessions with OS encryption and fence sign-out/expiry.
+- [x] Pass a real muted Windows recording/preparation/restart/sign-out rehearsal; preserve original account/show data.
+- [ ] Add interactive provider sign-in, aggregate cache management and wider real-platform/full-song acceptance.
+- [ ] Confirm provider partnership, distribution and commercial-hosting terms; add Pro and mobile playback only with suitable access.
 
 ## Mobile and Search Update
 

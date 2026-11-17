@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 17 November 2026. **Application milestone:** 0.9.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 17 November 2026. **Application milestone:** 0.9.1 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -242,6 +242,8 @@ Add to Queue uses the usual optional-singer dialog; the host may leave it empty,
 
 **Optional external KHost route:** the owner reports KaraFun subscription login/playback works in their separate KHost installation. TPV's independently written public-contract bridge implements external search/handoff; account sign-in, acquisition and playback stay in KHost. Host setup explicitly selects the bridge's protected connection profile, searches through the installed provider and offers **Send to KHost (External Queue)**. Search receipts, current policy/blacklists and the selected profile are checked before dispatch; uncertain outcomes retain the original handoff ID for read-only recovery. These results never become playable TPV queue entries. Actual plugin loading and authenticated search/handoff on the owner's target machine remain unverified. KHost core uses Shield and the separate KaraFun plugin has no explicit license grant in the reviewed repository. Their implementation was not copied; the separately MIT-licensed contracts are the adapter boundary. No consumer-client identity/signing scheme, password-equivalent storage or private protocol was copied. Confirm applicable permissions before broader distribution. The [bridge guide](khost-bridge.md) owns setup and exact verification status.
 
+**Experimental Party Tyme consumer integration in 0.9.1:** Sources connects the consumer Karaoke Premium account through a selected private credentials file. Accepted sessions use OS-protected storage when available; passwords are not copied into the saved session. This is separate from Party Tyme Pro and does not establish Pro account eligibility, a distribution partnership or commercial hosting rights. Authenticated consumer search results use the unified list, common context menu and optional-singer queue. Account-scoped MP4 preparation runs in the background; the existing transport, preview and singer display play the recording after fresh account/recording approval on each start or resume. Sign-out pauses playback and prevents cached resume. Only inspected non-DRM progressive sources are supported; no separate stems, mobile paid playback or licensed offline export is implied. The real muted Windows rehearsal decoded one 1280×720 recording and verified protected session restart, explicit reauthorization and sign-out refusal. Full-song listening, physical hardware, broader platforms, interactive sign-in and cache management remain open. Local schema 6 marks saved Party Tyme identities transactionally; preserve a pre-upgrade backup for downgrade. See `docs/partytyme-consumer-integration.md`.
+
 **Experimental native KaraFun integration, introduced in 0.6.0 and extended in 0.7.0:** connect an existing account through the official, isolated sign-in window in **Sources → KaraFun**. Its first-party engine opens the session; TPV's independent account client checks the session, searches canonical catalog metadata and requests eligible recordings without an embedded vendor application key. Signed-in library results show **KaraFun**, open the ordinary singer dialog and become durable TPV requests. Approved requests prepare and auto-stage without arming a new show. Host Play uses a fresh authorization, verified account-scoped KIT media, one Web Audio clock for its Ogg stems, and timed canvas lyrics over a muted optional backdrop in TPV's singer screen. Pause, resume, seek, Previous, Stop, output recovery, preview and the visual browser mirror share the normal show authority. The optional KHost bridge remains separate and is unnecessary for this native path.
 
 Remembered sessions use Electron safeStorage only when OS-backed encryption is available; Linux basic_text/plaintext fallback is refused. Restore validates an accepted saved session without opening a browser and retains its opaque account/cache scope. Normal close preserves the encrypted vault; explicit sign-out forgets it and silences native playback. Expiry/revocation offers reconnect; every performance still requires current authorization. Private cached KITs do not establish permanent/offline rights. Acquisition is bounded to 128 MiB, retained prepared data targets 128 MiB with a pinned active performance, and decoded audio to 512 MiB. Version 0.8.0 adds current-performance per-stem Vocal Mix. Native community playback, pitch/tempo, fixed-mix fallback and distribution/venue terms remain open. Global ratings now use numeric catalog/community keys without imported fingerprints; production needs the compatible validator deployment and no SQL migration. Schema 5 retains schema 4’s native-asset distinction and adds nullable request/history singer identity; older clients refuse the upgraded database.
@@ -251,6 +253,10 @@ Verification separates real account evidence from simulated flows: ordinary offi
 **Not implemented:** a Google Drive application source for the proposed shared folder. Fully readable local synced media can use ordinary directory import; remote Drive indexing, identity, acquisition and cache behavior require a dedicated connector.
 
 ## 13. Quality, verification and release gates
+
+**Plain-language QA guide:** `docs/qa/qa-test-guide.md` is the maintained tester-facing source for a separate Word guide. It explains the 38 specialist findings in ordinary test language and gives 15 scenarios with setup, steps and expected results. It distinguishes automated evidence from unperformed physical-device checks. Generate its Word edition from this Markdown; keep technical reports as supporting evidence.
+
+
 
 The 0.3.0 default Windows test run passed 566 checks with four opt-in/platform skips, including five asynchronous-wait regressions; six document-generator checks passed. Linux passed 76 targeted checks and final AppImage launch/version/restart/persistence/no-autoplay. The server passed 50 relay checks including real MySQL transactions and nonempty backup/restore/restart. Actual packaged Windows-to-public-relay-to-browser operations passed, as did real catalog search and immediate yt-dlp acquisition of the owner’s selected recording after queueing. The final package imported all 237 actual MP4s in a disposable library. Muted integration checks cover automatic bumper completion/Skip/silence and restart. These checks do not establish audible mixer output, physical monitor hot-plug, actual phones, non-root Linux sandbox behavior, long-show reliability, macOS or a complete platform support matrix.
 
@@ -924,7 +930,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "id": "D13",
   "title": "Song sources",
   "status": "Partial",
-  "description": "Karaoke Nerds, curated YouTube discovery, native KaraFun connection and other service metadata.",
+  "description": "Karaoke Nerds, curated YouTube discovery, KaraFun and Party Tyme consumer connections, plus other service metadata.",
   "layout": "panels",
   "toolbar": "Sources | KaraFun, Karaoke Nerds, YouTube and Third-Party Services",
   "heading": "KaraFun Account",
@@ -941,13 +947,13 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Curate | Block ID or import subscriptions",
     "Choose Singer | Queue permanent download"
   ],
-  "footer_heading": "Third-Party Services",
+  "footer_heading": "Party Tyme Premium",
   "footer_rows": [
-    "KaraFun / Party Tyme | Public metadata",
-    "Sunfly Store | Title / SF SKU",
-    "Stingray | Developer key needed"
+    "Connect | Private credentials file",
+    "Search and Queue | Consumer recordings",
+    "Play | Fresh account check every time"
   ],
-  "detail": "KaraFun remembered sign-in uses OS encryption where available and validates on restart; explicit sign-out forgets it. Each start/resume checks authorization. All discoveries use the unified library; public service metadata remains search-only."
+  "detail": "KaraFun remembered sign-in uses OS encryption where available and validates on restart; explicit sign-out forgets it. Each start/resume checks authorization. Party Tyme consumer Premium joins the unified queue with private video preparation. Other public service metadata remains search-only."
 }
 ```
 ```mockup

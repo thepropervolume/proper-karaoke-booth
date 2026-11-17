@@ -4,6 +4,16 @@ import { contextBridge, ipcRenderer } from 'electron';
 // Keep this list explicit. A generic invoke(channel, payload) would let a page
 // reach unrelated main-process capabilities; main still validates every call.
 contextBridge.exposeInMainWorld('tpv', {
+  partyTyme: {
+    status: () => ipcRenderer.invoke('host:partytyme-status'),
+    signIn: () => ipcRenderer.invoke('host:partytyme-connect'),
+    signOut: () => ipcRenderer.invoke('host:partytyme-disconnect'),
+    search: (query: string) => ipcRenderer.invoke('host:partytyme-search', query),
+    request: (input: unknown) => ipcRenderer.invoke('host:partytyme-request', input),
+    preparations: () => ipcRenderer.invoke('host:partytyme-preparations'),
+    retry: (id: string) => ipcRenderer.invoke('host:partytyme-retry', id),
+    subscribe: (callback: (value: unknown) => void) => { const listener=(_event:unknown,value:unknown)=>callback(value);ipcRenderer.on('host:partytyme-account',listener);return()=>ipcRenderer.removeListener('host:partytyme-account',listener); },
+  },
   karaFunMix: {
     status: () => ipcRenderer.invoke('host:karafun-mix-status'),
     set: (input: unknown) => ipcRenderer.invoke('host:karafun-mix-set', input),

@@ -116,7 +116,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <div className="settings-inline-help"><span>Connect accounts in Sources.</span><SettingsHelp label="Karaoke service search help" text="KaraFun, Party Tyme and Sunfly Store have public catalogs. Sunfly Store artist search is unverified. Stingray and the Sunfly partner catalog need developer profiles. Search-only services cannot be queued until playback is connected." /></div>
             <ul aria-label="Karaoke service availability">
               <li>KaraFun — Public catalog and connected-account playback</li>
-              <li>Party Tyme — Public catalog search; playback pending</li>
+              <li>Party Tyme — Consumer Premium in Sources; Pro catalog search only</li>
               <li>Sunfly Store — Public title/SKU search; optional developer catalog profile; playback pending</li>
               <li>Stingray — Catalog access requires a provider profile; playback pending</li>
             </ul>

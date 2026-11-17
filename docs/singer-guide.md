@@ -45,3 +45,7 @@ Singer/request information stays in the host show; internet requests also pass t
 ## Vocal Assistance
 
 For native KaraFun recordings, ask the host to adjust **Vocal Mix** if you want guide vocals or different backing levels. Separate duet/choir controls appear only when the recording supplies separate audio channels. Singers cannot change these host controls remotely.
+
+## Party Tyme Songs
+
+A connected desktop host can publish saved Party Tyme consumer recordings in the room library. Request an offered recording normally; the host handles its account, preparation and playback. Singers do not receive or enter the host's subscription credentials. This does not add paid-provider playback to mobile Full Host mode.

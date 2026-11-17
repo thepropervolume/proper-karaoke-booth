@@ -1,0 +1,63 @@
+// Opt-in, muted real-provider rehearsal. A private credentials file is required.
+// Uses only a disposable profile; never changes the owner show or saves passwords.
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdtemp,mkdir,realpath,writeFile,readFile,rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join,resolve,sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+if(process.argv.length!==3)throw Error('Usage: node scripts/partytyme-live-smoke.mjs <private-credentials-file>');
+const credentials=await realpath(resolve(process.argv[2]));
+const repo=await realpath(resolve('.')),require=createRequire(join(repo,'package.json'));
+const {_electron:electron}=require('playwright-core');
+const {waitForHostCondition}=await import(pathToFileURL(join(repo,'scripts/wait-for-host-condition.mjs')));
+const {waitForHostWindow}=await import(pathToFileURL(join(repo,'scripts/wait-for-host-window.mjs')));
+const parent=await realpath(tmpdir()),temporary=await mkdtemp(join(parent,'tpv-partytyme-live-'));
+const profile=join(temporary,'profile');await mkdir(profile);
+await writeFile(join(profile,'settings.json'),JSON.stringify({settingsVersion:2,sharedCatalogEnabled:false,providerCatalogEnabled:false,youtubeSearchEnabled:false,localControlEnabled:false,singerScreenEnabled:false,mobileRoomDiscovery:false,autoBumper:false,bumperOnLaunch:false,autoAdvance:false,masterVolume:0,singerDisplayFullscreen:false}));
+const bootstrap=join(temporary,'bootstrap.cjs');
+await writeFile(bootstrap,`const {app,dialog}=require('electron');const fs=require('node:fs');app.setPath('userData',process.env.TPV_QA_PROFILE);app.setAppPath(process.env.TPV_QA_REPO);if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_QA_PROFILE))throw Error('Unsafe profile');dialog.showOpenDialog=async(_window,options)=>{const chosen=options??_window;return chosen.title?.includes('Party Tyme')?{canceled:false,filePaths:[process.env.TPV_QA_PARTY_CREDENTIALS]}:{canceled:true,filePaths:[]};};dialog.showMessageBox=async()=>({response:0});require(process.env.TPV_QA_ENTRY);`);
+const env={...process.env,TPV_QA_PROFILE:await realpath(profile),TPV_QA_REPO:repo,TPV_QA_PARTY_CREDENTIALS:credentials,TPV_QA_ENTRY:join(repo,'dist/main/index.cjs'),APPDATA:join(temporary,'appdata'),LOCALAPPDATA:join(temporary,'localappdata')};delete env.ELECTRON_RUN_AS_NODE;
+let app;const evidence=[];
+const launch=async()=>{app=await electron.launch({executablePath:require('electron'),args:[bootstrap,`--user-data-dir=${profile}`,'--mute-audio'],cwd:repo,env});const host=await waitForHostWindow(app);await host.waitForFunction(()=>!!window.tpv?.partyTyme);return host;};
+try{
+ let host=await launch();await host.getByRole('button',{name:'Sources',exact:true}).click();
+ await host.getByRole('button',{name:'Connect Party Tyme…',exact:true}).click();
+ await waitForHostCondition(host,async()=>(await window.tpv.partyTyme.status()).state==='connected',undefined,{timeout:60000});
+ const status=await host.evaluate(()=>window.tpv.partyTyme.status());assert.equal(status.premium,true);assert.equal(status.persistence,'os-protected');evidence.push('Consumer Premium login and OS-protected session passed.');
+ await host.getByRole('searchbox',{name:'Search library'}).fill('Wonderwall');
+ const song=host.locator('[data-provider="partytyme"]').filter({hasText:'Wonderwall'}).filter({hasText:'Oasis'}).first();await song.waitFor({timeout:45000});await song.click({button:'right'});
+ await host.getByRole('menuitem',{name:'Add to Queue',exact:true}).click();
+ const dialog=host.getByRole('dialog',{name:'Add to Queue',exact:true});await dialog.getByRole('button',{name:'Add to Queue',exact:true}).click();
+ await waitForHostCondition(host,async()=>(await window.tpv.getState()).requests.length===1);
+ const state=await host.evaluate(()=>window.tpv.getState()),id=state.requests[0].versionId;
+ assert.equal(state.singers.length,0);assert.equal(state.versions.find(v=>v.id===id).source.provider,'partytyme');
+ await waitForHostCondition(host,async id=>(await window.tpv.partyTyme.preparations()).some(p=>p.versionId===id&&p.phase==='ready'),id,{timeout:240000});
+ evidence.push('Unified result context menu and optional-singer queue triggered authorized video preparation.');
+ await host.getByRole('button',{name:'Play/Pause',exact:true}).click();
+ await waitForHostCondition(host,async()=>(await window.tpv.getState()).playback?.status==='playing',undefined,{timeout:45000});
+ const display=app.windows().find(p=>p.url().includes('/display/index.html'));assert.ok(display);
+ await display.waitForFunction(()=>{const v=document.querySelector('video');return v&&!v.paused&&v.currentTime>1&&v.videoWidth>0;},{},{timeout:30000});
+ const video=await display.evaluate(()=>{const v=document.querySelector('video');return{width:v.videoWidth,height:v.videoHeight,duration:v.duration,position:v.currentTime};});
+ assert.ok(video.duration>200);evidence.push('Real provider MP4 decoded and playback clock advanced in the TPV singer renderer.');
+ const timeline=await host.evaluate(()=>window.tpv.getTimeline());assert.equal((await host.evaluate(generation=>window.tpv.seek({generation,position:60}),timeline.generation)).ok,true);
+ await display.waitForFunction(()=>document.querySelector('video')?.currentTime>=59);
+ await host.getByRole('button',{name:'Previous — Restart Current Song',exact:true}).click();await display.waitForFunction(()=>document.querySelector('video')?.currentTime<3);evidence.push('Seek and Previous used the existing transport with the provider video.');
+ await host.getByRole('button',{name:'Play/Pause',exact:true}).click();
+ await waitForHostCondition(host,async()=>(await window.tpv.getState()).playback?.status==='paused');
+ await host.screenshot({path:join(repo,'release/partytyme-live-091-host.png')});await display.screenshot({path:join(repo,'release/partytyme-live-091-display.png')});
+ await app.close();app=null;host=await launch();
+ await waitForHostCondition(host,async()=>(await window.tpv.partyTyme.status()).state==='connected',undefined,{timeout:45000});
+ assert.equal((await host.evaluate(()=>window.tpv.getState())).playback.status,'paused');
+ await host.getByRole('button',{name:'Play/Pause',exact:true}).click();
+ await waitForHostCondition(host,async()=>(await window.tpv.getState()).playback?.status==='playing',undefined,{timeout:45000});
+ evidence.push('Restart restored encrypted sign-in and paused show; explicit Play reauthorized the cached recording.');
+ await host.evaluate(()=>window.tpv.partyTyme.signOut());
+ await waitForHostCondition(host,async()=>(await window.tpv.getState()).playback?.status==='paused');
+ const denied=await host.evaluate(()=>window.tpv.command({type:'resume'}));assert.equal(denied.ok,false);
+ evidence.push('Sign-out paused playback and refused cached resume.');
+ await writeFile(join(repo,'release/partytyme-live-091.json'),JSON.stringify({evidence,video,muted:true,physicalAudioVerified:false},null,2));console.log(JSON.stringify({evidence,video}));
+}finally{
+ if(app)await app.close().catch(()=>{});
+ const canonical=await realpath(temporary);if(!canonical.startsWith(parent+sep)||!canonical.split(sep).pop().startsWith('tpv-partytyme-live-'))throw Error('Unsafe cleanup');await rm(canonical,{recursive:true,force:true});
+}

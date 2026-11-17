@@ -50,12 +50,14 @@ import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { SongResults } from './SongResults';
 import { unifiedSongResults, type SongResult } from './unified-song-results';
-import { useKaraFunSearch, useYouTubeSearch } from './use-streaming-search';
+import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-streaming-search';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { ProviderCatalogPanel } from './ProviderCatalogPanel';
 import { KHostBridgePanel } from './KHostBridgePanel';
 import { KaraFunPanel, useKaraFunAccount } from './KaraFunPanel';
 import type { KaraFunBridge } from '../domain/karafun';
+import { PartyTymePanel, usePartyTymeAccount } from './PartyTymePanel';
+import type { PartyTymeBridge } from '../domain/partytyme';
 
 import type { KHostBridgeApi } from '../domain/khost-bridge';
 import { useProviderCatalogSearch } from './use-provider-catalog-search';
@@ -78,7 +80,7 @@ import '../styles/search-workspace.scss';
 type Screen = 'library' | 'sources' | 'requests' | 'singers' | 'playlists' | 'remote';
 type NoticeTone = 'info' | 'success' | 'error';
 type Result = { ok: boolean; error?: string; cancelled?: boolean; notice?: string };
-type QueueSelection = LibrarySearchVersion & { youtubeSearchReceipt?: { searchId: string; videoId: string }; karaFunReceipt?: { searchId: string; songId: string; catalog: 'catalog' | 'community' } };
+type QueueSelection = LibrarySearchVersion & { youtubeSearchReceipt?: { searchId: string; videoId: string }; partyTymeReceipt?: { searchId: string; videoId: string }; karaFunReceipt?: { searchId: string; songId: string; catalog: 'catalog' | 'community' } };
 declare global {
   interface Window {
     tpv: {
@@ -118,6 +120,7 @@ declare global {
       singerScreens: SingerScreenBridge;
       youtubeSearch: YouTubeSearchBridge;
       karaFun: KaraFunBridge;
+      partyTyme: PartyTymeBridge;
       karaFunMix: KaraFunMixBridge;
       khostBridge: KHostBridgeApi;
       chooseRatingProfile: () => Promise<string | null>;
@@ -174,6 +177,7 @@ declare global {
 // queue change merely because a button was clicked.
 function App() {
   const karaFunAccount = useKaraFunAccount(window.tpv.karaFun);
+  const partyTymeAccount = usePartyTymeAccount(window.tpv.partyTyme);
   const [appVersion, setAppVersion] = useState('');
   const [state, setState] = useState<ShowState | null>(null);
   useEffect(() => { let alive = true; void window.tpv.getAppVersion().then(value => {if(alive)setAppVersion(value);}).catch(() => {});return()=>{alive=false;}; }, []);
@@ -376,16 +380,17 @@ function App() {
   const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
   const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
   const catalogSearch = useLibraryCatalogSearch(search, screen === 'library', JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist]), window.tpv.searchCommunityCatalog);
-  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, karaFunAccount.state, karaFunAccount.revision]);
+  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, karaFunAccount.state, karaFunAccount.revision, partyTymeAccount.state, partyTymeAccount.revision]);
   const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
   const libraryRows = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
     catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version)) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result, blacklist]);
   const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, screen === 'library' && libraryFilter === 'all', providerCatalogScope);
+  const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, screen === 'library' && libraryFilter === 'all', providerCatalogScope);
   const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
     JSON.stringify([providerCatalogScope, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]));
   const filtered = useMemo(() => unifiedSongResults(libraryRows, new Set(state?.versions.map(row => row.id)), {
-    karaFun: karaFunSearch.result, youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort,
-  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist]);
+    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort,
+  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist]);
 
   const pending = state?.requests.filter(r => r.status === 'pending') ?? [];
   const future = state ? orderedFuture(state, settings.rotationMode, clockMs) : [];
@@ -674,7 +679,7 @@ function App() {
             {(search.trim() || libraryFilter !== 'all') && <button type="button" className="link" onClick={() => { setSearch(''); setLibraryFilter('all'); }}>Clear search and filters</button>}
           </div>
           <div className="search-service-status" role="status">
-            {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
+            {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || partyTymeSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
             {catalogSearch.result && catalogSearch.result.status !== 'ready' && <Tooltip text="Karaoke Nerds is unavailable. Check Sources or retry when connected."><span tabIndex={0}>Karaoke Nerds unavailable ⓘ</span></Tooltip>}
             {karaFunSearch.result && karaFunSearch.result.status !== 'ok' && <Tooltip text={karaFunSearch.result.message || 'Check your account in Sources.'}><span tabIndex={0}>KaraFun unavailable ⓘ</span></Tooltip>}
             {youtubeSearch.result && !['ok', 'disabled', 'cancelled'].includes(youtubeSearch.result.status) && <Tooltip text={youtubeSearch.result.message}><span tabIndex={0}>YouTube unavailable ⓘ</span></Tooltip>}
@@ -697,7 +702,7 @@ function App() {
             </form>
           </details>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -796,6 +801,7 @@ function App() {
       <button role="menuitem" disabled={busy || !contextMenu.version.artist?.trim()} onClick={() => blacklistSelection('artist', contextMenu.version)}>Blacklist Artist</button>
       {contextMenu.version.catalogOnly && <button role="menuitem" onClick={() => { const song = contextMenu.version.catalogOnly!; setContextMenu(null); void run(() => window.tpv.openProviderCatalogSong({ provider: song.provider, id: song.id })); }}>Open Provider Page</button>}
       {contextMenu.version.source?.provider === 'karafun' && <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(async () => { await window.tpv.karaFun.retry(id); return { ok: true }; }); }}>Prepare Song / Retry</button>}
+      {contextMenu.version.source?.provider === 'partytyme' && <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { const id=contextMenu.version.id;setContextMenu(null);void run(async()=>{await window.tpv.partyTyme.retry(id);return{ok:true};}); }}>Prepare Song / Retry</button>}
       {contextMenu.version.source?.provider === 'youtube' && <button role="menuitem" disabled={busy || !!contextMenu.version.youtubeSearchReceipt} onClick={() => { const version = contextMenu.version; setContextMenu(null); void run(async () => { const result = await downloadLibrarySong(version, window.tpv); if (result.ok && result.versionId) setSelectedVersionId(result.versionId); return result; }); }}>Download Video / Retry</button>}
       <button role="menuitem" disabled={relinkBusy || !contextMenu.version.persisted || !!contextMenu.version.source} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
       <button role="menuitem" disabled={!contextMenu.version.persisted || !!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files…</button>
@@ -808,7 +814,9 @@ function App() {
         addSinger: singer => window.tpv.command({ type: 'addSinger', singer }),
         singerCreated,
         addRequest: async singerId => {
-          const result = queueVersion.karaFunReceipt
+          const result = queueVersion.partyTymeReceipt
+            ? await window.tpv.partyTyme.request({...queueVersion.partyTymeReceipt,singerId,requestId:crypto.randomUUID()})
+            : queueVersion.karaFunReceipt
             ? await window.tpv.karaFun.request({ ...queueVersion.karaFunReceipt, singerId, requestId: crypto.randomUUID() })
             : queueVersion.youtubeSearchReceipt
             ? await window.tpv.youtubeSearch.request({ ...queueVersion.youtubeSearchReceipt, singerId, requestId: crypto.randomUUID() })

@@ -80,11 +80,11 @@ export function ProviderCatalogPanel({ bridge, enabled, scope, onConfigurationCh
   };
   return <section className="provider-catalog-panel" aria-label="Third-party service catalogs">
     <h2>Third-Party Services</h2>
-    <p>Search provider catalogs alongside your library. Catalog access and playback are separate: this update does not connect paid-service audio or video.</p>
+    <p>Additional catalog discovery. Connect playable accounts in the sections above.</p>
     {!enabled && <p role="status">Service catalog search is turned off. Enable it under Preferences → Karaoke Services.</p>}
     {!statuses && !failure && <p role="status">Loading service connections…</p>}
     <div className="provider-catalog-cards">{statuses?.slice(0, 4).map(status => <article className="provider-catalog-card" key={status.provider}>
-      <h3>{status.label}</h3><span className="badge">{status.searchAvailable ? 'Catalog Search' : status.configured ? 'Search Unavailable' : 'Not Configured'}</span>
+      <h3>{status.provider==='partytyme'?'Party Tyme Pro Catalog':status.label}</h3><span className="badge">{status.searchAvailable ? 'Catalog Search' : status.configured ? 'Search Unavailable' : 'Not Configured'}</span>
       <p>{status.message}</p><p className="muted">Playback pending</p>
       {(status.provider === 'stingray' || status.provider === 'sunfly') ? <><button type="button" disabled={choosing !== null} onClick={() => void choose(status.provider)}>{choosing === status.provider ? 'Choosing…' : 'Choose Developer Profile…'}</button>{status.catalogMode === 'developer' && <button type="button" disabled={choosing !== null} onClick={() => void clear(status.provider)}>{status.provider === 'sunfly' ? 'Use Public Store Search' : 'Remove Profile Selection'}</button>}</> : <p className="muted">Public catalog metadata · No account needed for search</p>}
     </article>)}</div>

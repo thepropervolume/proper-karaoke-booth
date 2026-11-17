@@ -1,5 +1,6 @@
 import type { LibrarySearchVersion } from '../domain/unified-library';
 import type { KaraFunSearchReply } from '../domain/karafun';
+import type { PartyTymeSearchReply } from '../domain/partytyme';
 import type { YouTubeSearchResult } from '../domain/youtube-search';
 import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogSong } from '../domain/provider-catalog';
 import type { LibrarySort } from '../domain/library-view';
@@ -10,6 +11,7 @@ export type SongResult = LibrarySearchVersion & {
   resultProvider: SongResultProvider; persisted: boolean; catalogOnly?: ProviderCatalogSong;
   durationSeconds?: number | null;
   karaFunReceipt?: { searchId: string; songId: string; catalog: 'catalog' | 'community' };
+  partyTymeReceipt?: { searchId: string; videoId: string };
   youtubeSearchReceipt?: { searchId: string; videoId: string };
 };
 export const RESULT_PROVIDER_LABELS: Record<SongResultProvider, string> = {
@@ -21,7 +23,7 @@ export const RESULT_PROVIDER_COLORS: Record<SongResultProvider, string> = {
 // Artist/title are editable and different recordings can share them. Deduplicate
 // only exact provider identities so a host edit wins without merging versions.
 function identity(row: LibrarySearchVersion): string {
-  return row.source?.provider === 'karafun' ? `karafun:${row.source.catalog}:${row.source.songId}` : row.source?.provider === 'youtube' ? `youtube:${row.source.videoId}` : `local:${row.id}`;
+  return row.source?.provider === 'karafun' ? `karafun:${row.source.catalog}:${row.source.songId}` : row.source?.provider === 'partytyme' ? `partytyme:consumer:${row.source.videoId}` : row.source?.provider === 'youtube' ? `youtube:${row.source.videoId}` : `local:${row.id}`;
 }
 /** A display-only song match, never a recording ID or a replacement for host metadata. */
 function songKey(artist: string | null | undefined, title: string): string | null {
@@ -32,11 +34,17 @@ function songKey(artist: string | null | undefined, title: string): string | nul
 /** One exact-recording list; stored host metadata wins, and provider IDs never cross namespaces. */
 export function unifiedSongResults(library: readonly LibrarySearchVersion[], savedIds: ReadonlySet<string>, input: {
   karaFun?: KaraFunSearchReply | null; youtube?: YouTubeSearchResult | null;
+  partyTyme?: PartyTymeSearchReply | null; partyTymeConnected?: boolean;
   catalogs?: readonly ProviderCatalogSearchResult[] | null; karaFunConnected: boolean; sort: LibrarySort;
 }): SongResult[] {
   const rows: SongResult[] = [], seen = new Set<string>();
   const append = (row: SongResult) => { const key = row.catalogOnly ? row.catalogOnly.provider === 'karafun' ? `karafun:catalog:${row.catalogOnly.id}` : `catalog:${row.catalogOnly.provider}:${row.catalogOnly.id}` : identity(row); if (!seen.has(key)) { seen.add(key); rows.push(row); } };
-  for (const row of library) if (row.source?.provider !== 'karafun' || input.karaFunConnected) append({ ...row, persisted: savedIds.has(row.id), resultProvider: row.source?.provider === 'karafun' ? 'karafun' : row.catalogTrack || row.source?.provider === 'youtube' && row.source.brandSlug ? 'karaokenerds' : row.source?.provider === 'youtube' ? 'youtube' : 'local' });
+  for (const row of library) if ((row.source?.provider !== 'karafun' || input.karaFunConnected) && (row.source?.provider !== 'partytyme' || input.partyTymeConnected)) append({ ...row, persisted: savedIds.has(row.id), resultProvider: row.source?.provider === 'karafun' ? 'karafun' : row.source?.provider === 'partytyme' ? 'partytyme' : row.catalogTrack || row.source?.provider === 'youtube' && row.source.brandSlug ? 'karaokenerds' : row.source?.provider === 'youtube' ? 'youtube' : 'local' });
+  if (input.partyTymeConnected && input.partyTyme?.status === 'ok' && input.partyTyme.searchId) for (const song of input.partyTyme.songs) append({
+    id: `partytyme-search:consumer:${song.videoId}`, title: song.title, artist: song.artist, rating: 'unrated',
+    source: { provider: 'partytyme', catalog: 'consumer', videoId: song.videoId }, resultProvider: 'partytyme', persisted: false,
+    durationSeconds: song.durationSeconds, partyTymeReceipt: { searchId: input.partyTyme.searchId, videoId: song.videoId },
+  });
   // Account state also fences replies received immediately before sign-out.
   if (input.karaFunConnected && input.karaFun?.status === 'ok' && input.karaFun.searchId) for (const song of input.karaFun.songs) append({
     id: `karafun-search:${song.catalog}:${song.songId}`, title: song.title, artist: song.artist,
@@ -50,7 +58,7 @@ export function unifiedSongResults(library: readonly LibrarySearchVersion[], sav
   });
   // KaraFun has one authenticated search path; public metadata must not reappear
   // as an unplayable substitute when that account is disconnected.
-  for (const result of input.catalogs ?? []) if (result.status === 'ok' && result.provider !== 'karafun') for (const song of result.songs) append({
+  for (const result of input.catalogs ?? []) if (result.status === 'ok' && result.provider !== 'karafun' && !(result.provider === 'partytyme' && input.partyTymeConnected)) for (const song of result.songs) append({
     id: `catalog:${song.provider}:${song.id}`, title: song.title, artist: song.artist || '', rating: song.explicit === true ? 'explicit' : song.explicit === false ? 'clean' : 'unrated',
     resultProvider: song.provider, persisted: false, catalogOnly: song, durationSeconds: song.durationSeconds,
   });

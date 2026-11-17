@@ -2,6 +2,16 @@
 
 Download installers from [GitHub Releases](https://github.com/thepropervolume/proper-karaoke-booth/releases). Version changes on the default branch trigger verified builds for every supported desktop platform; [release automation](releasing.md) explains tags, assets and recovery. Each release includes its own exact source commit and checksums. The local verification history below remains version-specific.
 
+## 0.9.1 Party Tyme Update
+
+Development **0.9.1** adds the experimental desktop Party Tyme consumer Premium connection described in [setup and limits](partytyme-consumer-integration.md). The provided account passed actual muted Windows queue/preparation/playback, seek/Previous, protected-session restart and sign-out checks. Consumer and Pro accounts are different; Pro and mobile playback remain unimplemented. Source regression checks passed 1,090 tests with eight explicit skips, all 20 release-rule tests, and type checking. Package results are recorded after their own checks; a source rehearsal does not verify an installer.
+
+**Back up before the first 0.9.1 launch.** Local **schema 6** marks the new saved provider identity. Upgrade preserves show, media and history records transactionally; interrupted-marker rollback and retry passed. Older binaries refuse schema 6. Downgrade requires a validated pre-upgrade database/profile backup. Preferences, private connection/session files and media need separate protected backups. The shared ratings change needs no MySQL migration; no credential files were changed.
+
+The native project versions are aligned to 0.9.1. This does not add paid playback to phones or establish new native device/store acceptance. The live mobile website remains the previously verified 0.9.0 deployment. GitHub artifact quota remains an external distribution blocker.
+
+## Historical 0.9.0 Delivery
+
 Development **0.9.0** hides signed-out KaraFun results, makes generic YouTube results defer to matching songs from other sources, and adds the [mobile web app](https://queue.thepropervolume.com/app/) with Full Host and Piggyback modes. See the [mobile guide](mobile-app.md). The official release target remains **1.0.0**.
 
 ## 0.9.0 Delivery and Checks

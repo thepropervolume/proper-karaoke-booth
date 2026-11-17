@@ -7,7 +7,7 @@ A desktop app for hosting karaoke: find songs, manage singer rotation, accept re
 - A host preview, customizable singer screen and bumper music between songs.
 - Phone requests through remote sessions and optional local-network singer screens.
 
-**Pre-release:** native KaraFun playback is experimental; other paid services currently provide search results only. The official release target is **1.0.0**. See [source status](docs/source-status.md) for availability and limitations.
+**Pre-release 0.9.1:** desktop KaraFun and Party Tyme consumer Premium playback are experimental. Other paid services currently provide search results only. The official release target is **1.0.0**. See [source status](docs/source-status.md) for availability and limitations.
 
 ## Install or Run
 
@@ -26,6 +26,7 @@ Run checks with `npm test`. YouTube downloads require yt-dlp; CD+G conversion al
 ## Documentation
 
 - [Host guide](docs/host-workspace.md) · [Singer guide](docs/singer-guide.md)
+- [Plain-language QA test guide](docs/qa/qa-test-guide.md)
 - [Mobile Host and Piggyback modes](docs/mobile-app.md)
 - [Sources](docs/source-status.md) · [Remote singer screens](docs/singer-screen-sharing.md)
 - [Architecture](docs/architecture.md) · [Remaining work](docs/remaining-work.md)

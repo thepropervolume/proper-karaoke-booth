@@ -80,6 +80,9 @@ import { parseHostPolicy } from './host-policy';
 import { KaraFunAccount } from './karafun-account';
 import { KaraFunSessionVault } from './karafun-session-vault';
 import { KaraFunHost } from './karafun-host';
+import { PartyTymeAccount, partyTymeCredentials } from './partytyme-account';
+import { PartyTymeHost } from './partytyme-host';
+import { PartyTymeMediaCache, type PartyTymePrepared } from './partytyme-media';
 import { KaraFunMediaCache, type KaraFunPreparedMedia } from './karafun-media';
 import { KaraFunMixer } from './karafun-mixer';
 
@@ -91,6 +94,10 @@ let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
 let karaFunAccount: KaraFunAccount;
+let partyTymeAccount: PartyTymeAccount;
+let partyTymeHost: PartyTymeHost;
+let partyTymePickerOpen = false;
+let activePartyTyme: { generation: string; versionId: string; media: PartyTymePrepared; revision: number } | null = null;
 const mobileRoomBeacon = new MobileRoomBeacon();
 let karaFunHost: KaraFunHost;
 let activeKaraFun: { generation: string; versionId: string; media: KaraFunPreparedMedia; revision: number } | null = null;
@@ -238,6 +245,7 @@ const queuedDownloads = new QueuedVideoDownloads(async versionId => {
 function syncQueuedDownloads(): void {
   if (shuttingDown || !store || !settings) return;
   karaFunHost?.sync();
+  partyTymeHost?.sync();
   const active=youtubeDownloads?.snapshot();
   if(active && !isVersionAllowed(state, active.versionId, settings))youtubeDownloads?.cancel(active.id);
   queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state, request.versionId, settings))
@@ -269,6 +277,11 @@ const showAdvance = new ShowAdvance(() => {
     if (karaFunAccount?.status().state !== 'connected') error = 'Sign in to KaraFun in Sources, then press Play to continue.';
     else if (failed) error = failed.message || 'The next KaraFun song could not be prepared. Retry it in Sources.';
     else if (media && !mediaPresent) error = 'The prepared KaraFun recording is missing. Retry its preparation in Sources, then press Play.';
+  } else if (version?.source?.provider === 'partytyme') {
+    const failed = partyTymeHost?.status().find(item=>item.versionId===version.id&&item.phase==='failed');
+    if(partyTymeAccount?.status().state!=='connected'||!partyTymeAccount.status().premium)error='Connect Party Tyme Premium in Sources, then press Play.';
+    else if(failed)error=failed.message||'Party Tyme preparation failed. Retry in Sources.';
+    else if(media&&!mediaPresent)error='The prepared Party Tyme video is missing. Retry in Sources.';
   } else if (version?.source?.provider === 'youtube') {
     const failed = queuedDownloads.snapshot().failures.find(item => item.versionId === version.id);
     if (failed) error = 'The next video could not download. Retry it from the song menu, then press Play.';
@@ -432,7 +445,8 @@ function publishDisplay(): void {
     .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
   const native = currentNativeKaraFun();
   const backdrop = native ? lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }) : undefined;
-  const current = playback && request && version && store.media(version.id) && (version.source?.provider !== 'karafun' || native) ? { generation: playback.generationId, status: playback.status,
+  const partyReady = playback && activePartyTyme?.generation === playback.generationId && activePartyTyme.versionId === version?.id && activePartyTyme.revision === partyTymeAccount?.revision() && partyTymeAccount.status().state === 'connected';
+  const current = playback && request && version && store.media(version.id) && (version.source?.provider !== 'karafun' || native) && (version.source?.provider !== 'partytyme' || partyReady) ? { generation: playback.generationId, status: playback.status,
     kind: native ? 'karafun' : 'video',
     ...(native ? { karaFun: { timing: native.media.kit.timing, durationSeconds: native.media.kit.timing.durationSeconds,
       stemVolumes: Object.fromEntries(mix?.stems.map(stem => [stem.id, stem.volume]) ?? []),
@@ -466,7 +480,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   if (result.outcome.ok && (command.type === 'pause' || command.type === 'stop' || command.type === 'release')) { showAdvance.cancel(); cancelPendingPlayback(); }
   if (result.outcome.ok && command.type === 'release') autoStageSuspended = true;
   if (result.outcome.ok && command.type === 'setPolicy') youtubeSearch.cancel();
-  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) { verifiedPlayback = null; activeKaraFun = null; outputRecovery = null; }
+  if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) { verifiedPlayback = null; activeKaraFun = null; activePartyTyme = null; outputRecovery = null; }
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
   if (result.outcome.ok && previousGeneration && (command.type === 'complete' || command.type === 'skip')) { automaticBumper.arm(previousGeneration); showAdvance.arm(); }
   if (result.outcome.ok && ['request','accept','editRequest','moveRequest','promoteRequest','removeRequest','rejectRequest','setPolicy'].includes(command.type)) syncQueuedDownloads();
@@ -758,6 +772,7 @@ function playable(command: Command): string | null {
   const request = state.requests.find(r => r.id === requestId);
   const streaming = state.versions.find(version => version.id === request?.versionId)?.source;
   const media = request && store.media(request.versionId);
+  if (streaming?.provider === 'partytyme' && partyTymeAccount?.status().state !== 'connected') return 'Sign in to Party Tyme in Sources before playing this recording.';
   if (streaming?.provider === 'youtube' && !media) return null;
   if (streaming?.provider === 'youtube' && media && !existsSync(media.path)) return 'The saved video is missing. Right-click the library song and choose Download Video / Retry, or relink the original file.';
   if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
@@ -783,6 +798,10 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
   if (command.type === 'start' || command.type === 'resume') {
     const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
     const version = state.versions.find(item => item.id === state.requests.find(request => request.id === requestId)?.versionId);
+    if (version?.source?.provider === 'partytyme' && (!store.media(version.id) || !existsSync(store.media(version.id)!.path))) {
+      try { partyTymeHost.retry(version.id); return {ok:false,error:'Preparing this Party Tyme video. Follow progress in Sources, then press Play when ready.'}; }
+      catch(error){return{ok:false,error:error instanceof Error?error.message:'Connect Party Tyme in Sources.'};}
+    }
     if (version?.source?.provider === 'karafun' && !store.media(version.id)) {
       try { karaFunHost.retry(version.id); return { ok: false, error: 'Preparing this KaraFun recording. Follow progress in Sources, then press Play when ready.' }; }
       catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Sign in to KaraFun in Sources.' }; }
@@ -808,6 +827,9 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       const nativeRevision = karaFunAccount.revision();
       const pinned = command.type === 'resume' && activeKaraFun?.generation === state.playback?.generationId && activeKaraFun?.versionId === versionId ? activeKaraFun.media : undefined;
       const nativeMedia = nativeVersion ? await karaFunHost.authorizeStart(versionId!, pinned) : null;
+      const partyVersion = state.versions.find(version=>version.id===versionId)?.source?.provider === 'partytyme';
+      const partyRevision = partyTymeAccount.revision();
+      const partyMedia = partyVersion ? await partyTymeHost.authorizeStart(versionId!) : null;
       if (!current()) return { ok: false, error: 'Playback was cancelled.' };
       const check = new AbortController(); mediaChecks.add(check);
       let sourceIdentity: MediaIdentity;
@@ -850,10 +872,14 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       if (nativeMedia && (nativeRevision !== karaFunAccount.revision() || karaFunAccount.accountScope() !== nativeMedia.accountScope))
         return { ok: false, error: 'The KaraFun account changed. Sign in and press Play again.' };
       const previousNative = activeKaraFun;
+      if (partyMedia && (partyRevision !== partyTymeAccount.revision() || partyMedia.accountScope !== partyTymeAccount.accountScope())) return {ok:false,error:'The Party Tyme account changed. Sign in and press Play again.'};
+      const previousParty = activePartyTyme;
+      if(partyMedia)activePartyTyme={generation:command.type==='start'?command.generationId:state.playback!.generationId,versionId:versionId!,media:partyMedia,revision:partyRevision};
       if (nativeMedia) activeKaraFun = { generation: command.type === 'start' ? command.generationId : state.playback!.generationId,
         versionId: versionId!, media: nativeMedia, revision: nativeRevision };
       const result = perform(command);
       if (!result.ok) activeKaraFun = previousNative;
+      if (!result.ok) activePartyTyme = previousParty;
       if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; outputRecovery = null; }
       if (!result.ok && !state.playback) bumper?.karaokeEnded();
       return result.ok ? { ok: true } : { ok: false, error: result.message };
@@ -917,10 +943,13 @@ async function serveMedia(request: Request): Promise<Response> {
   if (request.method !== 'GET' || url.hostname !== 'play' || !playback || url.pathname !== `/${encodeURIComponent(playback.generationId)}`) return new Response(null, { status: 404 });
   const song = state.requests.find(r => r.id === playback.requestId);
   if (state.versions.find(version => version.id === song?.versionId)?.source?.provider === 'karafun') return new Response(null, { status: 404 });
+  const partySource = state.versions.find(version=>version.id===song?.versionId)?.source?.provider === 'partytyme';
+  const partyAuthorized = () => !partySource || !!activePartyTyme && activePartyTyme.generation===playback.generationId && activePartyTyme.versionId===song?.versionId && activePartyTyme.revision===partyTymeAccount.revision() && activePartyTyme.media.accountScope===partyTymeAccount.accountScope() && partyTymeAccount.status().state==='connected';
+  if (!partyAuthorized()) return new Response(null,{status:404});
   const media = song && store.media(song.versionId);
   if (!media) return new Response(null, { status: 404 });
   const currentMediaMatches = () => {
-    if (shuttingDown || state.playback?.generationId !== playback.generationId) return false;
+    if (shuttingDown || state.playback?.generationId !== playback.generationId || !partyAuthorized()) return false;
     const currentRequest = state.requests.find(item => item.id === state.playback?.requestId);
     const currentMedia = currentRequest?.versionId === media.id && store.media(media.id);
     return !!currentMedia && currentMedia.id === media.id && currentMedia.path === media.path && currentMedia.fingerprint === media.fingerprint;
@@ -1032,6 +1061,17 @@ else {
     karaFunHost.accountChanged();
     if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-account', value);
   });
+  partyTymeAccount = new PartyTymeAccount({vault:new KaraFunSessionVault(join(app.getPath('userData'),'partytyme-session.bin'))});
+  partyTymeHost = new PartyTymeHost(partyTymeAccount,new PartyTymeMediaCache(join(app.getPath('userData'),'partytyme-cache')),{
+    state:()=>state,settings:()=>settings,media:id=>store.media(id),
+    commit:(next,media=[])=>{if(shuttingDown)throw new Error('The application is closing.');store.save(next,media);state=next;try{broadcast();}catch{}},
+    changed:()=>showAdvance.changed(),
+  });
+  partyTymeAccount.subscribe(value=>{
+    if(activePartyTyme){pauseForOutputLoss();activePartyTyme=null;publishDisplay();}
+    partyTymeHost.accountChanged();
+    if(host&&!host.isDestroyed()&&!shuttingDown)host.webContents.send('host:partytyme-account',value);
+  });
   const commitImported = (path: string, fingerprint: string, metadataPath = path, parsing = importParsing ?? settings) => {
     if (shuttingDown) throw new Error('Import is unavailable.');
     if (store.byFingerprint(fingerprint)) return { outcome: 'duplicate' as const };
@@ -1110,6 +1150,23 @@ else {
   ipcMain.handle('host:singer-screen-retry', async event => { guardHost(event.sender.id); await reconcileSingerScreen(); return singerScreenStatus(); });
   ipcMain.handle('host:singer-screen-copy', (event, url: unknown) => { guardHost(event.sender.id); if (typeof url !== 'string' || !singerScreenStatus().urls.includes(url)) throw new Error('Choose a current singer-screen address.'); clipboard.writeText(url); });
   ipcMain.handle('host:karafun-status', event => { guardHost(event.sender.id); return karaFunAccount.status(); });
+  ipcMain.handle('host:partytyme-status',event=>{guardHost(event.sender.id);return partyTymeAccount.status();});
+  ipcMain.handle('host:partytyme-connect',async event=>{
+    guardHost(event.sender.id);if(shuttingDown||partyTymePickerOpen)throw new Error('Party Tyme connection is busy.');partyTymePickerOpen=true;
+    try{
+      const options:Electron.OpenDialogOptions={title:'Choose Party Tyme consumer credentials',properties:['openFile'],filters:[{name:'Private credentials',extensions:['json','txt','*']}]};
+      const selection=host?await dialog.showOpenDialog(host,options):await dialog.showOpenDialog(options);
+      if(selection.canceled||!selection.filePaths[0]||shuttingDown)return partyTymeAccount.status();
+      const file=await open(selection.filePaths[0],'r');let raw:string;
+      try{const info=await file.stat();if(!info.isFile()||info.size<1||info.size>16384)throw new Error('Choose a supported credentials file.');const bytes=Buffer.alloc(16385);const result=await file.read(bytes,0,bytes.length,0);if(result.bytesRead!==info.size)throw new Error('The credentials file changed. Retry.');raw=bytes.subarray(0,result.bytesRead).toString('utf8');}finally{await file.close();}
+      return await partyTymeAccount.connect(partyTymeCredentials(raw));
+    }catch(error){throw new Error(error instanceof Error&&error.name==='PartyTymeError'?error.message:'The private Party Tyme credentials file could not be opened.');}finally{partyTymePickerOpen=false;}
+  });
+  ipcMain.handle('host:partytyme-disconnect',event=>{guardHost(event.sender.id);return partyTymeAccount.disconnect();});
+  ipcMain.handle('host:partytyme-search',(event,query:unknown)=>{guardHost(event.sender.id);return partyTymeHost.search(query);});
+  ipcMain.handle('host:partytyme-request',(event,input:unknown)=>{guardHost(event.sender.id);return partyTymeHost.request(input);});
+  ipcMain.handle('host:partytyme-preparations',event=>{guardHost(event.sender.id);return partyTymeHost.status();});
+  ipcMain.handle('host:partytyme-retry',(event,id:unknown)=>{guardHost(event.sender.id);if(typeof id!=='string'||id.length>500)throw new Error('Choose a recording.');partyTymeHost.retry(id);});
   ipcMain.handle('host:karafun-mix-status', event => { guardHost(event.sender.id); return karaFunMixer.status(); });
   ipcMain.handle('host:karafun-mix-set', (event, input: unknown) => {
     guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.');
@@ -1654,6 +1711,7 @@ else {
   createHost();
   broadcast();
   void karaFunAccount.restore();
+  void partyTymeAccount.restore();
   void ensureSingerDisplayReady(false).catch(error => { bumperError = error instanceof Error ? error.message : 'The preview player could not start.'; publishBumper(); });
   try { await reconcileLocalControl(); } catch { /* Core local show operation remains available. */ }
   syncQueuedDownloads();
@@ -1679,9 +1737,10 @@ app.on('before-quit', event => {
   shuttingDown = true; for (const check of mediaChecks) check.abort();
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.setAudioMuted(true);
   if (display && !display.isDestroyed() && displayReady) display.webContents.send('display:state', { playback: null, next: [], logo: null, shortcuts, bumperVolume: 0 });
-  const nativePending = karaFunHost?.needsShutdownWait() ?? false;
-  const nativeShutdown = karaFunHost?.shutdown() ?? Promise.resolve();
+  const nativePending = (karaFunHost?.needsShutdownWait() ?? false) || (partyTymeHost?.needsShutdownWait() ?? false);
+  const nativeShutdown = Promise.all([karaFunHost?.shutdown(),partyTymeHost?.shutdown()]);
   void karaFunAccount?.close(); activeKaraFun = null;
+  partyTymeAccount?.close();activePartyTyme=null;
   youtubeSearch.cancel(); singerCapture.stop(); mobileRoomBeacon.close();
   const singerScreenWasActive = singerScreenServer.status().state !== 'stopped';
   const singerScreenShutdown = singerScreenServer.stop().then(() => true, () => false);
