@@ -112,6 +112,11 @@ no database migration, voter reprovisioning or vote rewrite is required. Verify
 the new namespaces with a separately provisioned test voter and clear only that
 voter's test votes. Never use the host's personal voter for deployment checks.
 
+Version 0.9.1 also accepts `partytyme:consumer:<numeric video ID>`. This is a
+consumer recording identity, not a Pro HD code. The compatible validator was
+[deployed and checked on 17 November](DEPLOYMENT-2026-11-17-PARTYTYME.md), with no
+SQL change or retained QA vote.
+
 The existing `apps.thepropervolume.com` certificate covers this API. Add only
 the agreed ratings routes to that exact Apache vhost, pointing at 8767; keep
 catalog routes on 8765 and preserve the default TLS deny vhost. Preserve Host
