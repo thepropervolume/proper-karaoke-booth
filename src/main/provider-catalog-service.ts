@@ -7,7 +7,7 @@ import { getPartnerCatalogStatus, searchPartnerCatalog } from './partner-catalog
 import { searchSunflyStoreCatalog } from './sunfly-store-catalog-client';
 import { compileSongBlacklist } from '../domain/song-blacklist';
 
-type Scope = Pick<Settings, 'providerCatalogEnabled' | 'providerCatalogProfiles'> & Partial<Pick<Settings, 'songBlacklist' | 'artistBlacklist'>> & { policy: Policy };
+type Scope = Pick<Settings, 'providerCatalogEnabled' | 'providerCatalogProfiles'> & Partial<Pick<Settings, 'songBlacklist' | 'artistBlacklist'>> & { policy: Policy; karaFunConnected?: boolean };
 type Dependencies = {
   search?: (provider: ProviderCatalogId, file: string | undefined, query: string) => Promise<ProviderCatalogSearchResult>;
   status?: (provider: 'sunfly' | 'stingray', file: string | undefined) => Promise<ProviderCatalogStatus>;
@@ -16,7 +16,7 @@ const publicCatalog = new KaraFunCatalogClient();
 const catalogSearch = (provider: ProviderCatalogId, file: string | undefined, query: string) => provider === 'karafun' ? publicCatalog.search(query) : provider === 'partytyme' ? searchPartyTymeCatalog(file, query) : provider === 'sunfly' && !file ? searchSunflyStoreCatalog(query) : searchPartnerCatalog(provider, file, query);
 const publicStatus = (provider: ProviderCatalogId): ProviderCatalogStatus => ({ provider, label: provider === 'sunfly' ? 'Sunfly Store' : PROVIDER_CATALOG_LABELS[provider], configured: true, searchAvailable: true, playbackAvailable: false, catalogMode: 'public', message: provider === 'sunfly' ? 'Public store title/SKU search. Artist search is not verified. Store IDs differ from streaming IDs. No account needed; playback is pending.' : 'Public catalog metadata. No account needed for search. Subscription playback is not connected.' });
 const blocked = (scope: Scope) => !scope.providerCatalogEnabled || scope.policy.ageRestricted || scope.policy.includeVersionIds !== null;
-const scopeKey = (scope: Scope) => JSON.stringify([scope.providerCatalogEnabled, scope.providerCatalogProfiles, scope.policy, scope.songBlacklist ?? [], scope.artistBlacklist ?? []]);
+const scopeKey = (scope: Scope) => JSON.stringify([scope.providerCatalogEnabled, scope.providerCatalogProfiles, scope.policy, scope.songBlacklist ?? [], scope.artistBlacklist ?? [], scope.karaFunConnected === true]);
 const failure = (provider: ProviderCatalogId, message: string): ProviderCatalogSearchResult => ({ provider, label: PROVIDER_CATALOG_LABELS[provider], status: 'unavailable', songs: [], message });
 
 /** The host renderer can discover metadata; it cannot promote these records to playable versions. */
@@ -28,7 +28,7 @@ export class ProviderCatalogService {
   async status(): Promise<ProviderCatalogStatus[]> {
     const scope = this.current();
     const values = await Promise.all(PROVIDER_CATALOG_IDS.map(async provider => provider === 'karafun' || provider === 'partytyme' || provider === 'sunfly' && !scope.providerCatalogProfiles.sunfly ? publicStatus(provider) : { ...await (this.deps.status ?? getPartnerCatalogStatus)(provider, scope.providerCatalogProfiles[provider] || undefined), catalogMode: 'developer' as const }));
-    return values.map(value => scope.providerCatalogEnabled ? value : { ...value, searchAvailable: false, message: 'Service catalog search is disabled in Preferences.' });
+    return values.map(value => value.provider === 'karafun' && !scope.karaFunConnected ? { ...value, searchAvailable: false, message: 'Sign in to KaraFun in Sources to search its songs.' } : scope.providerCatalogEnabled ? value : { ...value, searchAvailable: false, message: 'Service catalog search is disabled in Preferences.' });
   }
   async search(query: unknown): Promise<ProviderCatalogSearchResult[]> {
     const scope = this.current(), key = scopeKey(scope), sequence = ++this.sequence;
@@ -36,6 +36,7 @@ export class ProviderCatalogService {
     if (!validProviderQuery(query)) return PROVIDER_CATALOG_IDS.map(provider => ({ ...failure(provider, 'Enter 2–200 characters to search service catalogs.'), status: 'invalid-input' as const }));
     if (blocked(scope)) return PROVIDER_CATALOG_IDS.map(provider => failure(provider, !scope.providerCatalogEnabled ? 'Service catalog search is disabled.' : 'Service catalog results are hidden by the show policy because these recordings have not been approved for this show.'));
     const values = await Promise.all(PROVIDER_CATALOG_IDS.map(async provider => {
+      if (provider === 'karafun' && !scope.karaFunConnected) return { ...failure(provider, 'Sign in to KaraFun in Sources to search its songs.'), status: 'unauthorized' as const };
       try { return await (this.deps.search ?? catalogSearch)(provider, scope.providerCatalogProfiles[provider] || undefined, query.trim()); }
       catch { return failure(provider, `${PROVIDER_CATALOG_LABELS[provider]} search is unavailable. Other sources remain available.`); }
     }));

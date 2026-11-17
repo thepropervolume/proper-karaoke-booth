@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { unifiedSongResults, RESULT_PROVIDER_COLORS } from '../../src/renderer/unified-song-results';
 import type { KaraFunSearchReply } from '../../src/domain/karafun';
 import type { ProviderCatalogSearchResult } from '../../src/domain/provider-catalog';
+import { emptyYouTubeSearchCounts, type YouTubeSearchResult, type YouTubeKaraokeSong } from '../../src/domain/youtube-search';
 const reply: KaraFunSearchReply = { status: 'ok', searchId: 'receipt', songs: [
   { catalog: 'catalog', songId: '123', title: 'Provider Title', artist: 'Provider Artist', durationSeconds: 200, explicit: false },
   { catalog: 'community', songId: '123', title: 'Another Recording', artist: 'Same Artist', durationSeconds: 210, explicit: null },
@@ -20,10 +21,44 @@ test('connected native results replace search-only KaraFun catalog matches; unsu
   assert.deepEqual(rows.map(row => row.title), ['A First Song', 'Another Recording', 'Provider Title']);
   assert.equal(rows[0].catalogOnly?.provider, 'sunfly'); assert.equal(rows[0].source, undefined); assert.equal(rows[0].karaFunReceipt, undefined);
   const disconnected = unifiedSongResults([], new Set(), { catalogs, karaFunConnected: false, sort: 'import-oldest' });
-  assert.equal(disconnected[0].catalogOnly?.provider, 'karafun');
+  assert.deepEqual(disconnected.map(row => row.resultProvider), ['sunfly']);
   const saved = unifiedSongResults([{ id: 'saved', title: 'Host Title', artist: 'A', rating: 'clean', source: { provider: 'karafun', catalog: 'catalog', songId: '123' } }], new Set(['saved']), { catalogs, karaFunConnected: false, sort: 'import-oldest' });
-  assert.equal(saved.filter(row => row.resultProvider === 'karafun').length, 1);
-  assert.equal(saved[0].title, 'Host Title');
+  assert.equal(saved.filter(row => row.resultProvider === 'karafun').length, 0);
+  assert.equal(unifiedSongResults([], new Set(), { karaFun: reply, karaFunConnected: false, sort: 'import-oldest' }).length, 0);
+});
+
+function youtube(songs: Pick<YouTubeKaraokeSong, 'videoId' | 'artist' | 'title'>[], metadataSource: YouTubeKaraokeSong['metadataSource'] = 'youtube-metadata'): YouTubeSearchResult {
+  return { provider: 'youtube', status: 'ok', searchId: 'yt-receipt', counts: emptyYouTubeSearchCounts(), message: '', qualityNote: '',
+    songs: songs.map(song => ({ ...song, provider: 'youtube', durationSeconds: 200, metadataSource, videoTitle: song.title, watchUrl: `https://www.youtube.com/watch?v=${song.videoId}`,
+      channelId: 'UC1234567890123456789012', channelHandle: null, channelName: 'Karaoke', channelUrl: '', channelApproval: 'karaoke-hint' })) };
+}
+test('YouTube discovery falls back by song across local, community and other catalogs, without merging recordings', () => {
+  const rows = unifiedSongResults([
+    { id: 'local', title: 'Wonderwall', artist: 'Oasis', rating: 'clean' },
+    { id: 'kn', title: 'Don’t Look Back In Anger', artist: 'Oasis', rating: 'unrated', source: { provider: 'youtube', videoId: 'NerdsTrack1', brandSlug: 'Creator' } },
+  ], new Set(['local']), { karaFunConnected: false, sort: 'import-oldest',
+    youtube: youtube([{ videoId: 'Discovery01', title: '  WONDERWALL ', artist: 'oasis' }, { videoId: 'Discovery02', title: "Don't Look Back in Anger", artist: 'Oasis' },
+      { videoId: 'Discovery03', title: 'Champagne Supernova', artist: 'Oasis' }, { videoId: 'Discovery04', title: 'Wonderwall', artist: 'Ryan Adams' },
+      { videoId: 'Discovery05', title: 'Wonderwall', artist: null }, { videoId: 'Discovery06', title: 'Wonderwall (Live)', artist: 'Oasis' },
+      { videoId: 'Discovery07', title: 'Some Might Say', artist: 'Oasis' }]),
+    catalogs: [{ provider: 'sunfly', status: 'ok', songs: [{ provider: 'sunfly', id: 'SF1', title: 'Some Might Say', artist: 'Oasis' }] }] as ProviderCatalogSearchResult[] });
+  assert.deepEqual(rows.map(row => row.id), ['local', 'kn', 'catalog:sunfly:SF1', 'youtube-search:Discovery03', 'youtube-search:Discovery04', 'youtube-search:Discovery05', 'youtube-search:Discovery06']);
+  assert.equal(rows[0].rating, 'clean');
+});
+test('video-title guesses can be reversed; verified artist/track metadata cannot', () => {
+  const local = [{ id: 'local', title: 'Wonderwall', artist: 'Oasis', rating: 'clean' as const }];
+  const songs = [{ videoId: 'Discovery01', title: 'Oasis', artist: 'Wonderwall' }];
+  assert.equal(unifiedSongResults(local, new Set(), { karaFunConnected: false, sort: 'import-oldest', youtube: youtube(songs, 'video-title') }).length, 1);
+  assert.equal(unifiedSongResults(local, new Set(), { karaFunConnected: false, sort: 'import-oldest', youtube: youtube(songs) }).length, 2);
+});
+test('saved YouTube recordings remain selectable; discovery is last even when sorting', () => {
+  const local = [{ id: 'saved-yt', title: 'Wonderwall', artist: 'Oasis', rating: 'clean' as const, source: { provider: 'youtube' as const, videoId: 'SavedVideo1' } },
+    { id: 'file', title: 'Z Local', artist: 'Z Artist', rating: 'clean' as const }];
+  const search = youtube([{ videoId: 'Discovery01', title: 'Wonderwall', artist: 'Oasis' }, { videoId: 'Discovery02', title: 'A Fallback', artist: 'A Artist' }]);
+  for (const sort of ['import-oldest', 'title-asc', 'title-desc', 'artist-asc', 'artist-desc'] as const) {
+    const rows = unifiedSongResults(local, new Set(['saved-yt', 'file']), { karaFunConnected: false, sort, youtube: search });
+    assert.equal(rows.length, 3); assert.equal(rows.at(-1)?.title, 'A Fallback'); assert.ok(rows.some(row => row.id === 'saved-yt' && row.persisted));
+  }
 });
 test('provider colors retain explicit identities and distinguish imported files from online recordings', () => {
   const rows = unifiedSongResults([{ id: 'file', title: 'A', artist: 'B', rating: 'clean' }, { id: 'yt', title: 'Y', artist: 'Z', rating: 'unrated', source: { provider: 'youtube', videoId: 'Abcdefghijk' } }, { id: 'kn', title: 'K', artist: 'N', rating: 'unrated', source: { provider: 'youtube', videoId: 'Abcdefghijl', brandSlug: 'TheProperVolume' } }], new Set(['file', 'yt', 'kn']), { karaFunConnected: false, sort: 'import-oldest' });

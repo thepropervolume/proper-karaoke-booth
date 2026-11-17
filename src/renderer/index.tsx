@@ -376,7 +376,7 @@ function App() {
   const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
   const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
   const catalogSearch = useLibraryCatalogSearch(search, screen === 'library', JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist]), window.tpv.searchCommunityCatalog);
-  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist]);
+  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, karaFunAccount.state, karaFunAccount.revision]);
   const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
   const libraryRows = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
     catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version)) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result, blacklist]);

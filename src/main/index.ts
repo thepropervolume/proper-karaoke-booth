@@ -111,7 +111,7 @@ function ratingsConnection(): SongRatingsConnection {
 }
 let state: ShowState;
 let settings: Settings;
-const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist }));
+const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist, karaFunConnected: karaFunAccount?.status().state === 'connected' }));
 const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, policy: state.policy }));
 const khostBridge = new KHostBridgeConnection(() => ({ ...settings, policy: state.policy }));
 let choosingKHostProfile = false;

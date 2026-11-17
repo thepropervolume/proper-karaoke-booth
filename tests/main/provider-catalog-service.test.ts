@@ -33,7 +33,21 @@ test('strict show policies and disabled discovery stop provider calls at the ser
 });
 test('failure of one provider leaves other metadata results available and errors private', async () => {
   const service = new ProviderCatalogService(scope, { search: async provider => { if (provider === 'stingray') throw Error('SECRET'); return result(provider); } });
-  const results = await service.search('song'); assert.equal(results.filter(r => r.status === 'ok').length, 3); assert.ok(!JSON.stringify(results).includes('SECRET'));
+  const results = await service.search('song'); assert.equal(results.filter(r => r.status === 'ok').length, 2); assert.ok(!JSON.stringify(results).includes('SECRET'));
+});
+
+test('signed-out KaraFun does not fetch public results, and sign-out fences pending replies', async () => {
+  const state = { ...scope(), karaFunConnected: false }, calls: string[] = [];
+  let release: (() => void) | undefined;
+  const service = new ProviderCatalogService(() => state, { search: async provider => { calls.push(provider); if (provider === 'karafun') await new Promise<void>(resolve => { release = resolve; }); return result(provider); } });
+  assert.equal((await service.status()).find(value => value.provider === 'karafun')?.searchAvailable, false);
+  assert.equal((await service.search('Oasis')).find(value => value.provider === 'karafun')?.status, 'unauthorized');
+  assert.ok(!calls.includes('karafun'));
+  state.karaFunConnected = true;
+  const pending = service.search('Oasis');
+  state.karaFunConnected = false; release?.();
+  assert.ok((await pending).every(value => !value.songs.length));
+  assert.equal(service.url('karafun', '1'), null);
 });
 test('changed policy or profile fences pending replies and external links', async () => {
   const state = scope(); let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });

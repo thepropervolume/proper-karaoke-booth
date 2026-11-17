@@ -6,7 +6,7 @@ import type { YouTubeSearchResult } from '../domain/youtube-search';
 // invalidate its request receipt too. The key hides stale replies immediately,
 // even before React has run the cleanup for the previous search.
 export function useKaraFunSearch(bridge: KaraFunBridge, account: KaraFunAccountStatus, query: string, enabled: boolean, scope: string) {
-  const key = JSON.stringify([query.trim(), scope, account.revision, enabled]);
+  const key = JSON.stringify([query.trim(), scope, account.revision, account.state, enabled]);
   const [result, setResult] = useState<{ key: string; reply: KaraFunSearchReply } | null>(null), [loading, setLoading] = useState(false);
   useEffect(() => {
     let alive = true; setResult(null); setLoading(false);
