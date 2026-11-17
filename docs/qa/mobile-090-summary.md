@@ -10,7 +10,7 @@ Three specialized reviewers independently audited the initial mobile draft on 17
 | MP-07 | Anonymous owners have a reserved namespace, one reserved slug each and a 50-reservation pool within the relay's 200 total capacity. The globally serialized store check preserves trusted-host capacity. SQLite test-adapter coverage passes; production uses MySQL. |
 | MP-08 | Discovery retains room metadata until lease expiry while visibility remains heartbeat-bounded. Controlled outage/two-room recovery test passes. |
 | MP-09–10 | Missing-song requests persist in show metadata. Host mutation replies wait for the IndexedDB save barrier; storage failure closes access without acknowledging success. Model and fault tests pass. |
-| MP-11 | Anonymous MySQL owner-row cleanup is under follow-up; configured desktop owner records must remain intact. |
+| MP-11 | Anonymous MySQL owner rows are removed only after their lease and open tombstones are gone. Configured desktop owner IDs, including any that use the reserved prefix, are explicitly retained. Disposable MySQL verification is recorded with deployment. |
 | M-UX-001–003 | Player state events synchronize controls. Queue dialogs trap keyboard focus, support Escape and restore the trigger. Settings copy only the four supported fields. Browser/model regression coverage passes. |
 | M-UX-004–005 | Invalid saved data gets an atomic recovery copy before replacement. A Web Lock guards the host writer, acquired before reading state; a second tab retains singer access. Real Chromium IndexedDB/locking tests pass. |
 | M-UX-006 | Dismissal remembers room identity/generation for this app session. |

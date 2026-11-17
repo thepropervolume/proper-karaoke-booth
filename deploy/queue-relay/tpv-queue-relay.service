@@ -26,6 +26,7 @@ Environment=TPV_QUEUE_MYSQL_PASSWORD_FILE=/run/tpv-queue-relay/mysql.password
 Environment=TPV_QUEUE_WEB_ROOT=/opt/tpv-queue-relay/web
 Environment=TPV_QUEUE_OWNERS_FILE=/run/tpv-queue-relay/owners.json
 Environment=TPV_QUEUE_TRUST_PROXY=yes
+Environment=TPV_QUEUE_MOBILE=yes
 LoadCredential=owners.json:/etc/tpv-queue-relay/owners.json
 LoadCredential=mysql.password:/etc/tpv-queue-relay/runtime.password
 # Credential mounts can use 0440; the application requires owner-only files.

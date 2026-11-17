@@ -7,7 +7,7 @@ import { RelayError, type HostOpenResult, type RelayStoreApi, type RoomLease } f
 const TABLES = ['relay_version', 'relay_owners', 'relay_leases', 'relay_opens'] as const;
 type LeaseRow = RowDataPacket & { slug: string; owner_id: string; room_id: string; generation: string; expires_at: string | number; active: number };
 type OpenRow = RowDataPacket & { slug: string; room_id: string; generation: string; expires_at: string | number };
-type Options = { now?: () => number; publicOrigin?: string; leaseMs?: number };
+type Options = { now?: () => number; publicOrigin?: string; leaseMs?: number; retainedOwnerIds?: readonly string[] };
 type Column = { name: string; type: string; nullable: string; length: number | string | null; collation: string | null; extra: string; generated_sql: string };
 const COLUMNS: Record<typeof TABLES[number], readonly [string, string, boolean, number?][]> = {
   relay_version: [['id', 'tinyint', false], ['version', 'int', false]],
@@ -124,6 +124,7 @@ export class MySqlRelayStore implements RelayStoreApi {
   readonly now: () => number;
   private readonly origin: string;
   private readonly leaseMs: number;
+  private readonly retainedOwnerIds: readonly string[];
   private readonly listeners = new Set<(identity: RoomIdentity) => void>();
   private readonly known = new Map<string, string>();
   private ready = false;
@@ -132,6 +133,9 @@ export class MySqlRelayStore implements RelayStoreApi {
   constructor(private readonly pool: Pool, options: Options = {}) {
     this.now = options.now ?? Date.now;
     this.leaseMs = options.leaseMs ?? 12 * 60 * 60 * 1000;
+    if (options.retainedOwnerIds !== undefined && (!Array.isArray(options.retainedOwnerIds) || options.retainedOwnerIds.length > 100 || !options.retainedOwnerIds.every(isRelayUuid)))
+      throw new RelayError(400, 'invalid-configuration');
+    this.retainedOwnerIds = [...new Set(options.retainedOwnerIds ?? [])];
     let origin: URL;
     try { origin = new URL(options.publicOrigin ?? 'https://queue.thepropervolume.com'); }
     catch { throw new RelayError(400, 'invalid-configuration'); }
@@ -190,6 +194,15 @@ export class MySqlRelayStore implements RelayStoreApi {
     for (const row of expired) { const lease = this.row(row); fenced.push({ roomId: lease.roomId, generation: lease.generation }); }
     if (expired.length) await connection.execute('DELETE FROM relay_leases WHERE expires_at<=?', [now]);
     await connection.execute('DELETE FROM relay_opens WHERE expires_at<=?', [now - this.leaseMs]);
+    // Anonymous owners are disposable, but an inactive lease still reserves its
+    // slug and a retained open still prevents a delayed retry from resurrecting
+    // a room. The existing global transaction lock serializes cleanup with open.
+    // Explicit configured owners are retained even if their UUID uses the prefix.
+    const retain = this.retainedOwnerIds.length ? ` AND owners.owner_id NOT IN (${this.retainedOwnerIds.map(() => '?').join(',')})` : '';
+    await connection.execute(`DELETE owners FROM relay_owners AS owners
+      LEFT JOIN relay_leases AS leases ON leases.owner_id=owners.owner_id
+      LEFT JOIN relay_opens AS opens ON opens.owner_id=owners.owner_id
+      WHERE owners.owner_id LIKE 'f17e0001-%' AND leases.owner_id IS NULL AND opens.owner_id IS NULL${retain}`, [...this.retainedOwnerIds]);
   }
   /** Validate before any update, and invalidate all prior-process rooms before serving traffic. */
   initializeRuntime(): Promise<void> {

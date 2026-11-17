@@ -11,7 +11,17 @@ const socket = process.env.TPV_QUEUE_MYSQL_TEST_SOCKET;
 const database = process.env.TPV_QUEUE_MYSQL_TEST_DATABASE;
 const enabled = !!socket && isAbsolute(socket) && !!database && /^tpv_queue_test_[a-zA-Z0-9_]+$/.test(database);
 const request = (slug = 'proper-party') => ({ slug, openId: randomUUID() });
+const mobileOwner = () => 'f17e0001-' + randomUUID().slice(9);
+const desktopOwner = () => 'de5c0001-' + randomUUID().slice(9);
 const code = (status: number, reason?: string) => (error: unknown) => error instanceof RelayError && error.status === status && (!reason || error.code === reason);
+
+test('configured owner retention accepts bounded UUIDs and rejects malformed retention configuration before database access', () => {
+  const unusedPool = {} as Pool;
+  for (const retainedOwnerIds of [null, 'owner', ['not-an-id'], [42], Array.from({ length: 101 }, () => randomUUID())]) {
+    assert.throws(() => new MySqlRelayStore(unusedPool, { retainedOwnerIds: retainedOwnerIds as readonly string[] }), code(400, 'invalid-configuration'));
+  }
+  assert.doesNotThrow(() => new MySqlRelayStore(unusedPool, { retainedOwnerIds: [mobileOwner(), desktopOwner()] }));
+});
 
 test('MySQL relay metadata lifecycle, isolation and transaction invariants', { skip: !enabled, timeout: 120_000 }, async t => {
   const pool = createPool({ socketPath: socket, user: 'root', database, connectionLimit: 8,
@@ -23,9 +33,9 @@ test('MySQL relay metadata lifecycle, isolation and transaction invariants', { s
     assert.ok(tables.every(table => ['relay_opens', 'relay_leases', 'relay_owners', 'relay_version'].includes(table.name)), 'refuse to reset unrelated tables');
     for (const table of ['relay_opens', 'relay_leases', 'relay_owners', 'relay_version']) await pool.query(`DROP TABLE IF EXISTS ${table}`);
   };
-  const fresh = async (now = () => 1000) => {
+  const fresh = async (now = () => 1000, retainedOwnerIds: readonly string[] = []) => {
     await reset(); await initializeMySqlRelayStore(pool);
-    const store = new MySqlRelayStore(pool, { now, publicOrigin: 'https://queue.example.test' });
+    const store = new MySqlRelayStore(pool, { now, publicOrigin: 'https://queue.example.test', retainedOwnerIds });
     await store.initializeRuntime(); return store;
   };
   try {
@@ -90,6 +100,75 @@ test('MySQL relay metadata lifecycle, isolation and transaction invariants', { s
       assert.ok(last.some(result => result.status === 'rejected' && code(503, 'reservation-capacity')(result.reason)));
       const [total] = await pool.query<(RowDataPacket & { total: string | number })[]>('SELECT COUNT(*) AS total FROM relay_leases');
       assert.equal(Number(total[0].total), 200);
+    });
+
+    await t.test('anonymous mobile quotas include closed reservations and preserve 150 desktop slots under contention', async () => {
+      const store = await fresh(), firstOwner = mobileOwner();
+      const closed = await store.open(firstOwner, request('mobile-closed'));
+      await store.close(firstOwner, closed);
+      await assert.rejects(store.open(firstOwner, request('mobile-second-slug')), code(429, 'owner-reservation-limit'));
+      for (let index = 1; index < 49; index++) await store.open(mobileOwner(), request(`mobile-reserved-${index}`));
+      const lastMobile = await Promise.allSettled([
+        store.open(mobileOwner(), request('mobile-final-one')),
+        store.open(mobileOwner(), request('mobile-final-two')),
+      ]);
+      assert.equal(lastMobile.filter(result => result.status === 'fulfilled').length, 1);
+      assert.ok(lastMobile.some(result => result.status === 'rejected' && code(503, 'mobile-reservation-capacity')(result.reason)));
+      await assert.rejects(store.open(mobileOwner(), request('mobile-over-capacity')), code(503, 'mobile-reservation-capacity'));
+      const [mobileCount] = await pool.query<(RowDataPacket & { total: string | number })[]>("SELECT COUNT(*) AS total FROM relay_leases WHERE owner_id LIKE 'f17e0001-%'");
+      assert.equal(Number(mobileCount[0].total), 50, 'closed leases remain reserved, and concurrent mobile opens cannot exceed their subquota');
+      for (let index = 0; index < 149; index++) await store.open(desktopOwner(), request(`desktop-reserved-${index}`));
+      const lastDesktop = await Promise.allSettled([
+        store.open(desktopOwner(), request('desktop-final-one')),
+        store.open(desktopOwner(), request('desktop-final-two')),
+      ]);
+      assert.equal(lastDesktop.filter(result => result.status === 'fulfilled').length, 1);
+      assert.ok(lastDesktop.some(result => result.status === 'rejected' && code(503, 'reservation-capacity')(result.reason)));
+      const [counts] = await pool.query<(RowDataPacket & { total: string | number; mobile: string | number })[]>(
+        "SELECT COUNT(*) AS total,SUM(owner_id LIKE 'f17e0001-%') AS mobile FROM relay_leases");
+      assert.equal(Number(counts[0].total), 200); assert.equal(Number(counts[0].mobile), 50);
+      assert.equal(Number(counts[0].total) - Number(counts[0].mobile), 150);
+      assert.equal(store.isAvailable(), true, 'expected quota rejections must not latch existing shows unavailable');
+    });
+
+    await t.test('only anonymous orphans expire after all lease and retry references, while configured and desktop owners remain', async () => {
+      const leaseMs = 12 * 60 * 60 * 1000, initial = 1000;
+      let now = initial;
+      const configuredPrefixOwner = mobileOwner(), desktop = desktopOwner(), expiredOwner = mobileOwner();
+      const configured = [configuredPrefixOwner], store = await fresh(() => now, configured);
+      configured.length = 0;
+      await pool.execute('INSERT INTO relay_owners(owner_id) VALUES(?),(?)', [configuredPrefixOwner, desktop]);
+      const input = request('anonymous-expiry'), opened = await store.open(expiredOwner, input);
+      await store.close(expiredOwner, opened);
+      const owners = async () => {
+        const [rows] = await pool.query<(RowDataPacket & { owner_id: string })[]>('SELECT owner_id FROM relay_owners');
+        return new Set(rows.map(row => row.owner_id));
+      };
+      await store.expire(); assert.equal((await owners()).has(expiredOwner), true, 'a closed but reserved lease protects its owner');
+      now = initial + leaseMs;
+      await store.expire();
+      assert.equal(await store.lookup(input.slug), null);
+      assert.equal((await owners()).has(expiredOwner), true, 'a retry tombstone alone must retain the anonymous owner');
+      await assert.rejects(store.open(expiredOwner, input), code(410, 'room-ended'));
+      now = initial + 2 * leaseMs - 1;
+      await store.expire(); assert.equal((await owners()).has(expiredOwner), true, 'retain the full retry window');
+      // Exercise the lease-only invariant independently of retry retention. This
+      // fixture edit is confined to the explicitly disposable schema above.
+      const leaseOnlyOwner = mobileOwner(), activeLease = await store.open(leaseOnlyOwner, request('lease-reference-only'));
+      await pool.execute('DELETE FROM relay_opens WHERE owner_id=?', [leaseOnlyOwner]);
+      now++;
+      await store.expire();
+      const retained = await owners();
+      assert.equal(retained.has(expiredOwner), false, 'remove anonymous ownership only after its last tombstone expires');
+      assert.equal(retained.has(leaseOnlyOwner), true, 'a retained lease independently protects its owner');
+      assert.equal(retained.has(configuredPrefixOwner), true, 'configured owners survive even when their UUID has the anonymous prefix');
+      assert.equal(retained.has(desktop), true, 'ordinary desktop owners without current rooms are never garbage-collected');
+      assert.equal((await store.assertActive(leaseOnlyOwner, activeLease)).active, true);
+      now = activeLease.expiresAt;
+      await store.expire();
+      const final = await owners();
+      assert.equal(final.has(leaseOnlyOwner), false); assert.equal(final.has(configuredPrefixOwner), true); assert.equal(final.has(desktop), true);
+      assert.equal(final.size, 2); assert.equal(store.isAvailable(), true);
     });
 
     await t.test('failed rotation with confirmed rollback preserves the prior room and remains available', async () => {

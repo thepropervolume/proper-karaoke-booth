@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     multipleStatements: false, supportBigNumbers: true, bigNumberStrings: true, connectTimeout: 5000 });
   let started = false;
   try {
-    const store = new MySqlRelayStore(pool, { publicOrigin });
+    const store = new MySqlRelayStore(pool, { publicOrigin, retainedOwnerIds: (parsed.owners as RelayOwner[]).map(owner => owner.id) });
     await store.initializeRuntime();
     const broker = new RelayBroker(store);
     const service = await startQueueRelayService({ publicOrigin, owners: parsed.owners as RelayOwner[], broker, staticHandler, trustProxy: true,

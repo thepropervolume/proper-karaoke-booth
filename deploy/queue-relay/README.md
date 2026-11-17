@@ -1,5 +1,13 @@
 # Remote singer relay deployment
 
+## Mobile web and native clients
+
+Version 0.9 adds `https://queue.thepropervolume.com/app/`. Build with `npm run build:mobile`; install only the resulting `dist/mobile` directory, root-owned and unwritable by the runtime, as `/opt/tpv-queue-relay/mobile/`. Install `mobile.conf` at `/etc/apache2/tpv-queue-mobile.conf` and include it in the HTTPS vhost before the catch-all proxy. The static allowlist rejects dotfiles/build manifests and includes the app shell, fonts, icons and fixed public YouTube player. Keep its origin referrer policy: a no-referrer override can cause YouTube error 153. Never serve the repository, native signing material or credentials as the web root.
+
+`TPV_QUEUE_MOBILE=yes` enables bounded same-origin catalog search, nearby suggestions and temporary mobile-host capabilities. The catalog adapter reads the existing public snapshot on fixed loopback port 8765; the service's localhost-only IP sandbox remains in force, and no upstream Karaoke Nerds feed call is made. Mobile owners use a reserved UUID namespace, one reserved slug each and a maximum 50 reservations within the existing 200 total. The store retains configured owner IDs explicitly; expired anonymous owner rows are removed only after both lease and open tombstones have expired. No database migration or new credentials are required.
+
+Before restart, check for live rooms and avoid interrupting a show. Back up the existing bundle, static files and configuration to a new private rollback directory, verify disposable MySQL tests, check Apache syntax, then atomically install the reviewed bundle/static files and restart the relay. Confirm health, catalog results, headers, a complete mobile-host/singer queue cycle and old-generation revocation. Keep rollback assets and all existing database credential exports. Native deployment requires the public player at this exact HTTPS path; store signing and device tests are independent of static deployment.
+
 These assets serve `https://queue.thepropervolume.com` through an isolated relay
 on loopback port 8766. The desktop remains authoritative for show state, guests,
 queue changes and command receipts. The server's separate MySQL schema `tpv_queue_relay` contains relay

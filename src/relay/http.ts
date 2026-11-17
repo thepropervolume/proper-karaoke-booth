@@ -118,7 +118,7 @@ export function createQueueRelayHandler(options: Options) {
         }
         if (path === '/healthz') {
           const ready = options.isReady?.() ?? true;
-          respond(response, ready ? 200 : 503, { status: ready ? 'ok' : 'unavailable', version: '0.3.0' }); return;
+          respond(response, ready ? 200 : 503, { status: ready ? 'ok' : 'unavailable', version: '0.9.0' }); return;
         }
         const lookup = LOOKUP_ROUTE.exec(path);
         if (lookup) {
