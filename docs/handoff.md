@@ -2,6 +2,8 @@
 
 ## Current mobile handoff
 
+Delivery verification: version 0.9.0 Windows setup/ZIP from clean `8c5ffea` passed source/payload checks and isolated packaged launch/restart/branding. Final source tests: 1,076 pass, eight explicit skips, zero failures; 20 release-rule checks pass. Generated planning has 44 reviewed Word pages and 51 reviewed PDF pages. GitHub Actions artifact quota blocks mobile downloads and automatic 0.9.0 desktop release publication; published 0.8.0 remains intact. The local Windows files remain in the ignored release directory. The owner's installed app and Dropbox mirror were not changed. See [installation](installation.md) and [QA resolution index](qa/mobile-090-summary.md).
+
 17 November 2026 — source milestone 0.9.0. Active development remains in `C:\Users\hello\Projects\proper-karaoke-booth`; Dropbox is the owner's mirror. The mobile PWA is live at `https://queue.thepropervolume.com/app/`: Full Host owns a phone show, and Piggyback requests songs on a desktop or phone host. Live public catalog/search, consent before joining, request/withdraw, YouTube playback clock, shell caching and closing/revocation passed in isolated Chrome contexts. No provider key or saved account was used. Android APK/AAB and iOS Simulator compilation passed; artifact retention was rejected by GitHub's storage quota. Native signing/distribution and physical-device checks remain open. Three specialist QA reports and their resolution index are in `docs/qa/`; mobile operation/development is in `docs/mobile-app.md` and `mobile/README.md`. Catalog/website credentials are retained; no migration or credential change was needed for the mobile relay deployment.
 
 ## Current 0.7.1 Source — 15 November 2026

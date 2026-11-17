@@ -42,3 +42,5 @@ Native workflow run [44064086210](https://github.com/thepropervolume/proper-kara
 
 
 The final source suite passed **1,076 tests with eight explicit skips** (1,084 total), all 20 release-rule tests passed, type checking and production builds passed, and all 101 branding hashes verified. A separate live offline-PWA rehearsal reopened the interface without a network connection, restored the active turn paused and played its previously imported local video from IndexedDB. Evidence is in ignored `release/mobile-offline-090.json`.
+
+The clean Windows 0.9.0 setup/ZIP from `8c5ffea` passed exact source-bundle and payload comparison plus isolated packaged launch/restart/branding checks. These local files are available even while GitHub uploads are blocked. The automatic desktop release run also generated planning and built/verified Linux and both macOS architectures before its upload failures. Nothing was installed over the owner's profile. See [installation](../installation.md) and [complete document review](mobile-090-documents.md) for precise scope and evidence.

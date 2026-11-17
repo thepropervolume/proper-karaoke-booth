@@ -2,7 +2,19 @@
 
 Download installers from [GitHub Releases](https://github.com/thepropervolume/proper-karaoke-booth/releases). Version changes on the default branch trigger verified builds for every supported desktop platform; [release automation](releasing.md) explains tags, assets and recovery. Each release includes its own exact source commit and checksums. The local verification history below remains version-specific.
 
-Development **0.8.0** adds independent KaraFun instrumental, lead and backing channel volumes, including separate duet/choir parts when supplied. **Vocal Mix** is beside the transport during native playback. Mix changes survive pause/seek/Previous and reset for a new performance; lead starts muted. The official release target remains **1.0.0**.
+Development **0.9.0** hides signed-out KaraFun results, makes generic YouTube results defer to matching songs from other sources, and adds the [mobile web app](https://queue.thepropervolume.com/app/) with Full Host and Piggyback modes. See the [mobile guide](mobile-app.md). The official release target remains **1.0.0**.
+
+## 0.9.0 Delivery and Checks
+
+The Windows x64 setup and ZIP are built locally from clean commit `8c5ffea3ed756ab0229888b5c51ef9af6b4ea6dd`: `Proper-Karaoke-Booth-0.9.0-windows-x64-setup.exe` and `Proper-Karaoke-Booth-0.9.0-win-x64.zip`. They are in `C:\Users\hello\Projects\proper-karaoke-booth\release`, with build/checksum/verification receipts. Source bundles and ZIP payload hashes match; isolated packaged launch, restart without playback and branding checks passed. The owner's installed app and Dropbox mirror were not changed. Windows remains unsigned; installation/upgrade/removal and physical hardware acceptance are separate checks.
+
+The final Windows source suite passed 1,076 tests with eight explicit platform/environment skips, plus all 20 release-rule tests. The planning edition has 44 Word pages and 51 PDF pages, all visually reviewed. No desktop database migration is introduced; local schema remains 5.
+
+Android debug APK/unsigned AAB and iOS Simulator compilation passed in the [mobile workflow](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44064086210). The corresponding upload steps failed because GitHub Actions artifact storage is full. The automatic [0.9.0 desktop release run](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44068671920) also hit that quota after successful Linux/macOS packaging and verification and planning generation. Do not treat those jobs as successful deliveries or the new release as published. Published v0.8.0 release downloads were independently verified intact. Native store signing, physical phones and downloadable CI artifacts remain pending.
+
+## Historical 0.8.0 Delivery
+
+Development **0.8.0** adds independent KaraFun instrumental, lead and backing channel volumes, including separate duet/choir parts when supplied. **Vocal Mix** is beside the transport during native playback. Mix changes survive pause/seek/Previous and reset for a new performance; lead starts muted.
 
 The locally verified 0.8.0 packages described below use frozen runtime source `c0795b8`. Their files and verification receipts are in local `C:\Users\hello\Projects\proper-karaoke-booth\release`. The installed app and Dropbox mirror were not changed by that delivery.
 
