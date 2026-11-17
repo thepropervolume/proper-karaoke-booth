@@ -1,5 +1,9 @@
 # Architecture and Progress
 
+## Mobile architecture in 0.9.0
+
+`src/mobile` is one web interface built as a PWA and packaged by `mobile/` for Android/iOS using Capacitor. Full Host owns an independent local show; Piggyback uses the existing strict SingerClient and guest protocol to request changes on a desktop or phone host. A phone host uses IndexedDB, a single-writer lock, generation-scoped in-memory guest credentials and a persistence barrier before acknowledging remote mutations. It is not a second writer to a desktop's SQLite show. Existing MySQL relay tables retain leases; read-only mobile catalog search reaches the shared snapshot over fixed loopback. Native DNS-SD and short-lived same-egress hints only suggest public join addresses, never capabilities. The native HTTPS YouTube player bridge carries public player state, with parent/origin/channel checks and a new frame for each performance. See [research and boundaries](mobile-research.md), [mobile operation](mobile-app.md) and [QA](qa/mobile-090-summary.md).
+
 Updated 15 November 2026 for source development **0.7.1**. Source behavior, synthetic rehearsals, actual-account evidence and platform package verification are separate claims. See [installation](installation.md) for delivered artifacts.
 
 ## Single Host Authority

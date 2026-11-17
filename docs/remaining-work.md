@@ -1,8 +1,21 @@
 # Remaining work
 
-Updated 15 November 2026 for source development 0.7.1. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 17 November 2026 for source development 0.9.0. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The current source is 0.8.0; dated release sections below retain historical evidence. Native KaraFun playback and OS-protected remembered sign-in are implemented experimentally. Physical-show validation, native community playback, pitch/tempo and provider distribution/venue terms remain open. Per-channel KaraFun vocal mixing is implemented in 0.8.0; physical output checks remain open. KaraFun shared-rating identities and the matching production validator are deployed; both namespaces passed disposable-voter lookup/vote/update/withdrawal checks on 15 November. Windows/Linux/macOS 0.8.0 packages from `c0795b8` have separate verified receipts; installation/upgrade and physical-show gates remain. Earlier evidence stays version-specific. See installation and source-status guides.
+The current source is 0.9.0; dated release sections below retain historical evidence. Native desktop KaraFun playback, OS-protected remembered sign-in and per-channel mixing are experimental. Signed-out KaraFun results are now hidden, and generic YouTube results defer to other song sources. The mobile web app is deployed with Full Host/Piggyback modes and real YouTube streaming; Android and iOS development builds compile, while GitHub Actions artifact uploads currently hit the account storage quota. Installation and physical-show gates remain separate. See installation, mobile and source-status guides.
+
+## Mobile and Search Update
+
+- [x] Hide all saved/new KaraFun search results until signed in; fence stale replies and unsigned public calls.
+- [x] Keep generic YouTube results last and suppress artist/title matches from other visible sources without deleting recordings.
+- [x] Research KaraFun mobile capabilities and explicitly exclude quizzes.
+- [x] Deploy an installable mobile web app with independent Full Host playback/queue and host-authorized Piggyback requests.
+- [x] Add native Android/iOS wrappers, icons, DNS-SD suggestions and an explicit Join prompt; use same-egress browser hints and manual links as fallbacks.
+- [x] Independently audit protocol, usability and native packaging; document findings and regression fixes in [QA](qa/mobile-090-summary.md).
+- [ ] Complete physical Android/iOS playback, local-network permissions/discovery, prolonged background/reconnect and output checks.
+- [ ] Add mobile KaraFun/paid-provider account playback, key/tempo, vocal stems and native casting.
+- [ ] Add stable app signing and store/TestFlight distribution; resolve GitHub artifact storage capacity for downloadable CI builds.
+- [ ] Retain exact mobile playback position across app/mode restarts, show aggregate storage usage and synchronize personal accounts/favorites.
 
 ## Current foundation
 

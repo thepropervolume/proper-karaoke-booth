@@ -1,6 +1,9 @@
 # Karaoke Source Status
 
-Reviewed 15 November 2026 for experimental source development **0.8.0**. Package verification is recorded separately in [installation](installation.md). Native KaraFun was delivered in 0.6.0; 0.7.0 unifies search results and adds remembered sign-in, global native ratings and automated transitions. A searchable catalog, a consumer subscription and permission to distribute an integration are different capabilities.
+Reviewed 17 November 2026 for experimental source development **0.9.0**. Package verification is recorded separately in [installation](installation.md). Native KaraFun was delivered in 0.6.0; 0.7.0 unifies search results and adds remembered sign-in, global native ratings and automated transitions. A searchable catalog, a consumer subscription and permission to distribute an integration are different capabilities.
+
+
+In 0.9.0, KaraFun search results appear only while signed in, including saved recordings. Generic YouTube results are last and defer to artist/title matches from other visible sources. The [mobile web app](https://queue.thepropervolume.com/app/) streams Karaoke Nerds recordings through YouTube, plays user-imported local videos and supports Full Host/Piggyback rooms. Mobile paid-provider sign-in, vocal mixing and casting are still separate work; desktop KaraFun capability does not imply phone playback.
 
 | Source | Current TPV capability | Access and remaining work |
 | --- | --- | --- |

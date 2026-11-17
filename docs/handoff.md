@@ -1,5 +1,9 @@
 # Development Handoff
 
+## Current mobile handoff
+
+17 November 2026 — source milestone 0.9.0. Active development remains in `C:\Users\hello\Projects\proper-karaoke-booth`; Dropbox is the owner's mirror. The mobile PWA is live at `https://queue.thepropervolume.com/app/`: Full Host owns a phone show, and Piggyback requests songs on a desktop or phone host. Live public catalog/search, consent before joining, request/withdraw, YouTube playback clock, shell caching and closing/revocation passed in isolated Chrome contexts. No provider key or saved account was used. Android APK/AAB and iOS Simulator compilation passed; artifact retention was rejected by GitHub's storage quota. Native signing/distribution and physical-device checks remain open. Three specialist QA reports and their resolution index are in `docs/qa/`; mobile operation/development is in `docs/mobile-app.md` and `mobile/README.md`. Catalog/website credentials are retained; no migration or credential change was needed for the mobile relay deployment.
+
 ## Current 0.7.1 Source — 15 November 2026
 
 Active work is in `C:\Users\hello\Projects\proper-karaoke-booth`; Dropbox is the owner's mirror. Commit/push focused changes with relevant tests/help, report each delivered version, and reserve 1.0.0 for approved release. Canonical planning is `docs/product-specification.md`; generate Word/PDF from it into ignored local release/planning. Do not update generated files independently.

@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 15 November 2026. **Application milestone:** 0.8.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 17 November 2026. **Application milestone:** 0.9.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -12,7 +12,7 @@ This specification describes both the current rehearsal build and the product we
 
 The Proper Volume Karaoke is intended to be a dependable, local-first karaoke hosting product for Windows, macOS and Linux. A desktop host controls a show, its music library, the singer rotation and a separate singer display. The intended ecosystem also includes a singer experience, a dedicated KJ remote and a staff queue workspace, with appropriate boundaries between them. A **party** and a **show** mean the same live session. Hosts or venues are expected to pay; singer participation is free. Subscription prices, plans, billing cadence, trials, limits and launch dates are undecided.
 
-The host computer is the single authority for show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. Companion interfaces must never become a second playback or queue authority. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
+The host device, desktop or phone in Full Host mode, is the single authority for its own show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. Companion interfaces must never become a second playback or queue authority. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
 
 **Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started YouTube preview, unified host-only service catalog metadata search, native KaraFun account/queue/playback, and the initial authenticated local API/CLI for reads and settings navigation. **Experimental mobile:** the shared web interface provides Full Host and Piggyback modes with local show persistence and generation-scoped singer requests; Android/iOS wrappers and discovery require platform/device acceptance. **Planned:** complete mobile paid-provider playback, the full native companion feature set, complete general local API, complete access-control model, additional paid-provider playback and paid subscriptions. The app is not yet validated as a live-show replacement.
 
@@ -509,7 +509,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
       "Send title and artist to host"
     ]
   ],
-  "detail": "Local invitations require trusted venue HTTPS and DNS; internet sessions use the host’s queue.thepropervolume.com link. Persistent accounts and live native joining remain planned."
+  "detail": "Local invitations require trusted venue HTTPS and DNS; internet sessions use the host’s queue.thepropervolume.com link. Persistent accounts remain planned; real-device native joining and network permissions require acceptance."
 }
 ```
 
@@ -1112,5 +1112,80 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Done | Keep playing with current levels"
   ],
   "detail": "Host-only, authorized current generation. Unknown stems remain Other Audio; mixed voices cannot be separated. Synthetic five-stem audio and hidden-window controls verified. Physical mixer and real duet listening remain acceptance work."
+}
+```
+
+
+```mockup
+{
+  "id": "M01",
+  "title": "Mobile Host and Piggyback Modes",
+  "status": "Partial",
+  "description": "One mobile web interface powers the PWA and Android or iOS wrappers. Real phone acceptance remains separate.",
+  "layout": "phones",
+  "phone_titles": [
+    "Choose Your Mode",
+    "Full Host Mode"
+  ],
+  "phone_subtitles": [
+    "Host or join an existing room",
+    "Own player and singer queue"
+  ],
+  "phone_rows": [
+    [
+      "Full Host Mode | Play and invite singers",
+      "Piggyback Mode | Join another host",
+      "Room Found | Confirm then Join",
+      "Room Name or Link | Manual fallback",
+      "Install | Add to Home Screen",
+      "Native Discovery | Optional network access"
+    ],
+    [
+      "Search Songs | Karaoke Nerds and local",
+      "Popular | Nada Surf",
+      "Add to Queue | Singer optional",
+      "Play or Pause | Timeline and volume",
+      "Favorites and History | This device",
+      "Room | Name and share a singer link"
+    ]
+  ],
+  "detail": "Public HTTPS rehearsals passed for catalog search, joining, requests, withdrawal, real YouTube playback, shell caching and room closure. Native compilation passes; store signing and physical Android or iOS checks remain."
+}
+```
+
+```mockup
+{
+  "id": "M02",
+  "title": "Mobile Room and Singer Requests",
+  "status": "Partial",
+  "description": "A singer requests a song on a phone or desktop host. Discovery suggests a room and never joins automatically.",
+  "layout": "phones",
+  "phone_titles": [
+    "Piggyback Mode",
+    "Your Karaoke Room"
+  ],
+  "phone_subtitles": [
+    "Request songs on the host",
+    "Full Host room settings"
+  ],
+  "phone_rows": [
+    [
+      "Room Found | Friday Night",
+      "Join Room | Singer chooses",
+      "Your Name | Casey",
+      "Song Library | Host published songs",
+      "Request | Check accepted status",
+      "Withdraw or Away | Your own requests"
+    ],
+    [
+      "Booth Name | Friday Night",
+      "Room Address | friday-night",
+      "Open Room | Share singer link",
+      "Suggest Nearby | Optional",
+      "Between Songs | 5 second gap",
+      "Your Data | Export show and history"
+    ]
+  ],
+  "detail": "Web suggestions share a public internet connection and may cover different venues. Native DNS-SD uses public room beacons; manual HTTPS links remain available. Room closure resets guest access. No quizzes, mobile paid-provider login or casting is implied."
 }
 ```

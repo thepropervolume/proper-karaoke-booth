@@ -30,3 +30,15 @@ Three specialized reviewers independently audited the initial mobile draft on 17
 `scripts/mobile-browser-smoke.mts` runs two phone-sized Chrome contexts against a real local relay with synthetic catalog data and a generated test video. It verifies room publication, consent before joining, real SingerClient queue submission, reorder/singer identity, dialog keyboard behavior, local playback/native controls/timeline, cross-tab host protection and room-close revocation. The 320/390/768px pages have no horizontal overflow. Ignored evidence is in `release/mobile-browser-090/`; no real account or provider key is used. The standalone specialist evidence remains under their recorded ignored paths.
 
 Physical Android/iOS network permissions, DNS-SD over venue Wi-Fi, battery/background suspension, real YouTube creator restrictions, output hardware and long shows remain unverified. Browser tests and native compilation must not be presented as those physical checks. Paid mobile providers, key/tempo, vocal mixing, native casting, app-store signing and synced personal accounts remain product work, with quizzes excluded.
+
+
+## Live and native verification on 17 November
+
+The deployed PWA passed a live HTTPS rehearsal against the existing MySQL-backed services: shared catalog search, nearby suggestion, explicit admission, singer request/withdrawal, a real YouTube stream advancing from 0:00 to 0:01 with a 4:29 duration, installed shell caching and guest revocation after closing. The temporary room was closed, browser contexts were discarded and no account/provider credentials were used. Evidence is in ignored `release/mobile-live-090.json`.
+
+The disposable Linode MySQL suite passed all 13 checks, including concurrent mobile caps, the remaining 150 desktop slots, anonymous owner cleanup and protected configured owners; its isolated schema was removed afterward. Production show/catalog data and credential files were untouched. The application suite passed 1,074 tests with eight explicit platform/environment skips at that checkpoint, plus 20 release-rule checks; later final totals are recorded with delivery.
+
+Native workflow run [44064086210](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44064086210) compiled both Android APK/AAB and the iOS Simulator app successfully. Both upload steps failed with GitHub's artifact-storage quota error, so the complete workflow did not pass and those CI binaries are not downloadable artifacts. Published v0.8.0 release files were independently reverified intact. Native compilation is not device or store verification.
+
+
+The final source suite passed **1,076 tests with eight explicit skips** (1,084 total), all 20 release-rule tests passed, type checking and production builds passed, and all 101 branding hashes verified. A separate live offline-PWA rehearsal reopened the interface without a network connection, restored the active turn paused and played its previously imported local video from IndexedDB. Evidence is in ignored `release/mobile-offline-090.json`.
