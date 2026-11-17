@@ -67,10 +67,11 @@ for (const path of [config.win.icon, config.mac.icon, config.linux.icon,
   assert.ok(await stat(join(repo, path)));
 assert.ok(config.extraResources.some(item => item.to === 'branding' && item.filter.includes('app.ico') && item.filter.includes('app.png')));
 assert.deepEqual(png(await readFile(join(brand, 'app.png'))), [1024, 1024]);
-const mobile = JSON.parse(await readFile(join(repo, 'mobile/app.json'), 'utf8')).expo;
-for (const path of [mobile.icon, mobile.android.adaptiveIcon.foregroundImage, mobile.web.favicon])
-  assert.ok(await stat(resolve(repo, 'mobile', path)));
-assert.deepEqual(png(await readFile(resolve(repo, 'mobile', mobile.icon))), [1024, 1024]);
+assert.match(await readFile(join(repo, 'mobile/capacitor.config.ts'), 'utf8'), /com\.thepropervolume\.karaoke/);
+for (const size of [192, 512]) assert.deepEqual(png(await readFile(join(repo, `mobile/web-public/icon-${size}.png`))), [size, size]);
+assert.deepEqual(png(await readFile(join(repo, 'mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'))), [1024, 1024]);
+for (const [density, size] of [['mdpi',48],['hdpi',72],['xhdpi',96],['xxhdpi',144],['xxxhdpi',192]])
+  assert.deepEqual(png(await readFile(join(repo, `mobile/android/app/src/main/res/mipmap-${density}/ic_launcher.png`))), [size, size]);
 for (const [name, width, height] of [['installer-header.bmp',150,57],['installer-sidebar.bmp',164,314]]) {
   const bmp = await readFile(join(brand, name));
   assert.equal(bmp.subarray(0,2).toString(), 'BM');

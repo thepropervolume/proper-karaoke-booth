@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TPV Karaoke</string>
+    <string name="title_activity_main">TPV Karaoke</string>
+    <string name="package_name">com.thepropervolume.karaoke</string>
+    <string name="custom_url_scheme">com.thepropervolume.karaoke</string>
+</resources>

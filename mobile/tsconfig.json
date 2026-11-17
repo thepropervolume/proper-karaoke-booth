@@ -1,5 +1,4 @@
 {
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": { "strict": true, "noEmit": true },
-  "include": ["App.tsx", "src/**/*.ts"]
+  "compilerOptions": { "strict": true, "noEmit": true, "moduleResolution": "bundler", "module": "esnext", "target": "es2022", "skipLibCheck": true },
+  "include": ["capacitor.config.ts"]
 }

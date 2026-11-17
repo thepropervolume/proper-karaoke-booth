@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import math
+import runpy
 from pathlib import Path
 import struct
 import xml.etree.ElementTree as ET
@@ -149,6 +150,10 @@ def generate(output_root: Path) -> dict:
     installer_bitmap(brand / "installer-sidebar.bmp", (SOURCE / "wordmark-light.svg").read_bytes(), 164, 314, 10)
     write(brand / "installer.nsh", b"!macro customWelcomePage\n  !insertmacro MUI_PAGE_WELCOME\n!macroend\n")
 
+    # Native/PWA slots are derived from the same approved mark, including opaque
+    # store art, adaptive density exports and branded launch screens.
+    mobile_exports = runpy.run_path(str(REPO / "scripts" / "sync-mobile-icons.py"))["sync"](output_root)
+    written.update(mobile_exports)
     # Source-of-truth records are deliberately separate from app versioning: one
     # approved identity is shared by the booth, singer client and later releases.
     manifest = {"id": "mic-play", "name": "Microphone Play", "approvedOn": "2026-11-13",

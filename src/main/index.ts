@@ -1,3 +1,4 @@
+import { MobileRoomBeacon } from './mobile-room-beacon';
 // Application composition root: the host owns durable state; renderers ask for
 // actions and report playback facts. Provider credentials and media paths stay here.
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, screen, shell } from 'electron';
@@ -90,6 +91,7 @@ let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
 let karaFunAccount: KaraFunAccount;
+const mobileRoomBeacon = new MobileRoomBeacon();
 let karaFunHost: KaraFunHost;
 let activeKaraFun: { generation: string; versionId: string; media: KaraFunPreparedMedia; revision: number } | null = null;
 let hostRatings: HostSongRatings;
@@ -1054,7 +1056,8 @@ else {
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; syncQueuedDownloads(); broadcast(); };
     remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted);
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
-      publish:value=>{if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value)});
+      publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
+      fetch:(url,init)=>fetch(url,{...init,headers:{...Object.fromEntries(new Headers(init?.headers)),'X-TPV-Room-Discovery':settings.mobileRoomDiscovery?'yes':'no'}})});
     const provider = createLanHostProvider({ store, settings: () => settings, staticHandler,
       installCommitted, coordinator: remoteAuthority,
       pickFile: async kind => {
@@ -1462,6 +1465,7 @@ else {
         broadcast();
         if (youtubeSettingsChanged) youtubeSearch.cancel();
         await reconcileSingerScreen();
+        if (internetQueue) mobileRoomBeacon.update(internetQueue.status(),settings.boothName,settings.mobileRoomDiscovery);
         await reconcileLocalControl();
         return settings;
       } finally { if (changingOutput) { playbackTransition = false; publishBumper(); } }
@@ -1678,7 +1682,7 @@ app.on('before-quit', event => {
   const nativePending = karaFunHost?.needsShutdownWait() ?? false;
   const nativeShutdown = karaFunHost?.shutdown() ?? Promise.resolve();
   void karaFunAccount?.close(); activeKaraFun = null;
-  youtubeSearch.cancel(); singerCapture.stop();
+  youtubeSearch.cancel(); singerCapture.stop(); mobileRoomBeacon.close();
   const singerScreenWasActive = singerScreenServer.status().state !== 'stopped';
   const singerScreenShutdown = singerScreenServer.stop().then(() => true, () => false);
   const pendingImport = importJob?.snapshot();

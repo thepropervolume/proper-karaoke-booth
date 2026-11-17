@@ -1,21 +1,22 @@
 {
-  "name": "proper-karaoke-singer-preview",
-  "version": "0.1.0",
+  "name": "proper-karaoke-mobile",
+  "version": "0.9.0",
   "private": true,
-  "main": "node_modules/expo/AppEntry.js",
+  "description": "TPV mobile web, Android and iOS host and singer app",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "build": "npm --prefix .. run build:mobile",
+    "sync": "cap sync",
+    "android": "cap open android",
+    "ios": "cap open ios",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "expo": "58.0.0",
-    "react": "19.3.0",
-    "react-native": "0.88.0"
+    "@capacitor/core": "8.6.2",
+    "@capacitor/android": "8.6.2",
+    "@capacitor/ios": "8.6.2"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
+    "@capacitor/cli": "8.6.2",
     "typescript": "~5.9.3"
   }
 }

@@ -149,7 +149,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
         </details>
         <details className="settings-group">
           <summary>Remote Queueing</summary>
-          <div className="settings-group__content"><HostRemotePanel bridge={window.tpv.remote} /></div>
+          <div className="settings-group__content"><label><input type="checkbox" checked={draft.mobileRoomDiscovery} onChange={event => setDraft({ ...draft, mobileRoomDiscovery: event.target.checked })} />Suggest my active internet room to nearby mobile singers</label><p className="muted">Shares the public room address on trusted local networks and with devices using the same internet connection. Joining still needs approval from the singer.</p><HostRemotePanel bridge={window.tpv.remote} /></div>
         </details>
         <details className="settings-group">
           <summary>Audio Controls</summary>
