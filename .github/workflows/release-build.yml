@@ -13,8 +13,11 @@ on:
         required: true
         type: string
     outputs:
-      artifact-id:
-        value: ${{ jobs.package.outputs.artifact-id }}
+      stage-attempt:
+        value: ${{ jobs.package.outputs.stage-attempt }}
+    secrets:
+      BOOTH_RELEASE_SSH_KEY:
+        required: true
 
 permissions:
   contents: read
@@ -28,7 +31,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     outputs:
-      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+      stage-attempt: ${{ steps.upload.outputs.attempt }}
     env:
       TPV_RELEASE_PLATFORM: ${{ inputs.platform }}
     steps:
@@ -56,12 +59,9 @@ jobs:
         run: npm run "package:$TPV_RELEASE_PLATFORM"
       - name: Verify source, payloads and packaged app
         run: node scripts/github-release.mjs platform "$TPV_RELEASE_PLATFORM"
-      - name: Retain only verified release assets
-        id: artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: release-${{ inputs.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: release/ci-assets/${{ inputs.platform }}/*
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 14
+      - name: Stage verified release assets on the download server
+        id: upload
+        env:
+          BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
+          BOOTH_RELEASE_KNOWN_HOST: ${{ vars.BOOTH_RELEASE_KNOWN_HOST }}
+        run: node scripts/upload-booth-release.mjs upload "$TPV_RELEASE_PLATFORM"

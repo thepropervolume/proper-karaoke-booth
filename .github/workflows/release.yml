@@ -35,9 +35,7 @@ jobs:
           package-manager-cache: false
       - name: Check version change and existing releases
         id: plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/github-release.mjs plan
+        run: node scripts/upload-booth-release.mjs plan
 
   windows:
     needs: plan
@@ -47,6 +45,8 @@ jobs:
       platform: win
       runner: windows-latest
       commit: ${{ needs.plan.outputs.commit }}
+    secrets:
+      BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
   linux:
     needs: plan
     if: needs.plan.outputs.publish == 'true'
@@ -55,6 +55,8 @@ jobs:
       platform: linux
       runner: ubuntu-24.04
       commit: ${{ needs.plan.outputs.commit }}
+    secrets:
+      BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
   macos:
     needs: plan
     if: needs.plan.outputs.publish == 'true'
@@ -63,6 +65,8 @@ jobs:
       platform: mac
       runner: xcode-27
       commit: ${{ needs.plan.outputs.commit }}
+    secrets:
+      BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
 
   planning:
     needs: plan
@@ -70,7 +74,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
-      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+      stage-attempt: ${{ steps.upload.outputs.attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -93,22 +97,19 @@ jobs:
           python -m unittest discover -s tests/docs
           python scripts/generate-planning.py --output-dir release/planning
           node scripts/github-release.mjs planning
-      - id: artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: release-planning-${{ github.run_id }}-${{ github.run_attempt }}
-          path: release/ci-assets/planning/*
-          if-no-files-found: error
-          retention-days: 14
+      - name: Stage generated planning editions on the download server
+        id: upload
+        env:
+          BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
+          BOOTH_RELEASE_KNOWN_HOST: ${{ vars.BOOTH_RELEASE_KNOWN_HOST }}
+        run: node scripts/upload-booth-release.mjs upload planning
 
   publish:
     needs: [plan, windows, linux, macos, planning]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: write
-    # Serialize only publication of the same version; never cancel an upload.
+    # Serialize publication of the same version and keep each build set isolated.
     concurrency:
       group: release-${{ needs.plan.outputs.version }}
       cancel-in-progress: false
@@ -121,13 +122,12 @@ jobs:
         with:
           node-version: '24.15.0'
           package-manager-cache: false
-      # Exact IDs prevent a rerun from accidentally mixing another attempt's files.
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          artifact-ids: ${{ needs.windows.outputs.artifact-id }},${{ needs.linux.outputs.artifact-id }},${{ needs.macos.outputs.artifact-id }},${{ needs.planning.outputs.artifact-id }}
-          path: release-assets
-          merge-multiple: true
-      - name: Verify all assets and publish the GitHub release
+      - name: Verify and publish the complete release on the download server
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/github-release.mjs publish
+          BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
+          BOOTH_RELEASE_KNOWN_HOST: ${{ vars.BOOTH_RELEASE_KNOWN_HOST }}
+          WIN_STAGE_ATTEMPT: ${{ needs.windows.outputs.stage-attempt }}
+          LINUX_STAGE_ATTEMPT: ${{ needs.linux.outputs.stage-attempt }}
+          MAC_STAGE_ATTEMPT: ${{ needs.macos.outputs.stage-attempt }}
+          PLANNING_STAGE_ATTEMPT: ${{ needs.planning.outputs.stage-attempt }}
+        run: node scripts/upload-booth-release.mjs publish
