@@ -1,4 +1,4 @@
-# Singer Guide for Development Version 0.10.0
+# Singer Guide for Development Version 0.10.1
 
 ## Applause, Points and Photos
 
