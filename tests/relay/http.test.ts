@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { RelayStore } from '../../src/relay/store';
 import { RelayBroker } from '../../src/relay/broker';
 import { RelayRateLimits, startQueueRelayService } from '../../src/relay/http';
+import { version as appVersion } from '../../package.json';
 
 const origin = 'https://queue.example.test';
 const token = 'a'.repeat(43), second = 'b'.repeat(43);
@@ -118,7 +119,9 @@ test('host credentials, origins, identities and operation allowlists are enforce
 
 test('only the singer asset allowlist and clean custom slug paths are served', async () => fixture(async call => {
   assert.equal((await call('/')).status, 200);
-  assert.equal((await call('/healthz')).status, 200);
+  const health = await call('/healthz');
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).version, appVersion);
   assert.match(await (await call('/my-karaoke')).text(), /Karaoke/);
   assert.match(await (await call('/my-karaoke/')).text(), /Karaoke/);
   assert.equal((await call('/assets/singer-test.js')).status, 200);

@@ -10,6 +10,7 @@ import { RelayStore } from '../src/relay/store';
 import { RelayBroker } from '../src/relay/broker';
 import { startQueueRelayService } from '../src/relay/http';
 const origin = 'https://queue.thepropervolume.com', directory = resolve('release/mobile-browser-090');
+const { version: appVersion } = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
 await mkdir(directory, { recursive: true });
 const db = new DatabaseSync(':memory:');
 const broker = new RelayBroker(new RelayStore(db), { pollTimeoutMs: 300, rpcTimeoutMs: 1500 });
@@ -43,6 +44,7 @@ try {
   });
   const host = await context.newPage(); host.on('pageerror', error => errors.push(error.message));
   await host.goto(origin + '/app/');
+  assert.equal(await host.locator('.mobile-version').innerText(), appVersion);
   await host.getByRole('button', { name: /^Full Host Mode/ }).click();
   await host.getByRole('searchbox').fill('Oasis');
   await host.getByRole('button', { name: 'Queue Wonderwall' }).click();

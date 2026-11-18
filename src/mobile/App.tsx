@@ -1,4 +1,5 @@
 import { QueueDialog } from './QueueDialog';
+import { version as appVersion } from '../../package.json';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MobileShow, type MobileSong, type MobileShowState } from './show';
 import { loadMobileShow, saveLocalMedia, saveMobileShow, acquireMobileHostLock, MobileHostLockUnsupported, preserveMobileRecovery, listMobileRecoveries, readMobileRecovery, deleteLocalMedia, relinkLocalMedia } from './storage';
@@ -159,7 +160,7 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     </div></details>
   </li>;
   return <div className="mobile-app">
-    <header className="mobile-header"><a href="./" onClick={event => { event.preventDefault(); setMode('choose'); setPlaying(false); }} aria-label="The Proper Volume home"><img src="./icon-192.png" alt="" /><strong>TPV Karaoke</strong></a><span className="mobile-version">0.9.0</span>
+    <header className="mobile-header"><a href="./" onClick={event => { event.preventDefault(); setMode('choose'); setPlaying(false); }} aria-label="The Proper Volume home"><img src="./icon-192.png" alt="" /><strong>TPV Karaoke</strong></a><span className="mobile-version">{appVersion}</span>
       {mode !== 'choose' && <button type="button" onClick={() => { setMode('choose'); setPlaying(false); }}>Switch Mode</button>}</header>
     {error && <div className="mobile-alert" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
     {notice && <div className="mobile-notice" role="status">{notice}<button aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}

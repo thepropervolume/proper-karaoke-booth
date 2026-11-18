@@ -10,6 +10,7 @@ import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGue
 import { MobileHostAccess, NearbyRooms } from './mobile-access';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { searchMobileCatalog } from './mobile-catalog';
+import { version as appVersion } from '../../package.json';
 
 export type RelayOwner = { id: string; tokenSha256: string };
 type Options = { publicOrigin: string; owners: readonly RelayOwner[]; broker: RelayBroker; staticHandler: SingerStaticHandler;
@@ -120,7 +121,7 @@ export function createQueueRelayHandler(options: Options) {
         }
         if (path === '/healthz') {
           const ready = options.isReady?.() ?? true;
-          respond(response, ready ? 200 : 503, { status: ready ? 'ok' : 'unavailable', version: '0.9.0' }); return;
+          respond(response, ready ? 200 : 503, { status: ready ? 'ok' : 'unavailable', version: appVersion }); return;
         }
         const lookup = LOOKUP_ROUTE.exec(path);
         if (lookup) {
