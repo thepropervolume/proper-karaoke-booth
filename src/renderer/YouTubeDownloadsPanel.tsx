@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import type { YouTubeDownloadProgress } from '../main/youtube-download';
-export type YouTubeDownloadStatus = { job: YouTubeDownloadProgress | null; preparing: boolean; cachedVersionIds: string[];
+export type YouTubeDownloadStatus = { job: YouTubeDownloadProgress | null; preparing: boolean; cachedVersionIds: string[]; readyVersionIds?: string[];
   queue?: {pendingVersionIds:string[];waitingVideos?:{versionId:string;title:string}[];activeVersionId:string|null;failures:{versionId:string;message:string;title?:string}[];blocked:boolean} };
 export type YouTubeDownloadBridge = { status(): Promise<YouTubeDownloadStatus>; start(versionId: string): Promise<YouTubeDownloadProgress | null>; cancel(id: string): Promise<boolean> };
-export function YouTubeDownloadsPanel({ bridge, onCached }: { bridge: YouTubeDownloadBridge; onCached: (ids: string[]) => void }) {
+export function YouTubeDownloadsPanel({ bridge, onCached, onStatus }: { bridge: YouTubeDownloadBridge; onCached: (ids: string[]) => void; onStatus?: (value: YouTubeDownloadStatus | null) => void }) {
   const [state, setState] = useState<YouTubeDownloadStatus | null>(null);
   const [error, setError] = useState('');
   const [dismissed, setDismissed] = useState('');
@@ -15,16 +15,17 @@ export function YouTubeDownloadsPanel({ bridge, onCached }: { bridge: YouTubeDow
         const value = await bridge.status();
         if (alive) {
           setState(value);
+          onStatus?.(value);
           setError('');
           const key = JSON.stringify(value.cachedVersionIds);
           if (cached !== key) { cached = key; onCached(value.cachedVersionIds); }
         }
-      } catch { if (alive) setError('Video download status is unavailable.'); }
+      } catch { if (alive) { setError('Video download status is unavailable.'); onStatus?.(null); } }
       finally { pending = false; }
     };
     void refresh(); const timer = setInterval(() => void refresh(), 500);
     return () => { alive = false; clearInterval(timer); };
-  }, [bridge, onCached]);
+  }, [bridge, onCached, onStatus]);
   const job = state?.job;
   const active = !!job && ['preparing', 'downloading', 'verifying', 'cancelling'].includes(job.phase);
   if (!error && !state?.preparing && !state?.queue?.pendingVersionIds.length && !state?.queue?.failures.length && (!job || job.id === dismissed)) return null;

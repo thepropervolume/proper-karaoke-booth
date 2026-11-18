@@ -1,5 +1,11 @@
 # Host Workspace
 
+## Downloading Songs and Song Gaps
+
+Queued YouTube, KaraFun and Party Tyme songs that are still being prepared are shaded and show a status. When a song's turn arrives before its media is ready, the next ready song plays and the waiting request is reconsidered after it finishes. This repeats until the waiting song is ready. If every eligible song is still preparing, an automatically advancing show waits for one to become ready. Right-click a failed request and choose **Retry song preparation**.
+
+Set **Preferences → Queue Management → Automatically play next song** and **Preferences → Audio Controls → Pause Interval** to control the transition and gap. The interval ranges from 0 to 300 seconds. Starting a show still requires the host to press Play.
+
 ## Workspace in 0.7.1
 
 The search-results area is the main workspace, with larger readable song rows and brief status text. A global search field above Workspace in the sidebar remains available from Library, Playlists, Sources and host-only areas. Ctrl/Cmd+F or the assigned search shortcut returns to Library and focuses it. The search box has one visible outer focus ring; the input does not draw a second inner glow. Details belong in immediate (?) tooltips rather than long repeated instructions. Informational notices clear after eight seconds; errors remain until dismissed.

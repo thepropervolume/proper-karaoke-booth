@@ -230,13 +230,21 @@ function publishTimeline(): void {
 function videoCacheDirectory(): string {
   return settings.karaokeNerdsCacheDirectory || join(app.getPath('videos'), 'The Proper Volume Karaoke');
 }
+function queueMediaReady(versionId: string): boolean {
+  const provider = state.versions.find(version => version.id === versionId)?.source?.provider;
+  if (provider !== 'youtube' && provider !== 'karafun' && provider !== 'partytyme') return true;
+  const media = store.media(versionId);
+  return !!media && existsSync(media.path);
+}
 function downloadStatus() {
   const sources = new Set(state.versions.filter(version => version.source?.provider === 'youtube').map(version => version.id));
   const queue=queuedDownloads.snapshot();
   return { job: youtubeDownloads?.snapshot() ?? null, preparing: preparingDownload, queue:{...queue,
     waitingVideos:queue.pendingVersionIds.map(versionId=>({versionId,title:state.versions.find(version=>version.id===versionId)?.title ?? 'Video'})),
     failures:queue.failures.map(failure=>({...failure,title:state.versions.find(version=>version.id===failure.versionId)?.title ?? 'Video'}))},
-    cachedVersionIds: Object.keys(store.mediaFilenames()).filter(id => sources.has(id) && existsSync(store.media(id)!.path)) };
+    cachedVersionIds: Object.keys(store.mediaFilenames()).filter(id => sources.has(id) && existsSync(store.media(id)!.path)),
+    readyVersionIds: [...new Set(state.requests.filter(request => ['accepted', 'staged', 'pending'].includes(request.status))
+      .map(request => request.versionId))].filter(queueMediaReady) };
 }
 const queuedDownloads = new QueuedVideoDownloads(async versionId => {
   const job = await startYouTubeDownload(versionId);
@@ -406,7 +414,7 @@ function refreshAvailabilityDeadline(): void {
 function broadcast(): void {
   if (shuttingDown) return;
   if (!autoStageSuspended) {
-    const prepared = stageNextApproved(state, settings);
+    const prepared = stageNextApproved(state, settings, Date.now(), queueMediaReady);
     if (prepared !== state) { store.save(prepared); state = prepared; }
   }
   refreshAvailabilityDeadline();

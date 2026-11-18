@@ -30,6 +30,10 @@
 .queue-row__head > div { flex: 1; min-width: 0; }
 .queue-row__number { min-width: 22px; padding-top: 1px; color: var(--muted); font-size: .74rem; font-variant-numeric: tabular-nums; font-weight: 800; letter-spacing: .04em; }
 .queue-row.selected { background: var(--panel-selected); box-shadow: inset 3px 0 0 var(--accent); }
+.queue-row--preparing { background: color-mix(in srgb, var(--muted) 12%, var(--panel)); }
+.queue-row--preparing .queue-row__head > div > strong { color: var(--muted); }
+.queue-row--preparing .queue-row__preparation { font-weight: 700; }
+.queue-row--preparing .queue-row__preparation.is-failed { color: var(--danger); }
 .queue-row[draggable='false'] { cursor: default; }
 
 .song-option, .queue-row[role='option'] { cursor: pointer; }

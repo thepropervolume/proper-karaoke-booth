@@ -45,7 +45,8 @@ import { InternetSessionPanel } from '../remote/InternetSessionPanel';
 import type { InternetSessionBridge } from '../remote/internet-session-control';
 import { ImportPanel, type ImportBridge } from './ImportPanel';
 import { CdgImportPanel, type CdgBridge } from './CdgImportPanel';
-import { YouTubeDownloadsPanel, type YouTubeDownloadBridge } from './YouTubeDownloadsPanel';
+import { YouTubeDownloadsPanel, type YouTubeDownloadBridge, type YouTubeDownloadStatus } from './YouTubeDownloadsPanel';
+import { queuePreparation, useQueuePreparations } from './use-queue-preparation';
 import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { SongResults } from './SongResults';
@@ -195,6 +196,8 @@ function App() {
   const focusSearch = () => { pendingPreferences.current = null; ++ratingOpenSequence.current; setRatingDialog(null); setEditingRequest(null); setQueueMenu(null); setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [cachedVideoIds, setCachedVideoIds] = useState<string[]>([]);
+  const [downloadStatus, setDownloadStatus] = useState<YouTubeDownloadStatus | null>(null);
+  const providerPreparations = useQueuePreparations(window.tpv.karaFun, window.tpv.partyTyme);
   const [selectedRequestId, setSelectedRequestId] = useState('');
   const [editingRequest, setEditingRequest] = useState<SongRequest | null>(null);
   const [queueMenu, setQueueMenu] = useState<{ request: SongRequest; x: number; y: number } | null>(null);
@@ -656,7 +659,7 @@ function App() {
         <button type="button" className="notice__dismiss" aria-label="Dismiss message" onClick={dismissNotice}><Icon name="close" /></button>
       </div>}
       <ImportPanel bridge={window.tpv.imports} onActiveChange={setImportActive} />
-      <YouTubeDownloadsPanel bridge={window.tpv.youtubeDownloads} onCached={setCachedVideoIds} />
+      <YouTubeDownloadsPanel bridge={window.tpv.youtubeDownloads} onCached={setCachedVideoIds} onStatus={setDownloadStatus} />
       <CdgImportPanel bridge={window.tpv.cdg} showStart={false} />
       {!state ? <p className="empty">Loading your show…</p> : <>
         {screen === 'library' && <>
@@ -742,12 +745,12 @@ function App() {
         <div className="queue-actions"><button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').findIndex(r => r.id === selectedFuture.id) < 1} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i > 0) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i - 1].id }); }}>Move up</button> <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').at(-1)?.id === selectedFuture.id} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i >= 0 && i < waiting.length - 1) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i + 2]?.id ?? null }); }}>Move down</button> <button disabled={busy || (!state?.manualQueueOrder?.length && !state?.promotedRequestId)} onClick={() => void command({ type: 'resetQueueOrder' }, 'Automatic queue order restored.')}>Automatic order</button></div>
       </div>
       {state?.manualQueueOrder?.length ? <p className="muted rotation__hint">Manual order · new requests follow the arranged queue.</p> : null}
-      <div role="listbox" aria-label="Singer Rotation" data-queue-list>{future.map((request, index) => { const item = describe(request); return <div className={`queue-row ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}
+      <div role="listbox" aria-label="Singer Rotation" data-queue-list>{future.map((request, index) => { const item = describe(request); const preparation = queuePreparation(state?.versions.find(version => version.id === request.versionId), downloadStatus, providerPreparations); return <div className={`queue-row ${preparation?.pending ? 'queue-row--preparing' : ''} ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}
         draggable={!busy && request.status === 'accepted'} onDragStart={event => { draggedRequest.current = request.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', request.id); }} onDragEnd={() => { draggedRequest.current = ''; }}
         onDragOver={event => { if (!busy && request.status === 'accepted' && draggedRequest.current && draggedRequest.current !== request.id) event.preventDefault(); }}
         onDrop={event => { event.preventDefault(); const id = draggedRequest.current; draggedRequest.current = ''; if (!busy && id && id !== request.id && request.status === 'accepted') void command({ type: 'moveRequest', requestId: id, beforeRequestId: request.id }); }}
         onContextMenu={event => { event.preventDefault(); setSelectedRequestId(request.id); setQueueMenu({ request, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 240)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 230)) }); }}
-        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Staged · locked · unavailable under current policy' : 'Staged · locked') : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small></div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
+        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Staged · locked · unavailable under current policy' : 'Staged · locked') : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}</div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       {staged && <details className="queue-advanced"><summary>Queue options</summary><button disabled={busy} onClick={() => void command({ type: 'release' })}>Release Prepared Song</button></details>}
       </div>
@@ -767,6 +770,20 @@ function App() {
       <div className="transport__status" role="status">{!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : !active && pauseRemaining > 0 ? `Next song in ${pauseRemaining}s` : ''}</div>
     </footer>
     {queueMenu && <div className="song-menu queue-menu" role="menu" aria-label="Queued request actions" style={{ left: queueMenu.x, top: queueMenu.y, maxHeight: `calc(100vh - ${queueMenu.y + 8}px)` }}>
+      {(() => {
+        const version = state?.versions.find(item => item.id === queueMenu.request.versionId);
+        const preparation = queuePreparation(version, downloadStatus, providerPreparations);
+        if (!version?.source || !preparation?.failed) return null;
+        return <button role="menuitem" disabled={busy} onClick={() => {
+          setQueueMenu(null);
+          void run(async () => {
+            if (version.source?.provider === 'youtube') await window.tpv.youtubeDownloads.start(version.id);
+            else if (version.source?.provider === 'karafun') await window.tpv.karaFun.retry(version.id);
+            else if (version.source?.provider === 'partytyme') await window.tpv.partyTyme.retry(version.id);
+            return { ok: true };
+          });
+        }}>Retry song preparation</button>;
+      })()}
       <button role="menuitem" disabled={busy || !['accepted', 'pending', 'staged'].includes(queueMenu.request.status)} onClick={() => { setEditingRequest(queueMenu.request); setQueueMenu(null); }}>Edit track or singer…</button>
       <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { const waiting = future.filter(r => r.status === 'accepted' && r.id !== queueMenu.request.id); void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: waiting[0]?.id ?? null }); setQueueMenu(null); }}>Move to first waiting</button>
       <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: null }); setQueueMenu(null); }}>Move to last waiting</button>

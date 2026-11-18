@@ -1,5 +1,7 @@
 # Singer Guide for Development Version 0.7.1
 
+When a requested online song is still downloading at its turn, the host can continue with the next ready song. Your request stays in the rotation and is reconsidered after each performance.
+
 Tell the host your name and the song or artist you would like to sing. They can enter a request, invite you to an experimental venue-network singer page or share an internet Remote Session link. Persistent singer accounts are not implemented. Physical-phone, venue-network and long-show checks remain; ask which installed version they are using.
 
 ## Choose a Song

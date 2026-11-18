@@ -31,7 +31,7 @@ export type Command =
   | { type: 'editRequest'; requestId: string; singerId: string | null; versionId: string }
   | { type: 'rejectRequest'; requestId: string }
   | { type: 'withdrawRequest'; requestId: string }
-  | { type: 'stage' }
+  | { type: 'stage'; requestId?: string }
   | { type: 'release' }
   | { type: 'start'; generationId: string }
   | { type: 'pause' } | { type: 'resume' } | { type: 'stop' }
@@ -307,7 +307,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     }
     case 'stage': {
       if (state.stagedRequestId) { reject('LOCKED', 'Release the staged track first'); break; }
-      const next = orderedFuture(state, settings.rotationMode, nowMs).find(r => r.status === 'accepted' && singerAvailable(state, r.singerId, nowMs) && versionAllowed(r.versionId));
+      const next = orderedFuture(state, settings.rotationMode, nowMs).find(r => r.status === 'accepted' && singerAvailable(state, r.singerId, nowMs) && versionAllowed(r.versionId) && (cmd.requestId === undefined || r.id === cmd.requestId));
       if (!next) reject('NOT_AVAILABLE', 'No eligible accepted request');
       else {
         next.status = 'staged'; state.stagedRequestId = next.id;
