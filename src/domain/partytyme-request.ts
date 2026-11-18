@@ -1,4 +1,4 @@
-import { applyCommand, isVersionAllowed, type Command, type ShowState, type Version } from './index';
+import { applyCommand, isVersionAllowed, type Command, type PointsHistoryContext, type ShowState, type Version } from './index';
 import type { Settings } from './settings';
 import type { PartyTymeSong } from './partytyme';
 import { validStreamingSource, type PartyTymeSource } from './streaming-source';
@@ -7,7 +7,7 @@ import { compileSongBlacklist } from './song-blacklist';
 export function partyTymeRequest(state: ShowState, song: PartyTymeSong, singerId: string | null, requestId: string, settings: Settings, ids: {
     versionId: string;
     commandId: string;
-}, now: number) {
+}, now: number, history?: PointsHistoryContext) {
     const refuse = (error: string) => ({ state, result: { ok: false, error, versionId: undefined as string | undefined } });
     const source: PartyTymeSource = { provider: 'partytyme', catalog: 'consumer', videoId: song.videoId };
     if (!validStreamingSource(source) || !song.title?.trim() || typeof song.artist !== 'string' || song.title.length > 500 || song.artist.length > 500 ||
@@ -31,7 +31,7 @@ export function partyTymeRequest(state: ShowState, song: PartyTymeSong, singerId
     const send = (command: Command, suffix: string) => applyCommand(next, {
         commandId: ids.commandId + suffix,
         showId: next.showId, hostEpoch: next.hostEpoch, expectedRevision: next.revision, actor: { role: 'host', id: 'host' }, command
-    }, settings, now);
+    }, settings, now, history);
     if (!existing) {
         const added = send({ type: 'addVersion', version }, ':partytyme');
         if (!added.outcome.ok)

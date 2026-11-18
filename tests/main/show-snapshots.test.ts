@@ -8,6 +8,7 @@ import { migrateShowSchema } from '../../src/main/schema-migrations';
 import { createShowSnapshot, restoreShowSnapshotToNewFile, SnapshotCleanupError } from '../../src/main/show-snapshots';
 import { Store } from '../../src/main/store';
 import { applyCommand, createInitialState, type Command, type ShowState } from '../../src/domain';
+import { DEFAULT_SETTINGS } from '../../src/domain/settings';
 
 test('a live WAL-backed show can be backed up and restored to a separate database', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpv-backup-')), live = join(dir, 'live.sqlite'), snapshot = join(dir, 'backup.sqlite'), restored = join(dir, 'restored.sqlite');
@@ -159,4 +160,58 @@ test('well-formed SQLite files with incomplete or internally inconsistent show s
     db.prepare('INSERT OR REPLACE INTO show_state VALUES (1, ?)').run(JSON.stringify(bad)); db.close();
     await assert.rejects(restoreShowSnapshotToNewFile(file, target), /incomplete or incompatible/); assert.equal(existsSync(target), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test('backup and restore retain unassigned queue history for later singer awards', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-backup-queue-points-'));
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateShowSchema(db);
+    let state = createInitialState('show-00001', 'epoch-0001'), sequence = 0;
+    const send = (command: Command) => {
+      const result = applyCommand(state, { commandId: `points-${++sequence}`, showId: state.showId, hostEpoch: state.hostEpoch,
+        expectedRevision: state.revision, actor: { role: 'host', id: 'host' }, command }, DEFAULT_SETTINGS, 1000, { songSeenBefore: () => false });
+      assert.equal(result.outcome.ok, true, JSON.stringify(result.outcome)); state = result.state;
+    };
+    send({ type: 'addSinger', singer: { id: 's1', name: 'Alice' } });
+    send({ type: 'addVersion', version: { id: 'v1', title: 'Song', artist: 'Artist', rating: 'clean' } });
+    send({ type: 'request', requestId: 'r1', singerId: null, versionId: 'v1' });
+    db.prepare('INSERT INTO show_state VALUES (1, ?)').run(JSON.stringify(state));
+    const snapshot = join(dir, 'backup.sqlite'), restored = join(dir, 'restored.sqlite');
+    await createShowSnapshot(db, snapshot); await restoreShowSnapshotToNewFile(snapshot, restored);
+    const copy = new Store<ShowState>(restored);
+    try { state = copy.load()!; } finally { copy.close(); }
+    send({ type: 'editRequest', requestId: 'r1', singerId: 's1', versionId: 'v1' });
+    assert.equal(state.points?.accounts.find(account => account.singerId === 's1')?.points, 36);
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test('snapshot preserves an already-awarded room bonus without awarding it again', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tpv-backup-room-bonus-'));
+  const db = new DatabaseSync(':memory:');
+  try {
+    migrateShowSchema(db);
+    let state = createInitialState('show-00001', 'epoch-0001'), sequence = 0;
+    const send = (command: Command, actor: { role: 'host' | 'singer' | 'engine'; id: string } = { role: 'host', id: 'host' }) => {
+      const result = applyCommand(state, { commandId: `bonus-${++sequence}`, showId: state.showId, hostEpoch: state.hostEpoch,
+        expectedRevision: state.revision, actor, command }, DEFAULT_SETTINGS, 1000, { songSeenBefore: () => false });
+      assert.equal(result.outcome.ok, true, JSON.stringify(result.outcome)); state = result.state;
+    };
+    send({ type: 'addSinger', singer: { id: 'lead', name: 'Lead' } });
+    send({ type: 'addSinger', singer: { id: 'listener', name: 'Listener' } });
+    send({ type: 'addVersion', version: { id: 'v1', title: 'Song', artist: 'Artist', rating: 'clean' } });
+    send({ type: 'request', requestId: 'r1', singerId: 'lead', versionId: 'v1' });
+    send({ type: 'stage' }); send({ type: 'start', generationId: 'g1' });
+    send({ type: 'applause' }, { role: 'singer', id: 'listener' });
+    assert.equal(state.points?.accounts.find(account => account.singerId === 'lead')?.points, 96);
+    db.prepare('INSERT INTO show_state VALUES (1, ?)').run(JSON.stringify(state));
+    const snapshot = join(dir, 'backup.sqlite'), restored = join(dir, 'restored.sqlite');
+    await createShowSnapshot(db, snapshot); await restoreShowSnapshotToNewFile(snapshot, restored);
+    const copy = new Store<ShowState>(restored);
+    try { state = copy.load()!; } finally { copy.close(); }
+    send({ type: 'skip', generationId: 'g1', confirmed: true }, { role: 'host', id: 'host' });
+    assert.equal(state.points?.accounts.find(account => account.singerId === 'lead')?.points, 96);
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });

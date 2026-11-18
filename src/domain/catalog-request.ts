@@ -1,4 +1,4 @@
-import { applyCommand, isVersionAllowed, type ShowState, type Version } from './index';
+import { applyCommand, isVersionAllowed, type PointsHistoryContext, type ShowState, type Version } from './index';
 import type { Settings } from './settings';
 import { compileSongBlacklist } from './song-blacklist';
 
@@ -9,7 +9,7 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const text = (value: unknown, empty = false): value is string => typeof value === 'string' && (empty || !!value.trim()) && value.length <= 500 && !/[\x00-\x1f\x7f]/.test(value);
 
 /** Plan the library addition and request together; the authority saves once. */
-export function catalogRequest(state: ShowState, value: unknown, settings: Settings, ids: { versionId: string; commandId: string }, now: number): { state: ShowState; result: CatalogRequestResult } {
+export function catalogRequest(state: ShowState, value: unknown, settings: Settings, ids: { versionId: string; commandId: string }, now: number, history?: PointsHistoryContext): { state: ShowState; result: CatalogRequestResult } {
   const fail = (error: string) => ({state,result:{ok:false,error}});
   if (!record(value) || Object.keys(value).some(key => !['track','singerId','requestId'].includes(key)) || value.singerId !== null && !text(value.singerId) || !text(value.requestId) || !record(value.track)) return fail('Choose a valid song and optional singer.');
   const track = value.track;
@@ -26,7 +26,7 @@ export function catalogRequest(state: ShowState, value: unknown, settings: Setti
   const version: Version = existing ?? {id:ids.versionId,title:track.title.trim(),artist:track.artist.trim(),rating:'unrated',
     source:{provider:'youtube',videoId:track.youtubeId,...(track.brandSlug ? {brandSlug:track.brandSlug} : {})}};
   let next = state;
-  const command = (input: Parameters<typeof applyCommand>[1]['command'], suffix: string) => applyCommand(next, {commandId:ids.commandId + suffix,showId:next.showId,hostEpoch:next.hostEpoch,expectedRevision:next.revision,actor:{role:'host',id:'host'},command:input},settings,now);
+  const command = (input: Parameters<typeof applyCommand>[1]['command'], suffix: string) => applyCommand(next, {commandId:ids.commandId + suffix,showId:next.showId,hostEpoch:next.hostEpoch,expectedRevision:next.revision,actor:{role:'host',id:'host'},command:input},settings,now,history);
   if (!existing) {
     const added = command({type:'addVersion',version},':catalog');
     if (!added.outcome.ok) return fail(added.outcome.message);

@@ -1,4 +1,4 @@
-import { applyCommand, isVersionAllowed, type Command, type ShowState, type Version } from './index';
+import { applyCommand, isVersionAllowed, type Command, type PointsHistoryContext, type ShowState, type Version } from './index';
 import type { Settings } from './settings';
 import { validStreamingSource, type KaraFunSource } from './streaming-source';
 import { compileSongBlacklist } from './song-blacklist';
@@ -11,7 +11,7 @@ const text = (value: unknown, empty = false): value is string => typeof value ==
 /** Only the host's current authenticated-search authority supplies this metadata.
  * Plan the version and request together so a refused request leaves no orphan. */
 export function karaFunRequest(state: ShowState, track: KaraFunRequestTrack, singerId: string | null, requestId: string,
-  settings: Settings, ids: { versionId: string; commandId: string }, now: number): { state: ShowState; result: Result } {
+  settings: Settings, ids: { versionId: string; commandId: string }, now: number, history?: PointsHistoryContext): { state: ShowState; result: Result } {
   const refuse = (error: string) => ({ state, result: { ok: false, error } });
   if (!track || Object.keys(track).some(key => !['songId', 'catalog', 'title', 'artist', 'explicit'].includes(key)) ||
       track.explicit !== undefined && track.explicit !== null && typeof track.explicit !== 'boolean' ||
@@ -30,7 +30,7 @@ export function karaFunRequest(state: ShowState, track: KaraFunRequestTrack, sin
   const version: Version = existing ?? { id: ids.versionId, title: track.title.trim(), artist: track.artist.trim(), rating: track.explicit === false ? 'clean' : track.explicit === true ? 'explicit' : 'unrated', source };
   let next = state;
   const send = (command: Command, suffix: string) => applyCommand(next, { commandId: ids.commandId + suffix,
-    showId: next.showId, hostEpoch: next.hostEpoch, expectedRevision: next.revision, actor: { role: 'host', id: 'host' }, command }, settings, now);
+    showId: next.showId, hostEpoch: next.hostEpoch, expectedRevision: next.revision, actor: { role: 'host', id: 'host' }, command }, settings, now, history);
   if (!existing) {
     const added = send({ type: 'addVersion', version }, ':karafun');
     if (!added.outcome.ok) return refuse(added.outcome.message);

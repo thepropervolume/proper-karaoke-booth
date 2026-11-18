@@ -15,10 +15,10 @@ test('schema 5 format upgrade preserves show and media bytes and rolls back an i
   try{
     migrateShowSchema(db);db.exec('PRAGMA user_version=5');const show='{"saved":"unchanged"}';db.prepare('INSERT INTO show_state VALUES (1,?)').run(show);db.prepare('INSERT INTO media VALUES (?,?,?)').run('song','private-path','fingerprint');
     const original=db.exec.bind(db);let interrupted=true;
-    db.exec=(sql:string)=>{if(interrupted&&/PRAGMA user_version = 6/.test(sql)){interrupted=false;throw Error('Simulated interrupted marker');}return original(sql);};
+    db.exec=(sql:string)=>{if(interrupted&&sql.includes(`PRAGMA user_version = ${SHOW_SCHEMA_VERSION}`)){interrupted=false;throw Error('Simulated interrupted marker');}return original(sql);};
     assert.throws(()=>migrateShowSchema(db),/interrupted/);assert.equal(version(db),5);
     assert.equal((db.prepare('SELECT value FROM show_state').get() as {value:string}).value,show);
-    migrateShowSchema(db);assert.equal(version(db),6);assert.equal((db.prepare('SELECT path FROM media').get() as {path:string}).path,'private-path');
+    migrateShowSchema(db);assert.equal(version(db),SHOW_SCHEMA_VERSION);assert.equal((db.prepare('SELECT path FROM media').get() as {path:string}).path,'private-path');
   }finally{db.close();}
 });
 

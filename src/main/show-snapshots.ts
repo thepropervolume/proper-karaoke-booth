@@ -15,6 +15,34 @@ export class SnapshotCleanupError extends Error {
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function id(value: unknown): value is string { return typeof value === 'string' && value.trim().length > 0; }
 function whole(value: unknown): boolean { return Number.isSafeInteger(value) && (value as number) >= 0; }
+function validPoints(value: unknown, showId: string, singers: Set<unknown>): boolean {
+  if (!record(value) || value.version !== 1 || value.showId !== showId || !Array.isArray(value.accounts) ||
+      !Array.isArray(value.performances) || !Array.isArray(value.receipts)) return false;
+  if (value.duetAwards !== undefined && (!Array.isArray(value.duetAwards) ||
+      !value.duetAwards.every(award => record(award) && id(award.requestId) && singers.has(award.singerId)) ||
+      new Set(value.duetAwards.map(award => JSON.stringify([(award as Record<string, unknown>).requestId, (award as Record<string, unknown>).singerId]))).size !== value.duetAwards.length)) return false;
+  if (value.queueAwards !== undefined && (!Array.isArray(value.queueAwards) ||
+      !value.queueAwards.every(award => record(award) && id(award.requestId) && singers.has(award.singerId)) ||
+      new Set(value.queueAwards.map(award => JSON.stringify([(award as Record<string, unknown>).requestId, (award as Record<string, unknown>).singerId]))).size !== value.queueAwards.length)) return false;
+  if (value.queueFacts !== undefined && (!Array.isArray(value.queueFacts) ||
+      !value.queueFacts.every(fact => record(fact) && id(fact.requestId) && typeof fact.everQueuedOrSung === 'boolean' &&
+        Array.isArray(fact.sungBy) && fact.sungBy.every(singer => singers.has(singer)) && new Set(fact.sungBy).size === fact.sungBy.length) ||
+      new Set(value.queueFacts.map(fact => (fact as Record<string, unknown>).requestId)).size !== value.queueFacts.length)) return false;
+  if (!value.accounts.every(account => record(account) && singers.has(account.singerId) && whole(account.points) &&
+      whole(account.credits) && (account.credits as number) <= 5) ||
+      new Set(value.accounts.map(account => (account as Record<string, unknown>).singerId)).size !== value.accounts.length) return false;
+  if (!value.performances.every(item => record(item) && id(item.generationId) && whole(item.applauseCount) &&
+      typeof item.finished === 'boolean' && (item.allListenerBonusAwarded === undefined || typeof item.allListenerBonusAwarded === 'boolean') && Array.isArray(item.performers) && item.performers.every(singer => singers.has(singer)) &&
+      new Set(item.performers).size === item.performers.length && Array.isArray(item.eligibleListeners) &&
+      item.eligibleListeners.every(singer => singers.has(singer) && !(item.performers as unknown[]).includes(singer)) &&
+      new Set(item.eligibleListeners).size === item.eligibleListeners.length && Array.isArray(item.applauders) &&
+      item.applauders.every(id) && new Set(item.applauders).size === item.applauders.length && Array.isArray(item.singerApplause) &&
+      item.singerApplause.every(row => record(row) && singers.has(row.singerId) && whole(row.count)) &&
+      new Set(item.singerApplause.map(row => (row as Record<string, unknown>).singerId)).size === item.singerApplause.length) ||
+      new Set(value.performances.map(item => (item as Record<string, unknown>).generationId)).size !== value.performances.length) return false;
+  return value.receipts.every(receipt => record(receipt) && id(receipt.id) && typeof receipt.event === 'string') &&
+    new Set(value.receipts.map(receipt => (receipt as Record<string, unknown>).id)).size === value.receipts.length;
+}
 function validState(value: unknown, allowUnassigned: boolean): boolean {
   if (!record(value) || !id(value.showId) || !id(value.hostEpoch) || !whole(value.revision) ||
       !Array.isArray(value.singers) || !Array.isArray(value.versions) || !Array.isArray(value.requests) ||
@@ -28,11 +56,14 @@ function validState(value: unknown, allowUnassigned: boolean): boolean {
       !Array.isArray(value.policy.excludeVersionIds) || !value.policy.excludeVersionIds.every(id)) return false;
   if (!value.singers.every(singer => record(singer) && id(singer.id) && id(singer.name) && (singer.unavailableUntilMs === undefined || whole(singer.unavailableUntilMs))) ||
       !value.versions.every(version => record(version) && id(version.id) && id(version.title) && typeof version.artist === 'string' &&
-        ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)) && (version.source === undefined || validStreamingSource(version.source)))) return false;
+        ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)) && (version.isDuet === undefined || typeof version.isDuet === 'boolean') &&
+        (version.source === undefined || validStreamingSource(version.source)))) return false;
   const singers = new Set(value.singers.map(singer => (singer as Record<string, unknown>).id));
   const versions = new Set(value.versions.map(version => (version as Record<string, unknown>).id));
   if (singers.size !== value.singers.length || versions.size !== value.versions.length) return false;
+  if (value.points !== undefined && !validPoints(value.points, value.showId, singers)) return false;
   if (!value.requests.every(request => record(request) && id(request.id) && (allowUnassigned && request.singerId === null || singers.has(request.singerId)) && versions.has(request.versionId) &&
+      (request.coSingerId === undefined || request.coSingerId === null || (singers.has(request.coSingerId) && request.coSingerId !== request.singerId && request.singerId !== null)) &&
       ['pending', 'accepted', 'staged', 'playing', 'completed', 'skipped', 'removed', 'rejected', 'withdrawn'].includes(String(request.status)) &&
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
@@ -76,6 +107,10 @@ export function inspectShowSnapshot(db: DatabaseSync): SnapshotSummary {
   const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
   if (!validState(state, version >= 5) || !record(state)) throw new Error('Backup show state is incomplete or incompatible.');
   if (version < 6 && (state.versions as Record<string,unknown>[]).some(item=>record(item.source)&&item.source.provider==='partytyme')) throw new Error('Backup show state is incomplete or incompatible.');
+  if (version < 7 && (state.points !== undefined ||
+    (state.versions as Record<string, unknown>[]).some(item => item.isDuet !== undefined) ||
+    (state.requests as Record<string, unknown>[]).some(item => item.coSingerId !== undefined)))
+    throw new Error('Backup show state is incomplete or incompatible.');
   return { revision: state.revision as number, singers: (state.singers as unknown[]).length, songs: (state.versions as unknown[]).length, requests: (state.requests as unknown[]).length };
 }
 

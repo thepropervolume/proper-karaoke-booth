@@ -2,6 +2,8 @@ import { validStreamingSource, type StreamingSource } from './streaming-source';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 import { futureRequestLimitMessage } from './future-request-limit';
 import { compileSongBlacklist, type SongBlacklistMatcher } from './song-blacklist';
+import { applyPointsEvent, newPointsLedger, type PointsLedger, type PointsEvent } from './points';
+import { sameSong } from './song-identity';
 
 /** Pure show rules. Callers authenticate actors and must persist the returned state,
  * including receipt-only updates, before acknowledging a command. */
@@ -9,32 +11,32 @@ export type Role = 'host' | 'staff' | 'singer' | 'engine';
 export type Actor = { role: Role; id: string };
 export type Rating = 'clean' | 'explicit' | 'unrated' | 'uncertain';
 export type Version = { id: string; title: string; artist: string; rating: Rating;
-  source?: StreamingSource; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string };
+  source?: StreamingSource; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string; isDuet?: boolean };
 export type Singer = { id: string; name: string; unavailableUntilMs?: number };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
 export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
 // null means a song has no assigned person. Do not create a shared "anonymous"
 // singer: that would accidentally share request limits and fair-rotation turns.
-export type SongRequest = { id: string; singerId: string | null; versionId: string; status: RequestStatus; round: number | null; order: number | null };
+export type SongRequest = { id: string; singerId: string | null; coSingerId?: string | null; versionId: string; status: RequestStatus; round: number | null; order: number | null };
 export type Playback = { requestId: string; generationId: string; status: 'playing' | 'paused' };
 export type Command =
   | { type: 'addVersion'; version: Version }
-  | { type: 'editVersion'; id: string; title: string; artist: string }
+  | { type: 'editVersion'; id: string; title: string; artist: string; isDuet?: boolean }
   | { type: 'addSinger'; singer: Singer }
   | { type: 'setSingerAvailability'; singerId: string; minutes: number; releaseStaged?: boolean }
-  | { type: 'request'; requestId: string; singerId: string | null; versionId: string }
+  | { type: 'request'; requestId: string; singerId: string | null; coSingerId?: string | null; versionId: string }
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
   | { type: 'promoteRequest'; requestId: string }
   | { type: 'moveRequest'; requestId: string; beforeRequestId: string | null }
   | { type: 'resetQueueOrder' }
-  | { type: 'editRequest'; requestId: string; singerId: string | null; versionId: string }
+  | { type: 'editRequest'; requestId: string; singerId: string | null; coSingerId?: string | null; versionId: string }
   | { type: 'rejectRequest'; requestId: string }
   | { type: 'withdrawRequest'; requestId: string }
   | { type: 'stage'; requestId?: string }
   | { type: 'release' }
   | { type: 'start'; generationId: string }
-  | { type: 'pause' } | { type: 'resume' } | { type: 'stop' }
+  | { type: 'pause' } | { type: 'resume' } | { type: 'stop' } | { type: 'applause' } | { type: 'photo'; photoHash: string }
   | { type: 'complete'; generationId: string }
   | { type: 'skip'; generationId: string; confirmed: boolean }
   | { type: 'setPolicy'; policy: Policy };
@@ -52,6 +54,8 @@ export type ShowState = {
   manualQueueOrder?: string[];
   /** Absolute deadline, persisted across host restart. */
   nextStartAtMs?: number;
+  /** Missing in older shows; each show starts its own scores and credits. */
+  points?: PointsLedger;
   receipts: Receipt[];
 };
 export type CommandResult = { state: ShowState; outcome: Outcome };
@@ -152,15 +156,17 @@ function canonical(value: unknown): string {
 }
 function nonempty(s: unknown): s is string { return typeof s === 'string' && s.trim().length > 0; }
 function permitted(actor: Actor, command: Command): boolean {
-  if (actor.role === 'host') return command.type !== 'complete' && command.type !== 'withdrawRequest';
+  if (actor.role === 'host') return command.type !== 'complete' && command.type !== 'withdrawRequest' && command.type !== 'photo';
   if (actor.role === 'engine') return command.type === 'complete';
   if (actor.role === 'staff') return command.type === 'addSinger' || command.type === 'request' || command.type === 'accept';
-  return actor.role === 'singer' && ((command.type === 'request' && command.singerId === actor.id) || (command.type === 'setSingerAvailability' && command.singerId === actor.id && command.releaseStaged !== true) || command.type === 'withdrawRequest');
+  return actor.role === 'singer' && (command.type === 'applause' || command.type === 'photo' || (command.type === 'request' && command.singerId === actor.id) || (command.type === 'setSingerAvailability' && command.singerId === actor.id && command.releaseStaged !== true) || command.type === 'withdrawRequest');
 }
+
+export type PointsHistoryContext = { songSeenBefore(version: Version): boolean };
 
 // This is the pure decision layer: validate the actor/revision, deduplicate the
 // command, and return a new state. The main process persists it before replying.
-export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>> = DEFAULT_SETTINGS, nowMs = 0): CommandResult {
+export function applyCommand(original: ShowState, envelope: Envelope, settings: Pick<Settings, 'autoApprove' | 'rotationMode'> & Partial<Pick<Settings, 'pauseIntervalSeconds' | 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>> & { pointsEnabled?: boolean; applauseEnabled?: boolean } = DEFAULT_SETTINGS, nowMs = 0, history?: PointsHistoryContext): CommandResult {
   const fail = (code: string, message: string): Outcome => ({ ok: false, code, message, revision: original.revision });
   // These checks are deliberately before receipt lookup: untrusted callers must not
   // learn stored outcomes or occupy command IDs. The service still authenticates actors.
@@ -178,21 +184,25 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
   const error: { value: { code: string; message: string } | null } = { value: null };
   const reject = (code: string, message: string) => { error.value = { code, message }; };
   const cmd = envelope.command;
-  if (envelope.expectedRevision !== original.revision) reject('REVISION_CONFLICT', 'Show state has changed');
+  // Applause and photos are independent guest actions, so another singer's
+  // concurrent action should not invalidate them. Show/epoch, actor and receipt
+  // checks still apply, and the output layer rechecks eligibility at delivery.
+  if (envelope.expectedRevision !== original.revision && cmd.type !== 'applause' && cmd.type !== 'photo') reject('REVISION_CONFLICT', 'Show state has changed');
   else switch (cmd.type) {
     case 'addVersion': {
       const v = cmd.version;
       if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating) ||
           (v.source !== undefined && !validStreamingSource(v.source)) || (v.djCode !== undefined && typeof v.djCode !== 'string') || (v.trackNumber !== undefined && typeof v.trackNumber !== 'string') ||
-          (v.metadataAmbiguous !== undefined && typeof v.metadataAmbiguous !== 'boolean') || (v.metadataTemplate !== undefined && typeof v.metadataTemplate !== 'string')) reject('INVALID', 'Invalid version');
+          (v.metadataAmbiguous !== undefined && typeof v.metadataAmbiguous !== 'boolean') || (v.metadataTemplate !== undefined && typeof v.metadataTemplate !== 'string') ||
+          (v.isDuet !== undefined && typeof v.isDuet !== 'boolean')) reject('INVALID', 'Invalid version');
       else if (state.versions.some(x => x.id === v.id)) reject('DUPLICATE', 'Version already exists');
       else state.versions.push({ ...v });
       break;
     }
     case 'editVersion': {
       const version = state.versions.find(v => v.id === cmd.id);
-      if (!version || !nonempty(cmd.title) || cmd.title.length > 500 || typeof cmd.artist !== 'string' || cmd.artist.length > 500) reject('INVALID', 'Invalid song metadata');
-      else { version.title = cmd.title.trim(); version.artist = cmd.artist.trim(); if (version.metadataAmbiguous) version.metadataAmbiguous = false; }
+      if (!version || !nonempty(cmd.title) || cmd.title.length > 500 || typeof cmd.artist !== 'string' || cmd.artist.length > 500 || (cmd.isDuet !== undefined && typeof cmd.isDuet !== 'boolean')) reject('INVALID', 'Invalid song metadata');
+      else { version.title = cmd.title.trim(); version.artist = cmd.artist.trim(); if (cmd.isDuet !== undefined) version.isDuet = cmd.isDuet; if (version.metadataAmbiguous) version.metadataAmbiguous = false; }
       break;
     }
     case 'addSinger':
@@ -218,9 +228,10 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!nonempty(cmd.requestId) || cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (cmd.coSingerId != null && (cmd.singerId === null || cmd.singerId === cmd.coSingerId || !state.singers.some(s => s.id === cmd.coSingerId) || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Choose another singer and mark this song as a duet');
       else if (limitMessage) reject('LIMIT', limitMessage);
       else {
-        const request: SongRequest = { id: cmd.requestId, singerId: cmd.singerId, versionId: cmd.versionId, status: 'pending', round: null, order: null };
+        const request: SongRequest = { id: cmd.requestId, singerId: cmd.singerId, ...(cmd.coSingerId ? { coSingerId: cmd.coSingerId } : {}), versionId: cmd.versionId, status: 'pending', round: null, order: null };
         state.requests.push(request);
         if (settings.autoApprove) acceptRequest(state, request);
       }
@@ -290,12 +301,15 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!request || !['pending', 'accepted', 'staged'].includes(request.status)) reject('LOCKED', 'Stop the active performance before editing');
       else if (cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show or leave it unassigned');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
+      else if (cmd.coSingerId !== undefined && cmd.coSingerId !== null && (cmd.singerId === null || cmd.singerId === cmd.coSingerId || !state.singers.some(s => s.id === cmd.coSingerId) || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Choose another singer and mark this song as a duet');
+      else if (cmd.coSingerId === undefined && request.coSingerId && (cmd.singerId === null || cmd.singerId === request.coSingerId || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Remove or change the duet singer first');
       else {
         const changingSinger = request.singerId !== cmd.singerId;
         const limit = changingSinger && singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
         if (limit) reject('LIMIT', limit);
         else {
           request.versionId = cmd.versionId;
+          if (cmd.coSingerId !== undefined) request.coSingerId = cmd.coSingerId;
           if (changingSinger) {
             request.singerId = cmd.singerId;
             // Reassign to the recipient's next free round; retain an explicit host slot.
@@ -346,6 +360,14 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!state.playback || state.playback.status !== 'playing') reject('INVALID_STATE', 'No playing track');
       else state.playback.status = 'paused';
       break;
+    case 'applause':
+      if (settings.applauseEnabled === false) reject('DISABLED', 'Applause is turned off');
+      else if (envelope.actor.role === 'singer' && !state.singers.some(s => s.id === envelope.actor.id)) reject('FORBIDDEN', 'Singer is unavailable');
+      break;
+    case 'photo':
+      if (!state.singers.some(s => s.id === envelope.actor.id)) reject('FORBIDDEN', 'Singer is unavailable');
+      else if (typeof cmd.photoHash !== 'string' || !/^[a-f0-9]{64}$/.test(cmd.photoHash)) reject('INVALID', 'Invalid photo identity');
+      break;
     case 'resume':
       if (!state.playback || state.playback.status !== 'paused') reject('INVALID_STATE', 'No paused track');
       else if (!versionAllowed(state.requests.find(request => request.id === state.playback!.requestId)?.versionId ?? '')) reject('NOT_AVAILABLE', 'Version is not available');
@@ -385,6 +407,77 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     }
     default: reject('INVALID', 'Unknown command');
+  }
+  if (!error.value) {
+    const options = { pointsEnabled: settings.pointsEnabled !== false, applauseEnabled: settings.applauseEnabled !== false };
+    const relevant = ['addSinger', 'request', 'editRequest', 'editVersion', 'start', 'applause', 'photo', 'complete', 'skip', 'stop'].includes(cmd.type);
+    if (relevant) {
+      try {
+        let points = state.points ?? newPointsLedger(state.showId);
+        if (points.showId !== state.showId) throw new Error('Points belong to another show.');
+        const record = (event: PointsEvent) => { points = applyPointsEvent(points, event, options).ledger; };
+        // Freeze registered show participants at the moment playback starts.
+        const participants = () => state.singers.map(singer => singer.id);
+        const start = (generationId: string, request: SongRequest | undefined) => {
+          const performers = [request?.singerId, request?.coSingerId].filter((id): id is string => typeof id === 'string');
+          record({ type: 'start', eventId: `start:${generationId}`, generationId, performers, participants: participants() });
+        };
+        if (cmd.type === 'addSinger') record({ type: 'join', eventId: `join:${envelope.commandId}`, singerId: cmd.singer.id });
+        if (cmd.type === 'request') {
+          const version = state.versions.find(item => item.id === cmd.versionId)!;
+          const matching = original.requests.filter(request => {
+            const other = original.versions.find(item => item.id === request.versionId);
+            return !!other && sameSong(version, other);
+          });
+          const seen = matching.length > 0 || (history ? history.songSeenBefore(version) : true);
+          record({ type: 'rememberQueue', eventId: `queue-facts:${envelope.commandId}`, requestId: cmd.requestId, everQueuedOrSung: seen,
+            sungBy: [...new Set(matching.filter(request => request.status === 'completed').flatMap(request => [request.singerId, request.coSingerId].filter((id): id is string => typeof id === 'string')))] });
+          if (cmd.singerId !== null) record({ type: 'queue', eventId: `queue:${envelope.commandId}`, singerId: cmd.singerId,
+            sungEarlierThisShow: matching.some(request => request.status === 'completed' &&
+              [request.singerId, request.coSingerId].some(id => typeof id === 'string' && id !== cmd.singerId)),
+            everQueuedOrSung: seen, isDuet: !!version.isDuet, requestId: cmd.requestId, ...(cmd.coSingerId ? { coSingerId: cmd.coSingerId } : {}) });
+        }
+        if (cmd.type === 'editVersion' && cmd.isDuet === true && !original.versions.find(item => item.id === cmd.id)?.isDuet) {
+          let sequence = 0;
+          for (const request of state.requests.filter(item => item.versionId === cmd.id && ['pending', 'accepted', 'staged'].includes(item.status))) {
+            for (const singerId of [request.singerId, request.coSingerId]) {
+              if (singerId) record({ type: 'duetPartner', eventId: `duet:${envelope.commandId}:${sequence++}`, requestId: request.id, singerId });
+            }
+          }
+        }
+        if (cmd.type === 'editRequest') {
+          const request = state.requests.find(item => item.id === cmd.requestId)!;
+          const previous = original.requests.find(item => item.id === cmd.requestId);
+          if (request.singerId && request.singerId !== previous?.singerId)
+            record({ type: 'assignQueue', eventId: `queue-assignment:${envelope.commandId}`, requestId: request.id, singerId: request.singerId });
+          if ((state.versions.find(item => item.id === request.versionId)?.isDuet || request.coSingerId) &&
+              (request.versionId !== previous?.versionId || request.singerId !== previous?.singerId || request.coSingerId !== previous?.coSingerId)) {
+            let sequence = 0;
+            for (const singerId of [request.singerId, request.coSingerId]) {
+              if (singerId) record({ type: 'duetPartner', eventId: `duet:${envelope.commandId}:${sequence++}`, requestId: request.id, singerId });
+            }
+          }
+        }
+        if (cmd.type === 'start') {
+          const request = state.requests.find(item => item.id === state.playback?.requestId);
+          start(cmd.generationId, request);
+        }
+        const oldPlayback = original.playback;
+        if (oldPlayback && ['applause', 'complete', 'skip', 'stop'].includes(cmd.type) && !points.performances.some(item => item.generationId === oldPlayback.generationId)) {
+          const request = original.requests.find(item => item.id === oldPlayback.requestId);
+          start(oldPlayback.generationId, request);
+        }
+        if (cmd.type === 'applause') record({ type: 'applause', eventId: `applause:${envelope.commandId}`,
+          actor: envelope.actor.role === 'singer' ? { role: 'singer', singerId: envelope.actor.id } : { role: 'host' },
+          generationId: oldPlayback?.status === 'playing' ? oldPlayback.generationId : null });
+        if (cmd.type === 'photo') record({ type: 'photo', eventId: `photo:${envelope.commandId}`, singerId: envelope.actor.id });
+        if (oldPlayback && (cmd.type === 'complete' || cmd.type === 'skip' || cmd.type === 'stop'))
+          record({ type: 'finish', eventId: `finish:${oldPlayback.generationId}`, generationId: oldPlayback.generationId, completed: cmd.type === 'complete' });
+        state.points = points;
+      } catch (cause) {
+        reject('POINTS', cause instanceof Error ? cause.message : 'Points could not be recorded');
+      }
+    }
   }
   if (!error.value && state.manualQueueOrder?.length) {
     const live = new Set(state.requests.filter(r => ['accepted', 'staged', 'playing'].includes(r.status)).map(r => r.id));

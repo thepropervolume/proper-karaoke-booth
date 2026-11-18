@@ -1,12 +1,14 @@
 /** Transactional application schema versions. The caller owns the sole show database connection. */
 import type { DatabaseSync } from 'node:sqlite';
+import { seedSongHistory } from './song-history';
 
 // Version 5 permits unassigned (null-singer) queue/history entries. Older
 // clients require a singer and must refuse this database rather than crash
 // during playback or silently invent a singer when restoring it.
 // Version 6 adds Party Tyme source identities to saved show JSON. Older binaries
 // must not reinterpret private provider media as ordinary imported files.
-export const SHOW_SCHEMA_VERSION = 6;
+// Version 7 preserves queued song identities for cross-show scoring.
+export const SHOW_SCHEMA_VERSION = 7;
 const required: Record<string, readonly string[]> = {
   show_state: ['id', 'value'], media: ['id', 'path', 'fingerprint'], checkpoint: ['id', 'generation', 'position'],
   missing_song_requests: ['id', 'singer', 'title', 'artist', 'created_at'], missing_song_request_reviews: ['request_id', 'status', 'updated_at'], playlists: ['id', 'name', 'singer_id'],
@@ -14,14 +16,14 @@ const required: Record<string, readonly string[]> = {
   remote_invitations: ['token_hash', 'show_id', 'expires', 'revoked'], remote_guests: ['id', 'singer_id', 'show_id', 'resume_hash', 'resume_expires', 'join_id', 'join_name', 'join_revision', 'revoked'],
   remote_invitation_scopes: ['token_hash', 'scope_id'], remote_guest_scopes: ['guest_id', 'scope_id'], remote_sessions: ['token_hash', 'guest_id', 'run_id', 'expires', 'revoked'],
   remote_receipts: ['guest_id', 'command_id', 'fingerprint', 'outcome'], remote_missing_song_owners: ['request_id', 'guest_id', 'singer_id', 'show_id'],
-  local_song_ratings: ['fingerprint', 'value', 'updated_at'],
+  local_song_ratings: ['fingerprint', 'value', 'updated_at'], song_queue_history: ['identity'],
 };
 const primaryKeys: Record<string, readonly string[]> = {
   show_state: ['id'], media: ['id'], checkpoint: ['id'], missing_song_requests: ['id'], missing_song_request_reviews: ['request_id'], playlists: ['id'],
   playlist_items: ['playlist_id', 'version_id'], performance_history: ['generation_id'], remote_invitations: ['token_hash'],
   remote_guests: ['id'], remote_invitation_scopes: ['token_hash'], remote_guest_scopes: ['guest_id'], remote_sessions: ['token_hash'],
   remote_receipts: ['guest_id', 'command_id'], remote_missing_song_owners: ['request_id'],
-  local_song_ratings: ['fingerprint'],
+  local_song_ratings: ['fingerprint'], song_queue_history: ['identity'],
 };
 const notNull: Record<string, readonly string[]> = {
   show_state: ['value'], media: ['path', 'fingerprint'], checkpoint: ['generation', 'position'],
@@ -30,7 +32,7 @@ const notNull: Record<string, readonly string[]> = {
   remote_invitations: ['show_id', 'expires', 'revoked'], remote_guests: ['singer_id', 'show_id', 'resume_hash', 'resume_expires', 'join_id', 'join_name', 'join_revision', 'revoked'],
   remote_invitation_scopes: ['scope_id'], remote_guest_scopes: ['scope_id'], remote_sessions: ['guest_id', 'run_id', 'expires', 'revoked'],
   remote_receipts: ['guest_id', 'command_id', 'fingerprint', 'outcome'], remote_missing_song_owners: ['guest_id', 'singer_id', 'show_id'],
-  local_song_ratings: ['value', 'updated_at'],
+  local_song_ratings: ['value', 'updated_at'], song_queue_history: ['identity'],
 };
 
 /** Reject unrelated or incompatible legacy tables instead of silently stamping them as upgraded. */
@@ -40,7 +42,7 @@ function validateExisting(db: DatabaseSync, complete: boolean, schemaVersion = S
   if (tables.size && !tables.has('show_state')) throw new Error('This is not a recognizable show database.');
   for (const [name, columns] of Object.entries(required)) {
     if (!tables.has(name)) {
-      const introducedIn = name === 'local_song_ratings' ? 3 : name === 'missing_song_request_reviews' ? 2 : 1;
+      const introducedIn = name === 'song_queue_history' ? 7 : name === 'local_song_ratings' ? 3 : name === 'missing_song_request_reviews' ? 2 : 1;
       if (complete && schemaVersion >= introducedIn) throw new Error(`Show database table ${name} is missing.`);
       continue;
     }
@@ -130,6 +132,7 @@ export function migrateShowSchema(db: DatabaseSync): void {
       CREATE TABLE IF NOT EXISTS remote_missing_song_owners (request_id TEXT PRIMARY KEY, guest_id TEXT NOT NULL, singer_id TEXT NOT NULL, show_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS local_song_ratings (fingerprint TEXT PRIMARY KEY CHECK (length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
         value INTEGER NOT NULL CHECK (typeof(value) = 'integer' AND value BETWEEN 1 AND 10), updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS song_queue_history (identity TEXT PRIMARY KEY NOT NULL);
       INSERT OR IGNORE INTO playlists (id, name, singer_id) VALUES ('kj-picks', 'KJ Picks', NULL);`);
     const history = db.prepare('PRAGMA table_info(performance_history)').all() as { name: string; notnull: number }[];
     if (history.find(column => column.name === 'singer_id')?.notnull === 1) {
@@ -144,6 +147,7 @@ export function migrateShowSchema(db: DatabaseSync): void {
       db.exec('ALTER TABLE performance_history_v5 RENAME TO performance_history;');
       for (const entry of attached) db.exec(entry.sql);
     }
+    if (current < 7) seedSongHistory(db);
     // IF NOT EXISTS also tolerates a same-named view; verify the complete
     // resulting table layout before declaring this migration successful.
     validateExisting(db, true);

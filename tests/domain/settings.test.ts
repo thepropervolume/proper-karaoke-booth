@@ -21,6 +21,12 @@ test('settings have validated defaults and reject malformed or misspelled values
   for (const key of ['constructor', '__proto__', 'toString']) assert.throws(() => parseSettings(JSON.parse(`{"${key}": true}`)), /Unknown settings/);
   assert.equal(parseSettings({}).audioOutputId, '');
   assert.equal(parseSettings({}).autoBumper, true);
+  assert.equal(parseSettings({}).applauseEnabled, true);
+  assert.equal(parseSettings({}).pointsEnabled, true);
+  assert.equal(parseSettings({ applauseEnabled: false }).applauseEnabled, false);
+  assert.equal(parseSettings({ pointsEnabled: false }).pointsEnabled, false);
+  assert.throws(() => parseSettings({ applauseEnabled: 'false' }), /applause or points/);
+  assert.throws(() => parseSettings({ pointsEnabled: null }), /applause or points/);
   assert.equal(parseSettings({}).autoBumperTrackId, 'builtin-ambient');
   assert.equal(parseSettings({ autoBumper: true, autoBumperTrackId: 'chosen-track' }).autoBumperTrackId, 'chosen-track');
   for (const invalid of [{ autoBumper: 'yes' }, { autoBumperTrackId: '' }, { autoBumperTrackId: 'x'.repeat(129) }]) assert.throws(() => parseSettings(invalid));

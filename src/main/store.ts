@@ -4,9 +4,10 @@ import type { HistoryEntry } from '../domain/collections';
 import type { ShowState } from '../domain';
 import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
-import { RemoteQueue } from './remote-queue';
+import { RemoteQueue, type RemoteApplause, type RemotePhoto } from './remote-queue';
 import { migrateShowSchema } from './schema-migrations';
 import { createShowSnapshot } from './show-snapshots';
+import { recordQueuedSongs, songSeenBefore } from './song-history';
 import { isLocalRecordingKey, validHeartVote, parseRecordingKeys, type LocalRecordingKey, type SongRating } from '../domain/song-rating';
 
 /** The private path never leaves the main process. */
@@ -52,8 +53,10 @@ export class Store<T> {
     this.assertAuthority();
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      const before = this.load();
       const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
       for (const item of media) putMedia.run(item.id, item.path, item.fingerprint);
+      recordQueuedSongs(this.db, before, state);
       this.db.prepare('INSERT INTO show_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(JSON.stringify(state));
       if (history) this.collections.record(history);
       this.db.exec('COMMIT');
@@ -70,6 +73,12 @@ export class Store<T> {
     }
   }
 
+  /** Unknown metadata is treated conservatively as previously seen. */
+  songSeenBefore(song: { artist: string; title: string }): boolean {
+    this.assertAuthority();
+    return songSeenBefore(this.db, song);
+  }
+
   private assertAuthority(): void {
     if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
   }
@@ -84,8 +93,8 @@ export class Store<T> {
   assertRemoteQueueAvailable(): void { this.assertRemoteAuthority(); }
 
   /** Same SQLite connection as host writes; creates no network listener. */
-  openRemoteQueue(this: Store<ShowState>, settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>>,
-    installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {}): RemoteQueue {
+  openRemoteQueue(this: Store<ShowState>, settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled'>>,
+    installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {}, onApplause?: RemoteApplause, onPhoto?: RemotePhoto): RemoteQueue {
     this.assertRemoteAuthority();
     if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
     const failAuthority = () => {
@@ -112,7 +121,7 @@ export class Store<T> {
         failAuthority();
         throw new Error('Show authority needs recovery. Restart the application before making further changes.');
       }
-    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority);
+    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority, onApplause, onPhoto);
     this.remoteQueueOpened = true;
     return queue;
   }
