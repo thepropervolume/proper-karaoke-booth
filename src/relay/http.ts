@@ -8,6 +8,7 @@ import { RelayBroker } from './broker';
 import { RelayError } from './store';
 import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGuestRequest, parseHostOpen, parseRoomIdentity } from './protocol';
 import { MobileHostAccess, NearbyRooms } from './mobile-access';
+import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { searchMobileCatalog } from './mobile-catalog';
 
 export type RelayOwner = { id: string; tokenSha256: string };
@@ -94,6 +95,7 @@ export function createQueueRelayHandler(options: Options) {
   const limits = new RelayRateLimits(options.rateNow);
   const mobile = new MobileHostAccess(), nearby = new NearbyRooms();
   const bodyTimeout = options.bodyTimeoutMs ?? 5_000;
+  let photoReaders = 0;
   if (!Number.isSafeInteger(bodyTimeout) || bodyTimeout < 1 || bodyTimeout > 10_000) throw new Error('Invalid relay configuration.');
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const controller = new AbortController();
@@ -182,11 +184,17 @@ export function createQueueRelayHandler(options: Options) {
       if (!guest || !isRelayUuid(guest[1]) || !isRelayUuid(guest[2])) throw new HttpError(404, 'NOT_FOUND');
       if (request.headers.origin !== origin.origin) throw new HttpError(403, 'ORIGIN_REQUIRED');
       const token = bearer(request);
+      if (guest[3] === 'photo' && !token) throw new HttpError(401, 'UNAUTHORIZED');
       if (!limits.take('guest-ip:' + client, 3_000)) throw new HttpError(429, 'RATE_LIMITED');
       const anonymous = ['admission', 'join', 'resume'].includes(guest[3]);
       const scope = token ? createHash('sha256').update(token).digest('hex') : client;
       if (!limits.take((anonymous ? 'admission:' : 'session:') + guest[1] + ':' + scope, anonymous ? 300 : 120)) throw new HttpError(429, 'RATE_LIMITED');
-      const input = await readJson(request, 8192, bodyTimeout);
+      const photo = guest[3] === 'photo';
+      if (photo && (!limits.take('photo:' + client, 10) || photoReaders >= 16)) throw new HttpError(429, 'RATE_LIMITED');
+      if (photo) photoReaders++;
+      let input: unknown;
+      try { input = await readJson(request, photo ? MAX_PHOTO_BODY_BYTES : 8192, bodyTimeout); }
+      finally { if (photo) photoReaders--; }
       const parsed = parseGuestRequest(guest[3], input, token);
       if (!parsed) throw new HttpError(400, 'INVALID_GUEST_REQUEST');
       if (controller.signal.aborted) return;

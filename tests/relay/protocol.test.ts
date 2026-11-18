@@ -44,6 +44,8 @@ test('guest DTOs expose only the existing scoped guest operations and exact payl
     ['request', { command: { ...command, versionId: song.id } }, secret],
     ['withdraw', { command: { ...command, requestId: 'request-001' } }, secret],
     ['availability', { command: { ...command, minutes: 60 } }, secret],
+    ['applause', { command }, secret],
+    ['photo', { command: { ...command, dataUrl: 'data:image/jpeg;base64,/9j/2Q==' } }, secret],
     ['missing-request', { command: { commandId: command.commandId, title: 'Song', artist: '' } }, secret],
   ] as const;
   assert.equal(cases.length, RELAY_OPERATIONS.length);

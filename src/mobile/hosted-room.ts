@@ -2,6 +2,7 @@ import { mobileJson, MobileHttpError, MOBILE_ORIGIN } from './api';
 import { MobileRoomAuthority } from './room-authority';
 import { validateSessionSlug } from '../remote/internet-session-control';
 import type { InternetGuestCall, InternetGuestReply } from '../main/internet-queue-client';
+import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 
 type Room = { roomId: string; generation: string; slug: string; publicUrl: string; expiresAt: number };
 type OwnedRoom = { room: Room; token: string };
@@ -11,8 +12,8 @@ type Options = { json?: typeof mobileJson; retryDelayMs?: number; now?: () => nu
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const SECRET = /^[A-Za-z0-9_-]{43}$/;
-const OPERATIONS = new Set(['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request']);
-const MUTATIONS = new Set(['request', 'withdraw', 'availability', 'missing-request']);
+const OPERATIONS = new Set(['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request', 'applause', 'photo']);
+const MUTATIONS = new Set(['join', 'request', 'withdraw', 'availability', 'missing-request', 'applause', 'photo']);
 const terminal = (error: unknown) => error instanceof MobileHttpError && [400, 401, 403, 404, 409, 410].includes(error.status);
 class InvalidRoomResponse extends Error {}
 export type MobileRoomStatus = { state: 'stopped' | 'starting' | 'online' | 'reconnecting' | 'failed'; link: string; message: string;
@@ -94,7 +95,7 @@ export class MobileHostedRoom {
     for (const call of value.requests) {
       if (!record(call) || Object.keys(call).some(key => !['requestId', 'operation', 'payload', 'session'].includes(key)) ||
         typeof call.requestId !== 'string' || !UUID.test(call.requestId) || seen.has(call.requestId) || typeof call.operation !== 'string' || !OPERATIONS.has(call.operation) ||
-        !record(call.payload) || new TextEncoder().encode(JSON.stringify(call.payload)).length > 8192 || call.session !== undefined && (typeof call.session !== 'string' || !SECRET.test(call.session)))
+        !record(call.payload) || new TextEncoder().encode(JSON.stringify(call.payload)).length > (call.operation === 'photo' ? MAX_PHOTO_BODY_BYTES : 8192) || call.session !== undefined && (typeof call.session !== 'string' || !SECRET.test(call.session)))
         throw new InvalidRoomResponse('Invalid room response.');
       seen.add(call.requestId);
     }
@@ -118,7 +119,8 @@ export class MobileHostedRoom {
         const value = await this.json('/v1/relay/host/poll', identity, { token, signal: controller.signal, discovery: this.discovery() });
         if (!this.current(controller, epoch)) return;
         const calls = this.calls(value, room);
-        const batch = calls.map(call => this.authority.dispatch(call));
+        const batch = await Promise.all(calls.map(call => call.operation === 'applause' ? this.authority.dispatchApplause(call) :
+          call.operation === 'photo' ? this.authority.dispatchPhoto(call) : this.authority.dispatch(call)));
         if (calls.some(call => MUTATIONS.has(call.operation))) {
           try { await this.persist(); }
           catch {

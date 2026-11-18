@@ -1,5 +1,6 @@
 /** Bounded relay DTOs. No host control, file path, or provider credential belongs on this wire. */
-export const RELAY_OPERATIONS = ['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request'] as const;
+import { MAX_PHOTO_BODY_BYTES, MAX_PHOTO_DATA_URL, validPhotoDataUrl } from '../domain/photo';
+export const RELAY_OPERATIONS = ['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request', 'applause', 'photo'] as const;
 export type RelayOperation = typeof RELAY_OPERATIONS[number];
 export const RESERVED_SLUGS = ['api', 'v1', 'assets', 'singer', 'healthz', 'admin', 'host', 'login', 'logout', 'account', 'settings', 'status', 'help', 'support', 'robots', 'favicon', 'app', 'mobile'] as const;
 export const MAX_GUEST_BODY_BYTES = 8192;
@@ -33,13 +34,13 @@ export const isRelaySlug = (value: unknown): value is string => typeof value ===
 const operation = (value: unknown): value is RelayOperation => typeof value === 'string' && (RELAY_OPERATIONS as readonly string[]).includes(value);
 
 /** Validate structure before serializing, including direct callers outside HTTP JSON parsing. */
-function boundedJson(value: unknown, maxBytes: number): boolean {
+function boundedJson(value: unknown, maxBytes: number, maxString = 65_536): boolean {
   const seen = new Set<object>(); let nodes = 0;
   function visit(item: unknown, depth: number): boolean {
     if (++nodes > 20_000 || depth > 8) return false;
     if (item === null || typeof item === 'boolean') return true;
     if (typeof item === 'number') return Number.isFinite(item);
-    if (typeof item === 'string') return item.length <= 65_536;
+    if (typeof item === 'string') return item.length <= maxString;
     if (typeof item !== 'object' || seen.has(item)) return false;
     seen.add(item);
     if (Array.isArray(item)) return item.length <= 1024 && item.every(part => visit(part, depth + 1));
@@ -67,7 +68,8 @@ export function parseRoomIdentity(input: unknown): RoomIdentity | null {
 /** Mirrors the desktop guest API, with admission scoped by the public relay room. */
 export function parseGuestRequest(op: unknown, input: unknown, session?: unknown): GuestRequest | null {
   try {
-    if (!operation(op) || !record(input) || !boundedJson(input, MAX_GUEST_BODY_BYTES)) return null;
+    if (!operation(op) || !record(input) || !boundedJson(input, op === 'photo' ? MAX_PHOTO_BODY_BYTES : MAX_GUEST_BODY_BYTES,
+      op === 'photo' ? MAX_PHOTO_DATA_URL : 65_536)) return null;
     const anonymous = op === 'admission' || op === 'join' || op === 'resume';
     if (anonymous ? session !== undefined && session !== null : !isRelaySecret(session)) return null;
     let payload: Record<string, unknown>;
@@ -95,6 +97,18 @@ export function parseGuestRequest(op: unknown, input: unknown, session?: unknown
         if (op === 'missing-request') {
           if (!exact(command, ['commandId', 'title', 'artist']) || !domainId(command.commandId) || !text(command.title, 200) || !text(command.artist, 200, true)) return null;
           payload = { command: { commandId: command.commandId, title: command.title, artist: command.artist } }; break;
+        }
+        if (op === 'applause') {
+          if (!exact(command, ['commandId', 'showId', 'hostEpoch', 'expectedRevision']) || !domainId(command.commandId) ||
+              !domainId(command.showId) || !domainId(command.hostEpoch) || !integer(command.expectedRevision)) return null;
+          payload = { command: { commandId: command.commandId, showId: command.showId, hostEpoch: command.hostEpoch,
+            expectedRevision: command.expectedRevision } }; break;
+        }
+        if (op === 'photo') {
+          if (!exact(command, ['commandId', 'showId', 'hostEpoch', 'expectedRevision', 'dataUrl']) || !domainId(command.commandId) ||
+              !domainId(command.showId) || !domainId(command.hostEpoch) || !integer(command.expectedRevision) || !validPhotoDataUrl(command.dataUrl)) return null;
+          payload = { command: { commandId: command.commandId, showId: command.showId, hostEpoch: command.hostEpoch,
+            expectedRevision: command.expectedRevision, dataUrl: command.dataUrl } }; break;
         }
         const field = op === 'request' ? 'versionId' : op === 'withdraw' ? 'requestId' : 'minutes';
         if (!exact(command, ['commandId', 'showId', 'hostEpoch', 'expectedRevision', field]) || !domainId(command.commandId) ||
@@ -156,7 +170,11 @@ export function projectGuestResponse(op: unknown, status: unknown, input: unknow
             !text(input.singerName, 100, true) || !(input.catalogNextOffset === null || integer(input.catalogNextOffset)) ||
             !Array.isArray(input.requests) || input.requests.length > 50 ||
             (input.unavailableUntilMs !== undefined && !integer(input.unavailableUntilMs)) || (input.serverNowMs !== undefined && !integer(input.serverNowMs)) ||
-            (input.requestsTruncated !== undefined && typeof input.requestsTruncated !== 'boolean')) return null;
+            (input.requestsTruncated !== undefined && typeof input.requestsTruncated !== 'boolean') ||
+            (input.applauseEnabled !== undefined && typeof input.applauseEnabled !== 'boolean') ||
+            (input.photoEnabled !== undefined && typeof input.photoEnabled !== 'boolean') ||
+            (input.applauseCredits !== undefined && (!integer(input.applauseCredits) || input.applauseCredits > 5)) ||
+            (input.points !== undefined && !integer(input.points))) return null;
         const requests: Record<string, unknown>[] = [], ids = new Set<string>();
         for (const request of input.requests) {
           if (!record(request) || !requestId(request.id) || ids.has(request.id) || !domainId(request.versionId) ||
@@ -167,7 +185,11 @@ export function projectGuestResponse(op: unknown, status: unknown, input: unknow
           catalog, catalogNextOffset: input.catalogNextOffset, requests,
           ...(input.unavailableUntilMs === undefined ? {} : { unavailableUntilMs: input.unavailableUntilMs }),
           ...(input.serverNowMs === undefined ? {} : { serverNowMs: input.serverNowMs }),
-          ...(input.requestsTruncated === undefined ? {} : { requestsTruncated: input.requestsTruncated }) }; break;
+          ...(input.requestsTruncated === undefined ? {} : { requestsTruncated: input.requestsTruncated }),
+          ...(input.applauseEnabled === undefined ? {} : { applauseEnabled: input.applauseEnabled }),
+          ...(input.photoEnabled === undefined ? {} : { photoEnabled: input.photoEnabled }),
+          ...(input.applauseCredits === undefined ? {} : { applauseCredits: input.applauseCredits }),
+          ...(input.points === undefined ? {} : { points: input.points }) }; break;
       }
       default: body = outcome(input); if (!body) return null;
     }

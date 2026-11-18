@@ -5,3 +5,20 @@
 .mobile-tabs{flex-wrap:wrap}.mobile-tabs button{flex:1 1 auto}.mobile-song-options{margin:0;padding:0;border:0;background:transparent;position:relative;flex-shrink:0}.mobile-song-options summary{list-style:none;min-width:44px;min-height:46px;text-align:center;padding:.6rem;border:1px solid var(--line);border-radius:12px;cursor:pointer;font-size:1.2rem}.mobile-song-options summary::-webkit-details-marker{display:none}.mobile-song-options[open] summary{margin:0}.mobile-song-options>div{position:absolute;right:0;top:52px;z-index:30;width:min(78vw,300px);padding:1rem;background:#172034;border:1px solid #70519d;border-radius:12px;box-shadow:0 10px 30px #0008}.mobile-song-options small{font-size:.8rem}.mobile-song-options input{max-width:100%}
 
 .mobile-player{min-height:200px}
+.mobile-photo-overlay {
+  position: fixed;
+  top: max(4.5rem, env(safe-area-inset-top));
+  right: 1rem;
+  z-index: 40;
+  width: min(42vw, 18rem);
+  max-height: 35vh;
+  pointer-events: none;
+}
+.mobile-photo-overlay img {
+  display: block;
+  width: 100%;
+  max-height: 35vh;
+  object-fit: contain;
+  border-radius: .65rem;
+  box-shadow: 0 3px 18px #0009;
+}

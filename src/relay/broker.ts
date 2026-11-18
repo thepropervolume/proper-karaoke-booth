@@ -205,6 +205,11 @@ export class RelayBroker {
     if (room.lastPoll === null || this.now() - room.lastPoll > this.offlineAfter) throw new RelayError(503, 'host-offline');
     if (signal?.aborted) throw new RelayError(503, 'request-cancelled');
     if (room.pending.size >= 16 || this.outstanding >= 1000) throw new RelayError(503, 'request-capacity');
+    // One photo per room and a small global cap bound large payloads in memory.
+    if (request.operation === 'photo') {
+      const photos = [...this.rooms.values()].flatMap(item => [...item.pending.values()].filter(rpc => rpc.envelope.operation === 'photo'));
+      if (photos.length >= 32 || [...room.pending.values()].some(rpc => rpc.envelope.operation === 'photo')) throw new RelayError(503, 'photo-capacity');
+    }
     const requestId = randomUUID();
     const envelope: RpcEnvelope = { requestId, operation: request.operation, payload: request.payload,
       ...(request.session === undefined ? {} : { session: request.session }) };

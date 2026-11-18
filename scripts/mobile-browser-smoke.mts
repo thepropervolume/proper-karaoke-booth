@@ -17,6 +17,9 @@ const relay = await startQueueRelayService({ publicOrigin: origin, owners: [{ id
   broker, staticHandler: async () => false, port: 0, closeDependencies: () => db.close(), mobileEnabled: true,
   mobileCatalog: async query => ({ items: [{ id: 'youtube_Video123456', videoId: 'Video123456', title: query === 'Oasis' ? 'Wonderwall' : query, artist: 'Oasis', provider: 'karaokenerds' }] }) });
 const staticRoot = resolve('dist/mobile');
+const mobileConfig = await readFile(resolve('deploy/queue-relay/mobile.conf'), 'utf8');
+const csp = /Header always set Content-Security-Policy "([^"]+)"/.exec(mobileConfig)?.[1];
+if (!csp) throw new Error('Mobile deployment CSP is missing.');
 const server = createServer((request, response) => {
   if (request.url?.startsWith('/v1/')) {
     const proxy = requestHttp({ host: '127.0.0.1', port: relay.port, path: request.url, method: request.method, headers: { ...request.headers, host: new URL(origin).host } }, remote => { response.writeHead(remote.statusCode ?? 500, remote.headers); remote.pipe(response); });
@@ -24,7 +27,7 @@ const server = createServer((request, response) => {
   }
   const path = resolve(staticRoot, request.url === '/app/' ? 'index.html' : (request.url ?? '').replace(/^\/app\//, ''));
   if (!path.startsWith(staticRoot + sep)) { response.writeHead(404); response.end(); return; }
-  void readFile(path).then(bytes => { const extension = path.split('.').at(-1)!; response.writeHead(200, { 'Content-Type': ({ html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png', woff: 'font/woff', woff2: 'font/woff2', webmanifest: 'application/manifest+json' } as Record<string,string>)[extension] ?? 'application/octet-stream' }); response.end(bytes); }).catch(() => { response.writeHead(404); response.end(); });
+  void readFile(path).then(bytes => { const extension = path.split('.').at(-1)!; response.writeHead(200, { 'Content-Security-Policy': csp, 'Content-Type': ({ html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png', woff: 'font/woff', woff2: 'font/woff2', webmanifest: 'application/manifest+json' } as Record<string,string>)[extension] ?? 'application/octet-stream' }); response.end(bytes); }).catch(() => { response.writeHead(404); response.end(); });
 });
 await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
 const address = server.address(); if (!address || typeof address === 'string') throw new Error('Missing rehearsal address.');
@@ -55,6 +58,14 @@ try {
   const guest = await guestContext.newPage(); guest.on('pageerror', error => errors.push(error.message)); await guest.goto(origin + '/app/');
   await guest.getByRole('button', { name: 'Join Room', exact: true }).click();
   await guest.getByLabel('Your name').fill('Alice'); await guest.getByRole('button', { name: 'Join the show', exact: true }).click();
+  const photoBytes = await guest.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 8; const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#601ce9'; ctx.fillRect(0, 0, 8, 8); return canvas.toDataURL('image/png').split(',')[1]; });
+  await guest.getByLabel('JPEG or PNG').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: Buffer.from(photoBytes, 'base64') });
+  await guest.getByRole('button', { name: 'Send to singer display' }).click();
+  await host.bringToFront();
+  try { await host.locator('.mobile-photo-overlay img').waitFor({ timeout: 7000 }); }
+  catch (error) { console.error('Guest photo state:', await guest.locator('body').innerText(), 'Host state:', await host.locator('body').innerText()); throw error; }
+  await host.getByText(/Alice.*24 points/).waitFor();
+  checks.push('Authenticated guest photo displays and scores under the actual production CSP.');
   await guest.getByRole('button', { name: 'Request', exact: true }).click();
   await guest.getByText('accepted', { exact: true }).waitFor();
   await host.getByRole('button', { name: /^Queue \(2\)$/ }).waitFor();

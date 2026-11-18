@@ -8,7 +8,7 @@ test('a restored mobile show retains its active turn but has no persisted play o
   const show = new MobileShow(); show.add(songs); show.request(songs[0].id); show.start();
   const saved = show.state(), restored = new MobileShow(restoreMobileShow(saved));
   assert.equal(restored.current()?.songId, songs[0].id);
-  assert.deepEqual(Object.keys(saved).sort(), ['autoAdvance','currentId','favorites','format','gapSeconds','history','missingRequests','name','queue','songs','volume'].sort());
+  assert.deepEqual(Object.keys(saved).sort(), ['applauseEnabled','autoAdvance','currentId','favorites','format','gapSeconds','history','missingRequests','name','points','pointsEnabled','queue','singers','songs','volume'].sort());
   const changed = show.state(); changed.songs[0].title = 'Other'; assert.equal(show.state().songs[0].title, 'Wonderwall');
   assert.throws(() => restoreMobileShow({ ...saved, volume: NaN }));
   assert.throws(() => restoreMobileShow({ ...saved, currentId: 'missing' }));

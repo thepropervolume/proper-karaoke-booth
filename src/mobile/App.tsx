@@ -1,11 +1,12 @@
 import { QueueDialog } from './QueueDialog';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MobileShow, type MobileSong, type MobileShowState } from './show';
 import { loadMobileShow, saveLocalMedia, saveMobileShow, acquireMobileHostLock, MobileHostLockUnsupported, preserveMobileRecovery, listMobileRecoveries, readMobileRecovery, deleteLocalMedia, relinkLocalMedia } from './storage';
 import { Capacitor } from '@capacitor/core';
 import { parseMobileCatalog, youtubeLink } from './catalog';
 import { mobileFetch, mobileJson } from './api';
 import { MobilePlayer, type PlayerHandle } from './Player';
+import { createApplausePlayer } from '../display/applause-player';
 import { MobileHostedRoom, type MobileRoomStatus } from './hosted-room';
 import { MobileRoomAuthority } from './room-authority';
 import { advertiseMobileRoom, discoverRooms, roomSlug, stopMobileDiscovery, type DiscoveredRoom } from './discovery';
@@ -26,11 +27,29 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   const [playing, setPlaying] = useState(false), [elapsed, setElapsed] = useState(0), [duration, setDuration] = useState(0), [gapUntil, setGapUntil] = useState(0), [tick, setTick] = useState(Date.now());
   const [roomStatus, setRoomStatus] = useState<MobileRoomStatus>({ state: 'stopped', link: '', message: '' }), [roomBusy, setRoomBusy] = useState(false), [discoverable, setDiscoverable] = useState(true);
   const [roomName, setRoomName] = useState(state.name), [slug, setSlug] = useState(`karaoke-${crypto.randomUUID().slice(0, 8)}`);
+  const [photo, setPhoto] = useState<{ id: string; dataUrl: string } | null>(null);
   const dismissedRooms = useRef(new Set<string>()), [mediaRevision, setMediaRevision] = useState(0);
   const joinEpoch = useRef(0), modeRef = useRef(mode); modeRef.current = mode;
   const alive = useRef(true), discoveryEnabled = useRef(discoverable); discoveryEnabled.current = discoverable;
   const player = useRef<PlayerHandle>(null), playRef = useRef(playing); playRef.current = playing;
-  const authority = useMemo(() => new MobileRoomAuthority(model, () => setState(model.state())), [model]);
+  const applausePlayer = useMemo(() => createApplausePlayer(), []);
+  const activePhoto = useRef<{ id: string; timer: ReturnType<typeof setTimeout>; resolve?: () => void; reject?: (error: Error) => void } | null>(null);
+  const playApplause = useCallback(async () => {
+    if (modeRef.current !== 'host') throw new Error('The host screen is not available.');
+    const result = await applausePlayer.play({ id: crypto.randomUUID(), volume: model.state().volume, outputId: '' });
+    if (!result.ok) throw new Error(result.error || 'Could not play applause.');
+  }, [applausePlayer, model]);
+  const displayPhoto = useCallback((dataUrl: string) => new Promise<void>((resolve, reject) => {
+    if (!alive.current || modeRef.current !== 'host' || document.fullscreenElement) { reject(new Error('The host screen is not available for photos.')); return; }
+    if (activePhoto.current) { reject(new Error('A photo is already being shown.')); return; }
+    const id = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      if (activePhoto.current?.id === id) { activePhoto.current = null; setPhoto(null); reject(new Error('Photo could not be displayed.')); }
+    }, 8000);
+    activePhoto.current = { id, timer, resolve, reject };
+    setPhoto({ id, dataUrl });
+  }), []);
+  const authority = useMemo(() => new MobileRoomAuthority(model, () => setState(model.state()), playApplause, displayPhoto), [model, playApplause, displayPhoto]);
   const room = useMemo(() => new MobileHostedRoom(authority, status => { if (alive.current) setRoomStatus(status); }, () => discoveryEnabled.current, async () => { await pendingSaves.current; }), [authority]);
   useEffect(() => {
     alive.current = true;
@@ -40,8 +59,12 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     });
     const pause = () => { if (document.hidden) { setPlaying(false); setNotice('Playback paused while the app is in the background.'); } };
     document.addEventListener('visibilitychange', pause);
-    return () => { alive.current = false; unsubscribe(); document.removeEventListener('visibilitychange', pause); void room.stop().catch(() => {}); void stopMobileDiscovery().catch(() => {}); };
+    return () => { alive.current = false; unsubscribe(); document.removeEventListener('visibilitychange', pause); applausePlayer.stop(); const photo = activePhoto.current; activePhoto.current = null; if (photo) { clearTimeout(photo.timer); photo.reject?.(new Error('The host screen closed.')); } void room.stop().catch(() => {}); void stopMobileDiscovery().catch(() => {}); };
   }, [model, room, writable, pendingSaves]);
+  useEffect(() => {
+    model.setPlaybackActive(mode === 'host' && playing && !gapUntil && !!state.currentId);
+  }, [model, mode, playing, gapUntil, state.currentId]);
+  useEffect(() => { applausePlayer.setVolume(state.volume); }, [applausePlayer, state.volume]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(''), 8000); return () => clearTimeout(timer);
@@ -129,10 +152,11 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     <div><strong>{song.title}</strong><span>{song.artist || 'Unknown Artist'}</span><small>{song.provider === 'karaokenerds' ? `Karaoke Nerds${song.brand ? ` · ${song.brand}` : ''}` : song.provider === 'youtube' ? 'YouTube' : 'On This Device'}</small></div>
     <button type="button" aria-label={`${state.favorites.includes(song.id) ? 'Unfavorite' : 'Favorite'} ${song.title}`} aria-pressed={state.favorites.includes(song.id)} onClick={() => void run(() => { model.add([song]); model.favorite(song.id); })}>{state.favorites.includes(song.id) ? '♥' : '♡'}</button>
     <button type="button" aria-label={`Queue ${song.title}`} onClick={() => { setQueueSong(song); }}>＋</button>
-    {song.provider === 'local' && <details className="mobile-song-options"><summary aria-label={`Manage local video ${song.title}`}>⋯</summary><div>
-      <label>Relink Video<input type="file" accept="video/*" onChange={event => { const file = event.currentTarget.files?.[0]; if (!file) return; void run(async () => { await relinkLocalMedia(song.id, file); setPlaying(false); setMediaRevision(value => value + 1); setNotice('Video relinked. Press Play to continue.'); }); event.currentTarget.value = ''; }} /></label>
-      <button type="button" disabled={state.queue.some(r => r.songId === song.id && ['accepted', 'playing'].includes(r.status))} onClick={() => void run(async () => { await deleteLocalMedia(song.id); setNotice('Device copy removed. Metadata and history are kept; relink this song to play again.'); })}>Remove Device Copy</button><small>Remove waiting requests first. Your original file is untouched.</small>
-    </div></details>}
+    <details className="mobile-song-options"><summary aria-label={`Manage ${song.provider === 'local' ? 'local video ' : ''}${song.title}`}>⋯</summary><div>
+      <button type="button" onClick={() => void run(() => { model.add([song]); model.setDuet(song.id, !song.isDuet); })}>{song.isDuet ? 'Mark as Solo' : 'Mark as Duet'}</button>
+      {song.provider === 'local' && <><label>Relink Video<input type="file" accept="video/*" onChange={event => { const file = event.currentTarget.files?.[0]; if (!file) return; void run(async () => { await relinkLocalMedia(song.id, file); setPlaying(false); setMediaRevision(value => value + 1); setNotice('Video relinked. Press Play to continue.'); }); event.currentTarget.value = ''; }} /></label>
+      <button type="button" disabled={state.queue.some(r => r.songId === song.id && ['accepted', 'playing'].includes(r.status))} onClick={() => void run(async () => { await deleteLocalMedia(song.id); setNotice('Device copy removed. Metadata and history are kept; relink this song to play again.'); })}>Remove Device Copy</button><small>Remove waiting requests first. Your original file is untouched.</small></>}
+    </div></details>
   </li>;
   return <div className="mobile-app">
     <header className="mobile-header"><a href="./" onClick={event => { event.preventDefault(); setMode('choose'); setPlaying(false); }} aria-label="The Proper Volume home"><img src="./icon-192.png" alt="" /><strong>TPV Karaoke</strong></a><span className="mobile-version">0.9.0</span>
@@ -160,22 +184,25 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
           <details><summary>Add a Video</summary><label className="mobile-file">Import Local Video<input type="file" accept="video/mp4,video/webm,video/quicktime,.m4v" multiple onChange={event => { const files = event.currentTarget.files; void run(() => importFiles(files)); event.currentTarget.value = ''; }} /></label>
             <form onSubmit={event => { event.preventDefault(); void run(() => { const song = youtubeLink(youtubeUrl); if (!song) throw new Error('Use an HTTPS YouTube watch or youtu.be link.'); setQueueSong(song); setYoutubeUrl(''); }); }}><label>YouTube karaoke link<input type="url" value={youtubeUrl} onChange={event => setYoutubeUrl(event.target.value)} required /></label><button>Add YouTube Video</button></form></details>
         </section>}
-        {tab === 'queue' && <section><h2>Singer Queue</h2>{current && <p><strong>Now: {currentSong?.title}</strong> · {current.singer || 'Unassigned'}</p>}
-          <ol className="mobile-queue">{state.queue.filter(r => r.status === 'accepted').map((request, i, waiting) => { const song = state.songs.find(s => s.id === request.songId); return <li key={request.id}><div><strong>{song?.title}</strong><span>{request.singer || 'Unassigned'}</span></div>
+        {tab === 'queue' && <section><h2>Singer Queue</h2>{current && <p><strong>Now: {currentSong?.title}</strong> · {[current.singer, state.singers.find(s => s.id === current.coSingerId)?.name].filter(Boolean).join(' & ') || 'Unassigned'}</p>}
+          <ol className="mobile-queue">{state.queue.filter(r => r.status === 'accepted').map((request, i, waiting) => { const song = state.songs.find(s => s.id === request.songId); return <li key={request.id}><div><strong>{song?.title}</strong><span>{[request.singer, state.singers.find(s => s.id === request.coSingerId)?.name].filter(Boolean).join(' & ') || 'Unassigned'}</span></div>
             <button aria-label={`Move ${song?.title} up`} disabled={i === 0} onClick={() => model.move(request.id, -1)}>↑</button><button aria-label={`Move ${song?.title} down`} disabled={i === waiting.length - 1} onClick={() => model.move(request.id, 1)}>↓</button><button aria-label={`Remove ${song?.title}`} onClick={() => void run(() => model.remove(request.id))}>×</button></li>; })}</ol>
           {!state.queue.some(r => r.status === 'accepted') && <p>No songs waiting. Add one from Songs.</p>}
           {authority.missing.length > 0 && <details><summary>Unavailable Song Requests ({authority.missing.length})</summary><ul>{authority.missing.map((r, i) => <li key={i}>{r.singer}: {r.artist} — {r.title}</li>)}</ul></details>}</section>}
         {tab === 'favorites' && <section><h2>Your Favorites</h2><ul className="mobile-songs">{state.songs.filter(s => state.favorites.includes(s.id)).map(renderSong)}</ul>{!state.favorites.length && <p>Tap a heart beside a song to save it here.</p>}</section>}
         {tab === 'history' && <section><h2>Show History</h2><ol className="mobile-history">{state.history.map((entry, i) => <li key={i}><strong>{state.songs.find(s => s.id === entry.songId)?.title}</strong><span>{entry.singer || 'Unassigned'} · {new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(entry.at)}</span></li>)}</ol>{!state.history.length && <p>Completed songs will appear here.</p>}</section>}
-        {tab === 'room' && <section className="mobile-room"><h2>Your Room</h2><label>Booth name<input value={roomName} maxLength={100} onChange={event => setRoomName(event.target.value)} onBlur={() => void run(() => model.settings({ ...state, name: roomName.trim() }))} /></label>
+        {tab === 'room' && <section className="mobile-room"><h2>Your Room</h2><label>Booth name<input value={roomName} maxLength={100} onChange={event => setRoomName(event.target.value)} onBlur={() => void run(() => model.settings({ name: roomName.trim() }))} /></label>
           <label>Room address<input value={slug} disabled={roomStatus.state === 'online' || roomStatus.state === 'reconnecting' || roomBusy || roomStatus.pending} maxLength={48} autoCapitalize="none" autoCorrect="off" onChange={event => setSlug(event.target.value)} /></label>
           <label className="mobile-check"><input type="checkbox" checked={discoverable} onChange={event => setDiscoverable(event.target.checked)} />Suggest this room to nearby singers</label>
           <p role="status">{roomStatus.message || 'Open your room to accept requests from other phones.'}</p>
           {roomStatus.link && <><label>Singer link<input readOnly value={roomStatus.link} onFocus={event => event.currentTarget.select()} /></label><button onClick={() => void run(async () => { await navigator.clipboard.writeText(roomStatus.link); setNotice('Singer link copied.'); })}>Copy Singer Link</button></>}
           <button className="mobile-primary" disabled={roomBusy} onClick={() => { setRoomBusy(true); void run(() => roomStatus.pendingAction === 'close' || roomStatus.state === 'online' || roomStatus.state === 'reconnecting' ? room.stop() : room.start(slug)).finally(() => setRoomBusy(false)); }}>{roomStatus.pendingAction === 'close' ? 'Retry Closing Room' : roomStatus.state === 'online' || roomStatus.state === 'reconnecting' ? 'Close Room' : roomStatus.pendingAction === 'open' ? 'Retry Open' : 'Open Room'}</button>{roomStatus.pendingAction === 'open' && <button disabled={roomBusy} onClick={() => void run(() => room.stop())}>Close Pending Room</button>}
           <p className="mobile-quiet">Keep the host app open. Room access ends when the session closes or expires. Anyone with your link can request published songs.</p>
-          <h2>Playback</h2><label className="mobile-check"><input type="checkbox" checked={state.autoAdvance} onChange={event => model.settings({ ...state, autoAdvance: event.target.checked })} />Play the next song automatically</label>
-          <label>Gap between songs (seconds)<input type="number" min={0} max={3600} value={state.gapSeconds} onChange={event => void run(() => model.settings({ ...state, gapSeconds: Number(event.target.value) }))} /></label>
+          <h2>Playback</h2><label className="mobile-check"><input type="checkbox" checked={state.autoAdvance} onChange={event => model.settings({ autoAdvance: event.target.checked })} />Play the next song automatically</label>
+          <label>Gap between songs (seconds)<input type="number" min={0} max={3600} value={state.gapSeconds} onChange={event => void run(() => model.settings({ gapSeconds: Number(event.target.value) }))} /></label>
+          <label className="mobile-check"><input type="checkbox" checked={state.applauseEnabled} onChange={event => model.settings({ applauseEnabled: event.target.checked })} />Enable applause</label>
+          <label className="mobile-check"><input type="checkbox" checked={state.pointsEnabled} onChange={event => model.settings({ pointsEnabled: event.target.checked })} />Enable singer points</label>
+          {state.singers.length > 0 && <section><h2>Singers</h2><ul>{state.singers.map(singer => { const account = state.points?.accounts.find(item => item.singerId === singer.id); return <li key={singer.id}>{singer.name}{state.pointsEnabled ? ` · ${account?.points ?? 0} points` : ''}{state.applauseEnabled ? ` · ${account?.credits ?? 3} applause credits` : ''}</li>; })}</ul></section>}
           <h2>Your Data</h2><button onClick={() => exportJson(model.state(), 'tpv-mobile-show.json')}>Export Show and History</button><button onClick={() => void run(async () => { const latest = (await listMobileRecoveries()).at(-1); if (!latest) { setNotice('No recovery copies are saved.'); return; } const copy = await readMobileRecovery(latest.key); if (copy) exportJson(copy.value, 'tpv-mobile-recovery.json'); })}>Export Latest Recovery Copy</button>
           <p className="mobile-quiet">Online videos use YouTube. Tap inside the video if your device blocks audio.</p>
         </section>}
@@ -183,10 +210,17 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
       <footer className="mobile-transport"><div className="mobile-now"><strong>{currentSong?.title || 'Ready to Sing'}</strong><span>{current?.singer || currentSong?.artist || `${state.queue.filter(r => r.status === 'accepted').length} songs waiting`}</span></div>
         <div className="mobile-time"><span>{clock(elapsed)}</span><input aria-label="Track position" type="range" min={0} max={Math.max(duration, 1)} step={1} value={Math.min(elapsed, Math.max(duration, 1))} disabled={!currentSong || duration <= 0} onChange={event => { const time = Number(event.target.value); player.current?.seek(time); setElapsed(time); }} /><span>{clock(duration)}</span></div>
         <div className="mobile-play-buttons"><button aria-label="Restart song" disabled={!current} onClick={() => { player.current?.seek(0); setElapsed(0); }}>↶</button><button className="mobile-primary" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button><button aria-label="Skip song" disabled={!current} onClick={() => next(true)}>⏭</button><button aria-label="Fullscreen video" disabled={!currentSong} onClick={() => player.current?.fullscreen()}>⛶</button>
-          <label className="mobile-volume">Volume<input type="range" min={0} max={1} step={0.01} value={state.volume} onChange={event => model.settings({ ...state, volume: Number(event.target.value) })} /></label></div>
+          <button aria-label="Applause" disabled={!state.applauseEnabled} onClick={() => void run(() => model.applaud({ role: 'host' }, crypto.randomUUID(), playApplause))}>👏</button>
+          <label className="mobile-volume">Volume<input type="range" min={0} max={1} step={0.01} value={state.volume} onChange={event => model.settings({ volume: Number(event.target.value) })} /></label></div>
       </footer>
     </>}
-    {queueSong && <QueueDialog song={queueSong} onClose={() => setQueueSong(null)} onSubmit={name => { void run(() => { model.add([queueSong]); model.request(queueSong.id, name); setQueueSong(null); setNotice('Added to queue.'); }); }} />}
+    {queueSong && <QueueDialog song={queueSong} onClose={() => setQueueSong(null)} onSubmit={(name, coSinger, isDuet) => { void run(() => { model.add([queueSong]); model.setDuet(queueSong.id, isDuet); model.request(queueSong.id, name, null, undefined, coSinger); setQueueSong(null); setNotice('Added to queue.'); }); }} />}
+    {mode === 'host' && photo && <div className="mobile-photo-overlay"><img src={photo.dataUrl} alt="A photo sent by a singer" onLoad={() => {
+      const active = activePhoto.current; if (!active || active.id !== photo.id || !active.resolve) return;
+      if (document.fullscreenElement || document.visibilityState !== 'visible') { clearTimeout(active.timer); activePhoto.current = null; setPhoto(null); active.reject?.(new Error('The host screen is not visible.')); return; }
+      clearTimeout(active.timer); active.resolve(); active.resolve = undefined; active.reject = undefined;
+      active.timer = setTimeout(() => { if (activePhoto.current?.id === photo.id) { activePhoto.current = null; setPhoto(null); } }, 10000);
+    }} onError={() => { const active = activePhoto.current; if (!active || active.id !== photo.id) return; clearTimeout(active.timer); activePhoto.current = null; setPhoto(null); active.reject?.(new Error('Photo could not be displayed.')); }} /></div>}
   </div>;
 }
 export function MobileEntry() {

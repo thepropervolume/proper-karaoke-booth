@@ -1,5 +1,6 @@
 import { MobileShow } from './show';
 import type { InternetGuestCall, InternetGuestReply } from '../main/internet-queue-client';
+import { validMobilePhoto } from './photo-validation';
 type Guest = { id: string; name: string; session: string; resume: string };
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown, max: number, empty = false): v is string => typeof v === 'string' && v.length <= max && (empty || !!v.trim()) && !/[\x00-\x1f\x7f]/.test(v);
@@ -13,12 +14,80 @@ export class MobileRoomAuthority {
   private guests = new Map<string, Guest>();
   private joins = new Map<string, { name: string; resume: string; guest: Guest }>();
   private receipts = new Map<string, { payload: string; body: Record<string, unknown> }>();
+  private applausePending = new Map<string, { payload: string; promise: Promise<Record<string, unknown>> }>();
+  private photoPending = new Map<string, { payload: string; promise: Promise<Record<string, unknown>> }>();
   private epoch = crypto.randomUUID();
   get missing(): { singer: string; title: string; artist: string }[] { return this.show.state().missingRequests; }
-  constructor(private show: MobileShow, private changed: () => void = () => {}) {}
+  constructor(private show: MobileShow, private changed: () => void = () => {}, private playApplause?: () => Promise<void>,
+    private displayPhoto?: (dataUrl: string) => Promise<void>) {}
   reset(): void {
     this.show.forgetGuestAvailability([...this.guests.values()].map(guest => guest.id));
-    this.guests.clear(); this.joins.clear(); this.receipts.clear(); this.epoch = crypto.randomUUID();
+    this.guests.clear(); this.joins.clear(); this.receipts.clear(); this.applausePending.clear(); this.photoPending.clear(); this.epoch = crypto.randomUUID();
+  }
+  async dispatchPhoto(call: InternetGuestCall): Promise<InternetGuestReply> {
+    const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
+    const guest = this.guests.get(call.session ?? ''), payload = call.payload;
+    if (!guest || !this.displayPhoto || !record(payload) || !exact(payload, ['command']) || !record(payload.command)) return denied();
+    const c = payload.command;
+    if (!exact(c, ['commandId', 'showId', 'hostEpoch', 'expectedRevision', 'dataUrl']) || !id(c.commandId) ||
+      c.showId !== this.show.showId || c.hostEpoch !== this.epoch || !Number.isSafeInteger(c.expectedRevision) || !validMobilePhoto(c.dataUrl)) return denied();
+    const dataUrl = c.dataUrl;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(dataUrl));
+    if (this.guests.get(guest.session) !== guest || c.hostEpoch !== this.epoch) return denied();
+    const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    const key = `${guest.id}:${c.commandId}`, serialized = JSON.stringify(['photo', c.commandId, c.showId, c.hostEpoch, c.expectedRevision, hash]);
+    const old = this.receipts.get(key);
+    if (old) return old.payload === serialized ? { requestId: call.requestId, status: 200, body: old.body } : denied();
+    const pending = this.photoPending.get(key);
+    if (pending && pending.payload !== serialized) return denied();
+    if (!pending && (this.receipts.size >= 10000 || this.photoPending.size)) return denied();
+    const epoch = this.epoch, session = guest.session;
+    const promise = pending?.promise ?? (async () => {
+      let result: Record<string, unknown>;
+      try {
+        await this.displayPhoto!(dataUrl);
+        if (this.epoch !== epoch || this.guests.get(session) !== guest) throw new Error('This room is no longer available.');
+        this.show.awardPhoto(guest.id, `remote-photo:${key}`);
+        result = { ok: true, revision: this.show.revision };
+      } catch (error) {
+        result = { ok: false, code: 'PHOTO', message: error instanceof Error ? error.message : 'Photo is unavailable.', revision: this.show.revision };
+      }
+      if (this.epoch === epoch && this.guests.get(session) === guest) this.receipts.set(key, { payload: serialized, body: result });
+      return result;
+    })();
+    if (!pending) this.photoPending.set(key, { payload: serialized, promise });
+    try { return { requestId: call.requestId, status: 200, body: await promise }; }
+    finally { if (this.photoPending.get(key)?.promise === promise) this.photoPending.delete(key); }
+  }
+  async dispatchApplause(call: InternetGuestCall): Promise<InternetGuestReply> {
+    const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
+    const guest = this.guests.get(call.session ?? ''), payload = call.payload;
+    if (!guest || !this.playApplause || !record(payload) || !exact(payload, ['command']) || !record(payload.command)) return denied();
+    const c = payload.command;
+    if (!exact(c, ['commandId', 'showId', 'hostEpoch', 'expectedRevision']) || !id(c.commandId) ||
+      c.showId !== this.show.showId || c.hostEpoch !== this.epoch || !Number.isSafeInteger(c.expectedRevision)) return denied();
+    const key = `${guest.id}:${c.commandId}`, serialized = JSON.stringify(['applause', c]);
+    const old = this.receipts.get(key);
+    if (old) return old.payload === serialized ? { requestId: call.requestId, status: 200, body: old.body } : denied();
+    const pending = this.applausePending.get(key);
+    if (pending && pending.payload !== serialized) return denied();
+    if (!pending && this.receipts.size >= 10000) return denied();
+    const epoch = this.epoch, session = guest.session;
+    const promise = pending?.promise ?? (async () => {
+      let result: Record<string, unknown>;
+      try {
+        await this.show.applaud({ role: 'singer', singerId: guest.id }, `remote:${key}`, this.playApplause!,
+          () => this.epoch === epoch && this.guests.get(session) === guest);
+        result = { ok: true, revision: this.show.revision };
+      } catch (error) {
+        result = { ok: false, code: 'APPLAUSE', message: error instanceof Error ? error.message : 'Applause is unavailable.', revision: this.show.revision };
+      }
+      if (this.epoch === epoch && this.guests.get(session) === guest) this.receipts.set(key, { payload: serialized, body: result });
+      return result;
+    })();
+    if (!pending) this.applausePending.set(key, { payload: serialized, promise });
+    try { return { requestId: call.requestId, status: 200, body: await promise }; }
+    finally { if (this.applausePending.get(key)?.promise === promise) this.applausePending.delete(key); }
   }
   dispatch(call: InternetGuestCall): InternetGuestReply {
     const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
@@ -39,6 +108,7 @@ export class MobileRoomAuthority {
         if (!old && p.expectedRevision !== revision()) return { requestId: call.requestId, status: 409, body: { error: 'REVISION_CONFLICT' } };
         if (!old && this.guests.size >= 100) return denied();
         const guest = old?.guest ?? { id: crypto.randomUUID(), name: p.name.trim(), session: mobileSecret(), resume: p.resumeSecret };
+        if (!old) this.show.registerSinger(guest.id, guest.name);
         this.guests.set(guest.session, guest); this.joins.set(p.joinId, { name: guest.name, resume: guest.resume, guest });
         body = { session: guest.session, singerId: guest.id };
       } else if (call.operation === 'resume' && exact(p, ['resumeSecret']) && call.session === undefined && secret(p.resumeSecret)) {
@@ -50,9 +120,13 @@ export class MobileRoomAuthority {
           const state = this.show.state(), mine = state.queue.filter(r => r.singerId === guest.id);
           const requests = [...mine.filter(r => ['accepted', 'playing'].includes(r.status)), ...mine.filter(r => !['accepted', 'playing'].includes(r.status)).reverse()].slice(0, 50);
           const page = catalog(0, 50);
+          const account = state.points?.accounts.find(item => item.singerId === guest.id);
           body = { ...admission(), singerId: guest.id, singerName: guest.name, catalog: page.items, catalogNextOffset: page.nextOffset,
             requests: requests.map(r => ({ id: r.id, versionId: r.songId, status: r.status })), requestsTruncated: mine.length > 50,
-            unavailableUntilMs: this.show.unavailableUntil(guest.id), serverNowMs: Date.now() };
+            unavailableUntilMs: this.show.unavailableUntil(guest.id), serverNowMs: Date.now(),
+            ...(this.playApplause ? { applauseEnabled: state.applauseEnabled, applauseCredits: account?.credits ?? 3,
+              ...(state.pointsEnabled ? { points: account?.points ?? 0 } : {}) } : {}),
+            ...(this.displayPhoto ? { photoEnabled: true } : {}) };
         } else if (call.operation === 'catalog' && exact(p, ['offset', 'limit']) && Number.isSafeInteger(p.offset) && (p.offset as number) >= 0 && Number.isInteger(p.limit) && (p.limit as number) >= 1 && (p.limit as number) <= 100) body = catalog(p.offset as number, p.limit as number);
         else if (call.operation === 'outcome' && exact(p, ['commandId']) && id(p.commandId)) body = this.receipts.get(`${guest.id}:${p.commandId}`)?.body ?? null;
         else if (exact(p, ['command']) && record(p.command) && id(p.command.commandId)) {
@@ -64,7 +138,7 @@ export class MobileRoomAuthority {
             const fail = (code: string, message: string) => ({ ok: false, code, message, revision: revision() });
             if (call.operation === 'missing-request' && exact(c, ['commandId', 'title', 'artist']) && text(c.title, 200) && text(c.artist, 200, true)) {
               if (this.missing.length >= 200) body = fail('REQUEST_LIMIT', 'The host has too many unavailable-song requests.');
-              else { this.show.addMissingRequest(guest.name, c.title.trim(), c.artist.trim()); this.changed(); body = { ok: true, revision: revision() }; }
+              else { this.show.addMissingRequest(guest.name, c.title.trim(), c.artist.trim(), guest.id, `suggestion:${key}`); this.changed(); body = { ok: true, revision: revision() }; }
             } else {
               const field = call.operation === 'request' ? 'versionId' : call.operation === 'withdraw' ? 'requestId' : call.operation === 'availability' ? 'minutes' : '';
               if (!field || !exact(c, ['commandId', 'showId', 'hostEpoch', 'expectedRevision', field])) return denied();
