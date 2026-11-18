@@ -1,6 +1,6 @@
 # Installing The Proper Volume Karaoke Booth
 
-Download installers from [GitHub Releases](https://github.com/thepropervolume/proper-karaoke-booth/releases). Version changes on the default branch trigger verified builds for every supported desktop platform; [release automation](releasing.md) explains tags, assets and recovery. Each release includes its own exact source commit and checksums. The local verification history below remains version-specific.
+Download installers and checksums from the [Karaoke Booth downloads page](https://release.thepropervolume.com/). Version changes on the default branch trigger verified builds for every supported desktop platform. See [release automation](releasing.md) for the files included and recovery steps. Each release records its exact source commit.
 
 ## 0.9.1 Party Tyme Update
 

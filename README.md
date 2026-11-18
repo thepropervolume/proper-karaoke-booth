@@ -11,7 +11,7 @@ A desktop app for hosting karaoke: find songs, manage singer rotation, accept re
 
 ## Install or Run
 
-Download Windows, Linux and macOS installers from [GitHub Releases](https://github.com/thepropervolume/proper-karaoke-booth/releases). See the [installation guide](docs/installation.md) for prerequisites and upgrades. Back up your show before upgrading.
+Download Windows, Linux and macOS installers from the [Karaoke Booth downloads page](https://release.thepropervolume.com/). Back up your show before upgrading. See the [installation guide](docs/installation.md) for prerequisites.
 
 For development, with Node.js and npm installed:
 
