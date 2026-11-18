@@ -6,6 +6,20 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectRelease, fileRecord, PLANNING_NAMES, releaseAssetNames, releaseVersion, sha256, versionChanged } from './release-artifacts.mjs';
 
+/** Publish only deliberately committed notes, never private commit subjects or
+ * untracked workspace content. Missing notes get an explicit plain fallback. */
+export function releaseNotesForCommit(repo, version, commit) {
+  releaseVersion(version); assert.match(commit, /^[a-f0-9]{40}$/);
+  const path = `docs/release-notes/v${version}.md`;
+  let hasNotes = false;
+  try { execFileSync('git', ['cat-file', '-e', `${commit}:${path}`], { cwd: repo, stdio: 'ignore' }); hasNotes = true; }
+  catch (error) { if (error.status !== 128) throw error; }
+  const notes = hasNotes ? execFileSync('git', ['show', `${commit}:${path}`], { cwd: repo, encoding: 'utf8', maxBuffer: 256 * 1024 + 1 })
+    : `# Release ${version}\n\nNo release notes were provided for this version.\n`;
+  assert.ok(notes.trim() && Buffer.byteLength(notes, 'utf8') <= 256 * 1024 && !notes.includes('\0'), 'Release notes must be plain, nonempty text under 256 KiB.');
+  return notes.endsWith('\n') ? notes : notes + '\n';
+}
+
 export class GitHubReleaseApi {
   constructor(repository, token) {
     assert.match(repository, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
@@ -154,8 +168,11 @@ async function main() {
     await verifyPackagedPlatform(repo, process.argv[3], version, commit);
   } else if (mode === 'planning') {
     const directory = join(repo, 'release/planning'), sourceSha256 = await sha256(join(repo, 'docs/product-specification.md'));
+    // Only deliberately tracked release copy is published. Private commit
+    // messages are never automatically exposed on the public download site.
+    await writeFile(join(directory, 'RELEASE_NOTES.md'), releaseNotesForCommit(repo, version, commit));
     const receipt = { version, sourceCommit: commit, sourceSha256, artifacts: [] };
-    for (const name of PLANNING_NAMES.slice(0, 2)) receipt.artifacts.push(await fileRecord(directory, name));
+    for (const name of PLANNING_NAMES.slice(0, -1)) receipt.artifacts.push(await fileRecord(directory, name));
     await writeFile(join(directory, 'planning-build.json'), JSON.stringify(receipt, null, 2) + '\n');
     const stage = join(repo, 'release/ci-assets/planning'); await mkdir(stage, { recursive: true });
     for (const name of PLANNING_NAMES) await cp(join(directory, name), join(stage, name), { force: false, errorOnExist: true });

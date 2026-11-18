@@ -68,6 +68,15 @@ jobs:
     secrets:
       BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
 
+  mobile:
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    uses: ./.github/workflows/mobile.yml
+    with:
+      commit: ${{ needs.plan.outputs.commit }}
+    secrets:
+      BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
+
   planning:
     needs: plan
     if: needs.plan.outputs.publish == 'true'
@@ -105,7 +114,7 @@ jobs:
         run: node scripts/upload-booth-release.mjs upload planning
 
   publish:
-    needs: [plan, windows, linux, macos, planning]
+    needs: [plan, windows, linux, macos, mobile, planning]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -129,5 +138,7 @@ jobs:
           WIN_STAGE_ATTEMPT: ${{ needs.windows.outputs.stage-attempt }}
           LINUX_STAGE_ATTEMPT: ${{ needs.linux.outputs.stage-attempt }}
           MAC_STAGE_ATTEMPT: ${{ needs.macos.outputs.stage-attempt }}
+          ANDROID_STAGE_ATTEMPT: ${{ needs.mobile.outputs.android-attempt }}
+          IOS_STAGE_ATTEMPT: ${{ needs.mobile.outputs.ios-attempt }}
           PLANNING_STAGE_ATTEMPT: ${{ needs.planning.outputs.stage-attempt }}
         run: node scripts/upload-booth-release.mjs publish

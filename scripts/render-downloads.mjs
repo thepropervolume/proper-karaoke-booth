@@ -29,6 +29,13 @@ function byPlatform(version) {
       [`${prefix}-linux-x86_64.AppImage`, 'Linux portable app', 'AppImage'],
       [`${prefix}-linux-amd64.deb`, 'Debian / Ubuntu package', 'DEB'],
     ] },
+    { name: 'Android development', note: 'Debug APK and unsigned release bundle', files: [
+      [`${prefix}-android-debug.apk`, 'Android debug app', 'APK'],
+      [`${prefix}-android-unsigned.aab`, 'Unsigned Android bundle', 'AAB'],
+    ] },
+    { name: 'iOS development', note: 'Unsigned simulator build; not an iPhone installer', files: [
+      [`${prefix}-ios-simulator.zip`, 'iOS simulator app', 'ZIP'],
+    ] },
   ];
 }
 
@@ -103,21 +110,25 @@ const styles = `
   @media (max-width: 25rem) { .card a { align-items: start; flex-direction: column; gap: .12rem; padding-block: .4rem; } }
 `;
 
-export async function renderDownloads(manifest, { versionPage = false, earlierVersions = [] } = {}) {
+export async function renderDownloads(manifest, { versionPage = false, earlierVersions = [], archivedVersions = [] } = {}) {
   const version = releaseVersion(manifest.version);
   const assets = manifestRecords(manifest, version);
-  assert.ok(!versionPage || earlierVersions.length === 0, 'Release history belongs on the latest downloads page.');
+  assert.ok(!versionPage || (earlierVersions.length === 0 && archivedVersions.length === 0), 'Release history belongs on the latest downloads page.');
   const history = releaseHistory(earlierVersions, version);
+  const archived = releaseHistory(archivedVersions, version);
+  assert.ok(!archived.some(item => history.includes(item)), 'An archived version cannot also be retained.');
   const root = versionPage ? './' : `./v${version}/`;
+  const assetUrl = file => versionPage ? `./${file}` : `./latest/${file.replace(`-${version}-`, '-')}`;
   const image = (await readFile(iconPath)).toString('base64');
   const platforms = byPlatform(version);
   const documents = [
     [PLANNING_NAMES[0], 'Product specification', 'Word'],
     [PLANNING_NAMES[1], 'Interface mockups', 'PDF'],
+    ['RELEASE_NOTES.md', 'Release notes', 'Markdown'],
   ];
   const featured = new Set([...platforms.flatMap(platform => platform.files), ...documents].map(([file]) => file));
   const downloads = files => files.filter(([file]) => assets.has(file)).map(([file, label, format]) => `
-        <li><a href="${root}${file}" download><strong>${label}</strong><span class="metadata">${format} · ${sizeLabel(assets.get(file).bytes)}</span></a></li>`).join('');
+        <li><a href="${assetUrl(file)}" download><strong>${label}</strong><span class="metadata">${format} · ${sizeLabel(assets.get(file).bytes)}</span></a></li>`).join('');
   const platformCards = platforms.map(({ name, note, files }) => {
     const links = downloads(files);
     return `<section class="card">
@@ -148,7 +159,7 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
     <div class="hero">
       <p class="version">${Number(version.split('.')[0]) === 0 ? 'Development release' : 'Version'} ${version}</p>
       <h1>Karaoke Booth downloads</h1>
-      <p class="muted">Get the desktop app for your computer.</p>
+      <p class="muted">Get desktop installers and mobile development builds.</p>
     </div>
     <div class="grid">${platformCards}</div>
     <p class="notice">Back up your show before upgrading. Windows and Linux development builds are unsigned. macOS development builds use ad hoc signing and have no Apple notarization.</p>
@@ -156,12 +167,13 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
     <details class="verification">
       <summary>Checksums and build receipts</summary>
       <ul>
-        <li><a href="${root}SHA256SUMS.txt" download>SHA-256 checksums</a></li>
-        <li><a href="${root}release-manifest.json" download>Release manifest</a></li>
-        ${receipts.map(file => `<li><a href="${root}${file}" download>${file}</a></li>`).join('\n        ')}
+        <li><a href="${assetUrl('SHA256SUMS.txt')}" download>SHA-256 checksums</a></li>
+        <li><a href="${assetUrl('release-manifest.json')}" download>Release manifest</a></li>
+        ${receipts.map(file => `<li><a href="${assetUrl(file)}" download>${file}</a></li>`).join('\n        ')}
       </ul>
     </details>
     ${history.length ? `<section class="card history"><h2>Earlier versions</h2><ul>${history.map(earlier => `<li><a href="./v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
+    ${archived.length ? `<section class="card history"><h2>Archived release history</h2><p>Installers are retained for the five most recent versions.</p><ul>${archived.map(earlier => `<li><a href="./archive/v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
     <footer>
       ${versionPage ? '<a href="../">Latest release</a>' : `<a href="${root}">Permanent link to this version</a>`}
       <a href="${repository}/commit/${manifest.sourceCommit}">Source commit <code>${manifest.sourceCommit.slice(0, 7)}</code></a>
@@ -173,10 +185,16 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [input, output, mode, history, ...extra] = process.argv.slice(2);
-  const validMode = mode === '--history' ? Boolean(history) : (mode === undefined || mode === '--version-page') && history === undefined;
-  assert.ok(input && output && !extra.length && validMode,
-    'Usage: node scripts/render-downloads.mjs <release-manifest.json> <output-index.html> [--version-page | --history 0.8.0,0.7.1]');
+  const [input, output, ...flags] = process.argv.slice(2);
+  let versionPage = false, earlierVersions = [], archivedVersions = [];
+  while (flags.length) {
+    const flag = flags.shift();
+    if (flag === '--version-page' && !versionPage) versionPage = true;
+    else if (flag === '--history' && !earlierVersions.length && flags[0]) earlierVersions = flags.shift().split(',');
+    else if (flag === '--archived' && !archivedVersions.length && flags[0]) archivedVersions = flags.shift().split(',');
+    else throw new Error('Invalid downloads page options.');
+  }
+  assert.ok(input && output, 'Usage: node scripts/render-downloads.mjs <manifest> <output> [--version-page] [--history VERSIONS] [--archived VERSIONS]');
   const manifest = JSON.parse(await readFile(input, 'utf8'));
-  await writeFile(output, await renderDownloads(manifest, { versionPage: mode === '--version-page', earlierVersions: history?.split(',') ?? [] }), 'utf8');
+  await writeFile(output, await renderDownloads(manifest, { versionPage, earlierVersions, archivedVersions }), 'utf8');
 }

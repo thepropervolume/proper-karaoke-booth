@@ -43,6 +43,13 @@ jobs:
         with:
           node-version: '24.15.0'
           package-manager-cache: false
+      - name: Verify macOS build environment
+        if: inputs.platform == 'mac'
+        run: |
+          sw_vers
+          uname -m
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 27
+          test "$(uname -m)" = arm64
       - name: Install Linux packaging and headless test libraries
         if: inputs.platform == 'linux'
         run: |

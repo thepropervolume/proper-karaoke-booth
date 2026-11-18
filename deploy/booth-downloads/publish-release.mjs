@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { collectRelease, platformNames, PLANNING_NAMES, releaseVersion } from './scripts/release-artifacts.mjs';
+import { collectRelease, platformNames, mobilePlatformNames, PLANNING_NAMES, releaseVersion } from './scripts/release-artifacts.mjs';
 
 // This helper runs only the installed verifier and page renderer. Build uploads are data.
 const [operation, version, ...args] = process.argv.slice(2);
 releaseVersion(version);
 if (operation === 'names' && args.length === 1) {
   const [scope] = args;
-  console.log(JSON.stringify(scope === 'planning' ? PLANNING_NAMES : platformNames(version, scope)));
+  console.log(JSON.stringify(scope === 'planning' ? PLANNING_NAMES : ['android', 'ios'].includes(scope) ? mobilePlatformNames(version, scope) : platformNames(version, scope)));
 } else if (operation === 'verify' && args.length === 3) {
   const [directory, commit, sourceSha256] = args;
   assert.match(sourceSha256, /^[0-9a-f]{64}$/);

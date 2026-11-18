@@ -4,7 +4,7 @@ import { appendFile, lstat, mkdtemp, readFile, readdir, rm, rmdir, writeFile } f
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PLANNING_NAMES, platformNames, releaseVersion, sha256, versionChanged } from './release-artifacts.mjs';
+import { MOBILE_PLATFORMS, PLANNING_NAMES, mobilePlatformNames, platformNames, releaseVersion, sha256, versionChanged } from './release-artifacts.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sshHost = '45.79.137.117';
@@ -16,8 +16,8 @@ const git = (...args) => execFileSync('git', args, { ...quiet, cwd: repo }).trim
 
 async function isHosted(version) {
   const url = new URL(`${publicBase}/v${version}/release-manifest.json`);
-  // The manifest body and download files can require sign-in. The server
-  // verifies completeness and commit identity before exposing this HEAD route.
+  // The server verifies completeness and commit identity before exposing the
+  // public manifest; a failed check never causes a version to be overwritten.
   const response = await fetch(url, { method: 'HEAD', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(20_000) });
   if (response.status === 404) return false;
   assert.equal(response.status, 200, `Could not check the hosted release (HTTP ${response.status}).`);
@@ -120,7 +120,7 @@ async function main() {
   assert.match(attempt ?? '', /^[1-9]\d{0,9}$/);
   if (mode === 'upload') {
     const platform = process.argv[3];
-    const names = platform === 'planning' ? PLANNING_NAMES : platformNames(version, platform);
+    const names = platform === 'planning' ? PLANNING_NAMES : MOBILE_PLATFORMS.includes(platform) ? mobilePlatformNames(version, platform) : platformNames(version, platform);
     const directory = join(repo, 'release', 'ci-assets', platform);
     assert.deepEqual((await readdir(directory)).sort(), [...names].sort(), 'Only verified release outputs can be uploaded.');
     for (const name of names) {
@@ -133,8 +133,8 @@ async function main() {
   }
 
   assert.equal(mode, 'publish', 'Use plan, upload <platform>, or publish.');
-  for (const name of ['WIN_STAGE_ATTEMPT', 'LINUX_STAGE_ATTEMPT', 'MAC_STAGE_ATTEMPT', 'PLANNING_STAGE_ATTEMPT']) {
-    assert.equal(process.env[name], attempt, 'All four upload jobs must use this run attempt. Select Re-run all jobs.');
+  for (const name of ['WIN_STAGE_ATTEMPT', 'LINUX_STAGE_ATTEMPT', 'MAC_STAGE_ATTEMPT', 'ANDROID_STAGE_ATTEMPT', 'IOS_STAGE_ATTEMPT', 'PLANNING_STAGE_ATTEMPT']) {
+    assert.equal(process.env[name], attempt, 'All six upload jobs must use this run attempt. Select Re-run all jobs.');
   }
   const sourceSha256 = await sha256(join(repo, 'docs', 'product-specification.md'));
   await sendSsh(['publish', version, commit, runId, attempt, sourceSha256], key);

@@ -3,6 +3,7 @@
 
 import argparse
 import fcntl
+import html
 import json
 import os
 from pathlib import Path
@@ -19,9 +20,10 @@ import time
 VERSION = r'(?:0|[1-9][0-9]{0,11})\.(?:0|[1-9][0-9]{0,11})\.(?:0|[1-9][0-9]{0,11})'
 JOB = re.compile(rf'(?P<operation>upload|publish) (?P<version>{VERSION}) '
                  r'(?P<commit>[0-9a-f]{40}) (?P<run>[1-9][0-9]{0,19}) '
-                 r'(?P<attempt>[1-9][0-9]{0,5}) (?P<scope>win|linux|mac|planning|[0-9a-f]{64})')
+                 r'(?P<attempt>[1-9][0-9]{0,5}) (?P<scope>win|linux|mac|android|ios|planning|[0-9a-f]{64})')
 STAGING = re.compile(rf'[1-9][0-9]{{0,19}}\.[1-9][0-9]{{0,5}}\.v{VERSION}\.[0-9a-f]{{40}}')
-SCOPES = ('win', 'linux', 'mac', 'planning')
+SCOPES = ('win', 'linux', 'mac', 'android', 'ios', 'planning')
+RETAIN_RELEASES = 5
 GIB = 1024 ** 3
 STAGING_LIMIT = 8 * GIB
 DISK_RESERVE = 5 * GIB
@@ -122,10 +124,106 @@ def published_versions(public):
             and re.fullmatch(f'v{VERSION}', path.name)]
 
 
-def render_page(node_binary, manifest, destination, is_version_page=False, history=()):
+def manifest_for(directory, version):
+    """Validate metadata before using an existing release as an archive or redirect target."""
+    manifest_path = directory / 'release-manifest.json'
+    if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.stat().st_size > MAX_TEXT_ASSET:
+        raise ValueError('A release has missing or invalid metadata.')
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    if manifest.get('version') != version or not re.fullmatch(r'[0-9a-f]{40}', manifest.get('sourceCommit', '')):
+        raise ValueError('A release has inconsistent identity metadata.')
+    if not isinstance(manifest.get('artifacts'), list):
+        raise ValueError('A release has invalid artifact metadata.')
+    return manifest
+
+
+def write_latest_map(directory, version, output):
+    """Only allow local, existing release assets to become versionless redirects."""
+    manifest = manifest_for(directory, version)
+    aliases = {}
+    files = [record.get('file') if isinstance(record, dict) else None for record in manifest['artifacts']]
+    files.extend(['release-manifest.json', 'SHA256SUMS.txt'])
+    for name in files:
+        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9._-]*', name):
+            raise ValueError('Invalid release asset name for latest redirect.')
+        file = directory / name
+        if file.is_symlink() or not file.is_file():
+            raise ValueError('Missing release asset for latest redirect.')
+        alias = name.replace(f'-{version}-', '-', 1)
+        if alias in aliases:
+            raise ValueError('Release assets conflict on their latest redirect name.')
+        aliases[alias] = f'/v{version}/{name}'
+    output.write_text(''.join(f'{key} {target}\n' for key, target in sorted(aliases.items())), encoding='ascii')
+    output.chmod(0o644)
+
+
+def write_archive_page(directory, version, manifest):
+    """Display preserved release notes as text, never as executable markup."""
+    notes = []
+    for file in sorted(directory.iterdir()):
+        if re.search(r'(?:release[-_ ]?notes|changelog)', file.name, re.I):
+            if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_TEXT_ASSET:
+                raise ValueError('Invalid archived release notes.')
+            notes.append((file.name, file.read_text(encoding='utf-8')))
+    body = ''.join(f'<h2>{html.escape(name)}</h2><pre>{html.escape(content)}</pre>' for name, content in notes)
+    commit = manifest['sourceCommit']
+    page = directory / 'index.html'
+    page.write_text(
+        '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+        f'<title>Karaoke Booth {version} archive</title><h1>Karaoke Booth {version} archive</h1>'
+        '<p>Installers are retained for the five most recent versions. The latest downloads page shows available versions; release metadata and original notes are preserved here.</p>'
+        f'<p>Source commit: <a href="https://github.com/thepropervolume/proper-karaoke-booth/commit/{commit}">{commit[:7]}</a></p>'
+        f'{body}<p><a href="release-manifest.json">Release manifest</a> · <a href="../../">Latest downloads</a></p></html>', encoding='utf-8')
+    page.chmod(0o644)
+
+
+def archive_release(public, version, scratch):
+    """Keep textual release metadata/notes when a version's downloads are pruned."""
+    source = public / f'v{version}'
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError('A release selected for archiving is not a directory.')
+    manifest = manifest_for(source, version)
+    archive_root = public / 'archive'
+    if archive_root.is_symlink() or (archive_root.exists() and not archive_root.is_dir()):
+        raise ValueError('The release archive is invalid.')
+    archive_root.mkdir(mode=0o755, exist_ok=True)
+    target = archive_root / f'v{version}'
+    extensions = {'.md', '.markdown', '.rst', '.txt', '.json', '.html', '.htm', '.yaml', '.yml'}
+    if target.exists() or target.is_symlink():
+        if target.is_symlink() or not target.is_dir() or (target / 'release-manifest.json').is_symlink() or not (target / 'release-manifest.json').is_file():
+            raise ValueError('An existing release archive is invalid.')
+        if (target / 'release-manifest.json').read_bytes() != (source / 'release-manifest.json').read_bytes():
+            raise ValueError('An existing release archive has different metadata.')
+        # A previous interrupted publish may have made an archive already. Do
+        # not discard notes that were added or changed since that archive.
+        for file in source.iterdir():
+            if file.suffix.lower() not in extensions:
+                continue
+            archived_file = target / ('original-download-page.html.txt' if file.name == 'index.html' else file.name)
+            if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_TEXT_ASSET or archived_file.is_symlink() or not archived_file.is_file() or archived_file.read_bytes() != file.read_bytes():
+                raise ValueError('An existing release archive does not preserve all current metadata.')
+        return
+    candidate = scratch / f'archive-v{version}'
+    candidate.mkdir(mode=0o755)
+    for file in source.iterdir():
+        if file.suffix.lower() not in extensions:
+            continue
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_TEXT_ASSET:
+            raise ValueError('Invalid textual release metadata; the release was not pruned.')
+        # Keep the old page as text so links to removed installers are not offered.
+        name = 'original-download-page.html.txt' if file.name == 'index.html' else file.name
+        shutil.copyfile(file, candidate / name, follow_symlinks=False)
+        (candidate / name).chmod(0o644)
+    write_archive_page(candidate, version, manifest)
+    candidate.rename(target)
+
+
+def render_page(node_binary, manifest, destination, is_version_page=False, history=(), archived=()):
     flags = ['--version-page'] if is_version_page else []
     if history:
         flags.extend(['--history', ','.join(history)])
+    if archived:
+        flags.extend(['--archived', ','.join(archived)])
     node(node_binary, 'scripts/render-downloads.mjs', manifest, destination, *flags)
     destination.chmod(0o644)
 
@@ -169,16 +267,32 @@ def publish(session, public, version, commit, source_hash, node_binary):
             candidate = scratch / 'release'
             prepare_release(session, candidate, node_binary, version, commit, source_hash)
 
-        # Build the latest page before publishing the immutable version directory.
+        # Archive old metadata before pruning any release, and never make the
+        # newest page or shortcuts refer to versions about to be removed.
         update_latest = latest is None or version_parts(version) >= version_parts(latest)
+        combined = sorted(set(versions + [version]), key=version_parts, reverse=True)
+        keep, prune = combined[:RETAIN_RELEASES], combined[RETAIN_RELEASES:]
+        for past in prune:
+            archive_release(public, past, scratch)
         if update_latest:
             index = scratch / 'index.html'
-            history = [past for past in versions if version_parts(past) < version_parts(version)]
-            render_page(node_binary, candidate / 'release-manifest.json', index, history=history)
+            history = [past for past in keep if version_parts(past) < version_parts(version)]
+            archive_root = public / 'archive'
+            archived = [path.name[1:] for path in archive_root.iterdir() if path.is_dir() and not path.is_symlink()
+                        and re.fullmatch(f'v{VERSION}', path.name) and path.name[1:] not in keep] if archive_root.exists() else []
+            render_page(node_binary, candidate / 'release-manifest.json', index, history=history, archived=archived)
+            latest_map = scratch / '.latest.map'
+            write_latest_map(candidate, version, latest_map)
         if candidate != target:
             candidate.rename(target)
         if update_latest:
+            latest_map.replace(public / '.latest.map')
             index.replace(public / 'index.html')
+        for past in prune:
+            path = public / f'v{past}'
+            if path.is_symlink() or not path.is_dir():
+                raise ValueError('A release selected for pruning changed unexpectedly.')
+            shutil.rmtree(path)
     shutil.rmtree(session)
     print(f'Published Booth {version} ({commit}).', flush=True)
 

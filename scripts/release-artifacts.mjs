@@ -5,6 +5,7 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:f
 import { basename, dirname, join, resolve } from 'node:path';
 
 export const PLATFORMS = ['win', 'linux', 'mac'];
+export const MOBILE_PLATFORMS = ['android', 'ios'];
 export function releaseVersion(value) {
   assert.equal(typeof value, 'string', 'The package version must be a string.');
   assert.ok(value.length <= 40 && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value), 'Use a numeric major.minor.patch package version.');
@@ -32,8 +33,18 @@ export function platformNames(version, platform) {
   return [...installerNames(version, platform), `${prefix}-build.json`, `${prefix}-SHA256SUMS.txt`, `${prefix}-ci-verification.json`,
     ...(platform === 'mac' ? [`${prefix}-verification.json`] : [])];
 }
-export const PLANNING_NAMES = ['TPV_Karaoke_Product_Specification_Current.docx', 'TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf', 'planning-build.json'];
-export const releaseAssetNames = version => [...PLATFORMS.flatMap(platform => platformNames(version, platform)), ...PLANNING_NAMES, 'release-manifest.json', 'SHA256SUMS.txt'];
+/** Development mobile builds are deliberately labeled with their signing and
+ * simulator limitations. They are staged and verified with the same release. */
+export function mobileInstallerNames(version, platform) {
+  const prefix = `Proper-Karaoke-Booth-${releaseVersion(version)}-${platform}`;
+  assert.ok(MOBILE_PLATFORMS.includes(platform), 'Unknown mobile release platform.');
+  return platform === 'android' ? [`${prefix}-debug.apk`, `${prefix}-unsigned.aab`] : [`${prefix}-simulator.zip`];
+}
+export function mobilePlatformNames(version, platform) {
+  return [...mobileInstallerNames(version, platform), `Proper-Karaoke-Booth-${releaseVersion(version)}-${platform}-build.json`];
+}
+export const PLANNING_NAMES = ['TPV_Karaoke_Product_Specification_Current.docx', 'TPV_Karaoke_Mockups_Dark_and_Light_Current.pdf', 'RELEASE_NOTES.md', 'planning-build.json'];
+export const releaseAssetNames = version => [...PLATFORMS.flatMap(platform => platformNames(version, platform)), ...MOBILE_PLATFORMS.flatMap(platform => mobilePlatformNames(version, platform)), ...PLANNING_NAMES, 'release-manifest.json', 'SHA256SUMS.txt'];
 export const sha256 = async path => {
   const digest = createHash('sha256');
   for await (const chunk of createReadStream(path)) digest.update(chunk);
@@ -81,17 +92,35 @@ export async function verifyPlatform(directory, version, platform, commit) {
 export async function verifyPlanning(directory, version, commit, sourceSha256) {
   const receipt = await json(join(directory, 'planning-build.json'));
   assert.equal(receipt.version, version); assert.equal(receipt.sourceCommit, commit); assert.equal(receipt.sourceSha256, sourceSha256);
-  exactNames(receipt.artifacts.map(item => item.file), PLANNING_NAMES.slice(0, 2), 'Missing planning editions.');
+  exactNames(receipt.artifacts.map(item => item.file), PLANNING_NAMES.slice(0, -1), 'Missing planning editions or release notes.');
   for (const item of receipt.artifacts) assert.equal((await fileRecord(directory, item.file)).sha256, item.sha256);
+}
+
+export async function verifyMobilePlatform(directory, version, platform, commit) {
+  const prefix = `Proper-Karaoke-Booth-${releaseVersion(version)}-${platform}`;
+  const receipt = await json(join(directory, `${prefix}-build.json`));
+  assert.equal(receipt.version, version); assert.equal(receipt.platform, platform); assert.equal(receipt.sourceCommit, commit);
+  assert.equal(receipt.sourceHasUncommittedChanges, false, 'Build from a clean checkout.');
+  assert.equal(receipt.sourceRevisionChangedDuringBuild, false, 'Source changed while packaging.');
+  assert.equal(receipt.kind, platform === 'android' ? 'debug-apk-and-unsigned-aab' : 'unsigned-ios-simulator');
+  assert.ok(Array.isArray(receipt.artifacts));
+  exactNames(receipt.artifacts.map(item => item.file), mobileInstallerNames(version, platform), 'Missing, duplicate or unexpected mobile packages.');
+  for (const item of receipt.artifacts) {
+    assert.match(item.sha256, /^[a-f0-9]{64}$/);
+    const record = await fileRecord(directory, item.file);
+    assert.equal(record.sha256, item.sha256, `Mobile package checksum mismatch: ${item.file}`);
+    assert.equal(record.bytes, item.bytes, `Mobile package size mismatch: ${item.file}`);
+  }
 }
 
 /** The allowlist is also the publication boundary: no show profiles, caches,
  * test credentials or arbitrary files from a runner can become release assets. */
 export async function collectRelease(directory, version, commit, sourceSha256) {
   assert.match(commit, /^[a-f0-9]{40}$/);
-  const expected = [...PLATFORMS.flatMap(platform => platformNames(version, platform)), ...PLANNING_NAMES];
+  const expected = [...PLATFORMS.flatMap(platform => platformNames(version, platform)), ...MOBILE_PLATFORMS.flatMap(platform => mobilePlatformNames(version, platform)), ...PLANNING_NAMES];
   exactNames(await readdir(directory), expected, 'The release must contain every platform and no extra files.');
   for (const platform of PLATFORMS) await verifyPlatform(directory, version, platform, commit);
+  for (const platform of MOBILE_PLATFORMS) await verifyMobilePlatform(directory, version, platform, commit);
   await verifyPlanning(directory, version, commit, sourceSha256);
   const files = [];
   for (const name of expected.sort()) files.push(await fileRecord(directory, name));

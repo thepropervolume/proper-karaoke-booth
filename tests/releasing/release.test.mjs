@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectRelease, fileRecord, installerNames, PLANNING_NAMES, PLATFORMS, releaseAssetNames, releaseVersion, sha256, versionChanged } from '../../scripts/release-artifacts.mjs';
+import { collectRelease, fileRecord, installerNames, mobileInstallerNames, MOBILE_PLATFORMS, PLANNING_NAMES, PLATFORMS, releaseAssetNames, releaseVersion, sha256, versionChanged } from '../../scripts/release-artifacts.mjs';
 import { GitHubReleaseApi, publishRelease, releasePlan } from '../../scripts/github-release.mjs';
 
 const version = '0.8.0', commit = 'a'.repeat(40), otherCommit = 'b'.repeat(40), sourceSha256 = 'c'.repeat(64);
@@ -20,8 +20,15 @@ async function fixture() {
     if (platform === 'mac') await save(dir, `${prefix}-verification.json`, { version, sourceCommit: commit, buildReceiptSha256,
       packages: ['arm64', 'x64'].map(architecture => ({ architecture, diskImageVerified: true, matchingDmgAndZip: true, nativeLaunch: architecture === 'arm64', cliWithoutNode: architecture === 'arm64' })) });
   }
+  for (const platform of MOBILE_PLATFORMS) {
+    const artifacts = [];
+    for (const file of mobileInstallerNames(version, platform)) { await writeFile(join(dir, file), `Synthetic mobile package ${file}`); artifacts.push(await fileRecord(dir, file)); }
+    await save(dir, `Proper-Karaoke-Booth-${version}-${platform}-build.json`, { version, platform, sourceCommit: commit,
+      sourceHasUncommittedChanges: false, sourceRevisionChangedDuringBuild: false,
+      kind: platform === 'android' ? 'debug-apk-and-unsigned-aab' : 'unsigned-ios-simulator', artifacts });
+  }
   const artifacts = [];
-  for (const file of PLANNING_NAMES.slice(0, 2)) { await writeFile(join(dir, file), `Synthetic planning ${file}`); artifacts.push(await fileRecord(dir, file)); }
+  for (const file of PLANNING_NAMES.slice(0, -1)) { await writeFile(join(dir, file), `Synthetic planning ${file}`); artifacts.push(await fileRecord(dir, file)); }
   await save(dir, 'planning-build.json', { version, sourceCommit: commit, sourceSha256, artifacts });
   return dir;
 }
@@ -39,19 +46,26 @@ test('the package contract includes every current installer architecture and sid
   assert.equal(installerNames(version, 'mac').length, 8);
   assert.ok(installerNames(version, 'mac').includes('Proper-Karaoke-Booth-0.8.0-mac-arm64.dmg'));
   assert.ok(installerNames(version, 'mac').includes('Proper-Karaoke-Booth-0.8.0-mac-x64.zip'));
-  assert.equal(releaseAssetNames(version).length, 28);
+  assert.deepEqual(mobileInstallerNames(version, 'android'), ['Proper-Karaoke-Booth-0.8.0-android-debug.apk', 'Proper-Karaoke-Booth-0.8.0-android-unsigned.aab']);
+  assert.deepEqual(mobileInstallerNames(version, 'ios'), ['Proper-Karaoke-Booth-0.8.0-ios-simulator.zip']);
+  assert.equal(releaseAssetNames(version).length, 34);
 });
 test('a complete same-commit release produces an allowlisted manifest and checksums', () => withFixture(async dir => {
   const files = await collectRelease(dir, version, commit, sourceSha256);
-  assert.equal(files.length, 28);
+  assert.equal(files.length, 34);
   const manifest = JSON.parse(await readFile(join(dir, 'release-manifest.json'), 'utf8'));
-  assert.equal(manifest.sourceCommit, commit); assert.equal(manifest.artifacts.length, 26);
+  assert.equal(manifest.sourceCommit, commit); assert.equal(manifest.artifacts.length, 32);
   const sums = await readFile(join(dir, 'SHA256SUMS.txt'), 'utf8');
   assert.ok(sums.includes(`${await sha256(join(dir, 'release-manifest.json'))}  release-manifest.json`));
 }));
-for (const mutation of ['missing-linux', 'extra-private-file', 'tampered-installer', 'different-version', 'different-commit', 'dirty-source', 'incomplete-architecture', 'bad-mac-rehearsal', 'changed-planning']) {
+for (const mutation of ['missing-linux', 'missing-mobile', 'missing-notes', 'tampered-notes', 'tampered-mobile', 'mobile-other-commit', 'extra-private-file', 'tampered-installer', 'different-version', 'different-commit', 'dirty-source', 'incomplete-architecture', 'bad-mac-rehearsal', 'changed-planning']) {
   test(`publication rejects ${mutation}`, () => withFixture(async dir => {
     if (mutation === 'missing-linux') await unlink(join(dir, 'Proper-Karaoke-Booth-0.8.0-linux-amd64.deb'));
+    else if (mutation === 'missing-mobile') await unlink(join(dir, 'Proper-Karaoke-Booth-0.8.0-ios-simulator.zip'));
+    else if (mutation === 'missing-notes') await unlink(join(dir, 'RELEASE_NOTES.md'));
+    else if (mutation === 'tampered-notes') await writeFile(join(dir, 'RELEASE_NOTES.md'), 'modified notes');
+    else if (mutation === 'tampered-mobile') await writeFile(join(dir, 'Proper-Karaoke-Booth-0.8.0-android-debug.apk'), 'replaced');
+    else if (mutation === 'mobile-other-commit') { const name = 'Proper-Karaoke-Booth-0.8.0-android-build.json'; const receipt = JSON.parse(await readFile(join(dir, name), 'utf8')); receipt.sourceCommit = otherCommit; await save(dir, name, receipt); }
     else if (mutation === 'extra-private-file') await writeFile(join(dir, 'private-credentials.json'), 'Never publish');
     else if (mutation === 'tampered-installer') await writeFile(join(dir, 'Proper-Karaoke-Booth-0.8.0-win-x64.zip'), 'replaced');
     else if (mutation === 'changed-planning') await writeFile(join(dir, PLANNING_NAMES[0]), 'changed');
@@ -99,7 +113,7 @@ test('manual first release works, branches are enforced, and conflicting tags ca
 });
 test('publication stages every file before publishing an immutable development prerelease', async () => {
   const api = new FakeGitHub(); const result = await publish(api);
-  assert.equal(result.alreadyPublished, false); assert.equal(api.uploaded.length, 28);
+  assert.equal(result.alreadyPublished, false); assert.equal(api.uploaded.length, 34);
   assert.equal(api.requests.find(item => item.method === 'POST').value.draft, true);
   assert.deepEqual(api.patches, [{ draft: false, prerelease: true, make_latest: 'false' }]);
   const count = api.requests.length;
@@ -109,7 +123,7 @@ test('partial uploads remain a draft and a retry retains correct assets', async 
   const api = new FakeGitHub(); api.failAt = 2;
   await assert.rejects(publish(api), /upload failure/); assert.equal(api.release.draft, true); assert.equal(api.patches.length, 0);
   const retained = api.uploaded.map(asset => asset.id); api.failAt = null;
-  await publish(api); assert.deepEqual(api.uploaded.slice(0, 2).map(asset => asset.id), retained); assert.equal(api.uploaded.length, 28);
+  await publish(api); assert.deepEqual(api.uploaded.slice(0, 2).map(asset => asset.id), retained); assert.equal(api.uploaded.length, 34);
 });
 test('checksum mismatch never publishes; unknown assets or another commit cannot hitchhike on a draft', async () => {
   const api = new FakeGitHub(); api.mismatch = true;

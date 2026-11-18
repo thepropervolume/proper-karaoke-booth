@@ -1,9 +1,18 @@
 name: Build mobile development apps
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['src/mobile/**', 'src/remote/**', 'mobile/**', 'scripts/build-mobile.mjs', 'vite.mobile.config.mts', '.github/workflows/mobile.yml']
+  workflow_call:
+    inputs:
+      commit:
+        required: true
+        type: string
+    outputs:
+      android-attempt:
+        value: ${{ jobs.android.outputs.stage-attempt }}
+      ios-attempt:
+        value: ${{ jobs.ios.outputs.stage-attempt }}
+    secrets:
+      BOOTH_RELEASE_SSH_KEY:
+        required: true
 permissions:
   contents: read
 defaults:
@@ -13,11 +22,15 @@ jobs:
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    outputs:
+      stage-attempt: ${{ steps.upload.outputs.attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: { persist-credentials: false }
+        with: { ref: '${{ inputs.commit }}', persist-credentials: false }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: '24.15.0', package-manager-cache: false }
+      - name: Verify clean source before building
+        run: node scripts/mobile-release.mjs check-source
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix mobile --no-audit --no-fund
       - run: npm run typecheck && npm --prefix mobile run typecheck && node --import tsx --test tests/mobile/*.test.ts
@@ -31,22 +44,26 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
           bash gradlew assembleDebug bundleRelease --no-daemon
         working-directory: mobile/android
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: tpv-mobile-android-${{ github.sha }}
-          path: |
-            mobile/android/app/build/outputs/apk/debug/app-debug.apk
-            mobile/android/app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
-          retention-days: 14
+      - name: Prepare checksummed Android development packages
+        run: node scripts/mobile-release.mjs stage android
+      - name: Stage Android packages on the release server
+        id: upload
+        env:
+          BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
+          BOOTH_RELEASE_KNOWN_HOST: ${{ vars.BOOTH_RELEASE_KNOWN_HOST }}
+        run: node scripts/upload-booth-release.mjs upload android
   ios:
     runs-on: xcode-27
     timeout-minutes: 35
+    outputs:
+      stage-attempt: ${{ steps.upload.outputs.attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: { persist-credentials: false }
+        with: { ref: '${{ inputs.commit }}', persist-credentials: false }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: '24.15.0', package-manager-cache: false }
+      - name: Verify clean source before building
+        run: node scripts/mobile-release.mjs check-source
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix mobile --no-audit --no-fund
       - run: npm run build:mobile
@@ -56,9 +73,11 @@ jobs:
         run: xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -derivedDataPath release/mobile-ios CODE_SIGNING_ALLOWED=NO build
       - name: Archive simulator app
         run: ditto -c -k --keepParent release/mobile-ios/Build/Products/Debug-iphonesimulator/App.app release/TPV-Karaoke-Mobile-iOS-Simulator.zip
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: tpv-mobile-ios-simulator-${{ github.sha }}
-          path: release/TPV-Karaoke-Mobile-iOS-Simulator.zip
-          if-no-files-found: error
-          retention-days: 14
+      - name: Prepare checksummed iOS Simulator build
+        run: node scripts/mobile-release.mjs stage ios
+      - name: Stage iOS Simulator build on the release server
+        id: upload
+        env:
+          BOOTH_RELEASE_SSH_KEY: ${{ secrets.BOOTH_RELEASE_SSH_KEY }}
+          BOOTH_RELEASE_KNOWN_HOST: ${{ vars.BOOTH_RELEASE_KNOWN_HOST }}
+        run: node scripts/upload-booth-release.mjs upload ios
