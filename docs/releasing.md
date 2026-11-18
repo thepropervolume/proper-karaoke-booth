@@ -1,35 +1,37 @@
-# Automatic desktop releases
+# Automatic releases
 
-The **Release on version change** GitHub Actions workflow builds the desktop packages and publishes them to [Karaoke Booth downloads](https://release.thepropervolume.com/). The latest version appears at the root and each release has its own page at `/vVERSION/`. Cloudflare DNS points the release hostname to the Linode server behind `apps.thepropervolume.com`.
+The **Release on version change** GitHub Actions workflow builds the desktop and mobile development packages and publishes verified artifacts to [Karaoke Booth downloads](https://release.thepropervolume.com/). Anyone with the link can download the files; no preview sign-in is required. A successful run publishes a complete desktop, mobile and planning set from one source commit directly to Linode. Cloudflare points the release hostname to `apps.thepropervolume.com`.
 
 ## Publish an update
 
-1. Increase `version` in `package.json` and `package-lock.json` together, for example with `npm version patch --no-git-tag-version`.
-2. Commit the change and push or merge it to the default branch, currently **main**. The workflow also supports **master** if the default branch is renamed.
-3. The workflow compares the version before and after the push. An unchanged version skips packaging. A downgrade or inconsistent lockfile fails with an explanation.
-4. Windows, Linux, macOS and planning jobs build from the same commit and send verified files directly to private staging on Linode. The publisher waits for all four jobs from the same workflow attempt.
+1. Increase the root and mobile package versions and platform version metadata together. Use semantic `0.x.y` versions; **1.0.0** remains the approved official release target.
+2. Commit and push or merge to the default branch. The workflow compares the package version with the preceding push; unchanged versions skip packaging and downgrades fail.
+3. Windows, Linux, macOS, Android, iOS Simulator and planning jobs build the same commit. Each job stages verified artifacts directly on Linode using the restricted SSH deploy key. The publisher verifies the complete set and publishes it only when every required job for that attempt has passed.
+4. Inspect the workflow and hosted release before announcing availability. Use **Re-run all jobs** after a failed attempt so all staged batches belong to the same run attempt.
 
-CI uses the `BOOTH_RELEASE_SSH_KEY` secret and the pinned `BOOTH_RELEASE_KNOWN_HOST` variable. The key can run only the release upload and publication commands. The workflow needs read-only GitHub repository access. See the [server runbook](../deploy/booth-downloads/README.md) for setup and diagnostics.
+Before release, add reviewed notes at `docs/release-notes/vVERSION.md`. The workflow includes that text as `RELEASE_NOTES.md` in the verified release; if the file is absent it uses an explicit no-notes message.
 
-## Release contents
+CI uses `BOOTH_RELEASE_SSH_KEY` and the pinned `BOOTH_RELEASE_KNOWN_HOST`. The key is for restricted uploads and publication, not for download access. GitHub Actions does not need to store the mobile artifacts. See the [server runbook](../deploy/booth-downloads/README.md) for operation and recovery.
 
-- Windows x64 setup installer and portable ZIP.
-- Linux x64 AppImage and Debian package.
-- macOS Apple silicon and Intel DMG/ZIP packages.
-- Installer blockmaps, per-platform checksums and build/CI verification receipts.
-- Word specification and Night/Day mockup PDF generated from `docs/product-specification.md`, with a source/hash receipt.
-- A combined `release-manifest.json` and `SHA256SUMS.txt` covering the download assets.
+## What the downloads contain
 
-The pipeline checks exact filenames, required architectures, consistent versions/source commits and file hashes. It also compares archive payloads and rehearses packaged launch/restart/branding in disposable profiles. macOS's existing native verifier checks both architectures and launches Apple silicon; Intel receives static checks. Linux uses a headless test launcher with test-only sandbox flags. These checks do not replace installation, physical audio/display or provider acceptance tests. Planning generation does not establish that planned features are implemented.
+The hosted set contains Windows x64 setup and portable ZIP; Linux x64 AppImage and Debian packages; macOS Apple silicon and Intel DMG/ZIP files; Android debug APK and unsigned Android App Bundle; an unsigned iOS Simulator ZIP; generated Word specification and mockup PDF; plus checksums and build verification receipts. The Android App Bundle is not a directly installable APK. The iOS Simulator ZIP runs only in the simulator and cannot be installed on an iPhone. Physical-device testing, production signing and store distribution remain separate work. Windows/Linux desktop builds are unsigned; macOS uses ad hoc signing without notarization.
 
-## Publication and recovery
+Each retained release has an immutable page under `/vVERSION/`. The `/latest/` aliases redirect to the latest verified files and are suitable for sharing stable download links. Only the five newest release download sets are retained on Linode. When a release ages out, its installers are removed, but the release history and available notes and metadata remain accessible. A version-specific installer URL for a pruned release no longer downloads a file.
 
-The release server rechecks the complete file list, platform receipts, source commit and SHA-256 hashes before publishing the version directory. The latest page is replaced atomically. Version directories are immutable. Development builds use **0.x.y**. **1.0.0** remains the official release target and needs approval and an update to the packaging guard. Windows/Linux builds are unsigned. macOS builds use ad hoc signing.
+Stable links remove the version component from a verified artifact name. They issue a temporary HTTP redirect to its current `/vVERSION/` file. Examples:
 
-Use **Actions → Release on version change → Run workflow** on the default branch to publish an existing version for the first time. The planner skips a version already on the downloads site. After a failure, inspect the failed step and select **Re-run all jobs** so all four staged batches have the same run attempt.
+- [Windows setup](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-windows-x64-setup.exe)
+- [Linux AppImage](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-linux-x86_64.AppImage)
+- [macOS Apple silicon DMG](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-mac-arm64.dmg)
+- [Android debug APK](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-android-debug.apk)
+- [iOS Simulator ZIP](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-ios-simulator.zip)
+- [Checksums](https://release.thepropervolume.com/latest/SHA256SUMS.txt) and [release manifest](https://release.thepropervolume.com/latest/release-manifest.json)
 
-Run `npm run test:release` for the existing package and integrity checks. On Linux, run `python3 deploy/booth-downloads/test-release-command.py -v` with Node on PATH to exercise the server publisher in a scratch directory.
+Archived versions are listed on the download page and their records are kept under `/archive/vVERSION/`. The archive page explains when installers have been pruned. Existing written release notes, including the v0.8.0 GitHub release text, are preserved; versions that never had written notes retain their available metadata without invented summaries.
+
+The server verifies filenames, platform receipts, commit identity, required architectures and SHA-256 hashes before publication. Automated packaged launch and archive checks do not replace install/upgrade testing, physical audio and display checks, provider acceptance or signed-store review. Run `npm run test:release` for package rules and `python3 deploy/booth-downloads/test-release-command.py -v` on Linux for the server publisher tests.
 
 ## Historical GitHub release
 
-On 15 November 2026, the [first complete workflow run](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/43758999649) published [v0.8.0 on GitHub](https://github.com/thepropervolume/proper-karaoke-booth/releases/tag/v0.8.0) with 28 assets from source `753e221`. The [hosted v0.8.0 archive](https://release.thepropervolume.com/v0.8.0/) was copied and verified against all 28 GitHub asset hashes. Its combined manifest and checksum files match the GitHub copies byte for byte.
+The [v0.8.0 GitHub release](https://github.com/thepropervolume/proper-karaoke-booth/releases/tag/v0.8.0) was published on 15 November 2026. New release downloads are hosted on Linode. Past failed mobile artifact uploads to GitHub reflected the old separate workflow and do not establish that a later hosted release is available.

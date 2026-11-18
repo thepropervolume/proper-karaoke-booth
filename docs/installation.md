@@ -1,6 +1,8 @@
 # Installing The Proper Volume Karaoke Booth
 
-Download installers and checksums from the [Karaoke Booth downloads page](https://release.thepropervolume.com/). Version changes on the default branch trigger verified builds for every supported desktop platform. See [release automation](releasing.md) for the files included and recovery steps. Each release records its exact source commit.
+Download installers and checksums from the [Karaoke Booth downloads page](https://release.thepropervolume.com/). Anyone with the link can download them without signing in. Stable `/latest/` links lead to the latest verified files; version-specific downloads are kept for the five most recent releases, while older release records and notes remain available. See [release automation](releasing.md) for platform options and recovery steps. Each release records its exact source commit.
+
+The Android debug APK is for development testing, and the unsigned Android App Bundle is not directly installable. The unsigned iOS Simulator ZIP is for the simulator only; it is not an iPhone installer. Native device testing, production signing and store distribution remain open.
 
 ## 0.9.1 Party Tyme Update
 
@@ -203,7 +205,7 @@ On Linux, use `npm run package:linux` for x64 AppImage and `.deb` packages. On a
 
 ### macOS Build Workflow
 
-The manually dispatched **Package macOS development build** GitHub Actions workflow uses the standard `xcode-27` Apple silicon runner and checks the actual OS version before building. It uses the committed lockfile, runs source tests and branding checks, builds both architectures, and verifies DMG/ZIP payloads. Native launch checks use empty, muted disposable profiles. Intel payload checks on that runner do not establish Intel runtime compatibility. It never publishes a GitHub Release or changes a real show profile. Verified artifacts are retained for 14 days; download them before expiry.
+The version-triggered **Release on version change** workflow uses an `xcode-27` Apple silicon runner, checks the actual OS and architecture, runs source and branding checks, builds both Mac architectures, and verifies the DMG/ZIP payloads. Native launch checks use empty, muted disposable profiles. Intel payload checks on that runner do not establish Intel runtime compatibility. Verified packages publish to the Linode download site with the other platform packages; the latest five release sets are retained. The workflow does not change a real show profile.
 
 Version 0.4.4 changes the Mac bundles from disabled signing to **ad-hoc integrity signing** and declares macOS 13 as the runtime minimum for Electron 45. The receipt retains `signed: false` to indicate there is no publisher certificate, and records `codeSigning: "ad-hoc"` and `notarized: false` separately. Deep/strict signature verification must pass before a Mac build receipt is issued. This does not establish Apple Developer ID certification or Gatekeeper approval. The Unix CLI launcher is sealed as `Contents/Resources/control/tpv-karaoke` inside the app; loose executable scripts in `Contents` prevent valid bundle signing. Native package evidence and remaining installation checks are recorded in the macOS section above.
 
