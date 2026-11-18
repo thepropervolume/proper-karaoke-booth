@@ -81,6 +81,30 @@ try {
   await host.locator('video').evaluate(video => video.play()); await host.getByRole('button', { name: 'Pause', exact: true }).waitFor();
   await host.getByLabel('Track position').fill('5'); assert.ok(await host.locator('video').evaluate(video => video.currentTime) >= 4.9);
   checks.push('Real synthetic local video plays; embedded controls synchronize; timeline seeks.');
+  // Exercise completion through the actual player and verify the host's gap
+  // and auto-advance setting while another request remains in the queue.
+  for (let i = 0; i < 2; i++) {
+    await host.getByRole('button', { name: 'Queue mobile-test', exact: true }).click();
+    await host.getByRole('button', { name: 'Add Song', exact: true }).click();
+  }
+  await host.getByRole('button', { name: /^Room$/ }).click();
+  await host.getByLabel('Gap between songs (seconds)').fill('2');
+  const firstEndRequestedAt = Date.now();
+  await host.locator('video').evaluate(video => { video.currentTime = video.duration - 0.05; });
+  await host.getByText(/Next song in/).waitFor();
+  assert.equal(await host.locator('video').count(), 0);
+  await host.waitForFunction(() => Boolean(document.querySelector('video') && (document.querySelector('video')?.currentTime ?? 0) > 0.1), undefined, { timeout: 8000 });
+  assert.ok(Date.now() - firstEndRequestedAt >= 1900, 'The next song started before the configured two-second gap.');
+  await host.locator('video').evaluate(video => { video.currentTime = video.duration - 0.05; });
+  await host.getByText(/Next song in/).waitFor();
+  await host.getByLabel('Play the next song automatically').uncheck();
+  await host.getByRole('button', { name: 'Play', exact: true }).waitFor();
+  await host.waitForTimeout(2500);
+  assert.equal(await host.locator('video').count(), 0);
+  await host.getByRole('button', { name: /^Queue \(1\)$/ }).waitFor();
+  checks.push('Completion advances after the configured gap; disabling auto-advance during the gap leaves the next song waiting.');
+  await host.getByRole('button', { name: 'Play', exact: true }).click();
+  await host.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 0.1);
   await host.getByRole('button', { name: 'Pause', exact: true }).click();
   await host.screenshot({ path: resolve(directory, 'host-390.png'), fullPage: true });
   await guest.screenshot({ path: resolve(directory, 'singer-390.png'), fullPage: true });

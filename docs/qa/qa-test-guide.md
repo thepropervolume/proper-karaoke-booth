@@ -83,6 +83,8 @@ Mark each case **Pass**, **Fail**, **Blocked** or **Not run**. Use Blocked when 
 
 **Expected:** eligible songs advance after the selected gap. Changing settings does not restore an older queue or lose the new request. Turning off automatic advancement leaves the next song waiting for the host.
 
+**0.9.2 update:** Full Host Mode exposes these controls under **Room → Playback**. A desktop-browser rehearsal verified a two-second gap, cancelling advancement during the gap, and manually starting the waiting song. Test on actual phones and record any user-gesture or audio restrictions separately.
+
 ### M03 Queue controls and favorites
 
 1. Add three songs, start the first, and move waiting songs up and down.

@@ -67,9 +67,17 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   }, [mode, tab, query]);
   useEffect(() => {
     if (!gapUntil || !playing || mode !== 'host') return;
-    const timer = setInterval(() => { const now = Date.now(); setTick(now); if (now >= gapUntil) { setGapUntil(0); if (!model.start()) setPlaying(false); } }, 250);
+    const timer = setInterval(() => {
+      const now = Date.now(); setTick(now);
+      // Re-read the model before starting, including settings changed during the gap.
+      if (!model.state().autoAdvance) { setGapUntil(0); setPlaying(false); return; }
+      if (now >= gapUntil) { setGapUntil(0); if (!model.start()) setPlaying(false); }
+    }, 250);
     return () => clearInterval(timer);
   }, [gapUntil, playing, mode, model]);
+  useEffect(() => {
+    if (gapUntil && !state.autoAdvance) { setGapUntil(0); setPlaying(false); }
+  }, [gapUntil, state.autoAdvance]);
   const current = state.queue.find(r => r.id === state.currentId), currentSong = state.songs.find(s => s.id === current?.songId) ?? null;
   const songs = useMemo(() => {
     const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
