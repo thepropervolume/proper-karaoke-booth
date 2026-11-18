@@ -12,7 +12,7 @@ The local Windows x64 setup and ZIP use clean commit `d924fb05315079370d6722df85
 
 The native project versions are aligned to 0.9.1. This does not add paid playback to phones or establish new native device/store acceptance. The live mobile website remains the previously verified 0.9.0 deployment. Existing guest catalog responses contain only recording ID, title and artist, so requesting a saved Party Tyme recording does not require a new provider identifier in the singer client; playback stays on the connected desktop.
 
-The [0.9.1 release run](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44185403036) generated planning editions and built and verified Linux/macOS packages, but their upload steps failed with **Artifact storage quota has been hit**. The new GitHub Release is not published. Source commits are pushed; a successful build does not establish artifact delivery. Published v0.8.0 assets remain available. No old Actions artifacts were deleted to make room.
+GitHub Actions artifact storage blocked the [original 0.9.1 delivery](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44185403036). The subsequent [direct-to-Linode run](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44382316384) built and verified every desktop platform from `26f05c9` and published all 28 files, including the generated planning editions and checksums. The hosted installer set has been checked over HTTPS, including partial downloads on all eight packages and a full SHA-256 match for the Windows setup. Get the packages from the [0.9.1 download page](https://release.thepropervolume.com/v0.9.1/).
 
 ## Historical 0.9.0 Delivery
 
