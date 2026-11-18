@@ -7,7 +7,8 @@ type Result = { ok: boolean; error?: string; notice?: string; versionId?: string
 export function requestLibrarySong(version: LibrarySearchVersion, singerId: string | null, requestId: string, bridge: {
   requestCatalogTrack(input: { track: CatalogRequestTrack; singerId: string | null; requestId: string }): Promise<Result>;
   command(command: Command): Promise<Result>;
-}): Promise<Result> {
+}, coSingerId?: string | null): Promise<Result> {
+  if (version.catalogTrack && coSingerId) throw new Error('Save this song and mark it as a duet before selecting a partner.');
   return version.catalogTrack ? bridge.requestCatalogTrack({ track: version.catalogTrack, singerId, requestId }) :
-    bridge.command({ type: 'request', versionId: version.id, singerId, requestId });
+    bridge.command({ type: 'request', versionId: version.id, singerId, requestId, ...(coSingerId ? { coSingerId } : {}) });
 }

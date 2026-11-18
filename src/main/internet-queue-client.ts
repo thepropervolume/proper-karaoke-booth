@@ -7,6 +7,7 @@ import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { JoinRevisionConflict } from './remote-queue';
 import { RemoteRelayScope } from './remote-relay-scope';
 import type { GuestAuthority } from './remote-guest-api';
+import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Connection = { baseUrl: typeof INTERNET_QUEUE_ORIGIN; ownerToken: string };
@@ -16,8 +17,8 @@ export type InternetGuestReply = { requestId: string; status: 200 | 400 | 409; b
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SECRET = /^[A-Za-z0-9_-]{43}$/;
 const OWNER = /^[A-Za-z0-9._~-]{32,256}$/;
-const OPERATIONS = new Set(['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request']);
-const MAX_PAYLOAD = 8192, MAX_REPLY = 2 * 1024 * 1024, MAX_POLL = 128 * 1024;
+const OPERATIONS = new Set(['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request', 'applause', 'photo']);
+const MAX_PAYLOAD = 8192, MAX_REPLY = 2 * 1024 * 1024, MAX_POLL = 512 * 1024;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
@@ -75,6 +76,24 @@ export function dispatchInternetGuestCall(authority: GuestAuthority, call: Inter
     if (call.operation === 'join' && error instanceof JoinRevisionConflict) return { requestId: call.requestId, status: 409, body: { error: 'REVISION_CONFLICT' } };
     return denied();
   }
+}
+
+/** Applause waits for the host audio authority; other existing operations stay synchronous. */
+export async function dispatchInternetGuestCallAsync(authority: GuestAuthority, call: InternetGuestCall, invitation: () => string): Promise<InternetGuestReply> {
+  if (call.operation !== 'applause' && call.operation !== 'photo') return dispatchInternetGuestCall(authority, call, invitation);
+  const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
+  try {
+    if (!record(call) || typeof call.requestId !== 'string' || !UUID.test(call.requestId) ||
+        Object.keys(call).some(key => !['requestId', 'operation', 'payload', 'session'].includes(key)) ||
+        !record(call.payload) || !exact(call.payload, ['command']) || bytes(call.payload) > (call.operation === 'photo' ? MAX_PHOTO_BODY_BYTES : MAX_PAYLOAD) ||
+        typeof call.session !== 'string' || !SECRET.test(call.session)) return denied();
+    if (call.operation === 'photo' ? !authority.submitPhoto : !authority.applaud) return denied();
+    const body = call.operation === 'photo'
+      ? await authority.submitPhoto!(call.session, call.payload.command)
+      : await authority.applaud!(call.session, call.payload.command);
+    if (bytes(body) > MAX_REPLY - 1024) return denied();
+    return { requestId: call.requestId, status: 200, body };
+  } catch { return denied(); }
 }
 
 async function readConnection(file: string): Promise<Connection> {
@@ -155,7 +174,8 @@ function calls(value: unknown, current: Room): InternetGuestCall[] {
   const ids = new Set<string>();
   for (const item of value.requests) {
     if (!record(item) || Object.keys(item).some(key => !['requestId', 'operation', 'payload', 'session'].includes(key)) || typeof item.requestId !== 'string' || !UUID.test(item.requestId) || ids.has(item.requestId) ||
-        typeof item.operation !== 'string' || !OPERATIONS.has(item.operation) || !record(item.payload) || bytes(item.payload) > MAX_PAYLOAD ||
+        typeof item.operation !== 'string' || !OPERATIONS.has(item.operation) || !record(item.payload) ||
+        bytes(item.payload) > (item.operation === 'photo' ? MAX_PHOTO_BODY_BYTES : MAX_PAYLOAD) ||
         item.session !== undefined && (typeof item.session !== 'string' || !SECRET.test(item.session))) throw new RelayFailure(false);
     ids.add(item.requestId);
   }
@@ -270,7 +290,7 @@ export class InternetQueueClient {
         if (this.state === 'reconnecting') { this.state = 'online'; this.message = 'Session online. Singers can reconnect and check their saved requests.'; this.changed(); }
         for (const call of batch) {
           if (!this.live(controller, epoch) || !this.scope || this.state !== 'online') return;
-          responses.push(dispatchInternetGuestCall(this.scope.authority, call, () => this.privateInvitation()));
+          responses.push(await dispatchInternetGuestCallAsync(this.scope.authority, call, () => this.privateInvitation()));
           if (!this.live(controller, epoch)) return;
         }
         if (responses.length) {

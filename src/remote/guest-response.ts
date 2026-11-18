@@ -40,10 +40,14 @@ export function parseGuestCatalog(value: unknown, offset: number, limit: number)
 }
 
 export function parseGuestSnapshot(value: unknown): GuestSnapshot {
-  if (!record(value) || !fields(value, ['showId', 'hostEpoch', 'revision', 'singerId', 'singerName', 'catalog', 'catalogNextOffset', 'requests'], ['unavailableUntilMs', 'serverNowMs', 'requestsTruncated']) ||
+  if (!record(value) || !fields(value, ['showId', 'hostEpoch', 'revision', 'singerId', 'singerName', 'catalog', 'catalogNextOffset', 'requests'], ['unavailableUntilMs', 'serverNowMs', 'requestsTruncated', 'applauseEnabled', 'applauseCredits', 'points', 'photoEnabled']) ||
       !id(value.showId) || !id(value.hostEpoch) || !integer(value.revision) || !id(value.singerId) || !text(value.singerName, 100) ||
       value.unavailableUntilMs !== undefined && !integer(value.unavailableUntilMs) || value.serverNowMs !== undefined && !integer(value.serverNowMs) ||
-      value.requestsTruncated !== undefined && typeof value.requestsTruncated !== 'boolean' || !Array.isArray(value.requests) || value.requests.length > 50) return invalid();
+      value.requestsTruncated !== undefined && typeof value.requestsTruncated !== 'boolean' ||
+      value.applauseEnabled !== undefined && typeof value.applauseEnabled !== 'boolean' ||
+      value.photoEnabled !== undefined && typeof value.photoEnabled !== 'boolean' ||
+      value.applauseCredits !== undefined && (!integer(value.applauseCredits) || value.applauseCredits > 5) ||
+      value.points !== undefined && !integer(value.points) || !Array.isArray(value.requests) || value.requests.length > 50) return invalid();
   const catalog = parseGuestCatalog({ revision: value.revision, items: value.catalog, nextOffset: value.catalogNextOffset }, 0, 50);
   const requests: GuestSnapshot['requests'] = [], seen = new Set<string>();
   for (const request of value.requests) {
@@ -54,7 +58,11 @@ export function parseGuestSnapshot(value: unknown): GuestSnapshot {
     catalog: catalog.items, catalogNextOffset: catalog.nextOffset, requests,
     ...(value.unavailableUntilMs !== undefined ? { unavailableUntilMs: value.unavailableUntilMs as number } : {}),
     ...(value.serverNowMs !== undefined ? { serverNowMs: value.serverNowMs as number } : {}),
-    ...(value.requestsTruncated !== undefined ? { requestsTruncated: value.requestsTruncated as boolean } : {}) };
+    ...(value.requestsTruncated !== undefined ? { requestsTruncated: value.requestsTruncated as boolean } : {}),
+    ...(value.applauseEnabled !== undefined ? { applauseEnabled: value.applauseEnabled as boolean } : {}),
+    ...(value.photoEnabled !== undefined ? { photoEnabled: value.photoEnabled as boolean } : {}),
+    ...(value.applauseCredits !== undefined ? { applauseCredits: value.applauseCredits as number } : {}),
+    ...(value.points !== undefined ? { points: value.points as number } : {}) };
 }
 
 export function parseGuestOutcome(value: unknown): Outcome {

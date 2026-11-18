@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isVersionAllowed, orderedFuture, type ShowState } from '../domain';
+import { isVersionAllowed, orderedFuture, type ShowState, type Version } from '../domain';
 import { compileSongBlacklist } from '../domain/song-blacklist';
 import { partyTymeRequest } from '../domain/partytyme-request';
 import type { Settings } from '../domain/settings';
@@ -28,6 +28,7 @@ export class PartyTymeHost {
         state(): ShowState;
         settings(): Settings;
         media(id: string): StoredMedia | undefined;
+        songSeenBefore?(version: Version): boolean;
         commit(state: ShowState, media?: StoredMedia[]): void;
         changed(): void;
     }) {
@@ -127,7 +128,8 @@ export class PartyTymeHost {
         const song = receipt.songs.get(input.videoId);
         if (!song)
             return { ok: false, error: 'Choose a current Party Tyme result.' };
-        const planned = partyTymeRequest(this.ports.state(), song, input.singerId as string | null, input.requestId, this.ports.settings(), { versionId: randomUUID(), commandId: randomUUID() }, Date.now());
+        const planned = partyTymeRequest(this.ports.state(), song, input.singerId as string | null, input.requestId, this.ports.settings(), { versionId: randomUUID(), commandId: randomUUID() }, Date.now(),
+          this.ports.songSeenBefore ? { songSeenBefore: version => this.ports.songSeenBefore!(version) } : undefined);
         if (!planned.result.ok)
             return planned.result;
         this.ports.commit(planned.state);

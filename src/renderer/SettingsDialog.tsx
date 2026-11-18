@@ -142,6 +142,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <SettingsHelp label="Singer rotation help" text="Fair rotation gives each singer a turn before their next song. Turn it off for request order. The prepared next song stays locked when changing modes." />
             <label className="settings-check"><input type="checkbox" checked={draft.autoApprove} onChange={event => setDraft({ ...draft, autoApprove: event.target.checked })} /> Automatically approve new requests</label>
             <label className="settings-check"><input type="checkbox" checked={draft.autoAdvance} onChange={event => setDraft({ ...draft, autoAdvance: event.target.checked })} /> Automatically play the next song</label>
+            <label className="settings-check"><input type="checkbox" checked={draft.pointsEnabled} onChange={event => setDraft({ ...draft, pointsEnabled: event.target.checked })} /> Enable singer points</label>
             <SettingsHelp label="Automatic queue playback help" text="Approved requests prepare automatically. After a completed or skipped song, the next starts once the pause interval ends and playback is ready. Stop cancels automatic advancement. Requests already awaiting approval stay pending." />
             <label>Future requests per singer<input type="number" min="0" max="50" step="1" required value={draft.maxFutureRequestsPerSinger} onChange={event => setDraft({ ...draft, maxFutureRequestsPerSinger: event.target.valueAsNumber })} /></label>
             <SettingsHelp label="Future request limits help" text="Counts pending, accepted and prepared songs, excluding the current song. Zero means unlimited. Lowering the limit keeps existing requests." />
@@ -155,6 +156,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <summary>Audio Controls</summary>
           <div className="settings-group__content">
             <AudioOutputPicker value={draft.audioOutputId} onChange={audioOutputId => setDraft({ ...draft, audioOutputId })} />
+            <label className="settings-check"><input type="checkbox" checked={draft.applauseEnabled} onChange={event => setDraft({ ...draft, applauseEnabled: event.target.checked })} /> Enable applause</label>
             <label>Playback Volume <input type="range" aria-label="Playback Volume" min="0" max="100" step="1" value={Math.round(draft.masterVolume * 100)} onChange={event => setDraft({ ...draft, masterVolume: Number(event.target.value) / 100 })} /><span>{Math.round(draft.masterVolume * 100)}%</span></label>
             <label>Pause Interval (seconds)<input type="number" min="0" max="300" step="1" value={draft.pauseIntervalSeconds} onChange={event => setDraft({ ...draft, pauseIntervalSeconds: Number(event.target.value) })} /></label>
             <p className="muted">Gap between songs. The next song starts automatically unless disabled in Queue Management.</p>

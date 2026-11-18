@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type IconName = 'search' | 'display' | 'fullscreen' | 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'cdg' | 'settings' | 'file' | 'folder' | 'palette' | 'library' | 'playlist' | 'globe' | 'inbox' | 'singers' | 'remote' | 'close' | 'check' | 'warning' | 'info';
+export type IconName = 'search' | 'display' | 'fullscreen' | 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'cdg' | 'settings' | 'file' | 'folder' | 'palette' | 'library' | 'playlist' | 'globe' | 'inbox' | 'singers' | 'remote' | 'close' | 'check' | 'warning' | 'info' | 'applause';
 
 /** Decorative icons: the containing control supplies an accessible name. */
 export function Icon({ name }: { name: IconName }) {
@@ -23,6 +23,7 @@ export function Icon({ name }: { name: IconName }) {
     globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></>,
     inbox: <><path d="M4 4h16v12H4zM4 12h5l2 3h2l2-3h5" /><path d="M12 16v5M8 19l4 2 4-2" /></>,
     singers: <><rect x="9" y="2.5" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" /></>,
+    applause: <><path d="M8 13 5.2 9.7a1.1 1.1 0 0 1 1.7-1.4l3.2 3.5-2.7-5a1 1 0 0 1 1.8-1l2.9 4.8-1.3-5.1a1 1 0 0 1 2-.5l1.4 5 0-3.9a1 1 0 0 1 2 0v7.7l1.5-1.4a1.1 1.1 0 0 1 1.6 1.5l-3.3 4.3c-.8 1-2 1.6-3.3 1.6h-1.1c-1.6 0-3.1-.8-3.9-2.2L5 14.3a1 1 0 0 1 1.7-1.1L8 14.7" /><path d="m4 4-1-1M4 7H2M19 4l1-1M20 7h2" /></>,
     remote: <><circle cx="12" cy="12" r="2" /><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13" /></>,
     close: <path d="m6 6 12 12M18 6 6 18" />,
     check: <path d="m4.5 12.5 5 5 10-11" />,

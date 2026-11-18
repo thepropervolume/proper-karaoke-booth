@@ -8,7 +8,7 @@ const MAX_FILE = 4 * 1024 * 1024;
 const MAX_TOTAL = 16 * 1024 * 1024;
 const MAX_FILES = 512;
 const TYPES: Record<string, string> = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', woff: 'font/woff', woff2: 'font/woff2' };
-const POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 type Asset = { bytes: Buffer; type: string };
 type Entry = { file: string; imports?: string[]; dynamicImports?: string[]; css?: string[]; assets?: string[] };
 export type SingerStaticHandler = (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;

@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 // Keep this list explicit. A generic invoke(channel, payload) would let a page
 // reach unrelated main-process capabilities; main still validates every call.
 contextBridge.exposeInMainWorld('tpv', {
+  applause: { trigger: () => ipcRenderer.invoke('host:applause-trigger') },
   partyTyme: {
     status: () => ipcRenderer.invoke('host:partytyme-status'),
     signIn: () => ipcRenderer.invoke('host:partytyme-connect'),
@@ -227,6 +228,18 @@ contextBridge.exposeInMainWorld('tpvDisplay', {
   bumperAck: (value: unknown) => ipcRenderer.send('display:bumper-ack', value),
   bumperEvent: (value: unknown) => ipcRenderer.send('display:bumper-event', value),
   bumperDeviceChange: () => ipcRenderer.send('display:bumper-devicechange'),
+  applauseResult: (value: unknown) => ipcRenderer.send('display:applause-result', value),
+  photoResult: (value: unknown) => ipcRenderer.send('display:photo-result', value),
+  onPhoto: (callback: (request: unknown) => void) => {
+    const listener = (_event: unknown, request: unknown) => callback(request);
+    ipcRenderer.on('display:photo', listener);
+    return () => ipcRenderer.removeListener('display:photo', listener);
+  },
+  onApplause: (callback: (request: unknown) => void) => {
+    const listener = (_event: unknown, request: unknown) => callback(request);
+    ipcRenderer.on('display:applause', listener);
+    return () => ipcRenderer.removeListener('display:applause', listener);
+  },
   onBumperCommand: (callback: (request: unknown) => void) => {
     const listener = (_event: unknown, request: unknown) => callback(request);
     ipcRenderer.on('display:bumper-command', listener);

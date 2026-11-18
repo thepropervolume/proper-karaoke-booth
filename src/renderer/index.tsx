@@ -133,6 +133,7 @@ declare global {
       saveShortcuts: (value: Shortcuts) => Promise<Shortcuts>;
       editShortcutsFile: () => Promise<void>;
       playPause: () => Promise<Result>;
+      applause?: { trigger: () => Promise<Result> };
       restartTrack: () => Promise<Result>;
       saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
       chooseLyricBackdrop: () => Promise<string | null>;
@@ -430,7 +431,9 @@ function App() {
   }, [ratingSelection, settings.ratingProfileConfigFile, ratingReload, filenameRefresh]);
   const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
   const describe = (request?: SongRequest) => {
-    const singer = request?.singerId == null ? 'Unassigned' : state?.singers.find(s => s.id === request.singerId)?.name ?? 'Unknown singer';
+    const lead = request?.singerId == null ? 'Unassigned' : state?.singers.find(s => s.id === request.singerId)?.name ?? 'Unknown singer';
+    const partner = request?.coSingerId ? state?.singers.find(s => s.id === request.coSingerId)?.name ?? 'Unknown singer' : '';
+    const singer = partner ? `${lead} & ${partner}` : lead;
     const song = state?.versions.find(v => v.id === request?.versionId);
     return { singer, title: song?.title ?? 'Unknown song', artist: song?.artist ?? '' };
   };
@@ -721,7 +724,7 @@ function App() {
         </>}
         {screen === 'singers' && <>
           <h2>Singers</h2><form className="inline-form" onSubmit={addSinger}><label>Singer name<input autoComplete="off" value={singerName} onChange={e => setSingerName(e.target.value)} placeholder="Enter a name" maxLength={100} /></label><button className="primary" disabled={busy || !singerName.trim()} type="submit">Add singer</button></form>
-          <h3>In This Show</h3><p className="muted">Unavailable singers can have one upcoming request. Existing requests are kept. They rejoin after their return time without interrupting a staged or playing song.</p>{state.singers.map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} onChange={minutes => setAvailability(s.id, minutes)} />)}
+          <h3>In This Show</h3><p className="muted">Unavailable singers can have one upcoming request. Existing requests are kept. They rejoin after their return time without interrupting a staged or playing song.</p>{state.singers.map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} />)}
           {!state.singers.length && <p className="empty">No singers yet.</p>}
         </>}
         {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
@@ -764,6 +767,7 @@ function App() {
         <Tooltip text={!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (stagedBlocked || pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text={shortcutHint('Stop', 'stop')}><button className="icon-button" aria-label="Stop" disabled={!state} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
         <Tooltip text={shortcutHint('Skip', 'skip')}><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
+        <Tooltip text={settings.applauseEnabled ? 'Play applause' : 'Enable applause in Preferences'}><button className="icon-button" aria-label="Applause" disabled={!settings.applauseEnabled || !window.tpv.applause} onClick={() => { void window.tpv.applause?.trigger().then(result => { if (!result.ok) setNotice(result.error || 'Could not play applause.', 'error'); }).catch(() => setNotice('Could not play applause.', 'error')); }}><Icon name="applause" /></button></Tooltip>
       </div>
       <PlaybackTimeline generation={state?.playback?.generationId ?? null} disabled={busy} shortcuts={shortcuts} />
       <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const masterVolume = Number(event.target.value) / 100; setSettings(current => ({ ...current, masterVolume })); void window.tpv.saveSettings({ masterVolume }).catch(error => setNotice(`Could not save volume: ${String(error)}`, 'error')); }} /></label>
@@ -790,8 +794,8 @@ function App() {
       <button role="menuitem" disabled={queueMenu.request.singerId === null} onClick={() => { setScreen('singers'); setQueueMenu(null); }}>Singer availability…</button>
       <button role="menuitem" disabled={busy} onClick={() => { void command({ type: 'removeRequest', requestId: queueMenu.request.id }); setQueueMenu(null); }}>Remove request</button>
     </div>}
-    {editingRequest && state && <QueueEditDialog request={editingRequest} singers={state.singers} versions={versions} onClose={() => setEditingRequest(null)} onSave={async (singerId, versionId) => {
-      const result = await window.tpv.command({ type: 'editRequest', requestId: editingRequest.id, singerId, versionId });
+    {editingRequest && state && <QueueEditDialog request={editingRequest} singers={state.singers} versions={versions} onClose={() => setEditingRequest(null)} onSave={async (singerId, versionId, coSingerId) => {
+      const result = await window.tpv.command({ type: 'editRequest', requestId: editingRequest.id, singerId, versionId, coSingerId });
       if (!result.ok) throw new Error(result.error || 'The request could not be updated.');
       setNotice('Queued request updated.', 'success');
     }} />}
@@ -806,8 +810,8 @@ function App() {
       } catch (error) { setNotice(error instanceof Error ? error.message : 'Your rating was not confirmed.', 'error'); throw error; }
       finally { setBusy(false); }
     }} />}
-    {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist) => {
-      const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist });
+    {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist, isDuet) => {
+      const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist, isDuet });
       if (!result.ok) throw new Error(result.error || 'The song could not be updated.');
     }} />}
     {contextMenu && <div className="song-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y, maxHeight: `calc(100vh - ${contextMenu.y + 8}px)` }}>
@@ -824,20 +828,21 @@ function App() {
       <button role="menuitem" disabled={!contextMenu.version.persisted || !!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files…</button>
       <button role="menuitem" onClick={() => { setContextMenu(null); openPreferences('blacklist'); }}>Manage Blacklist…</button>
     </div>}
-    {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated) => {
+    {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated, coSingerId) => {
       let queueNotice = '';
       await requestWithSinger(choice, {
         createSingerId: () => crypto.randomUUID(),
         addSinger: singer => window.tpv.command({ type: 'addSinger', singer }),
         singerCreated,
         addRequest: async singerId => {
+          if (coSingerId && (queueVersion.partyTymeReceipt || queueVersion.karaFunReceipt || queueVersion.youtubeSearchReceipt)) throw new Error('Save this song and mark it as a duet before selecting a partner.');
           const result = queueVersion.partyTymeReceipt
             ? await window.tpv.partyTyme.request({...queueVersion.partyTymeReceipt,singerId,requestId:crypto.randomUUID()})
             : queueVersion.karaFunReceipt
             ? await window.tpv.karaFun.request({ ...queueVersion.karaFunReceipt, singerId, requestId: crypto.randomUUID() })
             : queueVersion.youtubeSearchReceipt
             ? await window.tpv.youtubeSearch.request({ ...queueVersion.youtubeSearchReceipt, singerId, requestId: crypto.randomUUID() })
-            : await requestLibrarySong(queueVersion, singerId, crypto.randomUUID(), window.tpv);
+            : await requestLibrarySong(queueVersion, singerId, crypto.randomUUID(), window.tpv, coSingerId);
           if (result.ok && result.versionId) setSelectedVersionId(result.versionId);
           queueNotice = result.notice || ''; return result;
         },

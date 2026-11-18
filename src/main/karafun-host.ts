@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isVersionAllowed, orderedFuture, type ShowState } from '../domain';
+import { isVersionAllowed, orderedFuture, type ShowState, type Version } from '../domain';
 import { compileSongBlacklist } from '../domain/song-blacklist';
 import { karaFunRequest } from '../domain/karafun-request';
 import type { Settings } from '../domain/settings';
@@ -24,7 +24,7 @@ export class KaraFunHost {
   private closed = false;
   private queue: QueuedVideoDownloads;
   constructor(private readonly account: Account, private readonly cache: KaraFunMediaCache, private readonly ports: {
-    state(): ShowState; settings(): Settings; media(id: string): StoredMedia | undefined;
+    state(): ShowState; settings(): Settings; media(id: string): StoredMedia | undefined; songSeenBefore?(version: Version): boolean;
     commit(state: ShowState, media?: StoredMedia[]): void; changed(): void;
   }) {
     this.queue = new QueuedVideoDownloads(async id => { await this.prepare(id); return null; });
@@ -98,7 +98,8 @@ export class KaraFunHost {
     const song = receipt.songs.get(`${input.catalog}:${input.songId}`);
     if (!song) return { ok: false, error: 'Choose a current KaraFun search result.' };
     const planned = karaFunRequest(this.ports.state(), { songId: song.songId, catalog: song.catalog, title: song.title, artist: song.artist, explicit: song.explicit },
-      input.singerId, input.requestId, this.ports.settings(), { versionId: randomUUID(), commandId: randomUUID() }, Date.now());
+      input.singerId, input.requestId, this.ports.settings(), { versionId: randomUUID(), commandId: randomUUID() }, Date.now(),
+      this.ports.songSeenBefore ? { songSeenBefore: version => this.ports.songSeenBefore!(version) } : undefined);
     if (!planned.result.ok) return planned.result;
     this.ports.commit(planned.state); this.sync();
     return { ...planned.result, notice: 'Added to the TPV queue. KaraFun preparation runs in the background; press Play when ready.' };

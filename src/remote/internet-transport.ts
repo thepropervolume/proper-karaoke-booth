@@ -1,4 +1,5 @@
 import { JoinRevisionConflict, type GuestTransport } from './client';
+import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { INTERNET_QUEUE_ORIGIN, validateSessionSlug } from './internet-session-control';
 import { parseGuestAdmission, parseGuestCatalog, parseGuestJoin, parseGuestOutcome, parseGuestOutcomeLookup, parseGuestSnapshot } from './guest-response';
 
@@ -50,7 +51,7 @@ export function internetGuestTransport(room: InternetSingerRoom, options: { fetc
   const post = async <T,>(operation: string, payload: unknown, parse: (value: unknown) => T, session?: string): Promise<T> => {
     if (ended || room.expiresAt <= Date.now()) throw new InternetSessionEnded();
     const body = JSON.stringify(payload);
-    if (new TextEncoder().encode(body).byteLength > 8192 || session !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(session)) throw new Error('Invalid singer request.');
+    if (new TextEncoder().encode(body).byteLength > (operation === 'photo' ? MAX_PHOTO_BODY_BYTES : 8192) || session !== undefined && !/^[A-Za-z0-9_-]{43}$/.test(session)) throw new Error('Invalid singer request.');
     return await bounded(async signal => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
       if (session) headers.Authorization = `Bearer ${session}`;
@@ -78,6 +79,8 @@ export function internetGuestTransport(room: InternetSingerRoom, options: { fetc
     submit: (session, command) => post('request', { command }, parseGuestOutcome, session),
     withdraw: (session, command) => post('withdraw', { command }, parseGuestOutcome, session),
     setAvailability: (session, command) => post('availability', { command }, parseGuestOutcome, session),
+    applaud: (session, command) => post('applause', { command }, parseGuestOutcome, session),
+    submitPhoto: (session, command) => post('photo', { command }, parseGuestOutcome, session),
     submitMissing: (session, command) => post('missing-request', { command }, parseGuestOutcome, session),
     outcome: (session, commandId) => post('outcome', { commandId }, parseGuestOutcomeLookup, session),
   };

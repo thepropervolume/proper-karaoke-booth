@@ -3,11 +3,12 @@ import type { Singer, SongRequest, Version } from '../domain';
 
 export function QueueEditDialog({ request, singers, versions, onSave, onClose }: {
   request: SongRequest; singers: Singer[]; versions: Version[];
-  onSave: (singerId: string | null, versionId: string) => Promise<void>; onClose: () => void;
+  onSave: (singerId: string | null, versionId: string, coSingerId: string | null) => Promise<void>; onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [singerId, setSingerId] = useState(request.singerId ?? '');
   const [versionId, setVersionId] = useState(request.versionId);
+  const [coSingerId, setCoSingerId] = useState(request.coSingerId ?? '');
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -19,19 +20,25 @@ export function QueueEditDialog({ request, singers, versions, onSave, onClose }:
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); if (saving) return;
     setSaving(true); setError('');
-    try { await onSave(singerId || null, versionId); onClose(); }
+    try { await onSave(singerId || null, versionId, coSingerId || null); onClose(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setSaving(false); }
   };
   return <dialog ref={dialog} className="settings-dialog" aria-labelledby="edit-request-title"
     onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}>
     <form onSubmit={event => void submit(event)}>
       <h2 id="edit-request-title">Edit Queued Request</h2>
-      <label>Singer (optional)<select aria-label="Singer" autoFocus value={singerId} disabled={saving} onChange={event => setSingerId(event.target.value)}>
+      <label>Singer (optional)<select aria-label="Singer" autoFocus value={singerId} disabled={saving} onChange={event => { setSingerId(event.target.value); if (!event.target.value || event.target.value === coSingerId) setCoSingerId(''); }}>
         <option value="">No singer — assign later</option>
         {singers.map(singer => <option key={singer.id} value={singer.id}>{singer.name}</option>)}
       </select></label>
+      {versions.find(version => version.id === versionId)?.isDuet && <label>Duet partner (optional)
+        <select value={coSingerId} disabled={saving || !singerId} onChange={event => setCoSingerId(event.target.value)}>
+          <option value="">Choose later</option>
+          {singers.filter(singer => singer.id !== singerId).map(singer => <option key={singer.id} value={singer.id}>{singer.name}</option>)}
+        </select>
+      </label>}
       <label>Find a replacement track<input type="search" value={query} disabled={saving} onChange={event => setQuery(event.target.value)} /></label>
-      <label>Chosen track<select aria-label="Chosen track" required value={versionId} disabled={saving} onChange={event => setVersionId(event.target.value)}>
+      <label>Chosen track<select aria-label="Chosen track" required value={versionId} disabled={saving} onChange={event => { setVersionId(event.target.value); setCoSingerId(''); }}>
         {!versions.some(version => version.id === versionId) && <option value="">Choose an available track</option>}
         {choices.map(version => <option key={version.id} value={version.id}>{version.artist ? `${version.artist} — ` : ''}{version.title}</option>)}
       </select></label>

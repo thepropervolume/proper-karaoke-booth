@@ -42,6 +42,7 @@ test('serves only singer manifest dependencies with restrictive headers and no q
     const page = await get('/singer/');
     assert.equal(page.status, 200); assert.match(page.headers['content-type']!, /^text\/html/);
     assert.match(String(page.headers['content-security-policy']), /connect-src 'self'/);
+    assert.match(String(page.headers['content-security-policy']), /img-src 'self' blob:/);
     assert.match(String(page.headers['content-security-policy']), /frame-ancestors 'none'/);
     assert.equal(page.headers['x-content-type-options'], 'nosniff'); assert.equal(page.headers['cache-control'], 'no-store');
     assert.equal(page.headers['referrer-policy'], 'no-referrer');

@@ -2,12 +2,12 @@ import { MobileRoomBeacon } from './mobile-room-beacon';
 // Application composition root: the host owns durable state; renderers ask for
 // actions and report playback facts. Provider credentials and media paths stay here.
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, screen, shell } from 'electron';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { unlink, readFile, lstat, open } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Command, type ShowState } from '../domain';
+import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Actor, type Command, type Outcome, type ShowState } from '../domain';
 import type { HistoryEntry } from '../domain/collections';
 import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
@@ -27,6 +27,9 @@ import { loadLogo, saveLogo } from './logo';
 import { BumperCatalog } from './bumper-catalog';
 import { BumperController, type BumperTrack } from './bumper-controller';
 import { BumperDisplayOutput } from './bumper-display-output';
+import { ApplauseOutput } from './applause-output';
+import { applauseGenerationUnchanged, captureApplauseGeneration } from './applause-generation';
+import { PhotoDisplayOutput } from './photo-display-output';
 import { builtInBumperTracks } from './bumper-builtins';
 import { serveBumper } from './bumper-media';
 import { HostRemoteLifecycle } from './remote-host-lifecycle';
@@ -89,6 +92,14 @@ import { KaraFunMixer } from './karafun-mixer';
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 let host: BrowserWindow | null = null;
 let display: BrowserWindow | null = null;
+const applauseOutput = new ApplauseOutput(request => {
+  if (!display || display.isDestroyed() || !displayReady) throw new Error('The singer player is unavailable.');
+  display.webContents.send('display:applause', request);
+});
+const photoOutput = new PhotoDisplayOutput(request => {
+  if (!display || display.isDestroyed() || !displayReady) throw new Error('The singer player is unavailable.');
+  display.webContents.send('display:photo', request);
+});
 let displayFullscreen: DisplayFullscreen | null = null;
 let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
@@ -447,10 +458,11 @@ function publishDisplay(): void {
   const playback = state.playback;
   const request = state.requests.find(r => r.id === playback?.requestId);
   const version = state.versions.find(v => v.id === request?.versionId);
-  const singer = state.singers.find(s => s.id === request?.singerId);
+  const singerNames = (ids: (string | null | undefined)[]) =>
+    ids.map(id => state.singers.find(s => s.id === id)?.name).filter((name): name is string => !!name).join(' & ');
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
     .filter(r => r.singerId !== null && singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
-    .map(r => state.singers.find(s => s.id === r.singerId)?.name ?? 'Unknown singer') : [];
+    .map(r => singerNames([r.singerId, r.coSingerId]) || 'Unknown singer') : [];
   const native = currentNativeKaraFun();
   const backdrop = native ? lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }) : undefined;
   const partyReady = playback && activePartyTyme?.generation === playback.generationId && activePartyTyme.versionId === version?.id && activePartyTyme.revision === partyTymeAccount?.revision() && partyTymeAccount.status().state === 'connected';
@@ -461,7 +473,7 @@ function publishDisplay(): void {
       stems: native.media.kit.stems.map(stem => ({ id: stem.id, role: stem.role, voice: stem.voice, src: `tpv-media://karafun-stem/${encodeURIComponent(playback.generationId)}/${stem.id}` })) },
       backdropSrc: backdrop ? `tpv-media://lyric-backdrop/${encodeURIComponent(playback.generationId)}` : null } : {}),
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
-    position: store.position(playback.generationId), title: version.title, singer: singer?.name ?? '', volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
+    position: store.position(playback.generationId), title: version.title, singer: singerNames([request.singerId, request.coSingerId]), volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
   display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume,
     branding: { boothName: settings.boothName, displayLogoSize: settings.displayLogoSize, bannerEnabled: settings.bannerEnabled,
       bannerText: settings.bannerText, bannerPosition: settings.bannerPosition, bannerExpiresAt: settings.bannerExpiresAt, bannerOnLaunch: settings.bannerOnLaunch } });
@@ -471,14 +483,16 @@ function publishDisplay(): void {
 function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
   const previousGeneration = state.playback?.generationId;
   const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
-    expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings, Date.now());
+    expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings, Date.now(),
+    { songSeenBefore: version => store.songSeenBefore(version) });
   let history: HistoryEntry | undefined;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip') && state.playback) {
     const request = state.requests.find(r => r.id === state.playback?.requestId);
     if (request) {
       const singer = state.singers.find(s => s.id === request.singerId);
       const version = state.versions.find(v => v.id === request.versionId);
-      history = { generationId: state.playback.generationId, singerId: request.singerId, singer: singer?.name ?? '',
+      const coSinger = state.singers.find(s => s.id === request.coSingerId);
+      history = { generationId: state.playback.generationId, singerId: request.singerId, singer: [singer?.name, coSinger?.name].filter(Boolean).join(' & '),
         versionId: request.versionId, title: version?.title ?? 'Unknown song', artist: version?.artist ?? '',
         outcome: command.type === 'complete' ? 'completed' : 'skipped', at: new Date().toISOString() };
     }
@@ -498,7 +512,8 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
 
 function commitCatalogRequest(input: unknown) {
     if(shuttingDown)return {ok:false,error:'The application is closing.'};
-    const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now());
+    const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now(),
+      { songSeenBefore: version => store.songSeenBefore(version) });
     if(!planned.result.ok)return planned.result;
     store.save(planned.state);state=planned.state;
     let notice:string|undefined;
@@ -678,7 +693,7 @@ async function createDisplayWindow(automatic: boolean, hidden: boolean): Promise
     singerCapture.invalidate(); outputRecovery = null;
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     if (display !== window) return;
-    display = null; displayReady = false; displayId = null; displayOutputIds.clear();
+    display = null; displayReady = false; displayId = null; displayOutputIds.clear(); applauseOutput.clear(); photoOutput.clear();
     automaticBumper.cancel(); showAdvance.cancel(); bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
     if (pauseForOutputLoss()) warnDisplayLoss(); publishBumper();
   });
@@ -697,6 +712,101 @@ async function ensureSingerDisplayReady(showVisible = true): Promise<void> {
     if (performance.now() >= deadline) throw new Error('The singer display did not become ready. Close it and press Play to retry.');
     await new Promise(resolve => setTimeout(resolve, 50));
   }
+}
+
+// Serialize credit checks through audio acknowledgement. Concurrent claps can
+// still overlap after they start, while the same singer cannot spend a credit twice.
+let applauseTurn: Promise<void> = Promise.resolve();
+const applauseInFlight = new Map<string, { fingerprint: string; work: Promise<Outcome> }>();
+function requestApplause(actor: Actor, commandId: string, showId: string, hostEpoch: string, expectedRevision: number,
+  stillAuthorized: () => boolean = () => true): Promise<Outcome> {
+  const fingerprint = JSON.stringify([actor.role, actor.id, showId, hostEpoch, expectedRevision]);
+  const existing = applauseInFlight.get(commandId);
+  if (existing) return existing.fingerprint === fingerprint ? existing.work :
+    Promise.resolve({ ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: state.revision });
+  const envelope = { commandId, showId, hostEpoch, expectedRevision, actor, command: { type: 'applause' as const } };
+  const preview = applyCommand(state, envelope, settings, Date.now());
+  if (!preview.outcome.ok || state.receipts.some(receipt => receipt.id === commandId)) return Promise.resolve(preview.outcome);
+  const generation = captureApplauseGeneration(state.playback);
+  const run = async (): Promise<Outcome> => {
+    if (shuttingDown || !stillAuthorized()) return { ok: false, code: 'UNAVAILABLE', message: 'Applause is unavailable.', revision: state.revision };
+    try {
+      await ensureSingerDisplayReady(false);
+      if (!stillAuthorized() || state.showId !== showId || state.hostEpoch !== hostEpoch || !settings.applauseEnabled)
+        return { ok: false, code: 'UNAVAILABLE', message: 'The show or applause setting changed.', revision: state.revision };
+      if (!applauseGenerationUnchanged(generation, state.playback))
+        return { ok: false, code: 'STALE_GENERATION', message: 'The song changed before applause started.', revision: state.revision };
+      const ready = applyCommand(state, { ...envelope, expectedRevision: state.revision }, settings, Date.now());
+      if (!ready.outcome.ok) return ready.outcome;
+      await applauseOutput.play(settings.masterVolume, settings.audioOutputId);
+      if (!stillAuthorized() || state.showId !== showId || state.hostEpoch !== hostEpoch || !settings.applauseEnabled)
+        return { ok: false, code: 'UNAVAILABLE', message: 'The show or applause setting changed.', revision: state.revision };
+      if (!applauseGenerationUnchanged(generation, state.playback))
+        return { ok: false, code: 'STALE_GENERATION', message: 'The song changed during applause; no points or credits were recorded.', revision: state.revision };
+      const result = applyCommand(state, { ...envelope, expectedRevision: state.revision }, settings, Date.now());
+      if (!result.outcome.ok) return result.outcome;
+      // Preserve the original request fingerprint for a retry after a lost reply,
+      // even if another host action changed the revision while audio was starting.
+      const receipt = result.state.receipts.find(item => item.id === commandId);
+      const originalReceipt = preview.state.receipts.find(item => item.id === commandId);
+      if (!receipt || !originalReceipt) throw new Error('Could not record applause.');
+      receipt.fingerprint = originalReceipt.fingerprint;
+      store.save(result.state);
+      state = result.state;
+      try { broadcast(); } catch { /* Committed applause remains recorded. */ }
+      return result.outcome;
+    } catch (error) {
+      return { ok: false, code: 'AUDIO', message: error instanceof Error ? error.message : 'Could not play applause.', revision: state.revision };
+    }
+  };
+  const work = applauseTurn.then(run);
+  applauseTurn = work.then(() => {}, () => {});
+  applauseInFlight.set(commandId, { fingerprint, work });
+  void work.finally(() => applauseInFlight.delete(commandId)).catch(() => {});
+  return work;
+}
+
+const photoInFlight = new Map<string, { fingerprint: string; work: Promise<Outcome> }>();
+function requestPhoto(singerId: string, commandId: string, showId: string, hostEpoch: string, expectedRevision: number,
+  dataUrl: string, stillAuthorized: () => boolean): Promise<Outcome> {
+  const photoHash = createHash('sha256').update(dataUrl).digest('hex');
+  const fingerprint = JSON.stringify([singerId, showId, hostEpoch, expectedRevision, photoHash]);
+  const existing = photoInFlight.get(commandId);
+  if (existing) return existing.fingerprint === fingerprint ? existing.work :
+    Promise.resolve({ ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: state.revision });
+  const envelope = { commandId, showId, hostEpoch, expectedRevision, actor: { role: 'singer' as const, id: singerId },
+    command: { type: 'photo' as const, photoHash } };
+  const preview = applyCommand(state, envelope, settings, Date.now());
+  if (!preview.outcome.ok || state.receipts.some(receipt => receipt.id === commandId)) return Promise.resolve(preview.outcome);
+  const work = (async (): Promise<Outcome> => {
+    try {
+      if (shuttingDown || !stillAuthorized()) return { ok: false, code: 'UNAVAILABLE', message: 'Photo sharing is unavailable.', revision: state.revision };
+      // A photo earns points only when it is sent to an actual visible display.
+      await ensureSingerDisplayReady();
+      if (!stillAuthorized() || state.showId !== showId || state.hostEpoch !== hostEpoch)
+        return { ok: false, code: 'UNAVAILABLE', message: 'The show is no longer available.', revision: state.revision };
+      const ready = applyCommand(state, { ...envelope, expectedRevision: state.revision }, settings, Date.now());
+      if (!ready.outcome.ok) return ready.outcome;
+      await photoOutput.show(dataUrl);
+      if (!stillAuthorized() || state.showId !== showId || state.hostEpoch !== hostEpoch)
+        return { ok: false, code: 'UNAVAILABLE', message: 'The show is no longer available.', revision: state.revision };
+      const result = applyCommand(state, { ...envelope, expectedRevision: state.revision }, settings, Date.now());
+      if (!result.outcome.ok) return result.outcome;
+      const receipt = result.state.receipts.find(item => item.id === commandId);
+      const originalReceipt = preview.state.receipts.find(item => item.id === commandId);
+      if (!receipt || !originalReceipt) throw new Error('Could not record the photo.');
+      receipt.fingerprint = originalReceipt.fingerprint;
+      store.save(result.state);
+      state = result.state;
+      try { broadcast(); } catch { /* The photo award is already committed. */ }
+      return result.outcome;
+    } catch (error) {
+      return { ok: false, code: 'PHOTO', message: error instanceof Error ? error.message : 'Could not show the photo.', revision: state.revision };
+    }
+  })();
+  photoInFlight.set(commandId, { fingerprint, work });
+  void work.finally(() => photoInFlight.delete(commandId)).catch(() => {});
+  return work;
 }
 function hostPlayPause(): Promise<TransportResult> {
   showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false; autoStageSuspended = false;
@@ -750,16 +860,22 @@ function validateCommand(value: unknown): Command | null {
       return policy ? { type: 'setPolicy', policy } : null;
     }
     case 'editVersion':
-      return shortString(value.id) && shortString(value.title) && typeof value.artist === 'string' && value.artist.length <= 500 ? { type: 'editVersion', id: value.id, title: value.title, artist: value.artist } : null;
+      return shortString(value.id) && shortString(value.title) && typeof value.artist === 'string' && value.artist.length <= 500 &&
+        (value.isDuet === undefined || typeof value.isDuet === 'boolean')
+        ? { type: 'editVersion', id: value.id, title: value.title, artist: value.artist, ...(value.isDuet !== undefined ? { isDuet: value.isDuet as boolean } : {}) } : null;
     case 'addSinger':
       return isRecord(value.singer) && shortString(value.singer.id) && shortString(value.singer.name) ? { type: 'addSinger', singer: { id: value.singer.id, name: value.singer.name } } : null;
     case 'request':
-      return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
+      return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) &&
+        (value.coSingerId === undefined || value.coSingerId === null || shortString(value.coSingerId))
+        ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId, ...(value.coSingerId !== undefined ? { coSingerId: value.coSingerId as string | null } : {}) } : null;
     case 'accept': return shortString(value.requestId) ? { type: 'accept', requestId: value.requestId } : null;
     case 'removeRequest': return shortString(value.requestId) ? { type: 'removeRequest', requestId: value.requestId } : null;
     case 'setSingerAvailability': return shortString(value.singerId) && Number.isInteger(value.minutes) && (value.minutes as number) >= 0 && (value.minutes as number) <= 60 && (value.releaseStaged === undefined || typeof value.releaseStaged === 'boolean') ? { type: 'setSingerAvailability', singerId: value.singerId, minutes: value.minutes as number, releaseStaged: value.releaseStaged as boolean | undefined } : null;
     case 'moveRequest': return shortString(value.requestId) && (value.beforeRequestId === null || shortString(value.beforeRequestId)) ? { type: 'moveRequest', requestId: value.requestId, beforeRequestId: value.beforeRequestId } : null;
-    case 'editRequest': return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) ? { type: 'editRequest', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId } : null;
+    case 'editRequest': return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) &&
+      (value.coSingerId === undefined || value.coSingerId === null || shortString(value.coSingerId))
+      ? { type: 'editRequest', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId, ...(value.coSingerId !== undefined ? { coSingerId: value.coSingerId as string | null } : {}) } : null;
     case 'resetQueueOrder': return { type: 'resetQueueOrder' };
     case 'promoteRequest': return shortString(value.requestId) ? { type: 'promoteRequest', requestId: value.requestId } : null;
     case 'rejectRequest': return shortString(value.requestId) ? { type: 'rejectRequest', requestId: value.requestId } : null;
@@ -1060,7 +1176,7 @@ else {
   store.save(state);
   karaFunAccount = new KaraFunAccount({ sessionStore: new KaraFunSessionVault(join(app.getPath('userData'), 'karafun-session.bin')) });
   karaFunHost = new KaraFunHost(karaFunAccount, new KaraFunMediaCache(join(app.getPath('userData'), 'karafun-cache')), {
-    state: () => state, settings: () => settings, media: id => store.media(id),
+    state: () => state, settings: () => settings, media: id => store.media(id), songSeenBefore: version => store.songSeenBefore(version),
     commit: (next, media = []) => { if (shuttingDown) throw new Error('The application is closing.'); store.save(next, media); state = next; try { broadcast(); } catch { /* Durable success survives a closing view. */ } },
     changed: () => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-preparations', karaFunHost.status()); showAdvance.changed(); },
   });
@@ -1071,7 +1187,7 @@ else {
   });
   partyTymeAccount = new PartyTymeAccount({vault:new KaraFunSessionVault(join(app.getPath('userData'),'partytyme-session.bin'))});
   partyTymeHost = new PartyTymeHost(partyTymeAccount,new PartyTymeMediaCache(join(app.getPath('userData'),'partytyme-cache')),{
-    state:()=>state,settings:()=>settings,media:id=>store.media(id),
+    state:()=>state,settings:()=>settings,media:id=>store.media(id),songSeenBefore:version=>store.songSeenBefore(version),
     commit:(next,media=[])=>{if(shuttingDown)throw new Error('The application is closing.');store.save(next,media);state=next;try{broadcast();}catch{}},
     changed:()=>showAdvance.changed(),
   });
@@ -1102,7 +1218,9 @@ else {
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; syncQueuedDownloads(); broadcast(); };
-    remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted);
+    remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted,
+      (singerId, commandId, showId, hostEpoch, revision, authorized) => requestApplause({ role: 'singer', id: singerId }, commandId, showId, hostEpoch, revision, authorized),
+      requestPhoto);
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
       publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
       fetch:(url,init)=>fetch(url,{...init,headers:{...Object.fromEntries(new Headers(init?.headers)),'X-TPV-Room-Discovery':settings.mobileRoomDiscovery?'yes':'no'}})});
@@ -1633,6 +1751,11 @@ else {
     if (!command) return { ok: false, error: 'Invalid or unsupported command.' };
     return executeHostCommand(command);
   });
+  ipcMain.handle('host:applause-trigger', async event => {
+    guardHost(event.sender.id);
+    const result = await requestApplause({ role: 'host', id: 'host' }, randomUUID(), state.showId, state.hostEpoch, state.revision);
+    return result.ok ? { ok: true } : { ok: false, error: result.message };
+  });
   ipcMain.on('display:ready', event => {
     if (!shuttingDown && senderIsDisplay(event.sender.id)) {
       displayReady = true; bumperOutput?.displayReady();
@@ -1641,8 +1764,11 @@ else {
     }
   });
   ipcMain.on('display:bumper-ack', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) bumperOutput?.acknowledge(value); });
+  ipcMain.on('display:applause-result', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) applauseOutput.acknowledge(value); });
+  ipcMain.on('display:photo-result', (event, value: unknown) => { if (senderIsDisplay(event.sender.id)) photoOutput.acknowledge(value); });
   ipcMain.on('display:bumper-devicechange', event => {
     if (!senderIsDisplay(event.sender.id) || !bumper) return;
+    applauseOutput.clear();
     automaticBumper.cancel(); showAdvance.cancel(); startupBumperPending = false; cancelPendingPlayback();
     void bumper.setOutputAvailable(false).catch(error => { bumperError = String(error); }).finally(publishBumper);
   });

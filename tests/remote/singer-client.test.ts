@@ -14,6 +14,23 @@ function fake(): GuestTransport {
 }
 const listen = () => {};
 
+test('an uncertain applause checks its original receipt before another applause', async () => {
+  const transport = fake();
+  let sent: unknown, calls = 0, outcomeId = '';
+  transport.applaud = async (_session, command) => { sent = command; calls++; throw new Error('lost response'); };
+  transport.outcome = async (_session, id) => { outcomeId = id; return { ok: true, revision: 5 }; };
+  const client = new SingerClient(transport, 'invite', secrets());
+  await client.join('Sam', listen);
+  await client.applaud(listen);
+  await client.applaud(listen);
+  assert.equal(calls, 1);
+  assert.deepEqual(Object.keys(sent as object).sort(), ['commandId', 'expectedRevision', 'hostEpoch', 'showId']);
+  assert.equal(client.state().uncertain, true);
+  await client.checkOutcome(listen);
+  assert.equal(outcomeId, 'secret-3');
+  assert.equal(client.state().uncertain, false);
+});
+
 test('join retries a lost response with exactly the same identity and never exposes secrets in view', async () => {
   const transport = fake(), calls: unknown[][] = [];
   transport.join = async (...args) => { calls.push(args); if (calls.length === 1) throw new Error('disconnected'); return { session: 'private-session', singerId: 'singer-123' }; };

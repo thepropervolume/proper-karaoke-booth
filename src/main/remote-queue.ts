@@ -5,10 +5,17 @@ import { applyCommand, isVersionAllowed, visibleVersions, type Outcome, type Sho
 import { normalizeMissingRequest } from '../domain/missing-request';
 import type { Settings } from '../domain/settings';
 import { compileSongBlacklist } from '../domain/song-blacklist';
+import { applyPointsEvent, newPointsLedger } from '../domain/points';
+import { recordQueuedSongs, songSeenBefore } from './song-history';
+import { validPhotoDataUrl } from '../domain/photo';
 
 type Guest = { id: string; singerId: string; showId: string };
 type Receipt = { fingerprint: string; outcome: string };
 type RequestInput = { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; versionId: string };
+export type RemoteApplause = (singerId: string, eventId: string, showId: string, hostEpoch: string, expectedRevision: number,
+  stillAuthorized: () => boolean) => Promise<Outcome>;
+export type RemotePhoto = (singerId: string, eventId: string, showId: string, hostEpoch: string, expectedRevision: number,
+  dataUrl: string, stillAuthorized: () => boolean) => Promise<Outcome>;
 const secret = () => randomBytes(32).toString('base64url');
 const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 const validSecret = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
@@ -29,10 +36,11 @@ export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
   private authorityFault = false;
-  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist'>>,
+  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled'>>,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
-    private readonly onUncertainCommit: () => void = () => {}) {
+    private readonly onUncertainCommit: () => void = () => {},
+    private readonly onApplause?: RemoteApplause, private readonly onPhoto?: RemotePhoto) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_invitation_scopes (token_hash TEXT PRIMARY KEY, scope_id TEXT NOT NULL);
@@ -40,7 +48,8 @@ export class RemoteQueue {
       CREATE TABLE IF NOT EXISTS remote_sessions (token_hash TEXT PRIMARY KEY, guest_id TEXT NOT NULL, run_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_receipts (guest_id TEXT NOT NULL, command_id TEXT NOT NULL, fingerprint TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY (guest_id, command_id));
       CREATE TABLE IF NOT EXISTS missing_song_requests (id TEXT PRIMARY KEY, singer TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS remote_missing_song_owners (request_id TEXT PRIMARY KEY, guest_id TEXT NOT NULL, singer_id TEXT NOT NULL, show_id TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS remote_missing_song_owners (request_id TEXT PRIMARY KEY, guest_id TEXT NOT NULL, singer_id TEXT NOT NULL, show_id TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS song_queue_history (identity TEXT PRIMARY KEY NOT NULL);`);
   }
   private requireAuthority(cleanup = false): void {
     if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
@@ -210,11 +219,16 @@ export class RemoteQueue {
       if (target.length < MAX_SNAPSHOT_REQUESTS) target.push({ index, request });
     }
     const selected = [...active, ...recent.slice(0, MAX_SNAPSHOT_REQUESTS - active.length)].sort((a, b) => a.index - b.index);
+    const account = state.points?.accounts.find(item => item.singerId === guest.singerId);
+    const preferences = this.settings();
     return { showId: state.showId, hostEpoch: state.hostEpoch, revision: state.revision, singerId: guest.singerId, singerName,
       unavailableUntilMs: state.singers.find(s => s.id === guest.singerId)?.unavailableUntilMs ?? 0, serverNowMs: this.now(),
       catalog: catalog.items, catalogNextOffset: catalog.nextOffset,
       requests: selected.map(({ request }) => ({ id: request.id, versionId: request.versionId, status: request.status })),
-      requestsTruncated: visibleCount > selected.length };
+      requestsTruncated: visibleCount > selected.length,
+      ...(this.onPhoto ? { photoEnabled: true } : {}),
+      ...(this.onApplause ? { applauseEnabled: preferences.applauseEnabled !== false, applauseCredits: account?.credits ?? 3,
+        ...(preferences.pointsEnabled !== false ? { points: account?.points ?? 0 } : {}) } : {}) };
   }
   catalog(token: unknown, offset = 0, limit = 50, scope = '') {
     this.authenticate(token, scope);
@@ -236,6 +250,63 @@ export class RemoteQueue {
     const row = this.db.prepare('SELECT outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, commandId) as { outcome: string } | undefined;
     return row ? JSON.parse(row.outcome) as Outcome : null;
   }
+  /** The host owns mixing and scoring; bind the singer to the authenticated guest. */
+  async applaud(token: unknown, input: unknown, scope = ''): Promise<Outcome> {
+    const guest = this.authenticate(token, scope);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw denied();
+    const value = input as Record<string, unknown>;
+    if (Object.keys(value).length !== 4 || Object.keys(value).some(k => !['commandId', 'showId', 'hostEpoch', 'expectedRevision'].includes(k)) ||
+        !validId(value.commandId) || !validId(value.showId) || !validId(value.hostEpoch) ||
+        !Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0) throw denied();
+    const command = value as { commandId: string; showId: string; hostEpoch: string; expectedRevision: number };
+    const fingerprint = digest(JSON.stringify(['applause', command.showId, command.hostEpoch, command.expectedRevision]));
+    const existing = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, command.commandId) as Receipt | undefined;
+    if (existing) return existing.fingerprint === fingerprint ? JSON.parse(existing.outcome) as Outcome :
+      { ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
+    if (!this.onApplause) return { ok: false, code: 'UNAVAILABLE', message: 'Applause is unavailable.', revision: this.state().revision };
+    const stillAuthorized = () => {
+      try { return this.authenticate(token, scope).id === guest.id; }
+      catch { return false; }
+    };
+    const result = await this.onApplause(guest.singerId, `remote-${guest.id}-${command.commandId}`, command.showId, command.hostEpoch, command.expectedRevision, stillAuthorized);
+    return this.transaction(() => {
+      const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, command.commandId) as Receipt | undefined;
+      if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome :
+        { ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
+      this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)')
+        .run(guest.id, command.commandId, fingerprint, JSON.stringify(result));
+      return result;
+    });
+  }
+  /** Photo bytes are delivered only to the display callback, never saved in receipts. */
+  async submitPhoto(token: unknown, input: unknown, scope = ''): Promise<Outcome> {
+    const guest = this.authenticate(token, scope);
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw denied();
+    const value = input as Record<string, unknown>;
+    if (Object.keys(value).length !== 5 || Object.keys(value).some(k => !['commandId', 'showId', 'hostEpoch', 'expectedRevision', 'dataUrl'].includes(k)) ||
+        !validId(value.commandId) || !validId(value.showId) || !validId(value.hostEpoch) ||
+        !Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0 || !validPhotoDataUrl(value.dataUrl)) throw denied();
+    const command = value as { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; dataUrl: string };
+    const fingerprint = digest(JSON.stringify(['photo', command.showId, command.hostEpoch, command.expectedRevision, digest(command.dataUrl)]));
+    const existing = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, command.commandId) as Receipt | undefined;
+    if (existing) return existing.fingerprint === fingerprint ? JSON.parse(existing.outcome) as Outcome :
+      { ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
+    if (!this.onPhoto) return { ok: false, code: 'UNAVAILABLE', message: 'Photo sharing is unavailable.', revision: this.state().revision };
+    const stillAuthorized = () => {
+      try { return this.authenticate(token, scope).id === guest.id; }
+      catch { return false; }
+    };
+    const result = await this.onPhoto(guest.singerId, `remote-photo-${guest.id}-${command.commandId}`,
+      command.showId, command.hostEpoch, command.expectedRevision, command.dataUrl, stillAuthorized);
+    return this.transaction(() => {
+      const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, command.commandId) as Receipt | undefined;
+      if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome :
+        { ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
+      this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)')
+        .run(guest.id, command.commandId, fingerprint, JSON.stringify(result));
+      return result;
+    });
+  }
   /** A guest can ask for a missing song only under their authenticated singer name. */
   submitMissing(token: unknown, input: unknown, scope = ''): Outcome {
     const guest = this.authenticate(token, scope);
@@ -244,7 +315,8 @@ export class RemoteQueue {
     if (Object.keys(value).some(k => !['commandId', 'title', 'artist'].includes(k)) || !validId(value.commandId) || typeof value.title !== 'string' || typeof value.artist !== 'string') throw denied();
     const { commandId, title, artist } = value as { commandId: string; title: string; artist: string };
     const fingerprint = digest(JSON.stringify(['missing-song', title, artist]));
-    return this.transaction(() => {
+    let committed: ShowState | undefined;
+    const result = this.transaction(() => {
       const state = this.state();
       const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, commandId) as Receipt | undefined;
       if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: state.revision };
@@ -252,18 +324,30 @@ export class RemoteQueue {
       const request = normalizeMissingRequest({ singer: singer?.name, title, artist });
       if (!request) throw denied();
       const settings = this.settings(), blocked = compileSongBlacklist({ songBlacklist: settings.songBlacklist ?? [], artistBlacklist: settings.artistBlacklist ?? [] }).isBlocked(request);
-      const outcome: Outcome = blocked ? { ok: false, code: 'NOT_AVAILABLE', message: 'Song is not available', revision: state.revision } : { ok: true, revision: state.revision };
+      let outcome: Outcome = blocked ? { ok: false, code: 'NOT_AVAILABLE', message: 'Song is not available', revision: state.revision } : { ok: true, revision: state.revision };
       if (!blocked) {
         const requestId = randomUUID();
         this.db.prepare('INSERT INTO missing_song_requests (id, singer, title, artist, created_at) VALUES (?, ?, ?, ?, ?)')
           .run(requestId, request.singer, request.title, request.artist, new Date(this.now()).toISOString());
         this.db.prepare('INSERT INTO remote_missing_song_owners (request_id, guest_id, singer_id, show_id) VALUES (?, ?, ?, ?)')
           .run(requestId, guest.id, guest.singerId, guest.showId);
+        const points = applyPointsEvent(state.points ?? newPointsLedger(state.showId), {
+          type: 'suggestion', eventId: `remote-missing-${guest.id}-${commandId}`, singerId: guest.singerId,
+        }, { pointsEnabled: settings.pointsEnabled !== false, applauseEnabled: settings.applauseEnabled !== false });
+        if (points.applied) {
+          state.points = points.ledger;
+          state.revision++;
+          this.save(state);
+          committed = state;
+          outcome = { ok: true, revision: state.revision };
+        }
       }
       this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)')
         .run(guest.id, commandId, fingerprint, JSON.stringify(outcome));
       return outcome;
     });
+    if (committed) this.onCommitted(committed);
+    return result;
   }
   /** Withdraw only an authenticated singer's pending or accepted request. */
   withdraw(token: unknown, input: unknown, scope = ''): Outcome {
@@ -328,7 +412,9 @@ export class RemoteQueue {
       const state = this.state();
       const applied = applyCommand(state, { commandId: `remote-${guest.id}-${request.commandId}`, showId: request.showId, hostEpoch: request.hostEpoch,
         expectedRevision: request.expectedRevision, actor: { role: 'singer', id: guest.singerId },
-        command: { type: 'request', requestId: `remote-${guest.id}-${request.commandId}`, singerId: guest.singerId, versionId: request.versionId } }, this.settings(), this.now());
+        command: { type: 'request', requestId: `remote-${guest.id}-${request.commandId}`, singerId: guest.singerId, versionId: request.versionId } }, this.settings(), this.now(),
+        { songSeenBefore: version => songSeenBefore(this.db, version) });
+      recordQueuedSongs(this.db, state, applied.state);
       this.save(applied.state);
       this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, request.commandId, fingerprint, JSON.stringify(applied.outcome));
       committed = applied.state;

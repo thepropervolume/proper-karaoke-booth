@@ -1,6 +1,8 @@
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, matchesShortcut, type ShortcutAction, type Shortcuts } from '../domain/shortcuts';
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
+import { createApplausePlayer, type ApplauseRequest } from './applause-player';
+import { createPhotoOverlay } from './photo-overlay';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
 import { paintKaraFunLyrics } from './karafun-lyrics';
@@ -12,7 +14,7 @@ type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: Kar
 type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
 const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number };
-declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
+declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; applauseResult?(value: unknown): void; onApplause?(callback: (request: ApplauseRequest) => void): () => void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
@@ -110,6 +112,12 @@ window.tpvDisplay.onSeek((value) => {
 });
 const bumperPlayer = createBumperPlayer(value => window.tpvDisplay.bumperAck(value), value => window.tpvDisplay.bumperEvent(value));
 window.tpvDisplay.onBumperCommand(request => bumperPlayer.handle(request));
+const applausePlayer = createApplausePlayer();
+window.tpvDisplay.onApplause?.(request => { void applausePlayer.play(request).then(result => window.tpvDisplay.applauseResult?.(result)); });
+const photoDisplay = window.tpvDisplay as typeof window.tpvDisplay & { onPhoto?: (callback: (request: { id: string; dataUrl: string }) => void) => () => void; photoResult?: (value: unknown) => void };
+const photoOverlay = createPhotoOverlay(result => photoDisplay.photoResult?.(result));
+photoDisplay.onPhoto?.(request => photoOverlay.show(request));
+window.addEventListener('beforeunload', () => photoOverlay.clear());
 const output = new AudioOutputRouter(async () => {
   if (!navigator.mediaDevices?.enumerateDevices) throw new Error('Audio output enumeration is unavailable.');
   return navigator.mediaDevices.enumerateDevices();
@@ -146,6 +154,7 @@ function reportOutputFailure(generation: string, message: string): void {
   window.tpvDisplay.event({ type: 'output-error', generation, revision: outputRevision, position: video.currentTime || 0, message });
 }
 navigator.mediaDevices?.addEventListener('devicechange', () => {
+  applausePlayer.stop();
   bumperPlayer.muteForOutputChange();
   window.tpvDisplay.bumperDeviceChange();
   if (!current) return;
@@ -198,6 +207,7 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
 // when its native window is hidden.
 window.tpvDisplay.subscribe(async (view) => {
   bumperPlayer.setVolume(view.bumperVolume);
+  applausePlayer.setVolume(view.bumperVolume);
   shortcuts = view.shortcuts;
   const state = view.playback;
   document.body.classList.toggle('idle', !state);

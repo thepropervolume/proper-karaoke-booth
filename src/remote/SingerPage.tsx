@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SingerClient, takeInvitation, type GuestView } from './client';
 import { httpsGuestTransport } from './transport';
 import './singer-page.css';
+import { prepareGuestPhoto } from './photo';
 
 /** Embeddable page; a secure server and asset bundle are still required to use it. */
 export function SingerPage({ client }: { client: SingerClient }) {
@@ -11,6 +12,9 @@ export function SingerPage({ client }: { client: SingerClient }) {
   const [awayMinutes, setAwayMinutes] = useState(5);
   const [missingTitle, setMissingTitle] = useState('');
   const [missingArtist, setMissingArtist] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   useEffect(() => {
     if (!view.joined) return;
     const timer = window.setInterval(() => void client.refresh(setView), 15000);
@@ -36,6 +40,27 @@ export function SingerPage({ client }: { client: SingerClient }) {
         {view.retryAvailable && <><p>No outcome was found. You can retry the original action with its existing request ID.</p>
           <button disabled={view.busy} onClick={() => void client.retryPending(setView)}>Retry original action</button></>}</section>}
       {view.snapshot && <>
+        {view.snapshot.photoEnabled && <section>
+          <h2>Share a photo</h2>
+          <form onSubmit={event => {
+            event.preventDefault();
+            if (!photo || photoBusy) return;
+            setPhotoError(''); setPhotoBusy(true);
+            void prepareGuestPhoto(photo).then(dataUrl => client.sendPhoto(dataUrl, setView))
+              .catch(error => setPhotoError(error instanceof Error ? error.message : 'Could not prepare the photo.'))
+              .finally(() => setPhotoBusy(false));
+          }}>
+            <label>JPEG or PNG<input type="file" accept="image/jpeg,image/png" onChange={event => setPhoto(event.target.files?.[0] ?? null)} /></label>
+            <button disabled={!photo || photoBusy || view.busy || view.uncertain}>{photoBusy ? 'Preparing photo…' : 'Send to singer display'}</button>
+            {photoError && <p role="alert">{photoError}</p>}
+          </form>
+        </section>}
+        {view.snapshot.applauseEnabled && <section>
+          <h2>Applause</h2>
+          <p>{view.snapshot.applauseCredits ?? 3} applause credits{view.snapshot.points !== undefined ? ` · ${view.snapshot.points} points` : ''}</p>
+          <button disabled={view.busy || view.uncertain || (view.snapshot.applauseCredits ?? 3) === 0}
+            onClick={() => void client.applaud(setView)}>👏 Applaud</button>
+        </section>}
         <section><h2>Your availability</h2>
           <p>{(view.snapshot.unavailableUntilMs ?? 0) > (view.snapshot.serverNowMs ?? Date.now()) ? `Unavailable · return in about ${Math.ceil(((view.snapshot.unavailableUntilMs ?? 0) - (view.snapshot.serverNowMs ?? Date.now())) / 60000)} min at last refresh.` : 'Available for your turn.'} You can keep one upcoming request while unavailable; existing requests stay saved. Your turn rejoins automatically when the time expires, and the host starts playback.</p>
           <label>Minutes away<input type="number" min="1" max="60" step="1" value={awayMinutes} onChange={event => setAwayMinutes(Number(event.target.value))} /></label>

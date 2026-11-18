@@ -26,6 +26,8 @@ export class RemoteRelayScope {
     outcome: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.outcome(session, command, this.scope); },
     submit: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.submit(session, command, this.scope); },
     setAvailability: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.setAvailability(session, command, this.scope); },
+    applaud: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.applaud(session, command, this.scope); },
+    submitPhoto: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.submitPhoto(session, command, this.scope); },
     withdraw: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.withdraw(session, command, this.scope); },
     submitMissing: (session: unknown, command: unknown) => { this.requireActive(); const result = this.queue.submitMissing(session, command, this.scope); if (result.ok) this.changed(this.notify.missing); return result; },
   };
