@@ -1,5 +1,13 @@
 # Host Workspace
 
+## Applause and Singer Points
+
+Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles ten generated sounds, with at most three at once; the host has unlimited applause. Check the chosen output and levels on your actual sound system before a show.
+
+Singers start with three applause credits, gain one for a completed song and can hold at most five. The Singers workspace shows their points and credits. Assigned singers earn points from song requests, duet participation and applause; room singers can also earn points for missing-song suggestions and sending a photo to the singer screen. The full rules and eligibility are in the product specification. Mark duets in the song's metadata so the correct duet bonus can be awarded.
+
+Room singers can send one JPEG or PNG photo at a time to the singer display; it appears briefly and is not saved in the show database. There is no approval step. A mobile Full Host must keep its host page visible and exit fullscreen to accept a photo. End-to-end use, photo visibility, and audio routing should be rehearsed before relying on these experimental features during a show.
+
 ## Downloading Songs and Song Gaps
 
 Queued YouTube, KaraFun and Party Tyme songs that are still being prepared are shaded and show a status. When a song's turn arrives before its media is ready, the next ready song plays and the waiting request is reconsidered after it finishes. This repeats until the waiting song is ready. If every eligible song is still preparing, an automatically advancing show waits for one to become ready. Right-click a failed request and choose **Retry song preparation**.

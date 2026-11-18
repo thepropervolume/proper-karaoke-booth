@@ -1,4 +1,12 @@
-# Singer Guide for Development Version 0.7.1
+# Singer Guide for Development Version 0.10.0
+
+## Applause, Points and Photos
+
+When your host enables applause, tap **Applause** to play a clap sound. You begin with three credits and regain one whenever you complete a song, up to five. You cannot applaud yourself. Your available credits and, when enabled, points appear in your room. A failed sound does not use a credit.
+
+Earn points for queueing songs, singing duets, applauding other performers, suggesting a missing song and sending a photo. Singers also earn points when others applaud their performances. Your host can turn the points system off.
+
+To share a photo, choose **Share a photo**, select a JPEG or PNG, and tap **Send to singer display**. It appears for about ten seconds when the display accepts it. If another photo is being shown or the display is unavailable, try again later. On a mobile-hosted show, the host needs to keep the host page visible and exit fullscreen before accepting a photo. Photos are reduced for transmission and are not saved in the host's show database. Share only pictures you want everyone at the venue to see.
 
 When a requested online song is still downloading at its turn, the host can continue with the next ready song. Your request stays in the rotation and is reconsidered after each performance.
 

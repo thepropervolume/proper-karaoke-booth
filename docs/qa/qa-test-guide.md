@@ -118,6 +118,20 @@ Mark each case **Pass**, **Fail**, **Blocked** or **Not run**. Use Blocked when 
 
 ## Room and singer tests
 
+### R05 Applause and points
+
+1. In a disposable show, confirm applause and points are enabled. Add a performer and three other singers. Start a song, then have the three singers and the host each applaud once.
+2. Confirm the performer receives 70 points for the four applauses plus 50 once all three other singers have applauded. The three singers should each spend one credit and receive 8 giver points. No more than three sounds should overlap; wait for a sound to finish if a press is rejected and retry it.
+3. Complete the song and confirm the performer gains one credit, with no more than five credits in total. Repeat with one listener missing; no 50-point bonus should appear.
+4. Check that a singer cannot applaud their own performance, and that failed audio does not deduct credits. Turn each setting off separately and confirm its behavior. Test the selected physical output as well as the default device.
+
+### R06 Queue points, suggestions and photos
+
+1. Queue an assigned song with known unused host history and confirm 36 points: 12 for queueing, 6 for a song nobody else completed during this show, and 18 for a song absent from host history. Mark a song as a duet and confirm the lead and assigned partner each receive 14 additional points. Repeat using a known previously queued song and with unknown history; the all-time bonus must not be awarded.
+   On mobile Full Host, cross-show history is not complete; expect the all-time 18-point bonus to be withheld when history is unknown.
+2. From a signed-in room singer, suggest a missing song and confirm 10 points. Select a JPEG or PNG using **Share a photo** and send it. Confirm a temporary image appears on the singer display and the sender earns 24 points only after the display accepts it.
+3. Retry the same request after an interrupted connection and confirm it does not award points twice. While a photo is visible, try another and confirm it is rejected with a clear message. Test local Wi-Fi and the deployed internet room separately, and include the mobile host when available. These are test instructions, not a claim that the devices or relay have passed.
+
 ### R01 Discover and join a room
 
 1. Open a host room with a recognizable booth name and custom address.

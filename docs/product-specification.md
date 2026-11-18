@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 18 November 2026. **Application milestone:** 0.9.2 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 18 November 2026. **Application milestone:** 0.10.0 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -107,6 +107,20 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 **Available through conversion:** Import CD+G / ZIP accepts a same-name MP3/CDG pair or a ZIP with exactly one pair. FFmpeg on PATH converts it to a managed H.264/AAC MP4 before library insertion; originals remain unchanged. The job has progress and cancellation, fixed-name extraction, expanded-size/CRC checks, path/symlink checks and explicit ambiguity errors. It is not native CDG playback: lyrics and the chosen background are composited at import. From 0.3.1, the default is the owner-selected `TPV-Karaoke-Backdrop-Video (Version 3).mp4`, bundled as a smaller, silent, full-duration 1080p playback copy. The animation loops behind the original CDG lyric colors; only the paired MP3 supplies audio. Preferences → Singer Display → Lyric Backdrop offers TPV Animated Backdrop (Version 3), Solid CDG Background, or a custom local MP4. The choice is captured for each new import; existing converted songs retain their picture and must be reimported to change it. Missing/unreadable selected backdrops stop import with a recovery message. Regular video songs retain their own picture. Converted videos use normal playback and require separate media backup. **Planned LRC support:** use this same backdrop selection by default when timed-lyric playback is implemented; LRC import, synchronization and rendering are not available yet. FFmpeg packaging, real-producer synchronization and other Player 2 formats still need evaluation. An extension alone does not prove a codec is playable; publish an evidenced codec matrix per supported platform.
 
 ## 5. Requests, rotation and singer fairness
+
+### Applause, show points and shared photos
+
+**Experimental, implemented in the current source:** Hosts can enable applause in Audio Controls and singer points in Queue Management; both default to on. The host's applause button has no credit limit. Ten generated applause sounds, 3–8 seconds long, cycle in order and mix with playback; up to three can play at once. Singer participants begin with three applause credits and gain one after completing a song, up to five. Singers cannot applaud their own performance. A failed playback does not spend a credit. The host and authenticated room singers can trigger applause; output routing and sound levels still need physical-device rehearsal.
+
+Points are show-scoped. For each performance, the first three applauses give each performer 10, 15 and 25 points, then 5 each; each different applauder after the first adds 5. If all eligible participating singers present at the start applaud at least once, each performer gets another 50 immediately; performers are excluded, the host is not required, and there must be at least one eligible listener. The four distinct applauders example awards 70 points before the optional all-participants bonus. A singer applauding another person's performance earns 8, then 4, then 2 points for their first three applauses of that performance. Applause outside active playback uses a credit but earns no performance points.
+
+Queueing an assigned song earns 12 points, plus 6 if nobody else completed that song during this show and 18 if host history shows it has never been queued or sung; unknown history does not earn the 18-point bonus. A duet earns each assigned performer 14 more points. The host can mark a song as a duet in metadata. A singer's accepted missing-song suggestion earns 10 points, and a photo accepted for display earns 24. No points are awarded when points are disabled. Assigned singers, track identity and stored history determine the applicable bonuses; an unassigned request does not have a singer to score until assigned.
+
+The mobile Full Host does not yet have a verified complete cross-show song history. It conservatively withholds the 18-point all-time novelty bonus when that history is unknown; this is separate from the 6-point current-show bonus.
+
+Authenticated room singers can select a JPEG or PNG and send it to the singer display. The browser reduces it to a bounded JPEG, and the screen displays one transient photo at a time for about ten seconds. The host does not have to approve each image. The photo itself is not retained in the show database; the score is recorded only after display acknowledgement. An occupied or unavailable display rejects the submission. LAN, relay, mobile-host presentation, audio routing and real-device behavior remain subject to end-to-end and deployment verification.
+
+Mobile Full Host rejects photo submissions while its host page is hidden or fullscreen; the host must return to the visible, non-fullscreen host screen before another attempt.
 
 **Available:** a host can leave the singer empty, add or select a singer, submit a song and remove eligible requests. Host/staff queue commands may use null; only host may assign or clear an eligible request. Null requests create no Singer and do not acquire remote ownership. New requests are automatically approved by default; switching to host moderation affects new requests and does not silently approve existing pending ones. In Requests the host can accept or reject pending requests and view recent terminal request history. The separate missing-song form saves singer, title and optional artist to a local review table; the host may mark it Pending, Reviewing, Fulfilled or Declined. Saving a missing-song request does not add a recording or create a rotation turn.
 
@@ -336,7 +350,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "D01",
   "title": "Desktop host",
   "status": "Current",
-  "description": "Dominant unified search, optional singer assignment, hidden preview and automatic show transitions.",
+  "description": "Unified search, singer preview, automatic transitions and host applause.",
   "layout": "desktop",
   "navigation": [
     "Library",
@@ -376,7 +390,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "footer_heading": "Now Playing",
   "footer_rows": [
     "Alex | Popular",
-    "01:20 / 03:45 | Seek +/-10s | Volume 45% | Vocal Mix"
+    "01:20 / 03:45 | Seek | Volume | Vocal Mix | Applause"
   ],
   "transport_icons": [
     "previous",
@@ -493,7 +507,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "S01",
   "title": "Singer join and request",
   "status": "Partial",
-  "description": "The mobile web app joins host sessions by name and sends real requests; native Android/iOS wrappers share the interface and require device verification.",
+  "description": "Join by name, request songs, applaud and share photos. Native devices still need verification.",
   "layout": "phones",
   "phone_titles": [
     "Join the show",
@@ -515,8 +529,8 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
       "Search songs",
       "Popular | Nada Surf",
       "Request",
-      "Can't find a song?",
-      "Send title and artist to host"
+      "Applause | 3 credits · 24 points",
+      "Share a photo | Send to display"
     ]
   ],
   "detail": "Local invitations require trusted venue HTTPS and DNS; internet sessions use the host’s queue.thepropervolume.com link. Persistent accounts remain planned; real-device native joining and network permissions require acceptance."
@@ -1155,7 +1169,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
       "Popular | Nada Surf",
       "Add to Queue | Singer optional",
       "Play or Pause | Timeline and volume",
-      "Favorites and History | This device",
+      "Applause | Host controls and points",
       "Room | Name and share a singer link"
     ]
   ],
@@ -1185,7 +1199,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
       "Your Name | Casey",
       "Song Library | Host published songs",
       "Request | Check accepted status",
-      "Withdraw or Away | Your own requests"
+      "Applause / Photo | Credits and points"
     ],
     [
       "Booth Name | Friday Night",
