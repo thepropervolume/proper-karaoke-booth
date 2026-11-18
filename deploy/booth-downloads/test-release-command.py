@@ -61,20 +61,20 @@ class ReleaseCommandTests(unittest.TestCase):
         self.assertEqual(result.returncode == 0, success, result.stderr.decode())
         return result
 
-    def fixture(self, scope):
+    def fixture(self, scope, version=VERSION, commit=COMMIT):
         names = json.loads(subprocess.check_output(
-            [NODE, self.code / 'publish-release.mjs', 'names', VERSION, scope], text=True,
+            [NODE, self.code / 'publish-release.mjs', 'names', version, scope], text=True,
         ))
         files = {file: f'Synthetic {file}'.encode() for file in names if not file.endswith(('.json', '.txt'))}
         artifacts = [{'file': file, 'sha256': digest(data)} for file, data in files.items()]
         if scope == 'planning':
-            files['planning-build.json'] = encoded(dict(version=VERSION, sourceCommit=COMMIT, sourceSha256=SPEC, artifacts=artifacts))
+            files['planning-build.json'] = encoded(dict(version=version, sourceCommit=commit, sourceSha256=SPEC, artifacts=artifacts))
             return files
-        prefix = f'Proper-Karaoke-Booth-{VERSION}-{scope}'
+        prefix = f'Proper-Karaoke-Booth-{version}-{scope}'
         architectures = ['arm64', 'x64'] if scope == 'mac' else ['x64']
-        build = encoded(dict(version=VERSION, platform=scope, sourceCommit=COMMIT, architectures=architectures,
+        build = encoded(dict(version=version, platform=scope, sourceCommit=commit, architectures=architectures,
                              sourceHasUncommittedChanges=False, sourceRevisionChangedDuringBuild=False, artifacts=artifacts))
-        identity = dict(version=VERSION, sourceCommit=COMMIT, buildReceiptSha256=digest(build))
+        identity = dict(version=version, sourceCommit=commit, buildReceiptSha256=digest(build))
         files[f'{prefix}-build.json'] = build
         files[f'{prefix}-SHA256SUMS.txt'] = ''.join(f"{item['sha256']}  {item['file']}\n" for item in artifacts).encode()
         files[f'{prefix}-ci-verification.json'] = encoded(dict(identity, passed=True, platform=scope))
@@ -114,6 +114,23 @@ class ReleaseCommandTests(unittest.TestCase):
         self.command(publish)
         self.command(publish.replace(COMMIT, 'c' * 40), success=False)
         self.assertEqual(public_index.read_bytes(), previous_index)
+
+    def test_new_version_links_to_earlier_release_without_modifying_its_files(self):
+        def promote(version, commit, run):
+            for scope in ('win', 'linux', 'mac', 'planning'):
+                self.command(f'upload {version} {commit} {run} 1 {scope}', archive(self.fixture(scope, version, commit)))
+            self.command(f'publish {version} {commit} {run} 1 {SPEC}')
+
+        promote(VERSION, COMMIT, 103)
+        archived = self.public / f'v{VERSION}'
+        archived_files = {file.name: digest(file.read_bytes()) for file in archived.iterdir()}
+        next_version = '0.10.0'
+        promote(next_version, 'd' * 40, 104)
+
+        latest_page = (self.public / 'index.html').read_text(encoding='utf8')
+        self.assertIn(f'href="./v{VERSION}/">Version {VERSION}</a>', latest_page)
+        self.assertIn(f'href="./v{next_version}/Proper-Karaoke-Booth-{next_version}-windows-x64-setup.exe"', latest_page)
+        self.assertEqual({file.name: digest(file.read_bytes()) for file in archived.iterdir()}, archived_files)
 
 
 if __name__ == '__main__':

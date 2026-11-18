@@ -47,6 +47,21 @@ function manifestRecords(manifest, version) {
   return records;
 }
 
+function newestFirst(left, right) {
+  const a = left.split('.').map(BigInt);
+  const b = right.split('.').map(BigInt);
+  const difference = a.findIndex((part, index) => part !== b[index]);
+  if (difference === -1) return 0;
+  return a[difference] > b[difference] ? -1 : 1;
+}
+
+function releaseHistory(earlierVersions, currentVersion) {
+  const entries = earlierVersions.map(releaseVersion);
+  assert.equal(new Set(entries).size, entries.length, 'Earlier versions must be unique.');
+  for (const version of entries) assert.equal(newestFirst(currentVersion, version), -1, 'Earlier versions must precede the current release.');
+  return entries.sort(newestFirst);
+}
+
 const styles = `
   :root { color-scheme: light dark; --page: #f7f5fa; --card: #fff; --ink: #20182e; --muted: #544a61;
     --line: #ded8e6; --accent: #871045; --accent-fill: #fae9f0; --focus: #601ce9; }
@@ -77,7 +92,9 @@ const styles = `
   .metadata { color: var(--muted); font-size: .8rem; white-space: nowrap; }
   ul { list-style: none; padding: 0; margin: .6rem 0 0; }
   .files li + li { border-top: 1px solid var(--line); }
-  .documents, .verification, .notice { margin-block-start: .8rem; }
+  .documents, .verification, .notice, .history { margin-block-start: .8rem; }
+  .history ul { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; }
+  .history a { display: inline-flex; align-items: center; min-height: 2.75rem; }
   .notice { color: var(--muted); font-size: .91rem; }
   summary { cursor: pointer; font-weight: 650; }
   .verification ul { display: grid; gap: .4rem; }
@@ -86,9 +103,11 @@ const styles = `
   @media (max-width: 25rem) { .card a { align-items: start; flex-direction: column; gap: .12rem; padding-block: .4rem; } }
 `;
 
-export async function renderDownloads(manifest, { versionPage = false } = {}) {
+export async function renderDownloads(manifest, { versionPage = false, earlierVersions = [] } = {}) {
   const version = releaseVersion(manifest.version);
   const assets = manifestRecords(manifest, version);
+  assert.ok(!versionPage || earlierVersions.length === 0, 'Release history belongs on the latest downloads page.');
+  const history = releaseHistory(earlierVersions, version);
   const root = versionPage ? './' : `./v${version}/`;
   const image = (await readFile(iconPath)).toString('base64');
   const platforms = byPlatform(version);
@@ -142,6 +161,7 @@ export async function renderDownloads(manifest, { versionPage = false } = {}) {
         ${receipts.map(file => `<li><a href="${root}${file}" download>${file}</a></li>`).join('\n        ')}
       </ul>
     </details>
+    ${history.length ? `<section class="card history"><h2>Earlier versions</h2><ul>${history.map(earlier => `<li><a href="./v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
     <footer>
       ${versionPage ? '<a href="../">Latest release</a>' : `<a href="${root}">Permanent link to this version</a>`}
       <a href="${repository}/commit/${manifest.sourceCommit}">Source commit <code>${manifest.sourceCommit.slice(0, 7)}</code></a>
@@ -153,9 +173,10 @@ export async function renderDownloads(manifest, { versionPage = false } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [input, output, mode, ...extra] = process.argv.slice(2);
-  assert.ok(input && output && (!mode || mode === '--version-page') && !extra.length,
-    'Usage: node scripts/render-downloads.mjs <release-manifest.json> <output-index.html> [--version-page]');
+  const [input, output, mode, history, ...extra] = process.argv.slice(2);
+  const validMode = mode === '--history' ? Boolean(history) : (mode === undefined || mode === '--version-page') && history === undefined;
+  assert.ok(input && output && !extra.length && validMode,
+    'Usage: node scripts/render-downloads.mjs <release-manifest.json> <output-index.html> [--version-page | --history 0.8.0,0.7.1]');
   const manifest = JSON.parse(await readFile(input, 'utf8'));
-  await writeFile(output, await renderDownloads(manifest, { versionPage: mode === '--version-page' }), 'utf8');
+  await writeFile(output, await renderDownloads(manifest, { versionPage: mode === '--version-page', earlierVersions: history?.split(',') ?? [] }), 'utf8');
 }

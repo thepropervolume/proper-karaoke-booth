@@ -122,8 +122,10 @@ def published_versions(public):
             and re.fullmatch(f'v{VERSION}', path.name)]
 
 
-def render_page(node_binary, manifest, destination, is_version_page=False):
+def render_page(node_binary, manifest, destination, is_version_page=False, history=()):
     flags = ['--version-page'] if is_version_page else []
+    if history:
+        flags.extend(['--history', ','.join(history)])
     node(node_binary, 'scripts/render-downloads.mjs', manifest, destination, *flags)
     destination.chmod(0o644)
 
@@ -150,7 +152,8 @@ def prepare_release(session, directory, node_binary, version, commit, source_has
 
 def publish(session, public, version, commit, source_hash, node_binary):
     target = public / f'v{version}'
-    latest = max(published_versions(public), key=version_parts, default=None)
+    versions = published_versions(public)
+    latest = max(versions, key=version_parts, default=None)
     with tempfile.TemporaryDirectory(dir=session, prefix='publish-') as scratch:
         scratch = Path(scratch)
         if target.exists():
@@ -170,7 +173,8 @@ def publish(session, public, version, commit, source_hash, node_binary):
         update_latest = latest is None or version_parts(version) >= version_parts(latest)
         if update_latest:
             index = scratch / 'index.html'
-            render_page(node_binary, candidate / 'release-manifest.json', index)
+            history = [past for past in versions if version_parts(past) < version_parts(version)]
+            render_page(node_binary, candidate / 'release-manifest.json', index, history=history)
         if candidate != target:
             candidate.rename(target)
         if update_latest:
