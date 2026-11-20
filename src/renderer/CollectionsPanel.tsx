@@ -18,6 +18,7 @@ type Props = {
 export function CollectionsPanel({ data, singers, versions, selectedVersionId, busy, mutate, selectVersion }: Props) {
   const [view, setView] = useState<'playlists' | 'kj' | 'artists' | 'genres' | 'history'>('playlists');
   const [playlistId, setPlaylistId] = useState('');
+  const [playlistSearch, setPlaylistSearch] = useState('');
   const [ownerId, setOwnerId] = useState('');
   const [name, setName] = useState('');
   const [artist, setArtist] = useState('');
@@ -29,6 +30,11 @@ export function CollectionsPanel({ data, singers, versions, selectedVersionId, b
   const currentPlaylistId = view === 'kj' ? 'kj-picks' : playlistId;
   const playlist = data.playlists.find(p => p.id === currentPlaylistId);
   const songs = data.items.filter(i => i.playlistId === currentPlaylistId).map(i => versions.find(v => v.id === i.versionId)).filter((v): v is Version => !!v);
+  const playlists = data.playlists.filter(p => p.singerId !== null).map(p => ({ playlist: p,
+    singer: singers.find(s => s.id === p.singerId)?.name ?? 'Unknown singer',
+    count: data.items.filter(item => item.playlistId === p.id).length,
+  })).filter(({ playlist: item, singer }) => `${item.name} ${singer}`.toLocaleLowerCase().includes(playlistSearch.trim().toLocaleLowerCase()))
+    .sort((a, b) => a.playlist.name.localeCompare(b.playlist.name) || a.singer.localeCompare(b.singer));
   const artists = [...new Set(versions.map(v => v.artist.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const history = useMemo(() => view === 'history' ? historyView(data.history, historySearch, historySinger) : [], [view, data.history, historySearch, historySinger]);
   const applyExportResult = (result: HistoryExportResult) => {
@@ -73,20 +79,26 @@ export function CollectionsPanel({ data, singers, versions, selectedVersionId, b
   };
   return <section aria-label="Library collections">
     <h2>Collections</h2>
-    <nav aria-label="Collection views">
+    <nav className="collections-nav" aria-label="Collection views">
       {([['playlists', 'Singer Playlists'], ['kj', 'KJ Picks'], ['genres', 'Genres'], ['artists', 'Artists'], ['history', 'History']] as const).map(([id, label]) =>
         <button key={id} type="button" aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}
     </nav>
     {(view === 'playlists' || view === 'kj') && <>
-      {view === 'playlists' && <form className="inline-form" onSubmit={make}>
-        <label>Singer<select value={ownerId} onChange={e => setOwnerId(e.target.value)}><option value="">Choose a singer</option>{singers.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select></label>
+      {view === 'playlists' && <details><summary>Create a playlist</summary><form className="inline-form" onSubmit={make}>
+        <label>Singer<select value={ownerId} onChange={e => setOwnerId(e.target.value)}><option value="">Choose a singer</option>{singers.filter(s => !s.archived).map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select></label>
         <label>New playlist name<input value={name} onChange={e => setName(e.target.value)} maxLength={100} /></label>
         <button type="submit" disabled={busy || !ownerId || !name.trim()}>Create playlist</button>
-      </form>}
-      {view === 'playlists' ? <label>Playlist<select value={playlistId} onChange={e => setPlaylistId(e.target.value)}>
-        <option value="">Choose a playlist</option>{data.playlists.filter(p => p.singerId !== null).map(p => <option key={p.id} value={p.id}>{p.name} · {singers.find(s => s.id === p.singerId)?.name ?? 'Unknown singer'}</option>)}
-      </select></label> : <h3>KJ Picks</h3>}
-      <p className="muted">Select a song in the library, then add it here. Select a listed song to request it.</p>
+      </form></details>}
+      {view === 'playlists' ? <div className="playlist-browser">
+        <label>Find a playlist<input type="search" value={playlistSearch} onChange={e => setPlaylistSearch(e.target.value)} placeholder="Playlist or singer" /></label>
+        <div className="playlist-browser__list" aria-label="Singer playlists">{playlists.map(({ playlist: item, singer, count }) =>
+          <button type="button" className="playlist-browser__item" key={item.id} aria-pressed={playlistId === item.id} onClick={() => setPlaylistId(item.id)}>
+            <strong>{item.name}</strong><small>{singer} · {count} {count === 1 ? 'song' : 'songs'}</small>
+          </button>)}</div>
+        {!playlists.length && <p className="empty">{playlistSearch.trim() ? 'No playlists match.' : 'No singer playlists yet.'}</p>}
+        {playlist && <h3>{playlist.name}</h3>}
+      </div> : <h3>KJ Picks</h3>}
+      <p className="muted">Select a song in the library to add it here.</p>
       <button disabled={busy || !playlist || !selectedVersionId || !versions.some(v => v.id === selectedVersionId)} onClick={() => void mutate({ type: 'add', playlistId: currentPlaylistId, versionId: selectedVersionId })}>Add selected song</button>
       {songs.map(song => <div className="track-row" key={song.id}><div><strong>{song.title}</strong><small>{song.artist || 'Unknown artist'}</small></div><div><button onClick={() => selectVersion(song.id)}>Select</button> <button disabled={busy} onClick={() => void mutate({ type: 'remove', playlistId: currentPlaylistId, versionId: song.id })} aria-label={`Remove ${song.title} from ${playlist?.name ?? 'playlist'}`}>Remove</button></div></div>)}
       {playlist && !songs.length && <p className="empty">This playlist has no available songs.</p>}

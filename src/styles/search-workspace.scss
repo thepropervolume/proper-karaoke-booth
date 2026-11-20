@@ -19,13 +19,21 @@
 .search-service-status { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: .78rem; }
 .search-service-status:empty { display: none; }
 .search-workspace .library-results { flex: 1 1 150px; min-height: 100px; max-height: none; overflow-y: auto; margin: 0; }
-.search-workspace .song-list { gap: 5px; }
-.song-option[data-provider] { grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--line); border-left: 3px solid var(--provider-color); padding: 9px 14px; min-height: 62px; gap: 14px; border-radius: 7px; }
+.search-workspace .song-list { gap: 0; }
+.search-workspace .song-option + .song-option { margin-top: 0; }
+.song-option[data-provider] { grid-template-columns: minmax(0, 1fr) auto; border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid var(--provider-color); padding: 4px 10px; min-height: 50px; gap: 8px; border-radius: 0; }
+// The yellow Party Tyme stripe needs an edge against the light library panel.
+// Keep the requested yellow intact and add a narrow dark keyline beside it.
+:root[data-theme='day'] .song-option[data-provider='partytyme'] { position: relative; }
+:root[data-theme='day'] .song-option[data-provider='partytyme']::before {
+  content: ''; position: absolute; left: -4px; top: 5px; bottom: 5px; width: 1px;
+  background: #6b5200; pointer-events: none;
+}
 .song-option[data-provider]:hover { background: var(--panel-selected); }
 .song-option[data-provider].selected { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); outline: 2px solid var(--accent); outline-offset: -2px; }
 .song-option__identity { min-width: 0; flex: 1; }
-.song-option__identity strong { display: block; font-size: 1.08rem; line-height: 1.35; overflow-wrap: anywhere; }
-.song-option__identity small { display: block; font-size: .94rem; line-height: 1.4; margin-top: 2px; }
+.song-option__identity strong { display: block; font-size: 1rem; line-height: 1.25; overflow-wrap: anywhere; }
+.song-option__identity small { display: block; font-size: .85rem; line-height: 1.25; margin-top: 2px; }
 .song-option__actions { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; }
 .song-source { color: var(--muted); font-size: .76rem; white-space: nowrap; }
 .missing-song-request { font-size: .8rem; max-height: 35%; overflow: auto; }
@@ -49,5 +57,5 @@
   .search-workspace { padding: 12px; gap: 6px; }
   .search-workspace .library-results { min-height: 60px; }
   .search-workspace .library-toolbar label { min-width: 0; flex: 1; }
-  .song-option[data-provider] { padding: 8px 10px; }
+  .song-option[data-provider] { padding: 4px 8px; }
 }
