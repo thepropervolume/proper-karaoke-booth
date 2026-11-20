@@ -12,6 +12,7 @@ async function main(): Promise<void> {
   const database = process.env.TPV_QUEUE_MYSQL_DATABASE, socketPath = process.env.TPV_QUEUE_MYSQL_SOCKET, user = process.env.TPV_QUEUE_MYSQL_USER;
   const passwordFile = process.env.TPV_QUEUE_MYSQL_PASSWORD_FILE, webRoot = process.env.TPV_QUEUE_WEB_ROOT, ownersFile = process.env.TPV_QUEUE_OWNERS_FILE;
   const rawPort = process.env.TPV_QUEUE_PORT, publicOrigin = process.env.TPV_QUEUE_PUBLIC_ORIGIN;
+  const screenOrigin = process.env.TPV_QUEUE_SCREEN_ORIGIN || undefined;
   if (process.argv.length !== 2 || !database || !/^[A-Za-z0-9_]{1,64}$/.test(database) || !validPath(socketPath) || !user || !/^[A-Za-z0-9_.-]{1,64}$/.test(user) ||
       !validPath(passwordFile) || !validPath(webRoot) || !validPath(ownersFile) ||
       !rawPort || !/^[1-9][0-9]{0,4}$/.test(rawPort) || Number(rawPort) > 65535 || !publicOrigin || process.env.TPV_QUEUE_TRUST_PROXY !== 'yes')
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
     const store = new MySqlRelayStore(pool, { publicOrigin, retainedOwnerIds: (parsed.owners as RelayOwner[]).map(owner => owner.id) });
     await store.initializeRuntime();
     const broker = new RelayBroker(store);
-    const service = await startQueueRelayService({ publicOrigin, owners: parsed.owners as RelayOwner[], broker, staticHandler, trustProxy: true,
+    const service = await startQueueRelayService({ publicOrigin, screenOrigin, owners: parsed.owners as RelayOwner[], broker, staticHandler, trustProxy: true,
       port: Number(rawPort), closeDependencies: () => pool.end(), isReady: () => store.isAvailable(), mobileEnabled: process.env.TPV_QUEUE_MOBILE === 'yes',
       onFailure: () => { process.exitCode = 1; console.error('Queue relay stopped unexpectedly.'); } });
     started = true;

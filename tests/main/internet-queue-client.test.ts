@@ -59,6 +59,7 @@ class RelayFixture {
   closes: unknown[] = [];
   screens: Record<string, any>[] = [];
   screenUnavailable = false;
+  screenViewerOrigin: string | undefined;
   pending: { resolve: (value: Response) => void; reject: (reason: Error) => void; generation: string } | undefined;
   replyFailures = 0;
   lateReplyConflict = false;
@@ -93,7 +94,7 @@ class RelayFixture {
         if (this.replyFailures-- > 0) throw new Error('lost acknowledgement');
         return response({ ok: true });
       case '/v1/relay/host/screen':
-        this.screens.push(body); return this.screenUnavailable ? response({ error: 'NOT_FOUND' }, 404) : response({ ok: true });
+        this.screens.push(body); return this.screenUnavailable ? response({ error: 'NOT_FOUND' }, 404) : response({ ok: true, ...(body.action === 'start' && this.screenViewerOrigin ? { viewerOrigin: this.screenViewerOrigin } : {}) });
       case '/v1/relay/host/close':
         this.closes.push(body);
         if (this.alreadyEnded) return response({ error: 'room-ended' }, 410);
@@ -151,6 +152,18 @@ test('an older relay reports screen sharing unavailable without exposing a link'
     await assert.rejects(f.client.startScreen(), /relay may need an update/i);
     assert.equal(f.client.screenSharing, false); assert.equal(f.client.status().screenUrl, null);
     assert.equal(f.client.status().state, 'online');
+  } finally { await f.dispose(); }
+});
+
+test('only the explicitly supported booth origin may replace the existing queue screen link', async () => {
+  const f = clientFixture(() => Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  try {
+    await f.client.start({ slug: 'viewer-origin' });
+    f.relay.screenViewerOrigin = 'https://evil.example.test';
+    await assert.rejects(f.client.startScreen()); assert.equal(f.client.status().screenUrl, null);
+    f.relay.screenViewerOrigin = 'https://booth.thepropervolume.com';
+    await f.client.startScreen(); assert.equal(new URL(f.client.status().screenUrl!).origin, 'https://booth.thepropervolume.com');
+    await f.client.stopScreen();
   } finally { await f.dispose(); }
 });
 

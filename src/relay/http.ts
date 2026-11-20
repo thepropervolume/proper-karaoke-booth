@@ -14,7 +14,7 @@ import { version as appVersion } from '../../package.json';
 import { InternetSingerScreens, SCREEN_FRAME_BYTES } from './singer-screen';
 
 export type RelayOwner = { id: string; tokenSha256: string };
-type Options = { publicOrigin: string; owners: readonly RelayOwner[]; broker: RelayBroker; staticHandler: SingerStaticHandler;
+type Options = { publicOrigin: string; screenOrigin?: string; owners: readonly RelayOwner[]; broker: RelayBroker; staticHandler: SingerStaticHandler;
   trustProxy?: boolean; rateNow?: () => number; bodyTimeoutMs?: number; onFailure?: () => void; isReady?: () => boolean;
   mobileEnabled?: boolean; mobileCatalog?: typeof searchMobileCatalog };
 const POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -92,6 +92,9 @@ export function createQueueRelayHandler(options: Options) {
   const origin = new URL(options.publicOrigin);
   if (origin.protocol !== 'https:' || origin.origin !== options.publicOrigin || origin.username || origin.password || origin.port ||
       !Array.isArray(options.owners) || options.owners.length < 1 || options.owners.length > 100) throw new Error('Invalid relay configuration.');
+  const screenOrigin = options.screenOrigin === undefined ? null : new URL(options.screenOrigin);
+  if (screenOrigin && (screenOrigin.protocol !== 'https:' || screenOrigin.origin !== options.screenOrigin || screenOrigin.username ||
+      screenOrigin.password || screenOrigin.port || screenOrigin.host === origin.host)) throw new Error('Invalid screen origin.');
   const ids = new Set<string>(), hashes = new Set<string>();
   const owners = options.owners.map(owner => {
     if (!owner || !isRelayUuid(owner.id) || !/^[a-f0-9]{64}$/.test(owner.tokenSha256) || ids.has(owner.id) || hashes.has(owner.tokenSha256)) throw new Error('Invalid relay owner configuration.');
@@ -108,9 +111,12 @@ export function createQueueRelayHandler(options: Options) {
     const disconnected = () => { if (!response.writableEnded) controller.abort(); };
     response.once('close', disconnected);
     try {
-      if (headerCount(request, 'host') !== 1 || request.headers.host?.toLowerCase() !== origin.host || !request.url ||
+      const requestHost = request.headers.host?.toLowerCase();
+      const viewerHost = !!screenOrigin && requestHost === screenOrigin.host;
+      if (headerCount(request, 'host') !== 1 || requestHost !== origin.host && !viewerHost || !request.url ||
           request.url.length > 2048 || !request.url.startsWith('/') || request.url.startsWith('//') || /[?#%\\\x00-\x20\x7f]/.test(request.url)) throw new HttpError(400, 'INVALID_REQUEST');
-      if (headerCount(request, 'origin') > 1 || request.headers.origin !== undefined && request.headers.origin !== origin.origin) throw new HttpError(403, 'ORIGIN_DENIED');
+      if (headerCount(request, 'origin') > 1 || request.headers.origin !== undefined && request.headers.origin !== (viewerHost ? screenOrigin!.origin : origin.origin)) throw new HttpError(403, 'ORIGIN_DENIED');
+      if (viewerHost && (request.method !== 'GET' || request.url !== '/v1/screen-viewer.js' && !SCREEN_ROUTE.test(request.url))) throw new HttpError(404, 'NOT_FOUND');
       let client = request.socket.remoteAddress ?? 'unknown';
       if (options.trustProxy) {
         if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(client) || headerCount(request, 'x-tpv-client-ip') !== 1 ||
@@ -213,7 +219,7 @@ export function createQueueRelayHandler(options: Options) {
             if (typeof value.frame !== 'string' || value.frame.length > Math.ceil(SCREEN_FRAME_BYTES * 4 / 3) || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.frame) || !Number.isSafeInteger(value.sequence)) throw new HttpError(400, 'INVALID_SCREEN');
             screens.publish(lease, value.streamId, value.sequence as number, Buffer.from(value.frame, 'base64'));
           }
-          respond(response, 200, { ok: true }); return;
+          respond(response, 200, { ok: true, ...(value.action === 'start' && screenOrigin ? { viewerOrigin: screenOrigin.origin } : {}) }); return;
         }
         if (host[1] === 'open') {
           const value = parseHostOpen(input); if (!value) throw new HttpError(400, 'INVALID_OPEN');

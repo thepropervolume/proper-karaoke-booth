@@ -219,7 +219,7 @@ export class InternetQueueClient {
   private pendingOpen: { slug: string; openId: string } | undefined;
   private disposed = false;
   private epoch = 0;
-  private screen: { id: string; secret: string; controller: AbortController; sequence: number } | undefined;
+  private screen: { id: string; secret: string; controller: AbortController; sequence: number; viewerOrigin: string; ready: boolean } | undefined;
   constructor(private readonly options: InternetQueueClientOptions) {
     if (!isAbsolute(options.configurationFile) || options.reconnectDelayMs !== undefined && (!Number.isInteger(options.reconnectDelayMs) || options.reconnectDelayMs < 0 || options.reconnectDelayMs > 15000)) throw new Error('Invalid internet-session options.');
     options.coordinator.onFailure(() => {
@@ -231,16 +231,19 @@ export class InternetQueueClient {
     if (this.scope && this.state === 'online') { try { guests = this.scope.guests().map(({ singerId, name }) => ({ singerId, name })); } catch {} }
     return { available: !this.disposed, state: this.state, suggestedSlug: this.suggestedSlug, slug: this.slug,
       joinUrl: this.state === 'online' ? this.currentRoom?.publicUrl ?? null : null, guests, message: this.message,
-      screenActive: !!this.screen, screenUrl: this.screen && this.state === 'online' && this.currentRoom ? `${INTERNET_QUEUE_ORIGIN}/${this.currentRoom.slug}/screen#${this.screen.secret}` : null };
+      screenActive: !!this.screen, screenUrl: this.screen?.ready && this.state === 'online' && this.currentRoom ? `${this.screen.viewerOrigin}/${this.currentRoom.slug}/screen#${this.screen.secret}` : null };
   }
   get screenSharing(): boolean { return !!this.screen; }
   async startScreen(): Promise<void> {
     if (this.screen || this.state !== 'online' || !this.currentRoom || !this.config || !this.options.screenFrame) throw new Error('Start an internet session before sharing the singer screen.');
     const room = this.currentRoom, config = this.config, controller = new AbortController();
-    const screen = { id: randomUUID(), secret: randomBytes(32).toString('base64url'), controller, sequence: 0 }; this.screen = screen; this.changed();
+    const screen = { id: randomUUID(), secret: randomBytes(32).toString('base64url'), controller, sequence: 0, viewerOrigin: INTERNET_QUEUE_ORIGIN as string, ready: false }; this.screen = screen; this.changed();
     try {
-      await post(this.options.fetch ?? fetch, config, 'screen', { roomId: room.roomId, generation: room.generation, streamId: screen.id, action: 'start', viewerDigest: createHash('sha256').update(screen.secret).digest('hex') }, controller.signal, 5000);
+      const ack = await post(this.options.fetch ?? fetch, config, 'screen', { roomId: room.roomId, generation: room.generation, streamId: screen.id, action: 'start', viewerDigest: createHash('sha256').update(screen.secret).digest('hex') }, controller.signal, 5000);
+      if (!record(ack) || ack.ok !== true || !(exact(ack, ['ok']) || exact(ack, ['ok', 'viewerOrigin']) && ack.viewerOrigin === 'https://booth.thepropervolume.com')) throw new Error('Invalid screen-sharing response.');
       if (this.screen !== screen || this.state !== 'online') throw new Error();
+      if (ack.viewerOrigin) screen.viewerOrigin = ack.viewerOrigin as string;
+      screen.ready = true; this.changed();
       void this.publishScreen(screen, room, config);
     } catch {
       if (this.screen === screen) { this.screen = undefined; this.changed(); }

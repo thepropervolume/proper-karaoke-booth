@@ -35,6 +35,26 @@ test('mobile hosts require exact origins, get isolated temporary capabilities an
   await call('/v1/relay/host/close', identity, { token: access.token });
   assert.equal((await (await call('/v1/mobile/nearby')).json()).rooms.length, 0);
 }, false, true));
+
+test('viewer origin is disabled by default and permits only its own read-only routes when configured', async () => {
+  await fixture(async call => {
+    assert.equal((await call('/room-one/screen', undefined, { host: 'booth.example.test' })).status, 400);
+  });
+  await fixture(async call => {
+    const view = { host: 'booth.example.test', origin: 'https://booth.example.test' };
+    assert.equal((await call('/room-one/screen', undefined, view)).status, 200);
+    assert.equal((await call('/v1/screen-viewer.js', undefined, view)).status, 200);
+    assert.equal((await call('/room-one/screen/frame', undefined, view)).status, 401);
+    assert.equal((await call('/room-one/screen', undefined, { ...view, origin })).status, 403);
+    assert.equal((await call('/room-one/screen', undefined, { origin: 'https://booth.example.test' })).status, 403);
+    for (const path of ['/healthz', '/v1/relay/lookup/room-one', '/v1/relay/host/open', '/app/', '/room-one'])
+      assert.equal((await call(path, undefined, view)).status, 404);
+    assert.equal((await call('/room-one/screen', {}, view)).status, 404);
+    assert.equal((await call('/room-one/screen', undefined, { ...view, method: 'HEAD' })).status, 404);
+    assert.equal((await call('/room-one/screen?token=secret', undefined, view)).status, 400);
+    assert.equal((await call('/room-one/screen', undefined, { host: 'evil.example.test' })).status, 400);
+  }, false, false, 'https://booth.example.test');
+});
 test('mobile catalog is bounded read-only search and never an arbitrary URL proxy', async () => fixture(async call => {
   assert.equal((await call('/v1/mobile/catalog', { query: 'Oasis' })).status, 403);
   assert.equal((await call('/v1/mobile/catalog', { query: 'Oasis', url: 'http://private.test' }, { origin })).status, 400);
@@ -44,10 +64,10 @@ test('mobile catalog is bounded read-only search and never an arbitrary URL prox
   assert.equal(response.headers.get('cache-control'), 'no-store');
 }, false, true));
 
-async function fixture(run: (call: (path: string, value?: unknown, options?: { token?: string; origin?: string; host?: string; headers?: Record<string,string>; method?: string }) => Promise<Response>) => Promise<void>, trustProxy = false, mobileEnabled = false) {
+async function fixture(run: (call: (path: string, value?: unknown, options?: { token?: string; origin?: string; host?: string; headers?: Record<string,string>; method?: string }) => Promise<Response>) => Promise<void>, trustProxy = false, mobileEnabled = false, screenOrigin?: string) {
   const db = new DatabaseSync(':memory:');
   const broker = new RelayBroker(new RelayStore(db, { publicOrigin: origin }), { pollTimeoutMs: 500, rpcTimeoutMs: 1000, offlineAfterMs: 2000 });
-  const service = await startQueueRelayService({ publicOrigin: origin, owners, broker, trustProxy, port: 0, mobileEnabled, mobileCatalog: async query => ({ items: [{ id: 'youtube_Video123456', title: query, artist: 'Artist', provider: 'karaokenerds', videoId: 'Video123456' }] }),
+  const service = await startQueueRelayService({ publicOrigin: origin, screenOrigin, owners, broker, trustProxy, port: 0, mobileEnabled, mobileCatalog: async query => ({ items: [{ id: 'youtube_Video123456', title: query, artist: 'Artist', provider: 'karaokenerds', videoId: 'Video123456' }] }),
     staticHandler: async (request, response) => {
       if (request.url !== '/singer/' && request.url !== '/assets/singer-test.js') return false;
       response.writeHead(200, { 'Content-Type': request.url.endsWith('.js') ? 'text/javascript' : 'text/html' });
@@ -106,7 +126,8 @@ test('internet singer screen accepts only the owner and ends on stop or room clo
   const command = { ...identity, streamId, action: 'start', viewerDigest };
   assert.equal((await call('/v1/relay/host/screen', command)).status, 401);
   assert.equal((await call('/v1/relay/host/screen', { ...command, generation: randomUUID() }, { token })).status, 410);
-  assert.equal((await call('/v1/relay/host/screen', command, { token })).status, 200);
+  const started = await call('/v1/relay/host/screen', command, { token });
+  assert.equal(started.status, 200); assert.deepEqual(await started.json(), { ok: true, viewerOrigin: 'https://booth.example.test' });
   const frame = { ...identity, streamId, action: 'frame', sequence: 1, frame: Buffer.from([255, 216, 255, 217]).toString('base64') };
   assert.equal((await call('/v1/relay/host/screen', { ...frame, frame: 'not-base64' }, { token })).status, 400);
   assert.equal((await call('/v1/relay/host/screen', frame, { token })).status, 200);
@@ -133,6 +154,9 @@ test('internet singer screen accepts only the owner and ends on stop or room clo
   assert.equal((await call('/screen-test/screen/frame', undefined, { token: 'y'.repeat(43), headers: { 'X-TPV-Screen-Viewer': viewerId } })).status, 404);
   const image = await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': viewerId } });
   assert.equal(image.status, 200);
+  const boothImage = await call('/screen-test/screen/frame', undefined, { host: 'booth.example.test', origin: 'https://booth.example.test', token: secret, headers: { 'X-TPV-Screen-Viewer': viewerId } });
+  assert.equal(boothImage.status, 200); assert.equal(boothImage.headers.get('content-type'), 'image/jpeg');
+  assert.equal((await call('/screen-test/screen/frame', undefined, { host: 'booth.example.test', token: 'x'.repeat(43), headers: { 'X-TPV-Screen-Viewer': viewerId } })).status, 404);
   for (let i = 0; i < 4; i++) assert.equal((await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': randomUUID() } })).status, 200); assert.equal(image.headers.get('content-type'), 'image/jpeg');
   assert.equal(image.headers.get('cache-control'), 'no-store');
   assert.equal((await call('/v1/relay/host/screen', { ...identity, streamId, action: 'stop' }, { token })).status, 200);
@@ -144,7 +168,7 @@ test('internet singer screen accepts only the owner and ends on stop or room clo
   assert.equal((await call('/v1/relay/host/close', identity, { token })).status, 200);
   assert.equal((await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': viewerId } })).status, 404);
   await poll;
-}));
+}, false, false, 'https://booth.example.test'));
 
 test('host credentials, origins, identities and operation allowlists are enforced before dispatch', async () => fixture(async call => {
   const open = { slug: 'karaoke-night', openId: randomUUID() };
