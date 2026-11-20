@@ -15,7 +15,10 @@ export type CatalogReadSnapshot = {
   lastAttempt: number | null;
   lastSuccess: number | null;
 };
-export type CatalogSnapshotStore = { searchSnapshot: () => Promise<CatalogReadSnapshot> };
+export type CatalogSnapshotStore = {
+  searchSnapshot: () => Promise<CatalogReadSnapshot>;
+  searchMetadata?: () => Promise<CatalogMetadata>;
+};
 
 const TOKEN = /^[A-Za-z0-9_-]{1,512}$/;
 const REVISION = /^(?:0|[1-9][0-9]{0,19})$/;
@@ -61,17 +64,26 @@ function cursor(revision: string, fingerprint: string, offset: number): string {
   return Buffer.from(JSON.stringify({ version: 1, revision, criteria: fingerprint, offset })).toString('base64url');
 }
 
+function validatedMetadata({ revision, lastAttempt, lastSuccess }: CatalogMetadata): Readonly<CatalogMetadata> {
+  const timestamp = (value: unknown) => value === null || Number.isSafeInteger(value) && (value as number) >= 0;
+  if (typeof revision !== 'string' || !REVISION.test(revision)) throw new Error('Invalid catalog revision.');
+  if (!timestamp(lastAttempt) || !timestamp(lastSuccess)) throw new Error('Invalid catalog timestamp.');
+  return Object.freeze({ revision, lastAttempt, lastSuccess });
+}
+
 /**
- * Reuses one immutable, sorted public projection for at most 30 seconds. Reads
- * arriving during a reload share the same consistent snapshot. Expired data is
- * never a fallback for a failed refresh; cursors retain their snapshot revision.
+ * Revalidates a sorted public projection at most every 30 seconds by default.
+ * Concurrent reads share the revalidation. A failed validation serves no stale
+ * results, and cursors remain tied to the public data revision.
  */
 export function createMySqlCatalogReader(store: CatalogSnapshotStore, options: { cacheTtlMs?: number; now?: () => number } = {}): CatalogReader & { status: () => Promise<CatalogStatus> } {
   const ttl = options.cacheTtlMs ?? 30_000, now = options.now ?? (() => Math.floor(performance.now()));
   if (!store || typeof store.searchSnapshot !== 'function' || !Number.isSafeInteger(ttl) || ttl < 0 || ttl > 60_000 || typeof now !== 'function')
     throw new Error('Invalid catalog reader configuration.');
   type IndexedTrack = Readonly<{ track: Readonly<CatalogTrack>; artist: string; title: string; brand: string; combined: string }>;
-  type Projection = Readonly<{ tracks: readonly IndexedTrack[]; metadata: Readonly<CatalogMetadata>; recordCount: number; expiresAt: number }>;
+  type TrackIndex = ReadonlyMap<string, readonly IndexedTrack[]>;
+  type Projection = Readonly<{ tracks: readonly IndexedTrack[]; artists: TrackIndex; brands: TrackIndex;
+    metadata: Readonly<CatalogMetadata>; recordCount: number; expiresAt: number }>;
   let cached: Projection | undefined, inFlight: Promise<Projection> | undefined;
   function clock(): number {
     const value = now();
@@ -80,11 +92,8 @@ export function createMySqlCatalogReader(store: CatalogSnapshotStore, options: {
   }
   function project(snapshot: CatalogReadSnapshot): Projection {
     if (!snapshot || !snapshot.catalog || !Array.isArray(snapshot.catalog.Items) || !Array.isArray(snapshot.brandMappings) ||
-        !Array.isArray(snapshot.videoMetadata) || !Array.isArray(snapshot.videoDates) || typeof snapshot.revision !== 'string' ||
-        !REVISION.test(snapshot.revision)) throw new Error('Invalid catalog snapshot.');
-    const timestamp = (value: unknown) => value === null || Number.isSafeInteger(value) && (value as number) >= 0;
-    if (!timestamp(snapshot.lastAttempt) || !timestamp(snapshot.lastSuccess)) throw new Error('Invalid catalog timestamp.');
-    const metadata: CatalogMetadata = { revision: snapshot.revision, lastAttempt: snapshot.lastAttempt, lastSuccess: snapshot.lastSuccess };
+        !Array.isArray(snapshot.videoMetadata) || !Array.isArray(snapshot.videoDates)) throw new Error('Invalid catalog snapshot.');
+    const metadata = validatedMetadata(snapshot);
     const brands = new Map<string, string>(), slugs = new Set<string>();
     for (const brand of snapshot.brandMappings) {
       if (!brand || !cleanText(brand.upstreamBrand, 200) || !cleanSlug(brand.slug) || brands.has(brand.upstreamBrand) || slugs.has(brand.slug)) throw new Error('Ambiguous brand mapping.');
@@ -122,13 +131,32 @@ export function createMySqlCatalogReader(store: CatalogSnapshotStore, options: {
       return Object.freeze({ track: Object.freeze(track), artist, title, brand: norm(track.brandSlug), combined: `${artist} ${title}` });
     });
     indexed.sort((a, b) => cmp(a.artist, b.artist) || cmp(a.title, b.title) || cmp(a.track.brandSlug, b.track.brandSlug) || cmp(a.track.youtubeId, b.track.youtubeId));
-    return Object.freeze({ tracks: Object.freeze(indexed), metadata: Object.freeze(metadata), recordCount: snapshot.catalog.Items.length, expiresAt: clock() + ttl });
+    function indexBy(field: 'artist' | 'brand'): TrackIndex {
+      const groups = new Map<string, IndexedTrack[]>();
+      for (const item of indexed) {
+        if (!item[field]) continue;
+        const group = groups.get(item[field]);
+        if (group) group.push(item);
+        else groups.set(item[field], [item]);
+      }
+      return groups;
+    }
+    return Object.freeze({ tracks: Object.freeze(indexed), artists: indexBy('artist'), brands: indexBy('brand'),
+      metadata, recordCount: snapshot.catalog.Items.length, expiresAt: clock() + ttl });
   }
   async function projection(): Promise<Projection> {
     if (cached && clock() < cached.expiresAt) return cached;
     if (inFlight) return inFlight;
+    const previous = cached;
     cached = undefined;
-    const task = (async () => project(await store.searchSnapshot()))();
+    const task = (async () => {
+      if (previous && store.searchMetadata) {
+        const metadata = validatedMetadata(await store.searchMetadata());
+        // A failed upstream attempt can update freshness without changing any recordings.
+        if (metadata.revision === previous.metadata.revision) return Object.freeze({ ...previous, metadata, expiresAt: clock() + ttl });
+      }
+      return project(await store.searchSnapshot());
+    })();
     inFlight = task;
     try { const value = await task; cached = value; return value; }
     finally { if (inFlight === task) inFlight = undefined; }
@@ -141,8 +169,11 @@ export function createMySqlCatalogReader(store: CatalogSnapshotStore, options: {
     const data = await projection(), metadata = data.metadata;
     const fingerprint = criteria(request), offset = request.cursor === null ? 0 : readCursor(request.cursor, metadata.revision, fingerprint);
     const q = norm(request.query), artist = norm(request.artist), brand = norm(request.brandSlug), terms = q ? q.split(' ') : [];
+    const artistTracks = artist ? data.artists.get(artist) ?? [] : data.tracks;
+    const brandTracks = brand ? data.brands.get(brand) ?? [] : data.tracks;
+    const candidates = artistTracks.length <= brandTracks.length ? artistTracks : brandTracks;
     const items: CatalogTrack[] = []; let matched = 0, more = false;
-    for (const item of data.tracks) {
+    for (const item of candidates) {
       if (!terms.every(term => item.combined.includes(term)) || artist && item.artist !== artist || brand && item.brand !== brand) continue;
       if (matched++ < offset) continue;
       if (items.length < request.limit) items.push(item.track);

@@ -33,6 +33,7 @@ test('MySQL 8 catalog import, daily gate, cross-connection lock and failure rete
     const first = new MySqlCommunityCatalogStore(pool), second = new MySqlCommunityCatalogStore(pool);
     let calls = 0;
     assert.equal(await first.read(), null);
+    await assert.rejects(first.searchMetadata(), /not initialized/);
     assert.equal((await first.refresh(async () => { calls++; return payload.snapshot; })).status, 'not-initialized');
     assert.equal(calls, 0);
     await t.test('raw read-only seeding preserves unknown refresh history and cannot enable fetching', async () => {
@@ -61,6 +62,7 @@ test('MySQL 8 catalog import, daily gate, cross-connection lock and failure rete
       const [seeded] = await pool.query<(RowDataPacket & { import_sha256: string; sqlite_retired_ms: string | null })[]>('SELECT import_sha256, sqlite_retired_ms FROM tpv_kn_state WHERE id = 1');
       assert.equal(seeded[0].import_sha256, createHash('sha256').update(JSON.stringify(payload.snapshot)).digest('hex'));
       assert.equal(seeded[0].sqlite_retired_ms, null);
+      assert.deepEqual(await first.searchMetadata(), { revision: '1', lastAttempt: null, lastSuccess: null });
       assert.deepEqual(await createMySqlCatalogReader(first).status(), { revision: '1', lastAttempt: null, lastSuccess: null, recordCount: 4, searchableCount: 4 });
       assert.equal((await first.refresh(async () => { calls++; return payload.snapshot; })).status, 'not-initialized');
       assert.equal(calls, 0);

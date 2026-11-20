@@ -147,3 +147,46 @@ test('cache duration is bounded and optional zero TTL preserves immediate revisi
   await assert.rejects(reader.search({ ...request, cursor: first.nextCursor }), /stale/);
   assert.equal(calls, 2);
 });
+
+test('coalesces revision checks on a large catalog and reloads only when recordings change', async () => {
+  const data = snapshot();
+  data.catalog.Items.push(...Array.from({ length: 64_000 }, (_, index) => entry(
+    `Generated artist ${index % 500}`, `Generated song ${index}`, 'UNKNOWN', index.toString(36).padStart(11, '0'))));
+  let now = 0, fullReads = 0, metadataReads = 0, unavailable = false;
+  const reader = createMySqlCatalogReader({
+    async searchSnapshot() { fullReads++; return data; },
+    async searchMetadata() {
+      metadataReads++;
+      if (unavailable) throw new Error('Synthetic database outage');
+      return { revision: data.revision, lastAttempt: data.lastAttempt, lastSuccess: data.lastSuccess };
+    },
+  }, { cacheTtlMs: 100, now: () => now });
+
+  const first = await reader.search(request);
+  assert.ok(first.nextCursor);
+  const matching = await reader.search({ ...request, artist: 'generated artist 1', query: 'song', limit: 100 });
+  assert.equal(matching.items.length, 100);
+  assert.ok(matching.nextCursor);
+  const rest = await reader.search({ ...request, artist: 'generated artist 1', query: 'song', limit: 100, cursor: matching.nextCursor });
+  assert.equal(rest.items.length, 28);
+  assert.equal(new Set([...matching.items, ...rest.items].map(item => item.youtubeId)).size, 128);
+
+  data.lastAttempt = 3000;
+  now = 100;
+  const group = await Promise.all(Array.from({ length: 32 }, () => reader.status()));
+  assert.ok(group.every(status => status.lastAttempt === 3000 && status.searchableCount === 64003));
+  assert.equal(metadataReads, 1);
+  assert.equal(fullReads, 1);
+  assert.equal((await reader.search({ ...request, cursor: first.nextCursor })).metadata?.revision, '1');
+
+  data.revision = '2';
+  now = 200;
+  await assert.rejects(reader.search({ ...request, cursor: first.nextCursor }), /stale/);
+  assert.equal(fullReads, 2);
+  assert.equal(metadataReads, 2);
+
+  unavailable = true;
+  now = 300;
+  await assert.rejects(reader.status(), /outage/);
+  assert.equal(fullReads, 2);
+});

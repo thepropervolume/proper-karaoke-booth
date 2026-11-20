@@ -14,6 +14,8 @@ An existing default `catalog-connection.json` in the application data folder rem
 
 The client stores up to 100 successful bounded queries in an at-most-20-MiB cache. Public and private caches have separate scopes and files. Previously saved searches can be used on transient outages; new queries need a service connection. Cached results show their age. Unauthorized, forbidden, malformed, and incompatible replies do not become offline successes.
 
+The 0.10.6 reader checks the database revision before reloading the full catalog. Exact artist and verified brand filters use in-memory indexes. Existing text matching and pagination continue to use the same published revision. The read path never calls the upstream feed.
+
 Changing credentials or configuration scope fences in-flight results from the old authority. Unsaved connection checks use separate status clients and cannot replace the active search authority or clear its offline queries. For integration, use `SharedCatalogConnection.publicSearch(query)` and `.publicStatus(active)` for the explicit public mode; preserve `.search(path, query)` and `.status(path, active)` for private mode. An unsaved public status check passes `active = false`.
 
 Linux installation, physical venue networking, and long-show operation still require checks on the intended host. A public catalog connection does not grant paid-provider playback or establish rights to a linked recording.

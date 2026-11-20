@@ -119,7 +119,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Package/test yt-dlp and FFmpeg installation, upgrades and all supported operating systems.
 - [x] Deploy the dedicated shared MySQL catalog search service behind HTTPS and verify server backup/scratch restore using the recovered raw snapshot.
 - [ ] Finish production monitoring, recovery/rotation operations and real desktop end-to-end verification; deployed search is not a working daily-refresh pipeline.
-- [ ] Replace full-snapshot refresh reads with indexed queries and load-test concurrent clients. A 30-second coalesced projection cache now avoids rebuilding the snapshot per request; this is partial progress, not a production throughput guarantee.
+- [x] Revalidate the read projection with a primary-key revision query and index exact artist and verified brand searches. A 64,000-record fixture with 32 concurrent reads verified coalescing, pagination, and outage behavior.
+- [ ] Measure production query and service capacity across free-text search, cold snapshot loads and concurrent exact filters.
 - [x] Recover and seed the 64,261-record raw Karaoke Nerds snapshot without a new feed request; expose valid unique recordings including unmapped brands.
 - [x] Implement desktop shared HTTPS configuration/preferences and scoped offline query caching (100 entries/20 MiB).
 - [x] Verify live Windows HTTPS status/search against the deployed service and durable offline reuse after a simulated connection failure; the legacy local default snapshot remains absent.

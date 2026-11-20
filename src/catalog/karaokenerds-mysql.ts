@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { parseCommunityCatalog, type CommunityCatalog } from './karaokenerds';
+import type { CatalogMetadata } from './karaokenerds-http';
 import { validateSQLiteExport, type CatalogMigrationExport } from './karaokenerds-migration-schema';
 
 const DAY = 86_400_000;
@@ -255,6 +256,15 @@ export class MySqlCommunityCatalogStore {
   async videoDates(youtubeId: string): Promise<{ uploadDate: string | null; releaseDate: string | null; source: string; observedAt: number } | null> {
     const [rows] = await this.pool.execute<(RowDataPacket & { uploadDate: string | null; releaseDate: string | null; source: string; observedAt: string })[]>('SELECT upload_date AS uploadDate, release_date AS releaseDate, source, observed_at AS observedAt FROM tpv_kn_dates WHERE youtube_id = ?', [youtubeId]);
     return rows[0] ? { uploadDate: rows[0].uploadDate, releaseDate: rows[0].releaseDate, source: rows[0].source, observedAt: millis(rows[0].observedAt)! } : null;
+  }
+
+  /** Revalidate a cached public projection without transferring the catalog JSON. */
+  async searchMetadata(): Promise<CatalogMetadata> {
+    const [rows] = await this.pool.query<(RowDataPacket & { revision: string; last_attempt_ms: DbTime; last_success_ms: DbTime })[]>(
+      'SELECT CAST(revision AS CHAR) AS revision, last_attempt_ms, last_success_ms FROM tpv_kn_state WHERE id = 1 AND snapshot IS NOT NULL');
+    if (rows.length !== 1 || !/^(?:0|[1-9][0-9]{0,19})$/.test(rows[0].revision)) throw new Error('Catalog is not initialized.');
+    const row = rows[0];
+    return { revision: row.revision, lastAttempt: millis(row.last_attempt_ms), lastSuccess: millis(row.last_success_ms) };
   }
 
   /** A consistent snapshot for the server-side read API; never expose this raw object to guests. */

@@ -7,9 +7,13 @@ systemd drop-in to enable them explicitly. New desktop installations can use
 these routes without a private reader configuration or any bundled token.
 Public routes reject every supplied Authorization header; existing private
 routes continue to require the existing reader credential. Public reads share
-a 60-request burst bucket refilling at one request per second. A coalesced,
-immutable projection is cached for at most 30 seconds; an expired cache never
-masks a failed database reload, and pagination remains tied to its revision.
+a 60-request burst bucket refilling at one request per second. Every 30 seconds
+under traffic, concurrent searches share a primary-key catalog revision check.
+The service reloads the full snapshot when the recordings change and indexes
+exact artist and verified brand filters in memory. A failed revalidation makes
+the service report unavailability. Paging remains tied to the snapshot revision.
+Restart the reader after restoring an older database backup so it starts with a
+fresh projection even if the restored database later reuses a revision number.
 
 Ratings run in the separate service and schema documented in
 [`../../song-ratings/README.md`](../../song-ratings/README.md). The catalog
