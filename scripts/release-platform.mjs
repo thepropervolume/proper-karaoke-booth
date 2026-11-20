@@ -73,8 +73,14 @@ export async function verifyPackagedPlatform(repo, platform, version, commit) {
       assert.ok(depends.split(',').some(dependency => /^libasound2t64\s*\|\s*libasound2\s*\(>=\s*1\.0\.16\)$/.test(dependency.trim())),
         'The Debian package must require native ALSA and exclude unversioned substitutes.');
       run('dpkg-deb', ['--extract', deb, join(check, 'deb')]);
+      const debRoot = join(check, 'deb');
+      assert.ok((await lstat(join(debRoot, 'opt/proper-karaoke-booth/chrome-sandbox'))).isFile(),
+        'Chromium needs a space-free installed sandbox path.');
+      const launcher = await readFile(join(debRoot, 'usr/share/applications/proper-karaoke-booth.desktop'), 'utf8');
+      assert.match(launcher, /^Name=The Proper Volume Karaoke Booth$/m);
+      assert.match(launcher, /^Exec="?\/opt\/proper-karaoke-booth\/proper-karaoke-booth(?:"|\s|$)/m);
       run(join(release, `Proper-Karaoke-Booth-${version}-linux-x86_64.AppImage`), ['--appimage-extract'], { cwd: check, stdio: 'ignore' });
-      for (const root of [join(check, 'deb'), join(check, 'squashfs-root')]) {
+      for (const root of [debRoot, join(check, 'squashfs-root')]) {
         const found = await packageRoots(root); assert.equal(found.length, 1, 'Expected one packaged app per Linux format.');
         for (const [name, hash] of hashes) assert.equal(await sha256(join(found[0], name)), hash, `Linux payload differs: ${name}`);
       }
