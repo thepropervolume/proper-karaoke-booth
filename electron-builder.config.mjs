@@ -7,7 +7,7 @@ export default {
   asar: true,
   npmRebuild: false,
   nodeGypRebuild: false,
-  files: ['dist/**/*', 'package.json', 'THIRD-PARTY-LICENSES.txt', '!node_modules/**/*', '!**/*.map'],
+  files: ['dist/**/*', 'package.json', 'LICENSE', 'LICENSING.md', 'TRADEMARKS.md', 'THIRD-PARTY-LICENSES.txt', '!node_modules/**/*', '!**/*.map'],
   extraResources: [
     { from: 'dist/control/cli.cjs', to: 'control/cli.cjs' },
     { from: 'assets/backdrops', to: 'backdrops', filter: ['tpv-karaoke-v3.mp4', 'README.md'] },

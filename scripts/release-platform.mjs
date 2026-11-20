@@ -58,7 +58,9 @@ export async function verifyPackagedPlatform(repo, platform, version, commit) {
       const result = await build({ entryPoints: [join(repo, source)], bundle: true, platform: 'node', format: 'cjs', target: 'node24', external: ['electron'], write: false });
       assert.deepEqual(extract(entry === 'control' ? 'dist/control/cli.cjs' : `dist/${entry}/index.cjs`), Buffer.from(result.outputFiles[0].contents));
     }
-    assert.ok(extract('THIRD-PARTY-LICENSES.txt').length > 0, 'Missing runtime notices.');
+    for (const notice of ['LICENSE', 'LICENSING.md', 'TRADEMARKS.md', 'THIRD-PARTY-LICENSES.txt']) {
+      assert.ok(extract(notice).length > 0, `Missing packaged notice: ${notice}.`);
+    }
     const names = ['resources/app.asar', 'resources/control/cli.cjs', 'resources/backdrops/tpv-karaoke-v3.mp4',
       ...(await readdir(join(unpacked, 'resources/branding'))).map(name => `resources/branding/${name}`),
       ...(platform === 'win' ? ['proper-karaoke-booth.exe', 'tpv-karaoke.cmd', 'tpv-karaoke-booth.exe']

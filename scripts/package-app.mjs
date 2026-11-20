@@ -100,6 +100,8 @@ try {
   }, null, 2) + '\n');
   const lock = JSON.parse(await readFile(join(repo, 'package-lock.json'), 'utf8'));
   await writeFile(join(stage, 'THIRD-PARTY-LICENSES.txt'), await productionDependencyNotices(repo, lock));
+  await Promise.all(['LICENSE', 'LICENSING.md', 'TRADEMARKS.md'].map(file =>
+    cp(join(repo, file), join(stage, file))));
   const { build, Platform, Arch } = electronBuilder;
   const target = platform === 'win' ? Platform.WINDOWS : platform === 'linux' ? Platform.LINUX : Platform.MAC;
   const architectures = platform === 'mac' ? [Arch.x64, Arch.arm64] : [Arch.x64];
