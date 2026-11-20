@@ -33,7 +33,13 @@ jobs:
         run: node scripts/mobile-release.mjs check-source
       - run: npm ci --no-audit --no-fund
       - run: npm ci --prefix mobile --no-audit --no-fund
-      - run: npm run typecheck && npm --prefix mobile run typecheck && node --import tsx --test tests/mobile/*.test.ts
+      - name: Check types and real-browser mobile storage
+        env:
+          TPV_REQUIRE_CHROMIUM: '1'
+        run: |
+          npm run typecheck
+          npm --prefix mobile run typecheck
+          dbus-run-session -- node --import tsx --test --test-concurrency=2 tests/mobile/*.test.ts
       - run: npm run build:mobile
       - run: npx cap sync android
         working-directory: mobile

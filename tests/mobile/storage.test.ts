@@ -17,7 +17,8 @@ const candidates = process.platform === 'win32' ? [join(process.env.PROGRAMFILES
   join(process.env['PROGRAMFILES(X86)'] ?? 'C:/Program Files (x86)', 'Microsoft/Edge/Application/msedge.exe')] : process.platform === 'darwin' ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'] : ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
 const executablePath = candidates.find(path => { try { accessSync(path); return true; } catch { return false; } });
 
-test('browser IndexedDB recovery, local media identity and cross-tab host ownership', { skip: executablePath ? false : 'An installed Chromium browser is required for real IndexedDB/Web Locks coverage.', timeout: 30_000 }, async t => {
+test('browser IndexedDB recovery, local media identity and cross-tab host ownership', { skip: executablePath || process.env.TPV_REQUIRE_CHROMIUM === '1' ? false : 'An installed Chromium browser is required for real IndexedDB/Web Locks coverage.', timeout: 90_000 }, async t => {
+  assert.ok(executablePath, 'A Chromium browser is required for the mobile release tests.');
   const repo = resolve(import.meta.dirname, '../..');
   const bundle = await build({ stdin: { contents: "import * as storage from './src/mobile/storage'; window.mobileStorage = storage;", resolveDir: repo }, bundle: true, platform: 'browser', format: 'iife', write: false });
   const server = createServer((request, response) => {
@@ -26,7 +27,7 @@ test('browser IndexedDB recovery, local media identity and cross-tab host owners
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
-  const browser = await chromium.launch({ executablePath, headless: true, timeout: 15_000,
+  const browser = await chromium.launch({ executablePath, headless: true, timeout: 45_000,
     args: process.platform !== 'win32' && process.getuid?.() === 0 ? ['--no-sandbox'] : [] }).catch(async error => {
     await new Promise<void>(resolve => server.close(() => resolve())); throw error;
   });
