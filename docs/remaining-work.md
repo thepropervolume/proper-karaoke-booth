@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 20 November 2026 for **0.10.4 development**, with 1.0.0 reserved for the official release. The public download page identifies each published build and its source commit. Earlier milestone sections preserve their original evidence and unfinished work as recorded at the time. [Booth downloads](https://release.thepropervolume.com/booth/)
+Updated 20 November 2026 for **0.10.5 development**, with 1.0.0 reserved for the official release. The public download page identifies each published build and its source commit. Earlier milestone sections preserve their original evidence and unfinished work as recorded at the time. [Booth downloads](https://release.thepropervolume.com/booth/)
 
 ## Next work in priority order
 
@@ -11,9 +11,15 @@ Updated 20 November 2026 for **0.10.4 development**, with 1.0.0 reserved for the
 5. **Singers, mobile and accessibility:** complete persistent profiles/roles, privacy and data controls, accessibility coverage, verify mobile playback-position recovery on real devices, and add mobile paid-source integration. Singer-room search already searches the host's saved library, not every provider's entire catalog.
 6. **Release readiness:** verify desktop installers/upgrades/removal, signing and CLI setup; define and implement a safe update path, then close documented QA findings. Published Android debug/unsigned and iOS Simulator artifacts are development builds, not production app-store or iPhone installers.
 
+**Native store delivery**
+
+Apple Developer and Google Play Console enrollment are pending. The first targets are signed TestFlight and Play testing builds with on-device playback and room testing. The unsigned iPhoneOS Release compile passed on GitHub Actions. Before public submission, confirm the publisher identity, provider rights, privacy disclosures, and how guest photo submissions will be moderated or scoped. [iOS build guide](store-ios.md) · [Android build guide](store-android.md) · [Mobile data inventory](store-data-inventory.md)
+
 **Hardware and owner/provider gates:** verify audible output, bumper/applause levels, codecs, external display loss/recovery and complete provider songs on the actual show equipment; verify Android/iOS on real phones and venue networks. Obtain provider-approved partnership, distribution, territory, venue and offline terms and fees. Signing/notarization, store access and commercial policy decisions remain separate from code completion. A successful build or synthetic rehearsal does not establish those results.
 
-**Live remote status:** on 20 November the public queue relay and mobile/singer assets were updated to 0.10.3, and the private visual-only viewer was deployed at `booth.thepropervolume.com`. A disposable public room verified a result past the first 50, matching-page pagination, legacy request compatibility and room closure; Chrome verified the singer search, and synthetic frames verified private viewer access and revocation. The published 0.10.3 desktop build copies the compatible queue-host viewer URL; later source also supports the booth hostname. Actual show capture, phones, venue-network performance and long sessions still need testing. See the [deployment record](../deploy/queue-relay/DEPLOYMENT-2026-11-20-SCREEN-SEARCH.md).
+**Live remote status**
+
+The public queue relay and mobile/singer assets are at 0.10.5. The private visual-only viewer is available at `booth.thepropervolume.com`. Public Chrome checks covered singer search beyond the first 50 results and withdrawal of a prepared request before playback. Synthetic frames verified private viewer access and revocation. Actual show capture, phones, venue-network performance and long sessions still need testing. [Deployment record](../deploy/queue-relay/DEPLOYMENT-2026-11-20-SCREEN-SEARCH.md)
 
 ## 0.10.3 Source Controls
 
