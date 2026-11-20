@@ -230,8 +230,11 @@ window.tpvDisplay.subscribe(async (view) => {
   bumperPlayer.setVolume(view.bumperVolume);
   applausePlayer?.setVolume(view.bumperVolume);
   shortcuts = view.shortcuts;
-  fontFamily = appearanceFontStack(view.fontFamily);
-  document.documentElement.style.setProperty('--booth-font-family', fontFamily ?? '');
+  const nextFont = appearanceFontStack(view.fontFamily);
+  if (fontFamily !== nextFont) {
+    fontFamily = nextFont;
+    document.documentElement.style.setProperty('--booth-font-family', fontFamily ?? '');
+  }
   const state = view.playback;
   document.body.classList.toggle('idle', !state);
   document.body.classList.toggle('native-karafun', isNative(state));

@@ -28,8 +28,10 @@ test('queue updates do not interrupt the currently playing output', async () => 
   video = new FakeMedia();
   const waiting = { hidden: false }, caption = { textContent: '' }, next = { textContent: '' };
   const byId: Record<string, unknown> = { '#waiting': waiting, '#caption': caption, '#next': next };
+  const fontWrites: string[] = [];
   const fakeDocument = {
     body: { classList: { toggle() {} } },
+    documentElement: { style: { setProperty(name: string, value: string) { if (name === '--booth-font-family') fontWrites.push(value); } } },
     querySelector(selector: string) { return selector === '#video' ? video : byId[selector]; },
     querySelectorAll() { return []; },
     createElement(tag: string) { assert.equal(tag, 'video'); return new FakeMedia(); },
@@ -74,11 +76,13 @@ test('queue updates do not interrupt the currently playing output', async () => 
     assert.equal(playing.paused, false);
     const before = { pause: playing.pauseCalls, play: playing.playCalls, load: playing.loadCalls };
     playing.currentTime = 23;
-    await publish({ ...view, logo: 'data:image/png;base64,AAAA', branding: { boothName: 'Updated Booth', displayLogoSize: 80,
+    assert.deepEqual(fontWrites, [], 'Default and queue-only updates leave the font untouched.');
+    await publish({ ...view, fontFamily: 'serif', logo: 'data:image/png;base64,AAAA', branding: { boothName: 'Updated Booth', displayLogoSize: 80,
       bannerEnabled: true, bannerText: 'Welcome!', bannerPosition: 'top', bannerExpiresAt: '' } });
+    assert.deepEqual(fontWrites, ['Georgia, "Times New Roman", serif']);
     assert.equal(video, playing); assert.equal(playing.currentTime, 23);
     assert.deepEqual({ pause: playing.pauseCalls, play: playing.playCalls, load: playing.loadCalls }, before,
-      'Branding updates must not pause, restart or reload a playing song.');
+      'Appearance updates must not pause, restart or reload a playing song.');
 
     playing.error = { code: 2 };
     playing.dispatchEvent(new Event('error'));
