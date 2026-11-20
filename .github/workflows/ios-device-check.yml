@@ -1,0 +1,85 @@
+name: Verify unsigned iOS device build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  iphoneos:
+    name: Compile and inspect iPhoneOS Release
+    runs-on: xcode-27
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Install dependencies and build the mobile interface
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --prefix mobile --no-audit --no-fund
+          npm run typecheck
+          npm --prefix mobile run typecheck
+          npm run build:mobile
+      - name: Copy web assets into the native iOS project
+        working-directory: mobile
+        run: npx cap sync ios
+      - name: Build an unsigned device app
+        run: |
+          xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/tpv-ios-device" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Verify device architecture, metadata and bundled interface
+        env:
+          APP_BUNDLE: ${{ runner.temp }}/tpv-ios-device/Build/Products/Release-iphoneos/App.app
+        run: |
+          set -euo pipefail
+          test -d "$APP_BUNDLE"
+          test -f "$APP_BUNDLE/Info.plist"
+          test -f "$APP_BUNDLE/App"
+          test ! -e "$APP_BUNDLE/embedded.mobileprovision"
+          test ! -d "$APP_BUNDLE/_CodeSignature"
+          # A linker can add an ad-hoc binary signature without any signing
+          # identity. Reject a real app signing authority or developer team.
+          codesign -dv --verbose=4 "$APP_BUNDLE" > "$RUNNER_TEMP/tpv-ios-build-signing.txt" 2>&1 || true
+          if grep -Eq '^Authority=|^TeamIdentifier=[A-Z0-9]{10}$' "$RUNNER_TEMP/tpv-ios-build-signing.txt"; then
+            echo 'Unexpected developer signing identity.' >&2
+            exit 1
+          fi
+          xcrun lipo -verify_arch arm64 "$APP_BUNDLE/App"
+          xcrun vtool -show-build "$APP_BUNDLE/App" > "$RUNNER_TEMP/tpv-ios-build-platform.txt"
+          grep -Eq '^[[:space:]]*platform[[:space:]]+(IOS|2)[[:space:]]*$' "$RUNNER_TEMP/tpv-ios-build-platform.txt"
+          test "$(plutil -extract CFBundleSupportedPlatforms.0 raw -o - "$APP_BUNDLE/Info.plist")" = 'iPhoneOS'
+          test "$(plutil -extract DTPlatformName raw -o - "$APP_BUNDLE/Info.plist")" = 'iphoneos'
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$APP_BUNDLE/Info.plist")" = 'com.thepropervolume.karaoke'
+          test "$(plutil -extract CFBundlePackageType raw -o - "$APP_BUNDLE/Info.plist")" = 'APPL'
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$APP_BUNDLE/Info.plist")" = "$(node -p "require('./package.json').version")"
+          test -n "$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP_BUNDLE/Info.plist")"
+          test "$(plutil -extract NSBonjourServices.0 raw -o - "$APP_BUNDLE/Info.plist")" = '_tpv-karaoke._tcp'
+          test -f "$APP_BUNDLE/Assets.car"
+          node --input-type=module <<'NODE'
+          import { readFile, readdir } from 'node:fs/promises';
+          import { join } from 'node:path';
+          import assert from 'node:assert/strict';
+          const source = 'dist/mobile', bundled = join(process.env.APP_BUNDLE, 'public');
+          const required = ['index.html', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+          const assets = await readdir(join(source, 'assets'), { withFileTypes: true });
+          assert.ok(assets.some(item => item.isFile() && item.name.endsWith('.js')), 'Missing built application JavaScript.');
+          assert.ok(assets.every(item => item.isFile()), 'Unexpected nested or linked asset.');
+          required.push(...assets.map(item => `assets/${item.name}`));
+          for (const name of required) assert.deepEqual(await readFile(join(bundled, name)), await readFile(join(source, name)), `Bundled asset differs: ${name}`);
+          const config = JSON.parse(await readFile(join(process.env.APP_BUNDLE, 'capacitor.config.json'), 'utf8'));
+          assert.equal(config.appId, 'com.thepropervolume.karaoke');
+          assert.ok(!config.server?.url, 'A device build must not point to a development server.');
+          console.log(`Verified ${required.length} bundled interface files and native configuration.`);
+          NODE
+          echo 'Unsigned arm64 iPhoneOS Release app verified. This is not a signed IPA or store submission.'
