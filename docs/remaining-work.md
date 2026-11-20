@@ -1,13 +1,13 @@
 # Remaining work
 
-Updated 20 November 2026 for **0.10.7 development**, with 1.0.0 reserved for the official release. The public download page lists each published build and source commit. Earlier milestones retain their original evidence. [Booth downloads](https://release.thepropervolume.com/booth/) · [Release acceptance checklist](release-acceptance.md)
+Updated 20 November 2026 for **0.10.8 development**, with 1.0.0 reserved for the official release. The public download page lists each published build and source commit. Earlier milestones retain their original evidence. [Booth downloads](https://release.thepropervolume.com/booth/) · [Release acceptance checklist](release-acceptance.md)
 
 ## Next work in priority order
 
 1. **Reliable show operation:** verify the new backup restore, missing-file review, and failed-video recovery on installed show systems. Continue fault testing for upgrades, interruptions, imports, real output devices, and external displays.
-2. **Catalog freshness and acquisition:** reconcile the unknown previous Karaoke Nerds refresh history before enabling a single centrally coordinated, at-most-daily feed refresh. Add monitored recovery, indexed queries and load tests; implement reviewed brand/artist bulk caching and newest-version selection. The recovered shared snapshot is searchable, but its upstream freshness is unknown.
+2. **Catalog freshness and acquisition:** reconcile the unknown previous Karaoke Nerds refresh history before enabling a single centrally coordinated, at-most-daily feed refresh. The shared snapshot is searchable and exact artist/brand filters are indexed in memory. Extend production load tests and recovery monitoring, and implement brand/artist bulk caching and newest-version selection. The snapshot's upstream freshness is unknown.
 3. **Provider playback:** harden the experimental desktop KaraFun and Party Tyme flows for account expiry, network failure, caching and recovery. Complete real-account and provider-specific integration for Sunfly and Stingray when partner access and playback rights exist; metadata search alone is not playback.
-4. **Queue, library and controls:** finish named-show lifecycle, refine approximate waits after real-show checks, support broader group performance, folder rescan/duplicate review and reversible metadata editing. The filename-template preview/apply workflow already exists; embedded-tag precedence and optional write-back remain open. Complete the authenticated local API/CLI beyond its current read/navigation subset without another database writer.
+4. **Queue, library and controls:** finish named-show lifecycle, refine approximate waits after real-show checks, support broader group performance, folder rescan/duplicate review and reversible metadata editing. The filename-template preview/apply workflow is available. Embedded-tag precedence and optional write-back remain open. Extend the authenticated local API/CLI beyond queue edits, paged library lookup, and basic read/navigation commands through the running Booth's show writer.
 5. **Singers, mobile and accessibility:** complete persistent profiles/roles, privacy and data controls, accessibility coverage, verify mobile playback-position recovery on real devices, and add mobile paid-source integration. Singer-room search already searches the host's saved library, not every provider's entire catalog.
 6. **Release readiness:** verify desktop installers/upgrades/removal, signing and CLI setup; define and implement a safe update path, then close documented QA findings. Published Android debug/unsigned and iOS Simulator artifacts are development builds, not production app-store or iPhone installers.
 
@@ -149,13 +149,14 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [x] Add a guided missing/moved-file review and keep exact-copy relinking. The isolated Windows rehearsal found a moved file, rejected a different video, and played the relinked original.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [x] Restore from a checked backup after native confirmation, with automatic current-show rollback and a silent restart. Windows Electron verified both cancellation and successful restore.
-- [x] Add versioned SQLite migrations (current schema 7) with upgrade, interrupted-write and rollback tests.
+- [x] Add versioned SQLite migrations (current schema 8) with upgrade, interrupted-write and rollback tests.
 - [x] Add a validated, standalone pre-migration show backup before opening an older database; stop the upgrade if the backup fails.
 - [ ] Verify pre-migration backup, upgrade and rollback on installed show systems and real filesystems. The new in-app flow passed an isolated Windows restart test.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
 - [x] Build Linux x64 AppImage and Debian packages, verify dependency metadata and payload, and pass final AppImage launch/restart under an isolated virtual display.
-- [ ] Verify Linux desktop installation, upgrade/removal, sandbox behavior and show hardware; complete Mac Finder installation, Intel runtime, Dock appearance and physical show checks after the 0.4.4 native build/arm64 launch rehearsal. Package builds do not establish installation or hardware readiness. Preserve local shows when network services fail.
+- [x] Verify the published 0.10.7 Debian package installs with its declared dependencies and purges while preserving an isolated profile. The Windows GitHub runner verified 0.10.6→0.10.7 installation, upgrade, checked schema 7 backup and uninstall.
+- [ ] Verify Linux installation and default sandbox behavior on a real desktop. Complete Mac Finder installation, Intel runtime, Dock appearance and physical show checks. Preserve local shows when network services fail.
 
 ## Priority 1 — host, queue and library
 
@@ -177,7 +178,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Add folder watching/rescanning and review for duplicates, moved media and alternate versions.
 - [ ] Verify and improve search, scrolling, filtering and sorting with a genuinely large library.
 - [ ] Extend batch metadata review/editing with source provenance, reversible overrides and broader rescan preview. A filename-template before/after preview with explicit selection and changed-since-preview protection is already implemented.
-- [ ] Read embedded metadata and allow the host to set precedence among tags, filename templates and manual overrides.
+- [x] Read a local MP4’s embedded title and artist from Edit Song Details and allow the host to copy either field to the local edit.
+- [ ] Add configurable embedded-tag and filename-template precedence for imports and retain manual overrides.
 - [ ] Offer an explicit per-edit choice to update supported embedded artist/title tags; default local-only and retain local edits if writing fails.
 - [x] Add playlist import/export with preview and exact recording matching. A two-profile Windows rehearsal matched a renamed identical file and skipped an unavailable recording.
 - [ ] Finish playlist and favorite organization, including personal accounts and cross-device sync.
@@ -189,7 +191,7 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
 - [x] Provide a user-invoked PATH installer for the bundled CLI on supported packaged Windows, Linux and macOS builds; AppImage needs manual handling.
 - [ ] Verify CLI install/removal on real Windows, Linux and macOS accounts, including shell startup and PATH collisions.
-- [x] Add an authenticated queue view and separately enabled queue changes through the existing show writer, with revision checks and original-outcome retries.
+- [x] Add an authenticated queue view, paged library lookup, and separately enabled queue changes through the existing show writer, with revision checks and original-outcome retries.
 - [ ] Complete general CLI actions, events, pagination and scoped callers. Playback, library import, providers and other specialized commands remain open.
 
 ## Priority 1 — playback and display
@@ -205,7 +207,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Verify audible bumper routing on show hardware; add fade-out, separate filler volume and richer intermission policies. Fade-in is implemented.
 - [ ] Verify the inter-song pause interval on physical show hardware for finish, skip and restart.
 - [ ] Extend configurable display presets and test physical fullscreen/monitor behavior; booth name, logo size, next singers and timed scrolling banner are implemented.
-- [ ] Add keyboard-only, screen-reader, high-contrast and text-scaling accessibility coverage.
+- [x] Verify desktop queue arrow navigation and mobile keyboard focus recovery and announcements in isolated browser rehearsals.
+- [ ] Extend accessibility coverage to full keyboard-only workflows, screen readers, high contrast and text scaling on actual devices.
 
 ## Priority 2 — singers, remote use and administration
 

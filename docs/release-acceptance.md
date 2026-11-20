@@ -16,6 +16,8 @@ The published 0.10.6 Windows ZIP was verified against its manifest, launched and
 
 On a disposable Windows GitHub runner, the published 0.10.5 installer installed successfully. The 0.10.6 upgrade retained the seeded profile and preferences without autoplay, and uninstall left the disposable show database intact. [Windows install rehearsal](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44714836985)
 
+The same rehearsal passed for the public 0.10.6 and 0.10.7 Windows installers. After the migration, the harness verified the integrity and original schema of the standalone backup. The public 0.10.7 Debian package installed on clean Ubuntu 24.04 without any extra ALSA packages, launched and reopened a disposable show under Xvfb, and purged while preserving that profile. The GUI rehearsal used a test-only sandbox override after Docker rejected namespace operations. [Windows 0.10.7 install rehearsal](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44717492142) · [0.10.7 packages](https://release.thepropervolume.com/booth/v0.10.7/)
+
 ## Official release gates
 
 - [ ] Install, upgrade and uninstall on supported Windows, Linux and macOS systems. Verify signing and launch behavior for the intended public distribution and cover both supported Mac architectures. Rehearse rollback against a copy of a representative show. [Handoff](handoff.md)
