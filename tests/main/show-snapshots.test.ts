@@ -18,6 +18,7 @@ test('a live WAL-backed show can be backed up and restored to a separate databas
     const state = createInitialState('show-00001', 'epoch-0001'); state.revision = 4;
     state.singers.push({ id: 's1', name: 'Alice' });
     state.versions.push({ id: 'v1', title: 'Song', artist: 'Artist', rating: 'clean' });
+    state.versions.push({ id: 'v-kn', title: 'Unbranded', artist: 'Artist', rating: 'clean', source: { provider: 'youtube', videoId: 'abcdefghijk' }, discoveryOrigin: 'karaokenerds' });
     state.requests.push({ id: 'r1', singerId: 's1', versionId: 'v1', status: 'playing', round: 1, order: 1 });
     state.requests.push({ id: 'r2', singerId: 's1', versionId: 'v1', status: 'rejected', round: null, order: null },
       { id: 'r3', singerId: 's1', versionId: 'v1', status: 'withdrawn', round: 2, order: 2 });
@@ -32,6 +33,7 @@ test('a live WAL-backed show can be backed up and restored to a separate databas
     const copy = new Store<typeof state>(restored);
     try {
       assert.equal(copy.load()?.revision, 4); assert.equal(copy.media('v1')?.path, '/private/song.mp4');
+      assert.equal(copy.load()?.versions.find(item => item.id === 'v-kn')?.discoveryOrigin, 'karaokenerds');
       assert.equal(copy.load()?.playback?.generationId, 'g1'); assert.equal(copy.load()?.requests[0].status, 'playing');
       assert.deepEqual(copy.load()?.requests.map(request => request.status), ['playing', 'rejected', 'withdrawn']);
       assert.equal(copy.missingSongRequests()[0].singer, 'Alice');

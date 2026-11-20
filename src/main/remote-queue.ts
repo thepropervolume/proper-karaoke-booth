@@ -1,3 +1,4 @@
+import { matchesCatalogQuery, validCatalogQuery } from '../domain/guest-catalog-search';
 /** Transport-independent, single-authority guest boundary. It opens no listener. */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,6 +9,7 @@ import { compileSongBlacklist } from '../domain/song-blacklist';
 import { applyPointsEvent, newPointsLedger } from '../domain/points';
 import { recordQueuedSongs, songSeenBefore } from './song-history';
 import { validPhotoDataUrl } from '../domain/photo';
+import { sourceIsVisible } from '../domain/source-visibility';
 
 type Guest = { id: string; singerId: string; showId: string };
 type Receipt = { fingerprint: string; outcome: string };
@@ -36,7 +38,7 @@ export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
   private authorityFault = false;
-  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled'>>,
+  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled' | 'sourceVisibility'>>,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
     private readonly onUncertainCommit: () => void = () => {},
@@ -136,12 +138,13 @@ export class RemoteQueue {
       const state = this.state(), hash = digest(resumeSecret);
       const prior = this.db.prepare('SELECT id, singer_id AS singerId, show_id AS showId, resume_hash AS resumeHash, resume_expires AS resumeExpires, join_name AS joinName, join_revision AS joinRevision, revoked FROM remote_guests WHERE join_id = ?').get(joinId) as { id: string; singerId: string; showId: string; resumeHash: string; resumeExpires: number; joinName: string; joinRevision: number; revoked: number } | undefined;
       if (prior) {
-        if (prior.revoked || prior.resumeExpires <= this.now() || prior.resumeHash !== hash || prior.joinName !== name.trim() || prior.joinRevision !== expectedRevision || prior.showId !== state.showId || this.guestScope(prior.id) !== scope) throw denied();
+        if (prior.revoked || prior.resumeExpires <= this.now() || prior.resumeHash !== hash || prior.joinName !== name.trim() || prior.joinRevision !== expectedRevision || prior.showId !== state.showId || !state.singers.some(s => s.id === prior.singerId && !s.archived) || this.guestScope(prior.id) !== scope) throw denied();
         return { session: this.issueSession(prior.id), singerId: prior.singerId };
       }
       const invite = this.db.prepare('SELECT show_id AS showId, expires, revoked FROM remote_invitations WHERE token_hash = ?').get(digest(invitation)) as { showId: string; expires: number; revoked: number } | undefined;
       if (!invite || invite.revoked || invite.expires <= this.now() || invite.showId !== state.showId || this.invitationScope(digest(invitation)) !== scope) throw denied();
-      const count = this.db.prepare("SELECT COUNT(*) AS count FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ? AND COALESCE((SELECT scope_id FROM remote_guest_scopes WHERE guest_id = remote_guests.id), '') = ?").get(state.showId, this.now(), scope) as { count: number };
+      const archivedIds = JSON.stringify(state.singers.filter(singer => singer.archived).map(singer => singer.id));
+      const count = this.db.prepare("SELECT COUNT(*) AS count FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ? AND COALESCE((SELECT scope_id FROM remote_guest_scopes WHERE guest_id = remote_guests.id), '') = ? AND singer_id NOT IN (SELECT value FROM json_each(?))").get(state.showId, this.now(), scope, archivedIds) as { count: number };
       if (count.count >= MAX_ROOM_GUESTS) throw new Error('Guest limit reached.');
       const guestId = randomUUID(), singerId = randomUUID();
       // The invite authorizes only this tightly scoped internal registration operation.
@@ -165,7 +168,7 @@ export class RemoteQueue {
     if (!validSecret(resumeSecret)) throw denied();
     return this.transaction(() => {
       const guest = this.db.prepare('SELECT id, singer_id AS singerId, show_id AS showId, resume_expires AS resumeExpires, revoked FROM remote_guests WHERE resume_hash = ?').get(digest(resumeSecret)) as (Guest & { revoked: number; resumeExpires: number }) | undefined;
-      if (!guest || guest.revoked || guest.resumeExpires <= this.now() || guest.showId !== this.state().showId || this.guestScope(guest.id) !== scope) throw denied();
+      if (!guest || guest.revoked || guest.resumeExpires <= this.now() || guest.showId !== this.state().showId || !this.state().singers.some(s => s.id === guest.singerId && !s.archived) || this.guestScope(guest.id) !== scope) throw denied();
       return { session: this.issueSession(guest.id), singerId: guest.singerId };
     });
   }
@@ -173,14 +176,15 @@ export class RemoteQueue {
     if (!validSecret(token)) throw denied();
     const row = this.db.prepare(`SELECT g.id, g.singer_id AS singerId, g.show_id AS showId FROM remote_sessions s
       JOIN remote_guests g ON g.id = s.guest_id WHERE s.token_hash = ? AND s.run_id = ? AND s.expires > ? AND s.revoked = 0 AND g.revoked = 0 AND g.resume_expires > ?`).get(digest(token), this.runId, this.now(), this.now()) as Guest | undefined;
-    if (!row || row.showId !== this.state().showId || this.guestScope(row.id) !== scope) throw denied();
+    if (!row || row.showId !== this.state().showId || !this.state().singers.some(s => s.id === row.singerId && !s.archived) || this.guestScope(row.id) !== scope) throw denied();
     return row;
   }
   /** Host-only bounded list. Guest access expires with the private resume credential. */
   listGuests(scope = ''): { singerId: string; name: string }[] {
     this.requireAuthority();
-    const rows = this.db.prepare("SELECT singer_id AS singerId, join_name AS name FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ? AND COALESCE((SELECT scope_id FROM remote_guest_scopes WHERE guest_id = remote_guests.id), '') = ? ORDER BY rowid LIMIT ?")
-      .all(this.state().showId, this.now(), scope, MAX_ROOM_GUESTS + 1) as { singerId: string; name: string }[];
+    const state = this.state(), archivedIds = JSON.stringify(state.singers.filter(singer => singer.archived).map(singer => singer.id));
+    const rows = this.db.prepare("SELECT singer_id AS singerId, join_name AS name FROM remote_guests WHERE show_id = ? AND revoked = 0 AND resume_expires > ? AND COALESCE((SELECT scope_id FROM remote_guest_scopes WHERE guest_id = remote_guests.id), '') = ? AND singer_id NOT IN (SELECT value FROM json_each(?)) ORDER BY rowid LIMIT ?")
+      .all(state.showId, this.now(), scope, archivedIds, MAX_ROOM_GUESTS + 1) as { singerId: string; name: string }[];
     if (rows.length > MAX_ROOM_GUESTS) throw new Error('Remote guest list needs recovery.');
     return rows.map(({ singerId, name }) => ({ singerId, name }));
   }
@@ -202,7 +206,7 @@ export class RemoteQueue {
   }
   snapshot(token: unknown, scope = '') {
     const guest = this.authenticate(token, scope), state = this.state();
-    const catalog = this.catalog(token, 0, 50, scope);
+    const catalog = this.catalog(token, 0, 50, '', scope);
     const visible = new Set(visibleVersions(state, this.settings()).map(version => version.id));
     const singerName = state.singers.find(singer => singer.id === guest.singerId)?.name ?? '';
     // Preserve active requests even when they are older than recent completed or
@@ -230,17 +234,17 @@ export class RemoteQueue {
       ...(this.onApplause ? { applauseEnabled: preferences.applauseEnabled !== false, applauseCredits: account?.credits ?? 3,
         ...(preferences.pointsEnabled !== false ? { points: account?.points ?? 0 } : {}) } : {}) };
   }
-  catalog(token: unknown, offset = 0, limit = 50, scope = '') {
+  catalog(token: unknown, offset = 0, limit = 50, query = '', scope = '') {
     this.authenticate(token, scope);
-    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw denied();
-    const state = this.state(), versions = visibleVersions(state, this.settings());
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !validCatalogQuery(query)) throw denied();
+    const state = this.state(), settings = this.settings(), versions = visibleVersions(state, settings).filter(version => sourceIsVisible(version, settings.sourceVisibility) && matchesCatalogQuery(version, query));
     const items = versions.slice(offset, offset + limit).map(v => ({ id: v.id, title: v.title, artist: v.artist }));
     return { revision: state.revision, items, nextOffset: offset + limit < versions.length ? offset + limit : null };
   }
   catalogItem(token: unknown, versionId: string, scope = '') {
     const state = this.state(); this.authenticate(token, scope);
-    if (!isVersionAllowed(state, versionId, this.settings())) return null;
-    const version = state.versions.find(v => v.id === versionId)!;
+    const settings = this.settings(), version = state.versions.find(v => v.id === versionId);
+    if (!version || !isVersionAllowed(state, versionId, settings) || !sourceIsVisible(version, settings.sourceVisibility)) return null;
     return { id: version.id, title: version.title, artist: version.artist };
   }
   /** Original outcome lookup is independent of host epoch but still requires the same guest. */
@@ -409,10 +413,15 @@ export class RemoteQueue {
     const outcome = this.transaction(() => {
       const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, request.commandId) as Receipt | undefined;
       if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false as const, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
-      const state = this.state();
+      const state = this.state(), preferences = this.settings(), version = state.versions.find(item => item.id === request.versionId);
+      if (version && request.showId === state.showId && request.hostEpoch === state.hostEpoch && request.expectedRevision === state.revision && !sourceIsVisible(version, preferences.sourceVisibility)) {
+        const refused: Outcome = { ok: false, code: 'NOT_AVAILABLE', message: 'This source is disabled by the host.', revision: state.revision };
+        this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, request.commandId, fingerprint, JSON.stringify(refused));
+        return refused;
+      }
       const applied = applyCommand(state, { commandId: `remote-${guest.id}-${request.commandId}`, showId: request.showId, hostEpoch: request.hostEpoch,
         expectedRevision: request.expectedRevision, actor: { role: 'singer', id: guest.singerId },
-        command: { type: 'request', requestId: `remote-${guest.id}-${request.commandId}`, singerId: guest.singerId, versionId: request.versionId } }, this.settings(), this.now(),
+        command: { type: 'request', requestId: `remote-${guest.id}-${request.commandId}`, singerId: guest.singerId, versionId: request.versionId } }, preferences, this.now(),
         { songSeenBefore: version => songSeenBefore(this.db, version) });
       recordQueuedSongs(this.db, state, applied.state);
       this.save(applied.state);

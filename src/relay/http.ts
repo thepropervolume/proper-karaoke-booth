@@ -11,15 +11,19 @@ import { MobileHostAccess, NearbyRooms } from './mobile-access';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { searchMobileCatalog } from './mobile-catalog';
 import { version as appVersion } from '../../package.json';
+import { InternetSingerScreens, SCREEN_FRAME_BYTES } from './singer-screen';
 
 export type RelayOwner = { id: string; tokenSha256: string };
 type Options = { publicOrigin: string; owners: readonly RelayOwner[]; broker: RelayBroker; staticHandler: SingerStaticHandler;
   trustProxy?: boolean; rateNow?: () => number; bodyTimeoutMs?: number; onFailure?: () => void; isReady?: () => boolean;
   mobileEnabled?: boolean; mobileCatalog?: typeof searchMobileCatalog };
 const POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
-const HOST_ROUTE = /^\/v1\/relay\/host\/(open|poll|reply|close)$/;
+const HOST_ROUTE = /^\/v1\/relay\/host\/(open|poll|reply|close|screen)$/;
 const GUEST_ROUTE = /^\/v1\/relay\/rooms\/([^/]+)\/([^/]+)\/guest\/([a-z-]+)$/;
 const LOOKUP_ROUTE = /^\/v1\/relay\/lookup\/([a-z0-9-]+)$/;
+const SCREEN_ROUTE = /^\/([a-z0-9-]+)\/screen(?:\/(frame))?$/;
+const SCREEN_PAGE = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Singer display</title><style>html,body{margin:0;height:100%;background:#000;color:white;font:18px system-ui}img{width:100%;height:100%;object-fit:contain}p{position:fixed;inset:40% 1rem auto;text-align:center}</style><img alt="Live singer display" hidden><p>Waiting for the singer display. Audio plays at the venue.</p><script src="/v1/screen-viewer.js" defer></script></html>';
+const SCREEN_JS = `(()=>{const img=document.querySelector('img'),notice=document.querySelector('p'),key='tpv-screen:'+location.pathname;let secret=location.hash.slice(1);history.replaceState(null,'',location.pathname);try{if(secret)sessionStorage.setItem(key,secret);else secret=sessionStorage.getItem(key)||''}catch{}if(!/^[A-Za-z0-9_-]{43}$/.test(secret)){notice.textContent='Use the complete singer-screen link from your host.';return}const viewer=crypto.randomUUID();let old='';async function update(){try{const r=await fetch(location.pathname+'/frame',{headers:{Authorization:'Bearer '+secret,'X-TPV-Screen-Viewer':viewer},cache:'no-store',credentials:'omit',mode:'same-origin',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();const blob=await r.blob();if(blob.type!=='image/jpeg')throw Error();const next=URL.createObjectURL(blob);img.src=next;img.hidden=false;notice.hidden=true;if(old)URL.revokeObjectURL(old);old=next}catch{img.hidden=true;notice.hidden=false;if(old){URL.revokeObjectURL(old);old=''}}finally{setTimeout(update,1000)}}update()})();`;
 class HttpError extends Error { constructor(readonly status: number, readonly code: string) { super(code); } }
 
 function headerCount(request: IncomingMessage, name: string): number {
@@ -94,6 +98,7 @@ export function createQueueRelayHandler(options: Options) {
     ids.add(owner.id); hashes.add(owner.tokenSha256); return { id: owner.id, hash: Buffer.from(owner.tokenSha256, 'hex') };
   });
   const limits = new RelayRateLimits(options.rateNow);
+  const screens = new InternetSingerScreens();
   const mobile = new MobileHostAccess(), nearby = new NearbyRooms();
   const bodyTimeout = options.bodyTimeoutMs ?? 5_000;
   let photoReaders = 0;
@@ -115,6 +120,29 @@ export function createQueueRelayHandler(options: Options) {
       if (!limits.take('global', 12_000) || !limits.take('ip:' + client, 6_000)) throw new HttpError(429, 'RATE_LIMITED');
       const path = request.url;
       if (request.method === 'GET') {
+        if (path === '/v1/screen-viewer.js') {
+          const bytes = Buffer.from(SCREEN_JS);
+          response.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Content-Length': bytes.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); response.end(bytes); return;
+        }
+        const screen = SCREEN_ROUTE.exec(path);
+        if (screen) {
+          if (!isRelaySlug(screen[1]) || !limits.take((screen[2] ? 'screen-frame:' : 'screen-page:') + client, screen[2] ? 2400 : 120)) throw new HttpError(429, 'RATE_LIMITED');
+          if (!screen[2]) {
+            const bytes = Buffer.from(SCREEN_PAGE);
+            response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': bytes.length, 'Cache-Control': 'no-store',
+              'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+              'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' }); response.end(bytes); return;
+          }
+          const token = bearer(request);
+          if (!token) throw new HttpError(401, 'UNAUTHORIZED');
+          const viewer = request.headers['x-tpv-screen-viewer'];
+          if (headerCount(request, 'x-tpv-screen-viewer') !== 1 || !isRelayUuid(viewer)) throw new HttpError(400, 'INVALID_VIEWER');
+          const room = await options.broker.lookup(screen[1]);
+          if (!room?.online) throw new HttpError(404, 'SCREEN_UNAVAILABLE');
+          const frame = screens.frame(screen[1], room, client + ':' + viewer, token);
+          if (!frame) throw new HttpError(404, 'SCREEN_UNAVAILABLE');
+          response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': frame.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' }); response.end(frame); return;
+        }
         if (path === '/v1/mobile/nearby' && options.mobileEnabled) {
           if (!limits.take('nearby:' + client, 60)) throw new HttpError(429, 'RATE_LIMITED');
           respond(response, 200, { rooms: await nearby.discover(client, slug => options.broker.lookup(slug)), method: 'same-egress' }); return;
@@ -166,8 +194,27 @@ export function createQueueRelayHandler(options: Options) {
         if (!ownerId && token && options.mobileEnabled) ownerId = mobile.authenticate(token);
         if (!token || !ownerId) { if (!limits.take('failed-host:' + client, 30)) throw new HttpError(429, 'RATE_LIMITED'); throw new HttpError(401, 'UNAUTHORIZED'); }
         if (!limits.take('owner:' + ownerId, 3_000) || host[1] === 'open' && !limits.take('open:' + ownerId, 120, 3_600_000)) throw new HttpError(429, 'RATE_LIMITED');
-        const input = await readJson(request, host[1] === 'reply' ? MAX_HOST_REPLY_BYTES : 8192, bodyTimeout);
+        const input = await readJson(request, host[1] === 'reply' ? MAX_HOST_REPLY_BYTES : host[1] === 'screen' ? Math.ceil(SCREEN_FRAME_BYTES * 4 / 3) + 2048 : 8192, bodyTimeout);
         if (controller.signal.aborted) return;
+        if (host[1] === 'screen') {
+          if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'INVALID_SCREEN');
+          const value = input as Record<string, unknown>;
+          if (!isRelayUuid(value.roomId) || !isRelayUuid(value.generation) || !isRelayUuid(value.streamId) ||
+              !['start', 'stop', 'frame'].includes(String(value.action))) throw new HttpError(400, 'INVALID_SCREEN');
+          const keys = Object.keys(value).sort().join(',');
+          if (keys !== (value.action === 'frame' ? 'action,frame,generation,roomId,sequence,streamId' : value.action === 'start' ? 'action,generation,roomId,streamId,viewerDigest' : 'action,generation,roomId,streamId')) throw new HttpError(400, 'INVALID_SCREEN');
+          const identity = { roomId: value.roomId, generation: value.generation };
+          const lease = await options.broker.screenLease(ownerId, identity);
+          if (controller.signal.aborted) return;
+          if (value.action === 'start') { if (typeof value.viewerDigest !== 'string') throw new HttpError(400, 'INVALID_SCREEN'); screens.start(lease, value.streamId, value.viewerDigest); }
+          else if (value.action === 'stop') screens.clear(identity, value.streamId);
+          else {
+            if (!limits.take('screen-upload:' + ownerId, 120) || !limits.take('screen-upload-global', 6000)) throw new HttpError(429, 'RATE_LIMITED');
+            if (typeof value.frame !== 'string' || value.frame.length > Math.ceil(SCREEN_FRAME_BYTES * 4 / 3) || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.frame) || !Number.isSafeInteger(value.sequence)) throw new HttpError(400, 'INVALID_SCREEN');
+            screens.publish(lease, value.streamId, value.sequence as number, Buffer.from(value.frame, 'base64'));
+          }
+          respond(response, 200, { ok: true }); return;
+        }
         if (host[1] === 'open') {
           const value = parseHostOpen(input); if (!value) throw new HttpError(400, 'INVALID_OPEN');
           const room = await options.broker.open(ownerId, value);
@@ -176,7 +223,7 @@ export function createQueueRelayHandler(options: Options) {
         }
         if (host[1] === 'reply') { respond(response, 200, await options.broker.reply(ownerId, input)); return; }
         const identity = parseRoomIdentity(input); if (!identity) throw new HttpError(400, 'INVALID_ROOM');
-        if (host[1] === 'close') { respond(response, 200, await options.broker.close(ownerId, identity)); nearby.forget(identity.roomId); return; }
+        if (host[1] === 'close') { const result = await options.broker.close(ownerId, identity); screens.clear(identity); respond(response, 200, result); nearby.forget(identity.roomId); return; }
         const result = await options.broker.poll(ownerId, identity, controller.signal);
         nearby.refresh(identity, client, request.headers['x-tpv-room-discovery'] === 'yes');
         respond(response, 200, { ...identity, ...result }); return;

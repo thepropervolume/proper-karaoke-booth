@@ -43,6 +43,8 @@ test('LAN HTTP and relay authority hide blacklisted metadata and reject stale gu
     for (const [api, guest, authority] of [[lan, lanGuest, queue], [internet, relayGuest, relay.authority]] as const) {
       const projection = await api.post('/api/v1/snapshot', {}, guest.session);
       assert.deepEqual(projection.catalog.map((version: { id: string }) => version.id), ['version-other']);
+      assert.deepEqual((await api.post('/api/v1/catalog', { offset: 0, limit: 50, query: 'Nada' }, guest.session)).items, []);
+      assert.deepEqual((await api.post('/api/v1/catalog', { offset: 0, limit: 50, query: 'other amateur' }, guest.session)).items.map((version: {id:string}) => version.id), ['version-other']);
       assert.deepEqual(projection.requests, []);
       if ('catalogItem' in authority) {
         assert.equal(authority.catalogItem(guest.session, 'version-first'), null);

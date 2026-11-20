@@ -124,3 +124,11 @@ test('host reply envelope is bounded, strict and separately projects by the pend
   const deep = { ...reply, responses: [{ ...reply.responses[0], body: { next: { next: { next: { next: { next: { next: { next: {} } } } } } } } }] };
   assert.equal(parseHostReplyEnvelope(deep), null);
 });
+
+
+test('catalog search remains authenticated, bounded, and strictly scoped', () => {
+  assert.deepEqual(parseGuestRequest('catalog',{offset:0,limit:50,query:'Nada Surf'},secret),{operation:'catalog',payload:{offset:0,limit:50,query:'Nada Surf'},session:secret});
+  for (const query of ['x'.repeat(201),'bad\nquery',12]) assert.equal(parseGuestRequest('catalog',{offset:0,limit:50,query},secret),null);
+  assert.equal(parseGuestRequest('catalog',{offset:0,limit:50,query:'song'}),null);
+  assert.equal(parseGuestRequest('catalog',{offset:0,limit:50,query:'song',path:'/private'},secret),null);
+});

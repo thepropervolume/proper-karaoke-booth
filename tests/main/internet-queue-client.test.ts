@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, chownSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -34,6 +34,9 @@ test('internet dispatch injects private admission, preserves receipts and reject
     assert.equal(joined.status, 200);
     const guest = joined.body as { session: string; singerId: string };
     assert.equal(send('join', { joinId: randomUUID(), resumeSecret: token(), name: 'Other', expectedRevision: 0 }).status, 409);
+    assert.deepEqual((send('catalog', {offset: 0, limit: 50, query: 'nada popular'}, guest.session).body as {items: {id:string}[]}).items.map(song => song.id), ['version-clean']);
+    assert.deepEqual((send('catalog', {offset: 0, limit: 50, query: 'not found'}, guest.session).body as {items: {id:string}[]}).items, []);
+    assert.equal(send('catalog', {offset: 0, limit: 50, query: 'x'.repeat(201)}, guest.session).status, 400);
     const snapshot = send('snapshot', {}, guest.session).body as { showId: string; hostEpoch: string; revision: number };
     const command = { commandId: randomUUID(), showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, versionId: 'version-clean' };
     assert.equal(send('request', { command }, guest.session).status, 200);
@@ -54,6 +57,8 @@ class RelayFixture {
   opens: { slug: string; openId: string }[] = [];
   replies: { roomId: string; generation: string; responses: InternetGuestReply[] }[] = [];
   closes: unknown[] = [];
+  screens: Record<string, any>[] = [];
+  screenUnavailable = false;
   pending: { resolve: (value: Response) => void; reject: (reason: Error) => void; generation: string } | undefined;
   replyFailures = 0;
   lateReplyConflict = false;
@@ -87,6 +92,8 @@ class RelayFixture {
         if (this.lateReplyConflict) { this.lateReplyConflict = false; return response({ error: 'unknown-reply' }, 409); }
         if (this.replyFailures-- > 0) throw new Error('lost acknowledgement');
         return response({ ok: true });
+      case '/v1/relay/host/screen':
+        this.screens.push(body); return this.screenUnavailable ? response({ error: 'NOT_FOUND' }, 404) : response({ ok: true });
       case '/v1/relay/host/close':
         this.closes.push(body);
         if (this.alreadyEnded) return response({ error: 'room-ended' }, 410);
@@ -102,17 +109,61 @@ class RelayFixture {
     return this.replies.at(-1)!.responses;
   }
 }
-function clientFixture() {
+function clientFixture(screenFrame?: () => Buffer | null) {
   const f = show(), relay = new RelayFixture(), directory = mkdtempSync(join(tmpdir(), 'tpv-internet-client-'));
   const configurationFile = join(directory, 'connection.json'), owner = token();
   writeFileSync(configurationFile, JSON.stringify({ baseUrl: INTERNET_QUEUE_ORIGIN, ownerToken: owner }), { mode: 0o600 });
   let copied = '';
-  const client = new InternetQueueClient({ coordinator: f.coordinator, configurationFile, fetch: relay.fetch, reconnectDelayMs: 0, writeClipboard: value => { copied = value; } });
+  const client = new InternetQueueClient({ coordinator: f.coordinator, configurationFile, fetch: relay.fetch, reconnectDelayMs: 0, screenFrame, writeClipboard: value => { copied = value; } });
   return { ...f, relay, client, configurationFile, owner, copied: () => copied, async dispose() {
     await client.stop(); f.store.close();
     assert.ok(resolve(directory).startsWith(resolve(tmpdir()) + sep)); rmSync(directory, { recursive: true, force: true });
   } };
 }
+
+test('screen sharing is explicit, private to each stream and stopped with its room', async () => {
+  let captures = 0;
+  const f = clientFixture(() => { captures++; return Buffer.from([0xff, 0xd8, 0xff, 0xd9]); });
+  try {
+    await f.client.start({ slug: 'private-screen' });
+    assert.equal(f.client.screenSharing, false); assert.equal(captures, 0); assert.equal(f.relay.screens.length, 0);
+    await f.client.startScreen();
+    await until(() => f.relay.screens.some(item => item.action === 'frame'));
+    const link = f.client.status().screenUrl!, url = new URL(link), secret = url.hash.slice(1);
+    assert.equal(url.pathname, '/private-screen/screen'); assert.match(secret, /^[A-Za-z0-9_-]{43}$/);
+    const started = f.relay.screens.find(item => item.action === 'start')!;
+    assert.equal(started.viewerDigest, createHash('sha256').update(secret).digest('hex'));
+    assert.ok(!JSON.stringify(f.relay.screens).includes(secret));
+    f.client.copyScreenLink(); assert.equal(f.copied(), link);
+    await f.client.stopScreen();
+    assert.equal(f.client.screenSharing, false); assert.equal(f.client.status().screenUrl, null);
+    assert.ok(f.relay.screens.some(item => item.action === 'stop' && item.streamId === started.streamId));
+    await f.client.startScreen(); assert.notEqual(f.client.status().screenUrl, link);
+    await f.client.stop(); assert.equal(f.client.screenSharing, false);
+    assert.equal(f.relay.screens.filter(item => item.action === 'stop').length, 2);
+  } finally { await f.dispose(); }
+});
+
+test('an older relay reports screen sharing unavailable without exposing a link', async () => {
+  const f = clientFixture(() => Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  try {
+    await f.client.start({ slug: 'old-relay' }); f.relay.screenUnavailable = true;
+    await assert.rejects(f.client.startScreen(), /relay may need an update/i);
+    assert.equal(f.client.screenSharing, false); assert.equal(f.client.status().screenUrl, null);
+    assert.equal(f.client.status().state, 'online');
+  } finally { await f.dispose(); }
+});
+
+test('screen sharing fails closed and reports missing capture instead of silently waiting', async () => {
+  const f = clientFixture(() => null);
+  try {
+    await f.client.start({ slug: 'capture-missing' }); await f.client.startScreen();
+    const deadline = Date.now() + 5000;
+    while (f.client.screenSharing && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(f.client.screenSharing, false); assert.equal(f.client.status().screenUrl, null);
+    assert.match(f.client.status().message, /capture was lost/i);
+  } finally { await f.dispose(); }
+});
 
 test('explicit internet session dispatches guests through one show authority and End leaves LAN intact', async () => {
   const f = clientFixture();

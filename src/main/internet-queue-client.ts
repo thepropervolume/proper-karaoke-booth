@@ -1,5 +1,5 @@
 /** Outbound, host-authenticated relay client. It never opens a listener or proxies URLs. */
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { lstat, open } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { INTERNET_QUEUE_ORIGIN, validateSessionSlug, type InternetSessionStatus } from '../remote/internet-session-control';
@@ -51,8 +51,8 @@ export function dispatchInternetGuestCall(authority: GuestAuthority, call: Inter
         if (!exact(payload, [])) return denied();
         body = authority.snapshot(guest()); break;
       case 'catalog':
-        if (!exact(payload, ['offset', 'limit']) || typeof payload.offset !== 'number' || typeof payload.limit !== 'number') return denied();
-        body = authority.catalog(guest(), payload.offset, payload.limit); break;
+        if (!(exact(payload, ['offset', 'limit']) || exact(payload, ['offset', 'limit', 'query'])) || (payload.query !== undefined && typeof payload.query !== 'string') || typeof payload.offset !== 'number' || typeof payload.limit !== 'number') return denied();
+        body = authority.catalog(guest(), payload.offset, payload.limit, payload.query as string | undefined); break;
       case 'outcome':
         if (!exact(payload, ['commandId'])) return denied();
         body = authority.outcome(guest(), payload.commandId); break;
@@ -125,7 +125,7 @@ class RelayFailure extends Error {
 }
 
 /** Bounded JSON on a single trusted HTTPS origin. Redirects and arbitrary proxy targets are forbidden. */
-async function post(fetcher: Fetcher, config: Connection, operation: 'open' | 'poll' | 'reply' | 'close', payload: unknown,
+async function post(fetcher: Fetcher, config: Connection, operation: 'open' | 'poll' | 'reply' | 'close' | 'screen', payload: unknown,
   signal: AbortSignal, timeoutMs: number, maxResponse = MAX_POLL): Promise<unknown> {
   const controller = new AbortController();
   let rejectAbort!: (reason: Error) => void;
@@ -198,6 +198,8 @@ export type InternetQueueClientOptions = {
   fetch?: Fetcher;
   /** Deterministic bounded delays for integration tests; normal operation uses 1–15 seconds. */
   reconnectDelayMs?: number;
+  /** A bounded JPEG from the singer display only, never the host desktop. */
+  screenFrame?: () => Buffer | null;
 };
 
 export class InternetQueueClient {
@@ -217,6 +219,7 @@ export class InternetQueueClient {
   private pendingOpen: { slug: string; openId: string } | undefined;
   private disposed = false;
   private epoch = 0;
+  private screen: { id: string; secret: string; controller: AbortController; sequence: number } | undefined;
   constructor(private readonly options: InternetQueueClientOptions) {
     if (!isAbsolute(options.configurationFile) || options.reconnectDelayMs !== undefined && (!Number.isInteger(options.reconnectDelayMs) || options.reconnectDelayMs < 0 || options.reconnectDelayMs > 15000)) throw new Error('Invalid internet-session options.');
     options.coordinator.onFailure(() => {
@@ -227,7 +230,51 @@ export class InternetQueueClient {
     let guests: InternetSessionStatus['guests'] = [];
     if (this.scope && this.state === 'online') { try { guests = this.scope.guests().map(({ singerId, name }) => ({ singerId, name })); } catch {} }
     return { available: !this.disposed, state: this.state, suggestedSlug: this.suggestedSlug, slug: this.slug,
-      joinUrl: this.state === 'online' ? this.currentRoom?.publicUrl ?? null : null, guests, message: this.message };
+      joinUrl: this.state === 'online' ? this.currentRoom?.publicUrl ?? null : null, guests, message: this.message,
+      screenActive: !!this.screen, screenUrl: this.screen && this.state === 'online' && this.currentRoom ? `${INTERNET_QUEUE_ORIGIN}/${this.currentRoom.slug}/screen#${this.screen.secret}` : null };
+  }
+  get screenSharing(): boolean { return !!this.screen; }
+  async startScreen(): Promise<void> {
+    if (this.screen || this.state !== 'online' || !this.currentRoom || !this.config || !this.options.screenFrame) throw new Error('Start an internet session before sharing the singer screen.');
+    const room = this.currentRoom, config = this.config, controller = new AbortController();
+    const screen = { id: randomUUID(), secret: randomBytes(32).toString('base64url'), controller, sequence: 0 }; this.screen = screen; this.changed();
+    try {
+      await post(this.options.fetch ?? fetch, config, 'screen', { roomId: room.roomId, generation: room.generation, streamId: screen.id, action: 'start', viewerDigest: createHash('sha256').update(screen.secret).digest('hex') }, controller.signal, 5000);
+      if (this.screen !== screen || this.state !== 'online') throw new Error();
+      void this.publishScreen(screen, room, config);
+    } catch {
+      if (this.screen === screen) { this.screen = undefined; this.changed(); }
+      controller.abort(); throw new Error('Internet screen sharing is unavailable. The relay may need an update, or the connection may be down.');
+    }
+  }
+  private async publishScreen(screen: NonNullable<InternetQueueClient['screen']>, room: Room, config: Connection): Promise<void> {
+    let missingSince = Date.now();
+    while (this.screen === screen && !screen.controller.signal.aborted && this.state === 'online') {
+      try {
+        const frame = this.options.screenFrame?.();
+        if (frame && frame.length <= 256 * 1024) { await post(this.options.fetch ?? fetch, config, 'screen', { roomId: room.roomId, generation: room.generation,
+          streamId: screen.id, action: 'frame', sequence: ++screen.sequence, frame: frame.toString('base64') }, screen.controller.signal, 5000); missingSince = Date.now(); }
+        else if (Date.now() - missingSince >= 3000) throw new Error('Singer-screen capture is unavailable.');
+        await sleep(1000, screen.controller.signal);
+      } catch { break; }
+    }
+    if (this.screen === screen) { this.screen = undefined; screen.controller.abort(); this.message = 'Internet screen stopped because its connection or capture was lost. Try sharing again.'; this.changed(); }
+  }
+  async stopScreen(): Promise<void> {
+    const screen = this.screen, room = this.currentRoom, config = this.config;
+    if (!screen) return;
+    this.screen = undefined; screen.controller.abort(); this.changed();
+    if (!room || !config) return;
+    const payload = { roomId: room.roomId, generation: room.generation, streamId: screen.id, action: 'stop' };
+    for (let attempt = 0; ; attempt++) {
+      try { await post(this.options.fetch ?? fetch, config, 'screen', payload, new AbortController().signal, 3000); break; }
+      catch (error) { if (attempt) throw error; }
+    }
+  }
+  copyScreenLink(): void {
+    const link = this.status().screenUrl;
+    if (!link || !this.options.writeClipboard) throw new Error('The singer-screen link is unavailable.');
+    this.options.writeClipboard(link);
   }
   private changed(): void { try { this.options.publish?.(this.status()); } catch {} }
   private closeScope(): boolean {
@@ -353,6 +400,7 @@ export class InternetQueueClient {
     const revoked = this.closeScope(); this.changed();
     const work = (async () => {
       try {
+        await this.stopScreen().catch(() => {});
         await this.opening?.catch(() => {}); await this.polling?.catch(() => {});
         if (!revoked && !this.closeScope()) throw new Error();
         if (this.pendingOpen && this.config) {

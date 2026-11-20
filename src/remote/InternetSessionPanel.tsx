@@ -26,7 +26,7 @@ export function InternetSessionPanel({ bridge }: { bridge: InternetSessionBridge
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setMessage('');
     try { await action(); if (aliveRef.current && success) setMessage(success); }
-    catch { if (aliveRef.current) setMessage('Could not complete this action. Check the session status and try again.'); }
+    catch (error) { if (aliveRef.current) setMessage(error instanceof Error ? error.message : 'Could not complete this action. Check the session status and try again.'); }
     finally { busyRef.current = false; if (aliveRef.current) setBusy(false); }
   };
   const start = () => {
@@ -50,6 +50,13 @@ export function InternetSessionPanel({ bridge }: { bridge: InternetSessionBridge
       <p>Anyone with this link can join. Share it with the people you want in your show.</p>
       <label>Singer link<input readOnly value={status.joinUrl!} onFocus={event => event.currentTarget.select()} /></label>
       <button type="button" disabled={busy} onClick={() => void run(() => bridge.copyLink(), 'Singer link copied.')}>Copy Link</button>
+      <h3>Internet Singer Screen</h3>
+      <p>Share a visual-only screen with anyone who has the full link. Audio stays at the venue. If the connection is lost, the last frame can remain visible for a few seconds.</p>
+      {status.screenActive && status.screenUrl ? <>
+        <label>Singer screen link<input readOnly value={status.screenUrl} onFocus={event => event.currentTarget.select()} /></label>
+        <button type="button" disabled={busy} onClick={() => void run(() => bridge.copyScreenLink!(), 'Singer-screen link copied.')}>Copy Screen Link</button>{' '}
+        <button type="button" disabled={busy} onClick={() => void run(() => bridge.stopScreen!())}>Stop Internet Screen</button>
+      </> : <button type="button" disabled={busy || !bridge.startScreen} onClick={() => void run(() => bridge.startScreen!())}>Share Internet Screen</button>}
       <h3>Connected Singers</h3>
       {status.guests.length ? <ul>{status.guests.map(guest => <li key={guest.singerId}><span>{guest.name}</span>
         <button type="button" disabled={busy} onClick={() => void run(() => bridge.revokeGuest(guest.singerId))}>Remove Access</button>

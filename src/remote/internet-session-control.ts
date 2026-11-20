@@ -8,6 +8,8 @@ export type InternetSessionStatus = {
   joinUrl: string | null;
   guests: { singerId: string; name: string }[];
   message: string;
+  screenActive?: boolean;
+  screenUrl?: string | null;
 };
 export type InternetSessionBridge = {
   status(): Promise<InternetSessionStatus>;
@@ -16,6 +18,9 @@ export type InternetSessionBridge = {
   stop(): Promise<void>;
   copyLink(): Promise<void>;
   revokeGuest(singerId: string): Promise<void>;
+  startScreen?(): Promise<void>;
+  stopScreen?(): Promise<void>;
+  copyScreenLink?(): Promise<void>;
 };
 
 export function validateSessionSlug(value: unknown): string | null {

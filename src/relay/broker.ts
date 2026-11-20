@@ -140,6 +140,12 @@ export class RelayBroker {
       online: lease.active && lease.expiresAt > this.now() && !this.blocked.has(this.key(lease)) &&
         room?.lastPoll !== null && room?.lastPoll !== undefined && this.now() - room.lastPoll <= this.offlineAfter };
   }
+  /** Screen publishers must own the current active lease, just like queue hosts. */
+  async screenLease(ownerId: string, identity: RoomIdentity): Promise<RoomLease> {
+    this.running();
+    const lease = await this.store.assertActive(ownerId, identity);
+    return this.lease(lease, identity, ownerId);
+  }
   private dispatch(room: Room): void {
     if (this.stopped || this.blocked.has(this.key(room.lease)) || this.rooms.get(room.lease.roomId) !== room) return;
     if (!room.poll || !room.queue.length) return;

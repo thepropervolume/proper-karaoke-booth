@@ -54,10 +54,11 @@ function validState(value: unknown, allowUnassigned: boolean): boolean {
   if (!record(value.policy) || typeof value.policy.ageRestricted !== 'boolean' ||
       !(value.policy.includeVersionIds === null || (Array.isArray(value.policy.includeVersionIds) && value.policy.includeVersionIds.every(id))) ||
       !Array.isArray(value.policy.excludeVersionIds) || !value.policy.excludeVersionIds.every(id)) return false;
-  if (!value.singers.every(singer => record(singer) && id(singer.id) && id(singer.name) && (singer.unavailableUntilMs === undefined || whole(singer.unavailableUntilMs))) ||
+  if (!value.singers.every(singer => record(singer) && id(singer.id) && id(singer.name) && (singer.archived === undefined || typeof singer.archived === 'boolean') && (singer.unavailableUntilMs === undefined || whole(singer.unavailableUntilMs))) ||
       !value.versions.every(version => record(version) && id(version.id) && id(version.title) && typeof version.artist === 'string' &&
         ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)) && (version.isDuet === undefined || typeof version.isDuet === 'boolean') &&
-        (version.source === undefined || validStreamingSource(version.source)))) return false;
+        (version.source === undefined || validStreamingSource(version.source)) &&
+        (version.discoveryOrigin === undefined || version.discoveryOrigin === 'karaokenerds' && record(version.source) && version.source.provider === 'youtube'))) return false;
   const singers = new Set(value.singers.map(singer => (singer as Record<string, unknown>).id));
   const versions = new Set(value.versions.map(version => (version as Record<string, unknown>).id));
   if (singers.size !== value.singers.length || versions.size !== value.versions.length) return false;
@@ -67,6 +68,9 @@ function validState(value: unknown, allowUnassigned: boolean): boolean {
       ['pending', 'accepted', 'staged', 'playing', 'completed', 'skipped', 'removed', 'rejected', 'withdrawn'].includes(String(request.status)) &&
       (request.round === null || whole(request.round)) && (request.order === null || whole(request.order)))) return false;
   const requests = value.requests as Record<string, unknown>[];
+  const archivedSingers = new Set(value.singers.filter(singer => (singer as Record<string, unknown>).archived === true).map(singer => (singer as Record<string, unknown>).id));
+  if (requests.some(request => ['pending', 'accepted', 'staged', 'playing'].includes(String(request.status)) &&
+      (archivedSingers.has(request.singerId) || archivedSingers.has(request.coSingerId)))) return false;
   if (new Set(requests.map(request => request.id)).size !== requests.length) return false;
   if (value.manualQueueOrder !== undefined && (!Array.isArray(value.manualQueueOrder) || !value.manualQueueOrder.every(id) ||
       new Set(value.manualQueueOrder).size !== value.manualQueueOrder.length ||

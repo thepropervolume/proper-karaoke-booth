@@ -141,3 +141,30 @@ test('availability uses its own outcome receipt and never repeats an uncertain d
   await client.checkOutcome(listen); assert.equal(outcomeId, 'secret-3');
   assert.equal(client.state().message, 'Availability updated.'); assert.equal(client.state().uncertain, false);
 });
+
+
+test('server search ignores stale responses, pages current results, and survives refresh', async () => {
+  const transport = fake(); const pending = new Map<string,(value: {revision:number;items:{id:string;title:string;artist:string}[];nextOffset:number|null})=>void>();
+  transport.catalog = async (_session, offset, _limit, query) => {
+    if (query === 'older') return new Promise(resolve => pending.set('older', resolve));
+    const items = [{id: offset ? 'next-song' : 'new-song', title: query ?? '', artist:'Artist'}];
+    return { revision:4, items, nextOffset: offset ? null : 50 };
+  };
+  const client = new SingerClient(transport, 'invite', secrets()); await client.join('Sam', listen);
+  const old = client.search('older', listen); await new Promise(resolve => setTimeout(resolve, 280));
+  const recent = client.search('newer', listen); await recent;
+  pending.get('older')!({revision:4,items:[{id:'old-song',title:'old',artist:''}],nextOffset:null}); await old;
+  assert.deepEqual(client.state().songs.map(s=>s.id),['new-song']);
+  await client.more(listen); assert.deepEqual(client.state().songs.map(s=>s.id),['new-song','next-song']);
+  await client.refresh(listen); assert.deepEqual(client.state().songs.map(s=>s.id),['new-song']);
+  assert.equal(client.state().songs[0].title,'newer');
+});
+
+
+test('failed catalog refresh clears the searching state without losing the query', async () => {
+  const transport=fake(); let fail=false, lastQuery='';
+  transport.catalog=async (_session,_offset,_limit,query)=>{ lastQuery=query ?? ''; if (fail) throw new Error('offline'); return {revision:4,items:[{id:'match',title:'Match',artist:'Artist'}],nextOffset:null}; };
+  const client=new SingerClient(transport,'invite',secrets()); await client.join('Sam',listen); await client.search('match',listen);
+  fail=true; await client.refresh(listen); assert.equal(client.state().searching,false); assert.match(client.state().message,/unavailable/i);
+  fail=false; await client.refresh(listen); assert.equal(lastQuery,'match'); assert.equal(client.state().songs[0].id,'match');
+});

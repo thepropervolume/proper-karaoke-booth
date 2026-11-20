@@ -1,3 +1,4 @@
+import { matchesCatalogQuery, validCatalogQuery } from '../domain/guest-catalog-search';
 import { MobileShow } from './show';
 import type { InternetGuestCall, InternetGuestReply } from '../main/internet-queue-client';
 import { validMobilePhoto } from './photo-validation';
@@ -96,8 +97,8 @@ export class MobileRoomAuthority {
       if (!record(p)) return denied();
       const revision = () => this.show.revision;
       const admission = () => ({ showId: this.show.showId, hostEpoch: this.epoch, revision: revision() });
-      const catalog = (offset: number, limit: number) => {
-        const all = this.show.state().songs;
+      const catalog = (offset: number, limit: number, query = '') => {
+        const all = this.show.state().songs.filter(song => matchesCatalogQuery(song, query));
         return { revision: revision(), items: all.slice(offset, offset + limit).map(({ id, title, artist }) => ({ id, title, artist })), nextOffset: all.length > offset + limit ? offset + limit : null };
       };
       let body: Record<string, unknown> | null;
@@ -127,7 +128,7 @@ export class MobileRoomAuthority {
             ...(this.playApplause ? { applauseEnabled: state.applauseEnabled, applauseCredits: account?.credits ?? 3,
               ...(state.pointsEnabled ? { points: account?.points ?? 0 } : {}) } : {}),
             ...(this.displayPhoto ? { photoEnabled: true } : {}) };
-        } else if (call.operation === 'catalog' && exact(p, ['offset', 'limit']) && Number.isSafeInteger(p.offset) && (p.offset as number) >= 0 && Number.isInteger(p.limit) && (p.limit as number) >= 1 && (p.limit as number) <= 100) body = catalog(p.offset as number, p.limit as number);
+        } else if (call.operation === 'catalog' && (exact(p, ['offset', 'limit']) || exact(p, ['offset', 'limit', 'query'])) && (p.query === undefined || validCatalogQuery(p.query)) && Number.isSafeInteger(p.offset) && (p.offset as number) >= 0 && Number.isInteger(p.limit) && (p.limit as number) >= 1 && (p.limit as number) <= 100) body = catalog(p.offset as number, p.limit as number, p.query as string | undefined);
         else if (call.operation === 'outcome' && exact(p, ['commandId']) && id(p.commandId)) body = this.receipts.get(`${guest.id}:${p.commandId}`)?.body ?? null;
         else if (exact(p, ['command']) && record(p.command) && id(p.command.commandId)) {
           const c = p.command, key = `${guest.id}:${c.commandId}`, serialized = JSON.stringify([call.operation, c]);

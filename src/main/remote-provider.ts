@@ -144,7 +144,7 @@ export function createLanHostProvider(options: LanProviderOptions): HostRoomProv
           join: (invitation, joinId, resumeSecret, name, revision) => { requireActive(); const result = queue!.join(invitation, joinId, resumeSecret, name, revision); safeNotify(input.onGuestsChanged); return result; },
           resume: secret => { requireActive(); return queue!.resume(secret); },
           snapshot: token => { requireActive(); return queue!.snapshot(token); },
-          catalog: (token, offset, limit) => { requireActive(); return queue!.catalog(token, offset, limit); },
+          catalog: (token, offset, limit, query) => { requireActive(); return queue!.catalog(token, offset, limit, query); },
           outcome: (token, id) => { requireActive(); return queue!.outcome(token, id); },
           submit: (token, command) => { requireActive(); return queue!.submit(token, command); },
           setAvailability: (token, command) => { requireActive(); return queue!.setAvailability(token, command); },

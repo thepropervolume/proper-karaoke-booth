@@ -86,8 +86,8 @@ export function parseGuestRequest(op: unknown, input: unknown, session?: unknown
         if (!exact(input, ['resumeSecret']) || !isRelaySecret(input.resumeSecret)) return null;
         payload = { resumeSecret: input.resumeSecret }; break;
       case 'catalog':
-        if (!exact(input, ['offset', 'limit']) || !integer(input.offset) || !integer(input.limit) || input.limit < 1 || input.limit > 100) return null;
-        payload = { offset: input.offset, limit: input.limit }; break;
+        if (!(exact(input, ['offset', 'limit']) || exact(input, ['offset', 'limit', 'query'])) || (input.query !== undefined && !text(input.query, 200, true)) || !integer(input.offset) || !integer(input.limit) || input.limit < 1 || input.limit > 100) return null;
+        payload = { offset: input.offset, limit: input.limit, ...(input.query === undefined ? {} : { query: input.query }) }; break;
       case 'outcome':
         if (!exact(input, ['commandId']) || !domainId(input.commandId)) return null;
         payload = { commandId: input.commandId }; break;

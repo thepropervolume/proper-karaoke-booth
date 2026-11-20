@@ -8,7 +8,7 @@ export type GuestTransport = {
   join(invitation: string, joinId: string, resumeSecret: string, name: string, revision: number): Promise<{ session: string; singerId: string }>;
   resume(resumeSecret: string): Promise<{ session: string; singerId: string }>;
   snapshot(session: string): Promise<GuestSnapshot>;
-  catalog(session: string, offset: number, limit: number): Promise<{ revision: number; items: Song[]; nextOffset: number | null }>;
+  catalog(session: string, offset: number, limit: number, query?: string): Promise<{ revision: number; items: Song[]; nextOffset: number | null }>;
   submit(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; versionId: string }): Promise<Outcome>;
   withdraw(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; requestId: string }): Promise<Outcome>;
   setAvailability?(session: string, request: { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; minutes: number }): Promise<Outcome>;
@@ -19,7 +19,7 @@ export type GuestTransport = {
 };
 
 export type GuestView = { joined: boolean; snapshot: GuestSnapshot | null; songs: Song[]; nextOffset: number | null; busy: boolean;
-  message: string; uncertain: boolean; retryAvailable: boolean; joinUncertain: boolean };
+  message: string; uncertain: boolean; retryAvailable: boolean; joinUncertain: boolean; searching?: boolean };
 type PendingJoin = { name: string; id: string; secret: string; revision: number };
 type PendingRequest =
   | { kind: 'song'; command: Parameters<GuestTransport['submit']>[1] }
@@ -40,6 +40,8 @@ export class JoinRevisionConflict extends Error {}
 /** All bearer credentials and invitation remain private to this object and live only in memory. */
 export class SingerClient {
   private invitation: string;
+  private catalogQuery = '';
+  private catalogGeneration = 0;
   private session = '';
   private singerId = '';
   private resumeSecret = '';
@@ -78,9 +80,23 @@ export class SingerClient {
     } finally { this.emit(listener, { busy: false }); }
   }
   private async loadSnapshot(listener: (view: GuestView) => void): Promise<void> {
+    const generation = ++this.catalogGeneration;
     const snapshot = await this.transport.snapshot(this.session);
     if (!snapshot || snapshot.singerId !== this.singerId) throw new Error('Singer identity changed.');
-    this.emit(listener, { snapshot, songs: snapshot.catalog, nextOffset: snapshot.catalogNextOffset, message: '' });
+    if (generation !== this.catalogGeneration) return;
+    this.emit(listener, { snapshot, songs: this.catalogQuery ? [] : snapshot.catalog,
+      nextOffset: this.catalogQuery ? null : snapshot.catalogNextOffset, searching: !!this.catalogQuery, message: '' });
+    if (this.catalogQuery) {
+      try {
+        const page = await this.transport.catalog(this.session, 0, 50, this.catalogQuery);
+        if (generation !== this.catalogGeneration) return;
+        if (page.revision !== snapshot.revision) throw new Error('Catalog changed while refreshing.');
+        this.emit(listener, { songs: page.items, nextOffset: page.nextOffset, searching: false });
+      } catch (error) {
+        if (generation === this.catalogGeneration) this.emit(listener, { searching: false, message: 'Could not search songs. Refresh to try again.' });
+        throw error;
+      }
+    }
   }
   async refresh(listener: (view: GuestView) => void): Promise<void> {
     if (!this.session || this.view.busy) return;
@@ -100,14 +116,32 @@ export class SingerClient {
     catch { this.emit(listener, { message: 'Could not reconnect. The show may be offline or access may have expired.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
+  /** Search is server-side; the generation fences late responses to earlier text. */
+  async search(query: string, listener: (view: GuestView) => void): Promise<void> {
+    const generation = ++this.catalogGeneration;
+    this.catalogQuery = query.slice(0, 200);
+    this.emit(listener, { songs: [], nextOffset: null, searching: true, message: '' });
+    await new Promise(resolve => setTimeout(resolve, 250));
+    if (generation !== this.catalogGeneration || !this.session || !this.view.snapshot) return;
+    try {
+      const page = await this.transport.catalog(this.session, 0, 50, this.catalogQuery);
+      if (generation !== this.catalogGeneration) return;
+      if (page.revision !== this.view.snapshot.revision) { await this.loadSnapshot(listener); return; }
+      this.emit(listener, { songs: page.items, nextOffset: page.nextOffset, searching: false });
+    } catch {
+      if (generation === this.catalogGeneration) this.emit(listener, { searching: false, message: 'Could not search songs. Check your connection.' });
+    }
+  }
   async more(listener: (view: GuestView) => void): Promise<void> {
     if (!this.session || this.view.busy || this.view.nextOffset === null || !this.view.snapshot) return;
+    const generation = this.catalogGeneration;
     this.emit(listener, { busy: true });
     try {
-      const page = await this.transport.catalog(this.session, this.view.nextOffset, 50);
-      if (page.revision !== this.view.snapshot.revision) { await this.loadSnapshot(listener); this.emit(listener, { message: 'The catalog changed; the list was refreshed.' }); }
+      const page = await this.transport.catalog(this.session, this.view.nextOffset, 50, this.catalogQuery);
+      if (generation !== this.catalogGeneration) return;
+      if (page.revision !== this.view.snapshot!.revision) { await this.loadSnapshot(listener); this.emit(listener, { message: 'The catalog changed; the list was refreshed.' }); }
       else this.emit(listener, { songs: [...this.view.songs, ...page.items], nextOffset: page.nextOffset, message: '' });
-    } catch { this.emit(listener, { message: 'Could not load more songs. Check your connection.' }); }
+    } catch { if (generation === this.catalogGeneration) this.emit(listener, { message: 'Could not load more songs. Check your connection.' }); }
     finally { this.emit(listener, { busy: false }); }
   }
   async request(versionId: string, listener: (view: GuestView) => void): Promise<void> {

@@ -20,7 +20,7 @@ function fixture() {
     join: async (_, joinId, resumeSecret, name, expectedRevision) => parseGuestJoin(call('join', { joinId, resumeSecret, name, expectedRevision })),
     resume: async resumeSecret => parseGuestJoin(call('resume', { resumeSecret })),
     snapshot: async session => parseGuestSnapshot(call('snapshot', {}, session)),
-    catalog: async (session, offset, limit) => parseGuestCatalog(call('catalog', { offset, limit }, session), offset, limit),
+    catalog: async (session, offset, limit, query) => parseGuestCatalog(call('catalog', { offset, limit, ...(query ? { query } : {}) }, session), offset, limit),
     submit: async (session, command) => parseGuestOutcome(call('request', { command }, session)),
     withdraw: async (session, command) => parseGuestOutcome(call('withdraw', { command }, session)),
     setAvailability: async (session, command) => parseGuestOutcome(call('availability', { command }, session)),
@@ -56,4 +56,16 @@ test('ending a room revokes its singer credentials and epoch while preserving th
   authority.reset();
   await assert.rejects(transport.snapshot(guest.session));
   assert.notEqual((await transport.admission('')).hostEpoch, admission.hostEpoch); assert.equal(show.state().queue.length, 1);
+});
+
+
+test('mobile host searches beyond its initial page, with bounded authenticated catalog queries', async () => {
+  const {show, transport, call} = fixture();
+  show.add(Array.from({length:60}, (_, i) => ({ id:`youtube_${String(i).padStart(11,'0')}`, title:`Song ${i}`, artist:'Artist', provider:'karaokenerds' as const, videoId:String(i).padStart(11,'0') })));
+  show.add([{ id:'youtube_LastSong123', title:'Rare Title', artist:'Oasis', provider:'karaokenerds', videoId:'LastSong123' }]);
+  const client=new SingerClient(transport,''); await client.join('Alice',()=>{});
+  assert.equal(client.state().songs.some(song=>song.title==='Rare Title'),false);
+  await client.search('oasis rare title',()=>{}); assert.deepEqual(client.state().songs.map(song=>song.title),['Rare Title']);
+  assert.throws(()=>call('catalog',{offset:0,limit:50,query:'x'.repeat(201)},mobileSecret()));
+  assert.throws(()=>call('catalog',{offset:0,limit:50,query:'Rare'}));
 });

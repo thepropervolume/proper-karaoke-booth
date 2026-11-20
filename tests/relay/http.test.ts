@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { request as httpRequest } from 'node:http';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { RelayStore } from '../../src/relay/store';
 import { RelayBroker } from '../../src/relay/broker';
 import { RelayRateLimits, startQueueRelayService } from '../../src/relay/http';
@@ -95,6 +96,54 @@ test('authenticated host long-poll routes only bounded guest operations and stri
   assert.deepEqual(await (await call('/v1/relay/host/reply', reply, { token })).json(), { ok: true });
   assert.equal((await call('/v1/relay/host/close', identity, { token })).status, 200);
   assert.equal((await call(guestPath, {}, { origin })).status, 410);
+}));
+
+test('internet singer screen accepts only the owner and ends on stop or room close', async () => fixture(async call => {
+  const opened = await call('/v1/relay/host/open', { slug: 'screen-test', openId: randomUUID() }, { token });
+  const room = await opened.json(), identity = { roomId: room.roomId, generation: room.generation }, streamId = randomUUID();
+  const viewerId = randomUUID();
+  const secret = 'z'.repeat(43), viewerDigest = createHash('sha256').update(secret).digest('hex');
+  const command = { ...identity, streamId, action: 'start', viewerDigest };
+  assert.equal((await call('/v1/relay/host/screen', command)).status, 401);
+  assert.equal((await call('/v1/relay/host/screen', { ...command, generation: randomUUID() }, { token })).status, 410);
+  assert.equal((await call('/v1/relay/host/screen', command, { token })).status, 200);
+  const frame = { ...identity, streamId, action: 'frame', sequence: 1, frame: Buffer.from([255, 216, 255, 217]).toString('base64') };
+  assert.equal((await call('/v1/relay/host/screen', { ...frame, frame: 'not-base64' }, { token })).status, 400);
+  assert.equal((await call('/v1/relay/host/screen', frame, { token })).status, 200);
+  const poll = call('/v1/relay/host/poll', identity, { token });
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if ((await (await call('/v1/relay/lookup/screen-test')).json()).online) break;
+    if (attempt === 19) assert.fail('host did not become online');
+  }
+  const page = await call('/screen-test/screen');
+  assert.equal(page.status, 200); assert.match(page.headers.get('content-security-policy')!, /frame-ancestors 'none'/);
+  const script = await (await call('/v1/screen-viewer.js')).text();
+  let outgoing: { path: string; options: RequestInit } | undefined, erased = false;
+  const img = { hidden: true, src: '' }, notice = { hidden: false, textContent: '' };
+  runInNewContext(script, { document: { querySelector: (selector: string) => selector === 'img' ? img : notice },
+    location: { pathname: '/screen-test/screen', hash: '#' + secret }, history: { replaceState: () => { erased = true; } },
+    sessionStorage: { setItem() {}, getItem() { return null; } }, crypto: { randomUUID },
+    fetch: async (path: string, options: RequestInit) => { outgoing = { path, options }; return new Response(new Blob(['x'], { type: 'image/jpeg' })); },
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} }, AbortSignal, setTimeout() {} });
+  for (let i = 0; i < 10 && !outgoing; i++) await Promise.resolve();
+  assert.equal(erased, true); assert.equal(outgoing?.path, '/screen-test/screen/frame');
+  assert.equal((outgoing?.options.headers as Record<string, string>).Authorization, `Bearer ${secret}`);
+  assert.ok(!outgoing?.path.includes(secret), 'The viewing capability must not enter the request URL or access log.');
+  assert.equal((await call('/screen-test/screen/frame')).status, 401);
+  assert.equal((await call('/screen-test/screen/frame', undefined, { token: 'y'.repeat(43), headers: { 'X-TPV-Screen-Viewer': viewerId } })).status, 404);
+  const image = await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': viewerId } });
+  assert.equal(image.status, 200);
+  for (let i = 0; i < 4; i++) assert.equal((await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': randomUUID() } })).status, 200); assert.equal(image.headers.get('content-type'), 'image/jpeg');
+  assert.equal(image.headers.get('cache-control'), 'no-store');
+  assert.equal((await call('/v1/relay/host/screen', { ...identity, streamId, action: 'stop' }, { token })).status, 200);
+  assert.equal((await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': viewerId } })).status, 404);
+  assert.equal((await call('/v1/relay/host/screen', command, { token })).status, 410);
+  const nextId = randomUUID();
+  assert.equal((await call('/v1/relay/host/screen', { ...command, streamId: nextId }, { token })).status, 200);
+  assert.equal((await call('/v1/relay/host/screen', { ...frame, streamId: nextId }, { token })).status, 200);
+  assert.equal((await call('/v1/relay/host/close', identity, { token })).status, 200);
+  assert.equal((await call('/screen-test/screen/frame', undefined, { token: secret, headers: { 'X-TPV-Screen-Viewer': viewerId } })).status, 404);
+  await poll;
 }));
 
 test('host credentials, origins, identities and operation allowlists are enforced before dispatch', async () => fixture(async call => {

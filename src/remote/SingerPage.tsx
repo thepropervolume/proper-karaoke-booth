@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SingerClient, takeInvitation, type GuestView } from './client';
 import { httpsGuestTransport } from './transport';
 import './singer-page.css';
@@ -20,10 +20,7 @@ export function SingerPage({ client }: { client: SingerClient }) {
     const timer = window.setInterval(() => void client.refresh(setView), 15000);
     return () => window.clearInterval(timer);
   }, [client, view.joined]);
-  const songs = useMemo(() => {
-    const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    return view.songs.filter(song => terms.every(term => `${song.artist} ${song.title}`.toLocaleLowerCase().includes(term)));
-  }, [query, view.songs]);
+  const songs = view.songs;
   return <main className="singer-page">
     <header><h1>The Proper Volume Karaoke</h1><p>Find a song and join the rotation.</p></header>
     {view.message && <p role="status" className="singer-message">{view.message}</p>}
@@ -71,8 +68,8 @@ export function SingerPage({ client }: { client: SingerClient }) {
           const song = view.songs.find(item => item.id === request.versionId);
           return <li key={request.id}>{song ? `${song.artist} — ${song.title}` : 'Song'} <strong>{request.status}</strong>{['pending', 'accepted'].includes(request.status) && <button disabled={view.busy || view.uncertain} onClick={() => void client.withdraw(request.id, setView)}>Withdraw</button>}</li>;
         })}</ul> : <p>You have no current requests.</p>}{view.snapshot.requestsTruncated && <p>Showing up to 50 requests, prioritizing active requests.</p>}</section>
-        <section><h2>Song library</h2><label>Search loaded songs<input type="search" value={query} onChange={event => setQuery(event.target.value)} /></label>
-          {!songs.length && <p>No loaded songs match your search.</p>}
+        <section><h2>Song library</h2><label>Search host library<input type="search" disabled={!view.snapshot} maxLength={200} value={query} onChange={event => { const value = event.target.value; setQuery(value); void client.search(value, setView); }} /></label>
+          {view.searching ? <p>Searching…</p> : !songs.length && <p>No songs match your search.</p>}
           <ul className="singer-songs">{songs.map(song => <li key={song.id}><span><strong>{song.title}</strong><br />{song.artist}</span>
             <button disabled={view.busy || view.uncertain} onClick={() => void client.request(song.id, setView)}>Request</button></li>)}</ul>
           {view.nextOffset !== null && <button disabled={view.busy} onClick={() => void client.more(setView)}>Load more songs</button>}

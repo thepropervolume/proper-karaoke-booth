@@ -69,8 +69,8 @@ export function createGuestApiHandler(authority: GuestAuthority) {
           if (!exact(payload, []) || !bearer) throw new Error();
           result = authority.snapshot(bearer); break;
         case '/api/v1/catalog':
-          if (!exact(payload, ['offset', 'limit']) || !bearer || typeof payload.offset !== 'number' || typeof payload.limit !== 'number') throw new Error();
-          result = authority.catalog(bearer, payload.offset, payload.limit); break;
+          if (!(exact(payload, ['offset', 'limit']) || exact(payload, ['offset', 'limit', 'query'])) || (payload.query !== undefined && typeof payload.query !== 'string') || !bearer || typeof payload.offset !== 'number' || typeof payload.limit !== 'number') throw new Error();
+          result = authority.catalog(bearer, payload.offset, payload.limit, payload.query as string | undefined); break;
         case '/api/v1/outcome':
           if (!exact(payload, ['commandId']) || !bearer) throw new Error();
           result = authority.outcome(bearer, payload.commandId); break;

@@ -22,7 +22,7 @@ export class RemoteRelayScope {
     join: (invitation: unknown, id: unknown, secret: unknown, name: unknown, revision: unknown) => { this.requireActive(); const result = this.queue.join(invitation, id, secret, name, revision, this.scope); this.changed(this.notify.guests); return result; },
     resume: (secret: unknown) => { this.requireActive(); return this.queue.resume(secret, this.scope); },
     snapshot: (session: unknown) => { this.requireActive(); return this.queue.snapshot(session, this.scope); },
-    catalog: (session: unknown, offset = 0, limit = 50) => { this.requireActive(); return this.queue.catalog(session, offset, limit, this.scope); },
+    catalog: (session: unknown, offset = 0, limit = 50, query = '') => { this.requireActive(); return this.queue.catalog(session, offset, limit, query, this.scope); },
     outcome: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.outcome(session, command, this.scope); },
     submit: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.submit(session, command, this.scope); },
     setAvailability: (session: unknown, command: unknown) => { this.requireActive(); return this.queue.setAvailability(session, command, this.scope); },

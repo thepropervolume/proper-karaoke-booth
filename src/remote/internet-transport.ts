@@ -75,7 +75,7 @@ export function internetGuestTransport(room: InternetSingerRoom, options: { fetc
     join: (_invitation, joinId, resumeSecret, name, expectedRevision) => post('join', { joinId, resumeSecret, name, expectedRevision }, parseGuestJoin),
     resume: resumeSecret => post('resume', { resumeSecret }, parseGuestJoin),
     snapshot: session => post('snapshot', {}, parseGuestSnapshot, session),
-    catalog: (session, offset, limit) => post('catalog', { offset, limit }, value => parseGuestCatalog(value, offset, limit), session),
+    catalog: (session, offset, limit, query) => post('catalog', { offset, limit, ...(query ? { query } : {}) }, value => parseGuestCatalog(value, offset, limit), session),
     submit: (session, command) => post('request', { command }, parseGuestOutcome, session),
     withdraw: (session, command) => post('withdraw', { command }, parseGuestOutcome, session),
     setAvailability: (session, command) => post('availability', { command }, parseGuestOutcome, session),
