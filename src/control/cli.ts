@@ -13,6 +13,7 @@ Commands:
   status              Check this profile's running API and capabilities
   capabilities        List implemented reads and desktop navigation actions
   state               Read the authorized host show snapshot
+  library [QUERY] [CURSOR]  Find saved songs and copy a version ID
   queue               Read upcoming and pending requests
   queue command JSON  Submit a revisioned queue command (use - to read stdin)
   settings            Read settings with private paths redacted
@@ -88,7 +89,8 @@ export async function runControlCli(args:string[],io:CliIO={}):Promise<number>{
     const read=command.length===1&&['status','capabilities','state','settings','shortcuts','queue'].includes(command[0]);
     const open=command.length===2&&command[0]==='open'&&['settings','keybindings'].includes(command[1]);
     const queue=command.length===3&&command[0]==='queue'&&command[1]==='command';
-    if(!read&&!open&&!queue||privatePaths&&command[0]!=='settings')throw new ControlError('invalid-request','Unknown command or incompatible option. Use --help.');
+    const library=command[0]==='library'&&command.length<=3;
+    if(!read&&!open&&!queue&&!library||privatePaths&&command[0]!=='settings')throw new ControlError('invalid-request','Unknown command or incompatible option. Use --help.');
     const client=new LocalControlClient(selected,{access:io.access,fetch:io.fetch,isRunning:io.isRunning});
     if(queue){
       const input=await readQueueInput(command[2],io.input??process.stdin);
@@ -99,7 +101,8 @@ export async function runControlCli(args:string[],io:CliIO={}):Promise<number>{
       (ok?out:err)(controlJson(result)+'\n');
       return ok?CONTROL_CLI_EXIT.ok:CONTROL_CLI_EXIT.service;
     }
-    const result=open?await client.open(command[1] as 'settings'|'keybindings'):await client.get(command[0]==='status'?'capabilities':command[0] as 'capabilities'|'state'|'settings'|'shortcuts'|'queue',privatePaths);
+    const result=library?await client.library(command[1],command[2]):open?await client.open(command[1] as 'settings'|'keybindings'):
+      await client.get(command[0]==='status'?'capabilities':command[0] as 'capabilities'|'state'|'settings'|'shortcuts'|'queue',privatePaths);
     out(controlJson(command[0]==='status'?{...result,status:'ready'}:result)+'\n');return CONTROL_CLI_EXIT.ok;
   }catch(error){
     const failure=error instanceof ControlError?error:new ControlError('unavailable','The local control request could not be completed.');

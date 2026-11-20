@@ -1,6 +1,7 @@
 import { CONTROL_API_VERSION, CONTROL_LIMITS, ControlError, INSTANCE_HEADERS, type ControlAction, type ControlDiscovery, type ControlInstance } from './protocol';
 import { ownerOnlyDiscoveryAccess, processIsRunning, readControlDiscovery, type DiscoveryAccess } from './discovery';
 import type { ControlQueueEnvelope } from './queue';
+import { parseControlLibraryQuery } from './library';
 
 export type ControlReply={ok:true;instance:ControlInstance;result:unknown};
 type FetchFn=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
@@ -11,6 +12,7 @@ const messages:Partial<Record<ControlError['code'],string>>={
   'invalid-request':'The control request was rejected.', 'not-found':'The control API resource is unavailable.', 'unsupported':'This host does not support the requested control action.',
   'busy':'The local control API is busy.', 'timed-out':'The local control API did not respond in time.', 'adapter-failed':'The host could not complete the control operation.',
   'body-too-large':'The control request exceeds the host limit.', 'response-too-large':'The host snapshot exceeds the control API response limit.',
+  'stale-cursor':'The library changed. Repeat the search without its previous cursor.',
 };
 function failure(status:number,value:unknown):ControlError{
   const code=record(value)&&record(value.error)&&typeof value.error.code==='string'&&Object.hasOwn(messages,value.error.code)?value.error.code as ControlError['code']:
@@ -84,5 +86,13 @@ export class LocalControlClient{
       !(outcome.ok === true || outcome.ok === false && typeof outcome.code === 'string' && typeof outcome.message === 'string'))
       throw new ControlError('invalid-response', 'The host returned an invalid queue outcome.');
     return reply;
+  }
+  async library(text = '', cursor?: string): Promise<ControlReply> {
+    const params = new URLSearchParams({ q: text, ...(cursor === undefined ? {} : { cursor }) });
+    parseControlLibraryQuery(params);
+    const d = await this.discover(), capabilities = await this.capabilitiesFor(d);
+    if (!(capabilities.result as { reads: string[] }).reads.includes('library'))
+      throw new ControlError('unsupported', 'This host does not publish a library view.');
+    return this.request(d, `/v1/library?${params}`);
   }
 }

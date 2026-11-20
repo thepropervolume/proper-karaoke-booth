@@ -248,6 +248,8 @@ Logical entities include Song, exact SongVersion and LocalAsset; Show/Party, Sin
 
 **Queue control in 0.10.6:** `GET /v1/queue` and `tpv-karaoke queue` give an owner up to 100 upcoming and pending requests plus the current show revision. A separate **Allow Local API to change the queue** preference enables exact add, approve, reject, remove, move and promote commands. The desktop authority checks the show, host epoch, revision and current rules before saving the outcome with the supplied command ID. An identical retry in that epoch returns the saved outcome. Playback controls remain in the host interface.
 
+**Saved-library lookup in 0.10.7:** `tpv-karaoke library` and `GET /v1/library` search visible saved songs and return exact IDs for queue commands. The result includes artist, title, rating and source, with no file paths. Continuation cursors bind to the show, query and visible result sequence. Catalog-wide provider search remains separate.
+
 The 0.4.2 host-only catalog IPC provides `getProviderCatalogStatus`, `searchProviderCatalog`, `chooseProviderCatalogProfile`, `clearProviderCatalogProfile` and `openProviderCatalogSong`. These project metadata/configuration state and approved official links, never playback rights or media tokens. Provider discovery is not yet exposed through the local HTTP API or CLI; those catalog/provider resource families remain planned.
 
 For every mutation, validate role, show/epoch, expected revision, item state and active policy. Persist the original result with the command ID before replying; reject reused IDs with different content. Stale clients refresh a filtered snapshot; an unknown result is queried rather than replayed blindly. Generation identifiers protect playback from late events. Nonstructural high-frequency controls need sequencing so old slider updates cannot overwrite newer state.
@@ -728,13 +730,14 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "A01",
   "title": "Local control API",
   "status": "Partial",
-  "description": "Initial authenticated read and settings-navigation API/CLI passed Windows and Linux package rehearsals; complete show control remains planned.",
+  "description": "The owner can read show and library data, open settings, and opt in to queue changes.",
   "layout": "panels",
   "heading": "Local control",
   "toolbar": "API access and integrations",
   "rows": [
     "Local API | Disabled until explicitly enabled",
-    "Read | Capabilities, state, settings and shortcuts",
+    "Read | Show, queue, library and settings",
+    "Change queue | Separate opt-in",
     "Navigate | Preferences and Keyboard Shortcuts",
     "Credentials | Owner-only, rotated each start"
   ],
@@ -747,8 +750,8 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   ],
   "footer_heading": "Planned Control",
   "footer_rows": [
-    "Playback, queue and provider mutations",
-    "Events, pagination and user-scoped tokens"
+    "Playback and provider commands",
+    "Events and user-scoped tokens"
   ],
   "detail": "The actual Windows and Linux packages passed private-profile read/navigation and lifecycle checks. Windows and Linux bundled-wrapper/package verification passed; full mutations and broader permissions are not implemented."
 }
@@ -1206,11 +1209,11 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
       "Popular | Nada Surf",
       "Add to Queue | Singer optional",
       "Play or Pause | Timeline and volume",
-      "Applause | Host controls and points",
+      "Storage | Find and remove unused copies",
       "Room | Name and share a singer link"
     ]
   ],
-  "detail": "Public HTTPS rehearsals passed for catalog search, joining, requests, withdrawal, real YouTube playback, shell caching and room closure. Native compilation passes; store signing and physical Android or iOS checks remain."
+  "detail": "Public HTTPS rehearsals covered search, requests, withdrawal, mobile storage and room closure. Device builds compile. Store signing and physical Android or iOS checks remain."
 }
 ```
 
@@ -1244,9 +1247,9 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
       "Open Room | Share singer link",
       "Suggest Nearby | Optional",
       "Between Songs | 5 second gap",
-      "Your Data | Export show and history"
+      "Review Photo | Show or discard"
     ]
   ],
-  "detail": "Web suggestions share a public internet connection and may cover different venues. Native DNS-SD uses public room beacons; manual HTTPS links remain available. Room closure resets guest access. No quizzes, mobile paid-provider login or casting is implied."
+  "detail": "Web suggestions can cover different venues. Native discovery uses room beacons and manual HTTPS links remain available. A mobile host reviews guest photos before display. Room closure revokes guest access."
 }
 ```

@@ -26,6 +26,8 @@ import type { AppAction } from '../domain/app-action';
 import { applicationMenu } from './application-menu';
 import { LocalControlServer } from '../control/server';
 import { projectControlQueue, type ControlQueueEnvelope } from '../control/queue';
+import { projectControlLibrary } from '../control/library';
+import { sourceIsVisible } from '../domain/source-visibility';
 import type { LocalControlUiStatus } from '../renderer/LocalControlSettings';
 import { parseLaunchIntent } from './launch-intent';
 import { loadLogo, saveLogo } from './logo';
@@ -640,6 +642,13 @@ async function reconcileLocalControl(): Promise<void> {
   const service = new LocalControlServer({ enabled: true, profileDirectory: app.getPath('userData'), applicationVersion: app.getVersion(), adapter: {
     getState: signal => { available(signal); return state; },
     getQueue: signal => { available(signal); return projectControlQueue(state, settings.rotationMode, Date.now()); },
+    getLibrary: (query, signal) => {
+      available(signal);
+      const saved = visibleVersions(state, settings).filter(version => sourceIsVisible(version, settings.sourceVisibility) &&
+        (version.source?.provider !== 'karafun' || karaFunAccount?.status().state === 'connected') &&
+        (version.source?.provider !== 'partytyme' || partyTymeAccount?.status().state === 'connected'));
+      return projectControlLibrary(state, saved, query);
+    },
     isQueueControlEnabled: () => settings.localControlEnabled && settings.localQueueControlEnabled && !shuttingDown,
     applyQueueCommand: (envelope, signal) => { available(signal); return perform(envelope.command, 'host', envelope); },
     getSettings: signal => { available(signal); return settings; },

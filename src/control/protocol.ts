@@ -2,6 +2,7 @@ import { parseSettings } from '../domain/settings';
 import { PROVIDER_CATALOG_IDS } from '../domain/provider-catalog';
 import type { Outcome } from '../domain';
 import type { ControlQueueEnvelope, ControlQueueView } from './queue';
+import type { ControlLibraryPage, ControlLibraryQuery } from './library';
 
 export const CONTROL_API_VERSION = 1;
 export const CONTROL_DISCOVERY_NAME = 'control-api.json';
@@ -16,10 +17,11 @@ export type ControlAdapter = {
   openSettings?(signal:AbortSignal):void | Promise<void>;
   openKeybindings?(signal:AbortSignal):void | Promise<void>;
   getQueue?(signal: AbortSignal): ControlQueueView;
+  getLibrary?(query: ControlLibraryQuery, signal: AbortSignal): ControlLibraryPage;
   isQueueControlEnabled?(): boolean;
   applyQueueCommand?(command: ControlQueueEnvelope, signal: AbortSignal): Outcome;
 };
-export type ControlErrorCode = 'disabled' | 'not-running' | 'already-running' | 'unsafe-discovery' | 'unauthorized' | 'request-denied' | 'invalid-request' | 'not-found' | 'method-not-allowed' | 'body-too-large' | 'busy' | 'timed-out' | 'unsupported' | 'adapter-failed' | 'response-too-large' | 'invalid-response' | 'unavailable';
+export type ControlErrorCode = 'disabled' | 'not-running' | 'already-running' | 'unsafe-discovery' | 'unauthorized' | 'request-denied' | 'invalid-request' | 'stale-cursor' | 'not-found' | 'method-not-allowed' | 'body-too-large' | 'busy' | 'timed-out' | 'unsupported' | 'adapter-failed' | 'response-too-large' | 'invalid-response' | 'unavailable';
 export class ControlError extends Error {
   constructor(public readonly code:ControlErrorCode, message:string) { super(message);this.name='ControlError'; }
 }

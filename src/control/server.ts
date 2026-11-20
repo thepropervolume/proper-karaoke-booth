@@ -6,12 +6,13 @@ import { parseShortcuts } from '../domain/shortcuts';
 import { ownerOnlyDiscoveryAccess, profileIdentity, publishControlDiscovery, type DiscoveryAccess } from './discovery';
 import { CONTROL_API_VERSION, CONTROL_DISCOVERY_NAME, CONTROL_LIMITS, ControlError, INSTANCE_HEADERS, controlJson, controlSettings, type ControlAdapter, type ControlDiscovery, type ControlInstance } from './protocol';
 import { CONTROL_QUEUE_COMMANDS, parseControlQueueEnvelope } from './queue';
+import { parseControlLibraryQuery } from './library';
 
 type Lease={controller:AbortController;pending?:Promise<unknown>};
 export type LocalControlStatus={status:'disabled'}|{status:'stopped';pendingOperations:number}|{status:'ready';port:number;instance:ControlInstance;discoveryFile:string};
 export type LocalControlOptions={profileDirectory:string;adapter:ControlAdapter;enabled?:boolean;applicationVersion?:string;access?:DiscoveryAccess;
   deadlineMs?:number;maxConcurrent?:number;maxRequestBytes?:number;maxResponseBytes?:number};
-const statusCode:Partial<Record<ControlError['code'],number>>={'unauthorized':401,'request-denied':403,'invalid-request':400,'not-found':404,'method-not-allowed':405,'body-too-large':413,'busy':429,'timed-out':504,'unsupported':501,'adapter-failed':500,'response-too-large':503};
+const statusCode:Partial<Record<ControlError['code'],number>>={'unauthorized':401,'request-denied':403,'invalid-request':400,'stale-cursor':409,'not-found':404,'method-not-allowed':405,'body-too-large':413,'busy':429,'timed-out':504,'unsupported':501,'adapter-failed':500,'response-too-large':503};
 function validLimit(value:unknown,minimum:number,maximum:number):value is number{return Number.isInteger(value)&&(value as number)>=minimum&&(value as number)<=maximum;}
 
 /** Fixed loopback adapter, with no database, generic IPC, filesystem or shell actions. */
@@ -153,14 +154,18 @@ export class LocalControlServer{
         }
         if(request.method!=='GET')throw new ControlError('method-not-allowed','This control resource is read-only.');
         if(request.headers['transfer-encoding']!==undefined||request.headers['content-length']!==undefined&&request.headers['content-length']!=='0')throw new ControlError('invalid-request','Read-only requests do not accept a body.');
-        if(url.pathname!=='/v1/settings'&&url.search)throw new ControlError('invalid-request','This control resource does not accept URL parameters.');
+        if(url.pathname!=='/v1/settings'&&url.pathname!=='/v1/library'&&url.search)throw new ControlError('invalid-request','This control resource does not accept URL parameters.');
         if(url.pathname==='/v1/capabilities')return{apiVersion:CONTROL_API_VERSION,applicationVersion:this.options.applicationVersion??'unknown',
-          reads:['capabilities','state','settings','shortcuts',...(this.options.adapter.getQueue?['queue']:[])],actions:{settings:!!this.options.adapter.openSettings,keybindings:!!this.options.adapter.openKeybindings},
+          reads:['capabilities','state','settings','shortcuts',...(this.options.adapter.getQueue?['queue']:[]),...(this.options.adapter.getLibrary?['library']:[])],actions:{settings:!!this.options.adapter.openSettings,keybindings:!!this.options.adapter.openKeybindings},
           ...(this.options.adapter.getQueue ? { queueCommands: this.options.adapter.applyQueueCommand && this.options.adapter.isQueueControlEnabled?.() ? CONTROL_QUEUE_COMMANDS : [] } : {}),
           limits:{requestBytes:this.maxRequestBytes,responseBytes:this.maxResponseBytes,concurrent:this.maxConcurrent,deadlineMs:this.deadlineMs},completeApplicationControl:false};
         if(url.pathname==='/v1/queue'){
           if(!this.options.adapter.getQueue)throw new ControlError('unsupported','This host does not publish a queue view.');
           return this.options.adapter.getQueue(signal);
+        }
+        if(url.pathname==='/v1/library'){
+          if(!this.options.adapter.getLibrary)throw new ControlError('unsupported','This host does not publish a library view.');
+          return this.options.adapter.getLibrary(parseControlLibraryQuery(url.searchParams),signal);
         }
         if(url.pathname==='/v1/state')return await this.options.adapter.getState(signal);
         if(url.pathname==='/v1/shortcuts')return parseShortcuts(await this.options.adapter.getShortcuts(signal));

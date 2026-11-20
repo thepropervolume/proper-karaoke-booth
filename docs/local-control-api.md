@@ -19,6 +19,7 @@ The [OpenAPI 3.1 contract](local-control-openapi.yaml) describes these routes, o
 | `GET /v1/shortcuts` | Effective validated shortcut bindings from the authority. |
 | `POST /v1/actions` | Only `{"action":"settings"}` or `{"action":"keybindings"}`, and only when the corresponding adapter callback is provided. |
 | `GET /v1/queue` | Show ID, active host epoch, revision, and up to 100 upcoming and pending requests. `truncated` indicates additional entries. |
+| `GET /v1/library` | Saved songs visible in the host library. Search by title, artist, DJ/track code or source. Results are sorted by title and paged without exposing file paths. |
 | `POST /v1/queue/commands` | Revisioned add, approve, reject, remove, move or promote command. Requires **Allow Local API to change the queue**. |
 
 `LocalControlServer` accepts `getState`, `getSettings` and `getShortcuts` callbacks, plus optional `openSettings` and `openKeybindings`. Callbacks receive an abort signal. Navigation callbacks should check the signal before dispatching their named desktop action. A successful navigation response confirms callback completion, not a screenshot or proof that a window was painted. No arbitrary IPC channel, shell command, SQL statement, path action or caller-supplied command name is exposed.
@@ -62,6 +63,8 @@ npx tsx src/control/entry.ts --profile-dir /path/to/app-profile open settings
 The entry is bundled as a standalone CLI with esbuild. The actual Windows `tpv-karaoke.cmd` and Linux `tpv-karaoke` packaged wrappers passed, reusing the included Electron runtime without a separate Node installation. It reads the owner-only discovery file, checks the advertised API identity/capabilities and uses that authority. It never opens the show database. `--discovery /path/to/control-api.json` is an alternative to `--profile-dir`; neither flag accepts a token value.
 
 Commands are `status`, `capabilities`, `state`, `queue`, `queue command JSON`, `settings`, `shortcuts`, `open settings`, and `open keybindings`. `--settings` and `--keybindings` are navigation aliases. `settings --include-private-paths` explicitly asks for private setting paths. JSON is the default output. Errors use stderr. `--help` reads no discovery or credential file.
+
+Use `tpv-karaoke library "Oasis Wonderwall"` to find the exact saved recording ID for a request. For more results, pass the same query plus the returned `nextCursor`. The CLI returns 50 entries per page. If the show or its visible results change, start the search again without its cursor.
 
 For a queue change, enable the separate queue preference and save it. Copy `showId`, `hostEpoch`, and `revision` from `tpv-karaoke queue`. Set `expectedRevision` to that revision and assign a new lowercase v4 UUID to `commandId`. For example, the `command` field can be `{"type":"removeRequest","requestId":"your-request-id"}`. See the OpenAPI schema for the other command shapes. Save the envelope as UTF-8 JSON and pipe it to `tpv-karaoke queue command -` (on PowerShell, `Get-Content -Raw queue-command.json | tpv-karaoke queue command -`). A domain rejection returns exit code 5 and the original result in `result`. Check `result.code` before preparing a fresh command, especially after `REVISION_CONFLICT` or `STALE_SHOW`.
 
