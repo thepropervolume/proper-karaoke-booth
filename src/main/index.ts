@@ -25,7 +25,8 @@ import { saveWithDiscoveryRevision } from './source-settings';
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts, writeShortcuts } from './shortcuts';
 import type { AppAction } from '../domain/app-action';
-import { applicationMenu } from './application-menu';
+import { applicationMenu, INITIAL_WORKSPACE_MENU_CONTEXT, type ApplicationMenuAction, type WorkspaceMenuContext } from './application-menu';
+import { openDocumentationWindow } from './documentation-window';
 import { LocalControlServer } from '../control/server';
 import { projectControlQueue, type ControlQueueEnvelope } from '../control/queue';
 import { projectControlLibrary } from '../control/library';
@@ -643,20 +644,33 @@ function restrictWindow(window: BrowserWindow): void {
 let hostActionsReady = false;
 const launchIntent = parseLaunchIntent(process.argv);
 let pendingHostActions: AppAction[] = launchIntent ? [launchIntent === 'keybindings' ? 'keybindings' : 'preferences'] : [];
+function showHostWindow(): BrowserWindow | null {
+  if (!host || host.isDestroyed()) return null;
+  if (host.isMinimized()) host.restore();
+  host.show(); host.focus();
+  return host;
+}
 function dispatchHostAction(action: AppAction): void {
-  if (host && !host.isDestroyed()) {
-    if (host.isMinimized()) host.restore();
-    host.show(); host.focus();
-    if (hostActionsReady) { host.webContents.send('host:app-action', action); return; }
-  }
+  const window = showHostWindow();
+  if (window && hostActionsReady) { window.webContents.send('host:app-action', action); return; }
   if (pendingHostActions.length < 16) pendingHostActions.push(action);
 }
-let workspaceMenuContext = { fileBlocked: false, viewBlocked: false };
+let hostFullscreen: DisplayFullscreen | null = null;
+function dispatchApplicationMenuAction(action: ApplicationMenuAction): void {
+  if (shuttingDown) return;
+  if (action === 'documentation') { openDocumentationWindow(host); return; }
+  if (action === 'showHostWindow') { showHostWindow(); return; }
+  if (action === 'toggleHostFullscreen') { if (showHostWindow()) hostFullscreen?.toggle(); return; }
+  dispatchHostAction(action);
+}
+const workspaceMenuContextKeys = Object.keys(INITIAL_WORKSPACE_MENU_CONTEXT) as (keyof WorkspaceMenuContext)[];
+let workspaceMenuContext = INITIAL_WORKSPACE_MENU_CONTEXT;
 let lastMenuSignature = '';
 function refreshApplicationMenu(): void {
-  const signature = JSON.stringify([settings.appearance, settings.accentColor, settings.layout, workspaceMenuContext]);
+  const singerDisplayVisible = !!display && !display.isDestroyed() && display.isVisible();
+  const signature = JSON.stringify([settings.appearance, settings.accentColor, settings.fontFamily, settings.layout, workspaceMenuContext, singerDisplayVisible]);
   if (signature === lastMenuSignature) return;
-  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenu(settings, dispatchHostAction, process.platform, workspaceMenuContext)));
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenu(settings, dispatchApplicationMenuAction, process.platform, workspaceMenuContext, singerDisplayVisible)));
   lastMenuSignature = signature;
 }
 function publishSettings(): void {
@@ -707,10 +721,17 @@ function createHost(): void {
   hostActionsReady = false;
   host = new BrowserWindow({ width: 1440, height: 900, minWidth: 780, minHeight: 600, title: 'The Proper Volume Karaoke', icon: applicationIcon,
     webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
-  restrictWindow(host);
+  const window = host;
+  restrictWindow(window);
+  const fullscreen = new DisplayFullscreen(value => window.setFullScreen(value), () => window.isFullScreen(), () => {
+    if (!shuttingDown && !window.isDestroyed()) void dialog.showMessageBox(window, { type: 'warning', message: 'Could not change host fullscreen.' });
+  });
+  hostFullscreen = fullscreen;
+  window.on('enter-full-screen', () => fullscreen.changed(true));
+  window.on('leave-full-screen', () => fullscreen.changed(false));
   publishSettings();
-  void host.loadFile(join(uiRoot, 'renderer/index.html'));
-  host.on('closed', () => { host = null; app.quit(); });
+  void window.loadFile(join(uiRoot, 'renderer/index.html'));
+  window.on('closed', () => { fullscreen.close(); hostFullscreen = null; host = null; app.quit(); });
 }
 let displayCreation: Promise<void> | null = null;
 let lastSingerDisplayId: number | null | undefined;
@@ -774,6 +795,9 @@ async function createDisplayWindow(automatic: boolean, hidden: boolean): Promise
     webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false } });
   restrictWindow(display);
   const window = display;
+  window.on('show', refreshApplicationMenu);
+  window.on('hide', refreshApplicationMenu);
+  refreshApplicationMenu();
   rememberSingerDisplay(target.id);
   const fullscreen = new DisplayFullscreen(
     value => { if (window.isDestroyed()) throw new Error('Singer display closed.'); window.setFullScreen(value); },
@@ -811,6 +835,7 @@ async function createDisplayWindow(automatic: boolean, hidden: boolean): Promise
     fullscreen.close(); if (displayFullscreen === fullscreen) displayFullscreen = null;
     if (display !== window) return;
     display = null; displayReady = false; displayId = null; displayOutputIds.clear(); applauseOutput.clear(); photoOutput.clear();
+    if (!shuttingDown) refreshApplicationMenu();
     automaticBumper.cancel(); showAdvance.cancel(); bumperOutput?.displayDestroyed(); void bumper?.setOutputAvailable(false).catch(error => { bumperError = String(error); publishBumper(); });
     if (pauseForOutputLoss()) warnDisplayLoss(); publishBumper();
   });
@@ -1265,7 +1290,7 @@ else {
   app.on('second-instance', (_event, argv) => {
     const intent = parseLaunchIntent(argv);
     if (intent) { dispatchHostAction(intent === 'keybindings' ? 'keybindings' : 'preferences'); return; }
-    if (host && !host.isDestroyed()) { if (host.isMinimized()) host.restore(); host.show(); host.focus(); }
+    showHostWindow();
   });
   // Playback still requires a host Start; the singer window receives no input gesture.
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -1594,8 +1619,9 @@ else {
   ipcMain.handle('host:refresh-menu', event => { guardHost(event.sender.id); lastMenuSignature = ''; publishSettings(); });
   ipcMain.handle('host:menu-context', (event, value: unknown) => {
     guardHost(event.sender.id);
-    if (!isRecord(value) || typeof value.busy !== 'boolean' || typeof value.modal !== 'boolean') throw new Error('Invalid menu context.');
-    workspaceMenuContext = { fileBlocked: value.busy || value.modal, viewBlocked: value.busy }; refreshApplicationMenu();
+    if (!isRecord(value) || !workspaceMenuContextKeys.every(key => typeof value[key] === 'boolean')) throw new Error('Invalid menu context.');
+    workspaceMenuContext = Object.fromEntries(workspaceMenuContextKeys.map(key => [key, value[key]])) as WorkspaceMenuContext;
+    refreshApplicationMenu();
   });
   let cliInstallInProgress = false;
   ipcMain.handle('host:install-control-cli', async event => {
@@ -1900,6 +1926,7 @@ else {
     publishDisplay();
     if (host && !host.isDestroyed()) host.webContents.send('host:display-logo', logoData);
   });
+  ipcMain.handle('host:toggle-host-fullscreen', event => { guardHost(event.sender.id); hostFullscreen?.toggle(); });
   ipcMain.handle('host:toggle-display-fullscreen', event => {
     guardHost(event.sender.id);
     if (!display || display.isDestroyed() || !displayFullscreen) throw new Error('Open the singer display first.');
@@ -1990,7 +2017,8 @@ else {
     }
   });
   ipcMain.on('display:shortcut', async (event, action: unknown) => {
-    if (!senderIsDisplay(event.sender.id) || typeof action !== 'string' || !SHORTCUT_ACTIONS.some(item => item.id === action)) return;
+    if (!senderIsDisplay(event.sender.id) || typeof action !== 'string' ||
+      !SHORTCUT_ACTIONS.some(item => item.id === action && (item.scope === 'application' || item.scope === 'player'))) return;
     if (action === 'toggleFullscreen') { displayFullscreen?.toggle(); return; }
     if (action === 'playPause' || action === 'previous' || action === 'stop') {
       const result = action === 'playPause' ? await hostPlayPause() : action === 'previous' ? await restartCurrentTrack() : await executeHostCommand({ type: 'stop' });

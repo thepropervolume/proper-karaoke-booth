@@ -224,9 +224,9 @@ try {
   assert.ok((await nav.getByRole('button', { name: 'Requests', exact: true }).boundingBox()).y > (await sources.boundingBox()).y);
 
   // Actual native menu callbacks route through the shared action bus.
-  for (const [label, expected] of [['Import Video File…', 'Import local MP4 files'], ['Import Custom Directory…', 'Import MP4 folder'], ['Import CD+G / LRC / ZIP…', 'Import CD+G, LRC or ZIP']]) {
+  for (const [label, expected] of [['Import Video…', 'Import local MP4 files'], ['Import Folder…', 'Import MP4 folder'], ['Import CD+G / LRC / ZIP…', 'Import CD+G, LRC or ZIP']]) {
     const before = await app.evaluate((_electron, title) => globalThis.workspaceQa.dialogs.filter(value => value.title === title).length, expected);
-    await clickMenu(['File', 'Import', label]);
+    await clickMenu(['File', label]);
     await untilApp((_electron, value) => globalThis.workspaceQa.dialogs.filter(item => item.title === value.title).length > value.before, { title: expected, before });
   }
   await clickMenu(['File', 'Back up show…']);

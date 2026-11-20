@@ -6,6 +6,7 @@ export const SHORTCUT_ACTIONS = [
   { id: 'keybindings', label: 'Open Keyboard Shortcuts', group: 'Application', scope: 'application' },
   { id: 'backupShow', label: 'Back Up Show', group: 'Application', scope: 'application' },
   { id: 'restoreShow', label: 'Restore Show Backup', group: 'Application', scope: 'application' },
+  { id: 'toggleHostFullscreen', label: 'Toggle Host Full Screen', group: 'Application', scope: 'host' },
   { id: 'playPause', label: 'Play/Pause', group: 'Playback', scope: 'application' },
   { id: 'previous', label: 'Restart Current Song', group: 'Playback', scope: 'application' },
   { id: 'stop', label: 'Stop', group: 'Playback', scope: 'application' },
@@ -36,6 +37,7 @@ export const DEFAULT_SHORTCUTS: Shortcuts = {
   search: ['Control+KeyF', 'Meta+KeyF'], playPause: ['Space'],
   preferences: ['Control+Comma', 'Meta+Comma', 'Alt+Comma'],
   keybindings: ['Control+Slash', 'Meta+Slash', 'F1'],
+  toggleHostFullscreen: ['F11'],
   toggleFullscreen: ['KeyF', 'Shift+KeyF'],
   previous: [], stop: [], skip: [], seekBackward: [], seekForward: [], singerDisplay: [],
   removeRequest: ['Delete'],
@@ -63,13 +65,16 @@ export function parseShortcuts(value: unknown): Shortcuts {
   const legacyOverrides = new Set(['search', 'playPause'].flatMap(action =>
     Object.hasOwn(input, action) && Array.isArray(input[action]) && input[action].length <= MAX_SHORTCUTS_PER_ACTION
       ? (input[action] as unknown[]).map(canonicalShortcut) : []));
+  // When upgrading a file that pre-dates host fullscreen, a custom F11 binding should win.
+  const fullscreenDefaultTaken = Object.values(input).some(bindings => Array.isArray(bindings) && bindings.includes('F11'));
   const result = {} as Shortcuts, used = new Map<string, string>();
   for (const action of SHORTCUT_ACTIONS) {
     const explicit = Object.hasOwn(input, action.id);
     // A valid old override wins over a newly added default during upgrade. The
     // editor submits every action, so editing still detects all conflicts.
     const bindings = explicit ? input[action.id] : DEFAULT_SHORTCUTS[action.id].filter(binding =>
-      action.id === 'search' || action.id === 'playPause' || !legacyOverrides.has(binding));
+      action.id === 'search' || action.id === 'playPause' || !legacyOverrides.has(binding) &&
+        (action.id !== 'toggleHostFullscreen' || !fullscreenDefaultTaken));
     if (!Array.isArray(bindings) || bindings.length > MAX_SHORTCUTS_PER_ACTION)
       throw new Error(`${action.label} must have between 0 and ${MAX_SHORTCUTS_PER_ACTION} bindings.`);
     result[action.id] = bindings.map(binding => {

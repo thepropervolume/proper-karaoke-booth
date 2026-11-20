@@ -11,9 +11,12 @@ Open **Preferences → Keyboard Shortcuts** to review or edit keyboard commands.
 | Open Preferences | Ctrl+,; Cmd+,; Alt+, | Host or player window |
 | Open Keyboard Shortcuts | Ctrl+/; Cmd+/; F1 | Host or player window |
 | Toggle Fullscreen | F; Shift+F | Active player window only |
+| Toggle Host Full Screen | F11 | Host window only |
 | Remove Selected Queue Request | Delete | Focused queue only; eligible selected request |
 
 When a host queue row has focus, use **Up** and **Down** to select the previous or next request. **Home** and **End** select the first or last request. **Shift+F10** opens the selected request’s actions.
+
+The **Window** menu has separate fullscreen controls for the host and singer display. An existing custom F11 assignment takes precedence over the new host fullscreen default.
 
 Other listed actions start unassigned. They include restart current song, stop, skip, seek backward/forward, open the singer display, all three import actions, backup, appearance/accent preferences and cycling, and the three workspace layouts. Assign keys to any of these in the editor. An action can have up to 16 alternate shortcuts. Each shortcut is one physical key plus optional Ctrl, Alt, Shift and Cmd/Meta modifiers; multi-step sequences are not supported.
 

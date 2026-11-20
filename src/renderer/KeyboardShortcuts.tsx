@@ -65,7 +65,7 @@ export function KeyboardShortcuts({ value, onSave, onEditFile }: {
         <h3>{group}</h3>
         <dl>
           {SHORTCUT_ACTIONS.filter(action => action.group === group).map(action => <div className="keyboard-shortcuts__row" key={action.id}>
-            <dt>{action.label}{action.scope !== 'application' && <small>{action.scope === 'player' ? 'Player window only' : 'Queue only'}</small>}</dt>
+            <dt>{action.label}{action.scope !== 'application' && <small>{action.scope === 'player' ? 'Player window only' : action.scope === 'host' ? 'Host window only' : 'Queue only'}</small>}</dt>
             <dd>
               <div className="keyboard-shortcuts__bindings">
                 {draft[action.id].map((binding, index) => <span className="keyboard-shortcuts__binding" key={`${binding}-${index}`}>

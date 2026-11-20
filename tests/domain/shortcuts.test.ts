@@ -26,10 +26,18 @@ test('the requested punctuation, help and player-fullscreen defaults match exact
   assert.equal(matchesShortcut(keys, 'toggleFullscreen', input('KeyF')), true);
   assert.equal(matchesShortcut(keys, 'toggleFullscreen', input('KeyF', { shift: true })), true);
   assert.equal(matchesShortcut(keys, 'toggleFullscreen', input('KeyF', { control: true })), false);
+  assert.equal(matchesShortcut(keys, 'toggleHostFullscreen', input('F11')), true);
   assert.equal(matchesShortcut(keys, 'preferences', input('Comma', { control: true, shift: true })), false);
   assert.equal(formatShortcut('Control+Comma'), 'Ctrl+,');
   assert.equal(formatShortcut('Meta+Slash'), 'Cmd+/');
   assert.equal(formatShortcut('Shift+KeyF'), 'Shift+F');
+});
+
+test('adding host fullscreen preserves any existing F11 binding', () => {
+  const migrated = parseShortcuts({ previous: ['F11'] });
+  assert.deepEqual(migrated.previous, ['F11']);
+  assert.deepEqual(migrated.toggleHostFullscreen, []);
+  assert.throws(() => parseShortcuts({ ...DEFAULT_SHORTCUTS, previous: ['F11'] }), /Conflicting/);
 });
 
 test('old custom bindings survive new help/fullscreen defaults without stealing another existing action', () => {

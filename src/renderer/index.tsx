@@ -25,6 +25,7 @@ import type { LocalControlUiStatus } from './LocalControlSettings';
 import { SongRatingButton, SongRatingDialog } from './SongRating';
 import { DEFAULT_SHORTCUTS, KARAOKE_PAIR_IMPORT_LABEL, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
 import type { AppAction, SettingsSection } from '../domain/app-action';
+import type { WorkspaceMenuContext } from '../main/application-menu';
 import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
 import type { CollectionsAction, CollectionsSnapshot } from '../domain/collections';
 import { Icon } from './Icon';
@@ -97,7 +98,8 @@ declare global {
       getAppVersion: () => Promise<string>;
       appReady: () => Promise<void>;
       refreshMenu: () => Promise<void>;
-      updateMenuContext: (value: { busy: boolean; modal: boolean }) => Promise<void>;
+      updateMenuContext: (value: WorkspaceMenuContext) => Promise<void>;
+      toggleHostFullscreen: () => Promise<void>;
       getLocalControlStatus: () => Promise<LocalControlUiStatus>;
       showControlCli: () => Promise<void>;
       onAppAction: (callback: (action: AppAction) => void) => () => void;
@@ -306,7 +308,7 @@ function App() {
     ++ratingOpenSequence.current;
     if (settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || mediaReviewOpen) setRatingDialog(null);
   }, [screen, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, mediaReviewOpen]);
-  useEffect(() => { void window.tpv.updateMenuContext({ busy, modal: !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || ratingDialog || mediaReviewOpen) }).catch(() => {}); }, [busy, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, !!ratingDialog, mediaReviewOpen]);
+  const modalOpen = !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || ratingDialog || mediaReviewOpen);
 
   useEffect(() => {
     let deadline = state?.nextStartAtMs ?? 0;
@@ -464,6 +466,14 @@ function App() {
     return () => { alive = false; };
   }, [ratingSelection, settings.ratingProfileConfigFile, ratingReload, filenameRefresh]);
   const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
+  const canPlay = !busy && !transportBusy && (!!active || (!stagedBlocked && !pauseRemaining && !!(staged || eligibleFuture)));
+  const canStop = !!state;
+  const performanceActive = !!active;
+  const canSeek = performanceActive && !!queueTimeline?.seekable && !queueTimeline.seeking;
+  useEffect(() => {
+    void window.tpv.updateMenuContext({ busy: busy || importPickerBusy, modal: modalOpen, videoImportBlocked: importActive,
+      canPlay, canStop, performanceActive, canSeek }).catch(() => {});
+  }, [busy, importPickerBusy, modalOpen, importActive, canPlay, canStop, performanceActive, canSeek]);
   const describe = (request?: SongRequest) => {
     const lead = request?.singerId == null ? 'Unassigned' : state?.singers.find(s => s.id === request.singerId)?.name ?? 'Unknown singer';
     const partner = request?.coSingerId ? state?.singers.find(s => s.id === request.coSingerId)?.name ?? 'Unknown singer' : '';
@@ -549,11 +559,11 @@ function App() {
       const textEntry = target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
       if (textEntry && isTextEditingShortcut(input)) return;
       const inQueue = !!target?.closest('[data-queue-list]');
-      const action = SHORTCUT_ACTIONS.find(action => (action.scope === 'application' || action.scope === 'queue' && inQueue) && matchesShortcut(shortcuts, action.id, input))?.id;
+      const action = SHORTCUT_ACTIONS.find(action => (action.scope === 'application' || action.scope === 'host' || action.scope === 'queue' && inQueue) && matchesShortcut(shortcuts, action.id, input))?.id;
       if (!action) return;
       const interactive = target?.closest('input, textarea, select, button, [contenteditable]:not([contenteditable="false"])');
       if (interactive && !event.ctrlKey && !event.metaKey && !event.altKey && !/^F\d+$/.test(event.code)) return;
-      const navigation = ['search', 'preferences', 'keybindings', 'appearance', 'accentColor'].includes(action);
+      const navigation = ['search', 'preferences', 'keybindings', 'appearance', 'accentColor', 'toggleHostFullscreen'].includes(action);
       if (!navigation && (settingsOpen || editingRequest || editingVersion || queueVersion || playlistVersion || target?.closest('input, textarea, select, button, [contenteditable]:not([contenteditable="false"])') || busy && action !== 'stop')) return;
       event.preventDefault();
       actionHandler.current(action);
@@ -613,7 +623,8 @@ function App() {
   const savePreferencePatch = (patch: Partial<Settings>) => run(async () => {
     if (patch.layout === 'rotation') patch = { ...patch, hostPanelSizes: { ...panelSizesRef.current, queue: Math.max(360, Math.min(1000, Math.round(window.innerWidth * .4))) } };
     else if (patch.layout === 'standard') patch = { ...patch, hostPanelSizes: { ...panelSizesRef.current, queue: DEFAULT_HOST_PANEL_SIZES.queue } };
-    setSettings(await window.tpv.saveSettings(patch));
+    try { setSettings(await window.tpv.saveSettings(patch)); }
+    catch (error) { void window.tpv.refreshMenu().catch(() => {}); throw error; }
   });
   const seekOffset = (seconds: number) => run(async () => {
     const timeline = await window.tpv.getTimeline();
@@ -621,15 +632,17 @@ function App() {
     return window.tpv.seek({ generation: timeline.generation, position: Math.max(0, Math.min(timeline.duration - .001, timeline.position + seconds)) });
   });
   actionHandler.current = action => {
+    if (action === 'toggleHostFullscreen') { void window.tpv.toggleHostFullscreen().catch(() => {}); return; }
     if (mediaReviewOpen && action !== 'stop') return;
     if (action === 'search') { focusSearch(); return; }
     if (action === 'preferences' || action === 'keybindings' || action === 'appearance' || action === 'accentColor') {
       openPreferences(action === 'keybindings' ? 'keyboard-shortcuts' : action === 'appearance' || action === 'accentColor' ? 'appearance' : 'general'); return;
     }
-    if (action.startsWith('appearance:') || action.startsWith('accent:') || ['layoutStandard', 'layoutRotation', 'layoutLibrary'].includes(action)) {
+    if (action.startsWith('appearance:') || action.startsWith('accent:') || action.startsWith('font:') || ['layoutStandard', 'layoutRotation', 'layoutLibrary'].includes(action)) {
       if (busy) { void window.tpv.refreshMenu(); return; }
       if (action.startsWith('appearance:')) void savePreferencePatch({ appearance: action.slice(11) as Settings['appearance'] });
       else if (action.startsWith('accent:')) void savePreferencePatch({ accentColor: action.slice(7) as Settings['accentColor'] });
+      else if (action.startsWith('font:')) void savePreferencePatch({ fontFamily: action.slice(5) as Settings['fontFamily'] });
       else void savePreferencePatch({ layout: action === 'layoutStandard' ? 'standard' : action === 'layoutRotation' ? 'rotation' : 'library' });
       return;
     }
@@ -846,7 +859,7 @@ function App() {
       <div className="transport__controls">
         <KaraFunMixControl bridge={window.tpv.karaFunMix} generation={state?.playback?.generationId ?? null} />
         <Tooltip text={shortcutHint('Previous — Restart Current Song', 'previous')}><button className="icon-button" aria-label="Previous — Restart Current Song" disabled={busy || !active} onClick={() => void run(() => window.tpv.restartTrack())}><Icon name="previous" /></button></Tooltip>
-        <Tooltip text={!active && stagedBlocked ? 'The next song is unavailable under the current policy. Change the queue or policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || transportBusy || (!active && (stagedBlocked || pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
+        <Tooltip text={!active && stagedBlocked ? 'The next song is unavailable under the current policy. Change the queue or policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={!canPlay} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text={shortcutHint('Stop', 'stop')}><button className="icon-button" aria-label="Stop" disabled={!state} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
         <Tooltip text={shortcutHint('Skip', 'skip')}><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
         <Tooltip text={settings.applauseEnabled ? 'Play applause' : 'Enable applause in Preferences'}><button className="icon-button" aria-label="Applause" disabled={!settings.applauseEnabled || !window.tpv.applause} onClick={() => { void window.tpv.applause?.trigger().then(result => { if (!result.ok) setNotice(result.error || 'Could not play applause.', 'error'); }).catch(() => setNotice('Could not play applause.', 'error')); }}><Icon name="applause" /></button></Tooltip>

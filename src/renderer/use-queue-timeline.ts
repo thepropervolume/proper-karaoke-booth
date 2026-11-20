@@ -10,7 +10,7 @@ export function useQueueTimeline(generation: string | null): PlaybackTimelineSta
     const unsubscribe = window.tpv.onTimeline(value => {
       observed = true;
       if (alive) setTimeline(previous => previous && previous.generation === value.generation &&
-        previous.duration === value.duration && previous.seeking === value.seeking &&
+        previous.duration === value.duration && previous.seekable === value.seekable && previous.seeking === value.seeking &&
         Math.floor(previous.position / 15) === Math.floor(value.position / 15) ? previous : value);
     });
     void window.tpv.getTimeline().then(value => { if (alive && !observed) setTimeline(value); }).catch(() => {});

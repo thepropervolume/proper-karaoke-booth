@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { WorkspaceMenuContext } from '../main/application-menu';
 
 // This bridge exposes only named application operations, never generic IPC or filesystem access.
 // Keep this list explicit. A generic invoke(channel, payload) would let a page
@@ -34,7 +35,8 @@ contextBridge.exposeInMainWorld('tpv', {
   getAppVersion: () => ipcRenderer.invoke('host:app-version'),
   appReady: () => ipcRenderer.invoke('host:ui-ready'),
   refreshMenu: () => ipcRenderer.invoke('host:refresh-menu'),
-  updateMenuContext: (value: { busy: boolean; modal: boolean }) => ipcRenderer.invoke('host:menu-context', value),
+  updateMenuContext: (value: WorkspaceMenuContext) => ipcRenderer.invoke('host:menu-context', value),
+  toggleHostFullscreen: () => ipcRenderer.invoke('host:toggle-host-fullscreen'),
   getLocalControlStatus: () => ipcRenderer.invoke('host:control-status'),
   installControlCli: () => ipcRenderer.invoke('host:install-control-cli'),
   showControlCli: () => ipcRenderer.invoke('host:show-control-cli'),
