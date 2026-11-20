@@ -38,7 +38,7 @@ export function RatingProfileControls({ configFile, onChange }: {configFile:stri
   };
   const busy = checking || choosing;
   return <div className="rating-profile-controls">
-    <p>Community ratings use 1–10 hearts. <strong>Your host rating</strong> belongs to a separately provisioned host voting profile; it is not a singer account.</p>
+    <p>Community ratings use 1–10 stars. <strong>Your host rating</strong> belongs to a separately provisioned host voting profile; it is not a singer account.</p>
     <Tooltip text={configFile || 'Uses rating-connection.json in this app’s data folder when present; otherwise public aggregate ratings only.'}>
       <button type="button" disabled={busy} onClick={() => void choose()}>{choosing ? 'Choosing…' : configFile ? `Profile: ${configFile.split(/[\\/]/).pop()}` : 'Choose Host Rating Profile…'}</button>
     </Tooltip>{' '}

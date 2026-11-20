@@ -156,7 +156,7 @@ export class Store<T> {
   /** Uses the sole show connection, so normal show backups retain local-only votes. */
   rateLocalSong(recordingKey: LocalRecordingKey, value: number | null): SongRating {
     this.assertAuthority();
-    if (!isLocalRecordingKey(recordingKey) || !validHeartVote(value)) throw new Error('Choose a local recording and 1–10 hearts, or clear its rating.');
+    if (!isLocalRecordingKey(recordingKey) || !validHeartVote(value)) throw new Error('Choose a local recording and 1–10 stars, or clear its rating.');
     // Refuse unknown hashes rather than creating arbitrary host-side records.
     this.localSongRatings([recordingKey]);
     const fingerprint = recordingKey.slice(7);
