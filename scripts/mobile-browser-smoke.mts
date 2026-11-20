@@ -69,7 +69,7 @@ try {
   await host.getByText(/Alice.*24 points/).waitFor();
   checks.push('Authenticated guest photo displays and scores under the actual production CSP.');
   await guest.getByRole('button', { name: 'Request', exact: true }).click();
-  await guest.getByText('accepted', { exact: true }).waitFor();
+  await guest.getByText('Queued', { exact: true }).waitFor();
   await host.getByRole('button', { name: /^Queue \(2\)$/ }).waitFor();
   checks.push('Nearby suggestion requires consent; real singer client queues into phone host.');
   await host.getByRole('button', { name: /^Queue \(2\)$/ }).click();
