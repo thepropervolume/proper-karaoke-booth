@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('tpv', {
   getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
   previewFilenameMetadata: () => ipcRenderer.invoke('host:preview-filename-metadata'),
   backupShow: () => ipcRenderer.invoke('host:backup-show'),
+  restoreShow: () => ipcRenderer.invoke('host:restore-show'),
   retryBackupCleanup: () => ipcRenderer.invoke('host:backup-cleanup'),
   getCollections: () => ipcRenderer.invoke('host:get-collections'),
   exportHistory: (filter: unknown) => ipcRenderer.invoke('host:export-history', filter),

@@ -53,6 +53,7 @@ import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
 import { LYRIC_FILE_EXTENSIONS } from './lrc-import';
 import { ShowBackup } from './show-backup';
 import { HistoryExport } from './history-export';
+import { InvalidShowBackupError, prepareShowRestore, type PreparedShowRestore, type RestoreResult } from './show-restore';
 import { DisplayFullscreen } from './display-fullscreen';
 import { selectSingerDisplay } from './display-placement';
 import { readSingerDisplayId, writeSingerDisplayId } from './display-placement-store';
@@ -204,7 +205,8 @@ let builtInBumpers: BumperTrack[] = [];
 let bumperError = '';
 let playbackTransition = false;
 let autoStageSuspended = false;
-let startupBumperPending = true;
+const restoreRestartSwitch = 'after-show-restore';
+let startupBumperPending = !app.commandLine.hasSwitch(restoreRestartSwitch);
 let startingLaunchBumper = false;
 const youtubeAudioGate = new YouTubeAudioGate(isYouTubePlayerActive);
 let importJob: ImportJob | null = null;
@@ -220,6 +222,48 @@ const showBackup = new ShowBackup(async () => {
   return result.canceled ? null : result.filePath ?? null;
 }, destination => store.backup(destination));
 const historyExport = new HistoryExport(() => store.collections.snapshot().history, async () => {
+let restoreRequest: Promise<RestoreResult> | null = null;
+let restorePending: PreparedShowRestore | null = null;
+function restoreBusy(): boolean {
+  const phase = importJob?.snapshot()?.phase;
+  return !!state.playback || playbackTransition || importPickerOpen || cdgPickerOpen || !!cdgImport?.active() ||
+    phase === 'scanning' || phase === 'hashing' || phase === 'cancelling' || relinking || showBackup.needsShutdownWait();
+}
+
+function chooseShowRestore(): Promise<RestoreResult> {
+  const window = host;
+  if (!window || window.isDestroyed() || shuttingDown) return Promise.resolve({ status: 'unavailable' });
+  if (restoreRequest || restorePending || restoreBusy()) return Promise.resolve({ status: 'busy' });
+  const operation = async (): Promise<RestoreResult> => {
+    let candidate: PreparedShowRestore | undefined;
+    try {
+      const chosen = await dialog.showOpenDialog(window, { title: 'Choose a show backup', properties: ['openFile'],
+        filters: [{ name: 'Show backup', extensions: ['sqlite'] }] });
+      const snapshot = chosen.filePaths[0];
+      if (chosen.canceled || !snapshot || shuttingDown || window.isDestroyed()) return { status: 'cancelled' };
+      candidate = await prepareShowRestore(snapshot, app.getPath('userData'));
+      if (shuttingDown || window.isDestroyed()) return { status: 'cancelled' };
+      if (restoreBusy()) return { status: 'busy' };
+      const { singers, songs, requests } = candidate.summary;
+      const count = (value: number, label: string) => `${value.toLocaleString()} ${label}${value === 1 ? '' : 's'}`;
+      const review = await dialog.showMessageBox(window, { type: 'warning', title: 'Restore Show Backup',
+        message: 'Replace the current show with this backup?',
+        detail: `This backup contains ${count(singers, 'singer')}, ${count(songs, 'song')} and ${count(requests, 'request')}. Booth will save your current show in the app data folder under show-restore-backups, end remote sessions and restart silently. Media files and preferences stay in place.`,
+        buttons: ['Cancel', 'Restore and Restart'], defaultId: 0, cancelId: 0, noLink: true });
+      if (review.response !== 1 || shuttingDown || window.isDestroyed()) return { status: 'cancelled' };
+      if (restoreBusy()) return { status: 'busy' };
+      restorePending = candidate;
+      setImmediate(() => app.quit());
+      return { status: 'restarting' };
+    } catch (error) {
+      return { status: error instanceof InvalidShowBackupError ? 'invalid-backup' : 'failed' };
+    } finally {
+      if (candidate && candidate !== restorePending) await candidate.discard().catch(() => {});
+    }
+  };
+  restoreRequest = operation().finally(() => { restoreRequest = null; });
+  return restoreRequest;
+}
   if (!host || host.isDestroyed() || shuttingDown) return null;
   const result = await dialog.showSaveDialog(host, { title: 'Export shown history to a new CSV file', defaultPath: 'karaoke-history.csv',
     filters: [{ name: 'CSV file', extensions: ['csv'] }], properties: ['showOverwriteConfirmation'] });
@@ -1297,6 +1341,7 @@ else {
     guardHost(event.sender.id);
     return previewMetadata(state.versions, id => store.media(id), settings.metadataTemplates, settings.metadataFormat);
   });
+  ipcMain.handle('host:restore-show', event => { guardHost(event.sender.id); return chooseShowRestore(); });
   singerCapture.start();
   await reconcileSingerScreen();
   ipcMain.handle('host:singer-preview', event => { guardHost(event.sender.id); return previewFrame(); });
@@ -1919,6 +1964,20 @@ function waitForImport(job: ImportJob): Promise<boolean> {
     void job.wait().then(() => { clearTimeout(timer); resolve(true); }, () => { clearTimeout(timer); resolve(false); });
   });
 }
+async function finishShowRestore(candidate: PreparedShowRestore): Promise<void> {
+  try { await candidate.install(destination => store.backupBeforeRestore(destination), closeStore); }
+  catch {
+    closeStore();
+    dialog.showErrorBox('Show restore stopped', 'Booth kept the current show. Close other tools using its database, check app data permissions and free space, then try again.');
+  } finally { await candidate.discard().catch(() => {}); }
+  const restartFlag = `--${restoreRestartSwitch}`;
+  app.relaunch({ args: [...process.argv.slice(1).filter(arg => arg !== restartFlag), restartFlag] });
+}
+async function stopBeforeRestore(): Promise<void> {
+  if (!restorePending) return;
+  await restorePending.discard().catch(() => {});
+  dialog.showErrorBox('Show restore stopped', 'Booth could not finish shutting down. Your current show is unchanged. Reopen Booth, end any active sessions and imports, then try again.');
+}
 // Fence new work before awaiting shutdown. Otherwise a late download, seek or
 // guest reply could still mutate the show after its database connection closes.
 app.on('before-quit', event => {
@@ -1946,7 +2005,7 @@ app.on('before-quit', event => {
   const downloading = !!youtubeDownloads?.active() || preparingDownload || !!queuedDownloads.snapshot().activeVersionId || nativePending;
   const controlShutdown = localControl?.stop().then(() => true, () => false) ?? Promise.resolve(true);
   const downloadShutdown = Promise.race([Promise.all([queuedDownloads.shutdown(),youtubeDownloads?.shutdown(),nativeShutdown]).then(() => true, () => false), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  const wait = singerScreenWasActive || !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
+  const wait = singerScreenWasActive || !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || !!restoreRequest || !!restorePending || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
   const internetShutdown=internetQueue?.shutdown() ?? Promise.resolve(true);
   const backupShutdown = showBackup.shutdown();
@@ -1959,12 +2018,17 @@ app.on('before-quit', event => {
   const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedControl = Promise.race([controlShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl,singerScreenShutdown]).then(([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean,controlClean,singerScreenClean]) => {
-    if (!singerScreenClean || !controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean) {
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl,singerScreenShutdown,boundedRestore]).then(async ([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean,controlClean,singerScreenClean,restoreClean]) => {
+    if (!singerScreenClean || !controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean || !restoreClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
+  const boundedRestore = restoreRequest ? Promise.race([restoreRequest.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]) : Promise.resolve(true);
       // without closing it underneath that work; the OS releases it on exit.
       app.exit(1); return;
     }
     quitReady = true; closeStore(); app.quit();
-  }).catch(() => { app.exit(1); });
+  }).catch(async () => { await stopBeforeRestore(); app.exit(1); });
 });
+      await stopBeforeRestore();
+    const restore = restorePending;
+    restorePending = null;
+    if (restore) await finishShowRestore(restore);

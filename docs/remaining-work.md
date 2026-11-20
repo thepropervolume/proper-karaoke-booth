@@ -146,7 +146,7 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Make missing files, unreadable media, unsupported codecs and decode errors explain how to recover while retaining the singer's turn.
 - [ ] Add a guided missing/moved-file review and relinking workflow; current relinking accepts an exact original only.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
-- [ ] Add restore from a checked backup; existing backup does not restore or include media/settings.
+- [x] Restore from a checked backup after native confirmation, with automatic current-show rollback and a silent restart. Windows Electron verified both cancellation and successful restore.
 - [x] Add versioned SQLite migrations (current schema 7) with upgrade, interrupted-write and rollback tests.
 - [x] Add a validated, standalone pre-migration show backup before opening an older database; stop the upgrade if the backup fails.
 - [ ] Verify pre-migration backup, upgrade and rollback on installed show systems and real filesystems; in-app restore remains separate.

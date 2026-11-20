@@ -22,6 +22,7 @@ export interface StoredMedia {
 export class Store<T> {
   private db: DatabaseSync;
   private authorityFault = false;
+  private restoreFrozen = false;
   private remoteQueueOpened = false;
   private remoteQueueDisabled = false;
   readonly collections: Collections;
@@ -49,6 +50,13 @@ export class Store<T> {
   /** Caller must keep this Store open until the returned promise settles. */
   backup(destination: string): Promise<void> {
     this.assertAuthority();
+    return createShowSnapshot(this.db, destination);
+  }
+
+  /** Freeze this retiring Store before taking the rollback snapshot. */
+  backupBeforeRestore(destination: string): Promise<void> {
+    this.assertAuthority();
+    this.restoreFrozen = true;
     return createShowSnapshot(this.db, destination);
   }
 
@@ -86,6 +94,7 @@ export class Store<T> {
 
   private assertAuthority(): void {
     if (this.authorityFault) throw new Error('Show authority needs recovery. Restart the application before making further changes.');
+    if (this.restoreFrozen) throw new Error('The show is restarting to restore a backup.');
   }
 
   /** Irreversibly block new or existing guest authority in this process; local host writes are unaffected. */

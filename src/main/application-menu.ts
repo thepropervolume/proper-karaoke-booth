@@ -18,6 +18,7 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
       { label: `${KARAOKE_PAIR_IMPORT_LABEL}…`, click: () => dispatch('importCdg') },
     ] },
     { label: 'Back up show…', enabled: !context.fileBlocked, click: () => dispatch('backupShow') },
+    { label: 'Restore Show Backup…', enabled: !context.fileBlocked, click: () => dispatch('restoreShow') },
     { type: 'separator' }, preferences,
     { label: 'Keyboard Shortcuts…', click: () => dispatch('keybindings') },
     { type: 'separator' }, { role: 'quit' },

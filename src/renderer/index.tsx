@@ -73,6 +73,7 @@ import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 import type { CatalogConnectionStatus } from '../main/shared-catalog-connection';
 import type { ImportProgress } from '../domain/import-job';
 import type { BackupResult } from '../main/show-backup';
+import type { RestoreResult } from '../main/show-restore';
 import type { HistoryExportResult } from '../main/history-export';
 import '../styles/main.scss';
 import '../styles/tooltip.scss';
@@ -106,6 +107,7 @@ declare global {
       getLibraryFilenames: () => Promise<Record<string, string>>;
       previewFilenameMetadata: () => Promise<import('../main/metadata-preview').MetadataProposal[]>;
       backupShow: () => Promise<BackupResult>;
+      restoreShow: () => Promise<RestoreResult>;
       retryBackupCleanup: () => Promise<BackupResult>;
       getCollections: () => Promise<CollectionsSnapshot>;
       exportHistory: (filter: { query: string; singerId: string }) => Promise<HistoryExportResult>;
@@ -474,6 +476,16 @@ function App() {
     } catch { setNotice('Backup could not be completed. Please try again.', 'error'); }
     finally { setBackupBusy(false); }
   };
+  const restoreShow = () => run(async () => {
+    const result = await window.tpv.restoreShow();
+    switch (result.status) {
+      case 'cancelled': return { ok: false, cancelled: true };
+      case 'busy': return { ok: false, error: 'Stop playback and finish the active import, relink or backup before restoring a show.' };
+      case 'invalid-backup': return { ok: false, error: 'Choose a complete, compatible Booth show backup. The selected file could not be verified.' };
+      case 'restarting': return { ok: true, notice: 'Restarting Booth to restore the checked backup…' };
+      default: return { ok: false, error: 'Show restore could not start. Check app data permissions and available space, then try again.' };
+    }
+  });
   const beginImport = async (kind: 'files' | 'folder') => {
     if (importPickerBusy || importActive) return;
     setImportPickerBusy(true); setNotice('');
@@ -605,6 +617,7 @@ function App() {
       case 'importDirectory': setScreen('library'); void beginImport('folder'); break;
       case 'importCdg': setScreen('library'); void run(async () => { await window.tpv.cdg.start(); }); break;
       case 'backupShow': void backupShow(backupCleanup); break;
+      case 'restoreShow': void restoreShow(); break;
       case 'removeRequest': if (selectedRequestId) { void command({ type: 'removeRequest', requestId: selectedRequestId }); setSelectedRequestId(''); setQueueMenu(null); } break;
       case 'cycleAccent': void cycleAccent(); break;
       case 'cycleAppearance': void savePreferencePatch({ appearance: settings.appearance === 'system' ? 'night' : settings.appearance === 'night' ? 'day' : 'system' }); break;

@@ -163,12 +163,18 @@ export async function createShowSnapshot(source: DatabaseSync, destination: stri
   }
 }
 
-/** Restore to a separate, new database file; this never replaces a live show. */
-export async function restoreShowSnapshotToNewFile(snapshot: string, destination: string, hooks: Hooks = {}): Promise<void> {
+export async function assertStandaloneShowFile(snapshot: string): Promise<void> {
   if (!isAbsolute(snapshot)) throw new Error('Choose an absolute backup filename.');
   const info = await lstat(snapshot);
   if (!info.isFile() || info.isSymbolicLink()) throw new Error('Backup must be a regular file.');
   await absent(`${snapshot}-wal`); await absent(`${snapshot}-shm`); await absent(`${snapshot}-journal`);
+}
+
+/** Restore to a separate, new database file; this never replaces a live show. */
+export async function restoreShowSnapshotToNewFile(snapshot: string, destination: string,
+  hooks: Hooks & { validateSource?: (source: DatabaseSync) => void } = {}): Promise<void> {
+  await assertStandaloneShowFile(snapshot);
   const source = new DatabaseSync(snapshot, { readOnly: true });
-  try { inspectShowSnapshot(source); await createShowSnapshot(source, destination, hooks); } finally { source.close(); }
+  try { hooks.validateSource?.(source); inspectShowSnapshot(source); await createShowSnapshot(source, destination, hooks); }
+  finally { source.close(); }
 }
