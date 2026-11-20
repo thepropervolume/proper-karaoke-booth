@@ -40,7 +40,7 @@ The [mobile web app](https://queue.thepropervolume.com/app/) offers **Full Host 
 
 If the host enables LAN Singer Screens, open their address, such as `http://192.168.1.20:4051`, on the venue network. It is a silent visual mirror; sound stays on the host. It works while the separate singer window is hidden. A `.local` name works only if the network resolves it. Viewing does not join the request queue.
 
-The 0.10.3 source also adds an optional internet singer-screen link for an active room. This experimental path needs the updated relay to be deployed before use. The host shares a complete private link; it shows still images without audio, and its access ends when the host stops sharing or the stream expires. A disconnected viewer may temporarily retain a previously received image.
+During an active room, your host can share a private internet singer-screen link at `booth.thepropervolume.com` or `queue.thepropervolume.com`. Open the full link, including the code after `#`. The viewer shows still images from the singer screen while audio plays at the venue. Viewing access ends when the host stops sharing or the stream expires.
 
 On Windows, screen sharing listens on verified Private interfaces, with loopback fallback when classification is unavailable or Public. Network rechecks may stop sharing; ask for a current address. This read-only screen and authenticated singer-request rooms are separate services.
 

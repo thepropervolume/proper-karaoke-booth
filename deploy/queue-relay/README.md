@@ -1,5 +1,13 @@
 # Remote singer relay deployment
 
+## Internet singer screen
+
+The queue relay can serve a separate, read-only viewer at `https://booth.thepropervolume.com/<room>/screen`. The host explicitly starts sharing from an active internet room and distributes the full link, including its private fragment. The viewer receives short-lived still frames from the singer display. Audio plays at the venue.
+
+Issue a dedicated `tpv-booth-screen` certificate for the booth hostname. Stage `apache-booth-screen.conf` as a separate HTTPS vhost and `booth-screen-systemd.conf` as a drop-in for `tpv-queue-relay.service`. Install `tpv-booth-screen-cert-reload` as an executable deploy hook for this certificate lineage. The Apache allowlist and the relay independently restrict this hostname to the viewer page, its script, and authenticated frame reads. The queue hostname retains existing room and host endpoints.
+
+Back up the current bundle and test the new vhost with `apache2ctl -t` before reloading. With the updated relay running, use `curl --resolve booth.thepropervolume.com:443:127.0.0.1` at the origin to check TLS, `/<room>/screen`, unauthenticated frame rejection, and denial of non-viewer routes. Only then point the proxied Cloudflare record at the relay. Check a synthetic share through public HTTPS and confirm stopping sharing revokes frame access. Keep the existing queue origin healthy throughout verification.
+
 ## Mobile web and native clients
 
 Version 0.9 adds `https://queue.thepropervolume.com/app/`. Build with `npm run build:mobile`; install only the resulting `dist/mobile` directory, root-owned and unwritable by the runtime, as `/opt/tpv-queue-relay/mobile/`. Install `mobile.conf` at `/etc/apache2/tpv-queue-mobile.conf` and include it in the HTTPS vhost before the catch-all proxy. The static allowlist rejects dotfiles/build manifests and includes the app shell, fonts, icons and fixed public YouTube player. Keep its origin referrer policy: a no-referrer override can cause YouTube error 153. Never serve the repository, native signing material or credentials as the web root.
