@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('tpv', {
   karaFun: {
     status: () => ipcRenderer.invoke('host:karafun-status'),
     signIn: () => ipcRenderer.invoke('host:karafun-connect'),
+    retrySavedSignIn: () => ipcRenderer.invoke('host:karafun-retry-sign-in'),
     signOut: () => ipcRenderer.invoke('host:karafun-disconnect'),
     search: (query: string) => ipcRenderer.invoke('host:karafun-search', query),
     request: (input: unknown) => ipcRenderer.invoke('host:karafun-request', input),

@@ -3,6 +3,7 @@ export type KaraFunAccountStatus = {
   state: 'disconnected' | 'connecting' | 'connected' | 'expired';
   revision: number;
   message?: string;
+  retrySavedSignIn?: boolean;
   persistence: 'memory-only' | 'os-protected';
 };
 export type KaraFunSong = {
@@ -14,6 +15,7 @@ export type KaraFunPreparation = { versionId: string; phase: 'authorizing' | 'do
 export type KaraFunBridge = {
   status(): Promise<KaraFunAccountStatus>;
   signIn(): Promise<KaraFunAccountStatus>;
+  retrySavedSignIn(): Promise<KaraFunAccountStatus>;
   signOut(): Promise<KaraFunAccountStatus>;
   search(query: string): Promise<KaraFunSearchReply>;
   request(input: { searchId: string; songId: string; catalog: 'catalog' | 'community'; singerId: string | null; requestId: string }): Promise<{ ok: boolean; versionId?: string; error?: string; notice?: string }>;

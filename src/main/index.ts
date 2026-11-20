@@ -1313,6 +1313,7 @@ else {
     const result = karaFunMixer.set(input); publishDisplay(); return result;
   });
   ipcMain.handle('host:karafun-connect', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.connect(host ?? undefined); });
+  ipcMain.handle('host:karafun-retry-sign-in', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.restore(); });
   ipcMain.handle('host:karafun-disconnect', event => { guardHost(event.sender.id); return karaFunAccount.disconnect(); });
   ipcMain.handle('host:karafun-search', async (event, query: unknown) => { guardHost(event.sender.id); const revision=sourceVisibilityRevision; if(!settings.sourceVisibility.karafun)return {status:'ok',songs:[]}; const result=await karaFunHost.search(query); return revision===sourceVisibilityRevision && settings.sourceVisibility.karafun ? result : {status:'ok',songs:[]}; });
   ipcMain.handle('host:karafun-request', (event, input: unknown) => { guardHost(event.sender.id); if(!settings.sourceVisibility.karafun)return {ok:false,error:'KaraFun search is disabled in Sources.'}; return karaFunHost.request(input); });

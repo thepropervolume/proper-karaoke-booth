@@ -12,7 +12,7 @@ export type KaraFunSessionStore = {
 export type KaraFunVaultCipher = {
   available(): Promise<boolean>;
   encrypt(value: string): Promise<Buffer>;
-  decrypt(value: Buffer): Promise<{ result: string; shouldReEncrypt?: boolean }>;
+  decrypt(value: Buffer): Promise<{ result: string; shouldReEncrypt?: boolean; isTemporarilyUnavailable?: boolean }>;
 };
 export class KaraFunSessionVaultError extends Error {
   constructor(readonly code: 'unavailable' | 'invalid-data' | 'changed' | 'cancelled') {
@@ -85,9 +85,10 @@ export class KaraFunSessionVault implements KaraFunSessionStore {
   private async decoded(bytes: Buffer, cipher: KaraFunVaultCipher): Promise<KaraFunRememberedSession> {
     try {
       const plain = await cipher.decrypt(bytes.subarray(magic.length));
+      if (plain.isTemporarilyUnavailable) throw new KaraFunSessionVaultError('unavailable');
       if (typeof plain.result !== 'string' || Buffer.byteLength(plain.result) > 8192) throw invalid();
       return parse(JSON.parse(plain.result));
-    } catch { throw invalid(); }
+    } catch (error) { throw error instanceof KaraFunSessionVaultError ? error : invalid(); }
   }
   load(signal?: AbortSignal): Promise<KaraFunRememberedSession | null> {
     return this.enqueue(async () => {

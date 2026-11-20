@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KaraFunAccount, KaraFunAccountError } from '../../src/main/karafun-account';
-import type { KaraFunRememberedSession, KaraFunSessionStore } from '../../src/main/karafun-session-vault';
+import { KaraFunSessionVaultError, type KaraFunRememberedSession, type KaraFunSessionStore } from '../../src/main/karafun-session-vault';
 const envelope = (body = '<session/>') => new Response('<response status="ok">' + body + '</response>');
 const remembered = { sessionKey: 'protected-fixture-session', clientId: '6', accountScope: 'a'.repeat(64) };
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
@@ -49,8 +49,37 @@ test('unverified browser sessions are never remembered and expired remembered se
 test('temporary provider failure preserves encrypted sign-in for a later retry and never retries passwords', async () => {
   const vault = store(remembered); let outage = true, calls = 0;
   const account = new KaraFunAccount({ sessionStore: vault.port, fetch: async () => { calls++; return outage ? new Response(null, { status: 503 }) : envelope(); }, authenticate: async () => { throw Error('No browser during recovery'); } });
-  const unavailable = await account.restore(); assert.equal(unavailable.state, 'disconnected'); assert.match(unavailable.message!, /connection/); assert.deepEqual(vault.current(), remembered);
+  const unavailable = await account.restore(); assert.equal(unavailable.state, 'disconnected'); assert.equal(unavailable.retrySavedSignIn, true); assert.match(unavailable.message!, /connection/); assert.deepEqual(vault.current(), remembered);
   outage = false; assert.equal((await account.restore()).state, 'connected'); assert.equal(account.accountScope(), remembered.accountScope); assert.equal(calls, 2); await account.close();
+});
+
+test('an ambiguous 403 and a cancelled new sign-in preserve the same remembered account for retry', async () => {
+  const vault = store(remembered); let blocked = true, logins = 0;
+  const account = new KaraFunAccount({ sessionStore: vault.port,
+    fetch: async () => blocked ? new Response('temporary gateway denial', { status: 403 }) : envelope(),
+    authenticate: async () => { logins++; throw new KaraFunAccountError('cancelled', 'Sign-in cancelled.'); } });
+  assert.equal((await account.restore()).retrySavedSignIn, true);
+  assert.deepEqual(vault.current(), remembered);
+  assert.equal((await account.connect()).retrySavedSignIn, true);
+  assert.deepEqual(vault.current(), remembered);
+  blocked = false;
+  assert.equal((await account.restore()).state, 'connected');
+  assert.equal(account.accountScope(), remembered.accountScope);
+  assert.equal(logins, 1);
+});
+
+test('locked operating-system storage can be retried without opening a login window', async () => {
+  const vault = store(remembered); let locked = true;
+  const account = new KaraFunAccount({ sessionStore: { ...vault.port, load: async () => {
+    if (locked) throw new KaraFunSessionVaultError('unavailable');
+    return vault.port.load();
+  } }, fetch: async () => envelope(), authenticate: async () => { throw Error('No browser during recovery'); } });
+  const unavailable = await account.restore();
+  assert.equal(unavailable.retrySavedSignIn, true);
+  assert.match(unavailable.message!, /Secure storage/);
+  locked = false;
+  assert.equal((await account.restore()).state, 'connected');
+  assert.deepEqual(vault.current(), remembered);
 });
 
 test('a late restore cannot reconnect or inspect a saved credential after explicit sign-out', async () => {
