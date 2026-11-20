@@ -2,11 +2,23 @@
 
 ## Applause and Singer Points
 
-Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles ten generated sounds, with at most three at once; the host has unlimited applause. Check the chosen output and levels on your actual sound system before a show.
+Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles the six supplied clap recordings, playing each for its full duration, with at most three at once; the host has unlimited applause. Recordings range from approximately 4 to 11.2 seconds, so the longest takes more than eight seconds to finish. Check the chosen output and levels on your actual sound system before a show.
 
 Singers start with three applause credits, gain one for a completed song and can hold at most five. The Singers workspace shows their points and credits. Assigned singers earn points from song requests, duet participation and applause; room singers can also earn points for missing-song suggestions and sending a photo to the singer screen. The full rules and eligibility are in the product specification. Mark duets in the song's metadata so the correct duet bonus can be awarded.
 
 Room singers can send one JPEG or PNG photo at a time to the singer display; it appears briefly and is not saved in the show database. There is no approval step. A mobile Full Host must keep its host page visible and exit fullscreen to accept a photo. End-to-end use, photo visibility, and audio routing should be rehearsed before relying on these experimental features during a show.
+
+## Choose Search Sources
+
+Open **Sources → Show in Search** to toggle Imported / Local, Karaoke Nerds, YouTube, KaraFun, Party Tyme, Sunfly or Stingray individually. All are enabled by default; existing account and catalog settings still apply. Disabling a source hides it from host and singer browsing and blocks new singer requests for that source, but leaves queued or playing songs, saved files and connected accounts in place. Singer pages refresh every 15 seconds and may briefly show an old row; a new request for a disabled source is rejected immediately. Turning off YouTube discovery does not stop Karaoke Nerds video downloads.
+
+New unbranded Karaoke Nerds entries retain their catalog origin. Older saved YouTube recordings without a brand or stored origin cannot be reliably distinguished from Karaoke Nerds recordings and may be classified as YouTube; an existing YouTube identity is not silently reclassified if reused.
+
+## Install the Command-Line Tool
+
+In a supported packaged installation, open **Preferences → Local API and CLI → Install CLI to PATH**, then open a new terminal and run `tpv-karaoke --help`. The app checks its bundled CLI first. On Windows it updates only your user PATH, without administrator access; you may need to sign out and back in. On Linux and macOS it creates a managed `~/.local/bin/tpv-karaoke` launcher and updates your Bash or Zsh startup files with managed PATH blocks. For other shells or a custom Zsh `ZDOTDIR`, follow the manual PATH instructions displayed by the app. Automatic AppImage installation is not supported. The dialog explains how to remove the changes.
+
+The CLI installer does not enable the Local API. Enable that separate preference when you want to use supported control commands. `--help` works without it; full playback and queue CLI controls remain planned.
 
 ## Downloading Songs and Song Gaps
 
@@ -123,9 +135,9 @@ Sources distinguishes public/developer catalog modes. **Choose Developer Profile
 
 Fresh installs can search the shared Karaoke Nerds catalog without a reader configuration file or a bundled secret. Optional private catalog profiles remain supported; an invalid selected private file is reported rather than bypassed. The recovered snapshot's upstream freshness is still unknown and automatic feed refresh remains disabled. Saved searches can be reused offline. See [shared catalog help](shared-catalog.md).
 
-Heart controls in the library, queue and On Stage use exact recording identities. YouTube/Karaoke Nerds uses its YouTube ID. Version 0.7.0 adds `karafun:catalog:NUMERIC_ID` and `karafun:community:NUMERIC_ID` without requiring an imported fingerprint; the matching service validator must be deployed before production accepts these keys. No SQL migration is needed. Source-less files use imported SHA256 and save **Your Local Rating** in this host show, offline. Artist/title edits never merge different recordings.
+Star controls in the library, queue and On Stage use exact recording identities. YouTube/Karaoke Nerds uses its YouTube ID. Version 0.7.0 adds `karafun:catalog:NUMERIC_ID` and `karafun:community:NUMERIC_ID` without requiring an imported fingerprint; the matching service validator must be deployed before production accepts these keys. No SQL migration is needed. Source-less files use imported SHA256 and save **Your Local Rating** in this host show, offline. Artist/title edits never merge different recordings.
 
-Open the heart control to choose 1–10 hearts, save a replacement or clear the current vote. A global vote needs a provisioned private writer profile; a catalog-reader token does not grant write access. Public lookup remains aggregate-only. The interface checks capability per recording so a shared outage or read-only profile does not disable local ratings. A failed global write is never relabeled as a successful local save. Use **Preferences → Song Ratings** to select/check a private profile; a draft check does not apply it or delete the file. Remote singer voting and cross-device person ownership remain planned. These hearts are separate from Clean/Explicit classifications. See [ratings help](song-ratings.md).
+Open the rating control and choose 1–10 stars. Selecting a star saves immediately; the control closes after the save is confirmed, or remains open with an error if saving fails. **Clear My Rating** removes the vote after confirmation. A global vote needs a provisioned private writer profile; a catalog-reader token does not grant write access. Public lookup remains aggregate-only. The interface checks capability per recording so a shared outage or read-only profile does not disable local ratings. A failed global write is never relabeled as a successful local save. Use **Preferences → Song Ratings** to select/check a private profile; a draft check does not apply it or delete the file. Remote singer voting and cross-device person ownership remain planned. These stars are separate from Clean/Explicit classifications. See [ratings help](song-ratings.md).
 
 ## Launcher Flags
 
@@ -154,4 +166,17 @@ The initial API reads current host state, settings and shortcuts, reports capabi
 
 Version 0.9.1 connects **Sources → Party Tyme → Connect Party Tyme…** through a selected private credentials file. Use one username:password line or JSON with username/email and password. The accepted session is remembered securely when available; the password is not copied into the saved session. Pro credentials use a separate service.
 
-Search and right-click Party Tyme results to add them to the ordinary queue with an optional singer. Preparation starts in the background; its progress and retry are in Sources. Play/Pause, seek, Previous, volume and the singer display use the normal transport. Each start/resume requires a fresh account and recording check, even with cached media. Sign-out stops playback. This consumer path has no separate vocal stems or verified commercial-hosting rights; see [setup and verification](partytyme-consumer-integration.md).
+Search and right-click Party Tyme results to add them to the ordinary queue with an optional singer. For a successful empty multiword search, the app retries one word and checks all words against artist and title; a true empty result is shown as no matches, not an error. Preparation starts in the background; its progress and retry are in Sources. Play/Pause, seek, Previous, volume and the singer display use the normal transport. Each start/resume requires a fresh account and recording check, even with cached media. Sign-out stops playback. This consumer path has no separate vocal stems or verified commercial-hosting rights; see [setup and verification](partytyme-consumer-integration.md).
+
+
+### Singers and playlists
+
+In **Singers**, right-click a singer or choose their actions button for availability and **Remove from show**. Removal requires confirmation and is blocked until their pending, waiting, staged or playing songs, including duets, are removed or reassigned. It archives their show identity: existing history, playlist ownership and points remain, but the singer no longer appears in new song selections and their remote session and resume access end. A returning person can join again as a new singer.
+
+In **Playlists → Singer Playlists**, search the visible list by playlist or singer name and select a result. Expand **Create a playlist** to add one for an active singer. Existing playlists belonging to removed singers retain their names and contents.
+
+
+The 0.10.3 source adds **Share Internet Screen** under an active internet session. It is off until the host starts it and requires deployment of the updated relay. Share its complete link only with intended viewers; it contains a fresh private viewing capability. The screen is visual-only, at approximately one frame per second, with no audio, for up to 32 concurrent browser viewers. Stopping sharing or ending the room revokes future frame access; a disconnected or paused browser may retain an image it already received. This is separate from the LAN screen.
+
+
+In **Preferences → Library Settings**, choose **Preview filename metadata changes** to compare existing artist/title metadata with the current saved filename templates. Review the before/after list, choose individual entries or **Select all**, then **Apply selected**. Nothing is selected initially. The app skips songs changed since the preview, reports success and failure, and does not write file tags. Older manual changes cannot always be recognized; inspect the suggestions before applying.

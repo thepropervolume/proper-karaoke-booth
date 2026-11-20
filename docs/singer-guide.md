@@ -1,12 +1,14 @@
-# Singer Guide for Development Version 0.10.2
+# Singer Guide for Development Version 0.10.3
 
 ## Applause, Points and Photos
 
-When your host enables applause, tap **Applause** to play a clap sound. You begin with three credits and regain one whenever you complete a song, up to five. You cannot applaud yourself. Your available credits and, when enabled, points appear in your room. A failed sound does not use a credit.
+When your host enables applause, tap **Applause** to play a clap sound. You begin with three credits and regain one whenever you complete a song, up to five. You cannot applaud yourself. Your available credits and, when enabled, points appear in your room. A failed sound does not use a credit. The six recorded claps play in order and vary in length; up to three can overlap.
 
 Earn points for queueing songs, singing duets, applauding other performers, suggesting a missing song and sending a photo. Singers also earn points when others applaud their performances. Your host can turn the points system off.
 
 To share a photo, choose **Share a photo**, select a JPEG or PNG, and tap **Send to singer display**. It appears for about ten seconds when the display accepts it. If another photo is being shown or the display is unavailable, try again later. On a mobile-hosted show, the host needs to keep the host page visible and exit fullscreen before accepting a photo. Photos are reduced for transmission and are not saved in the host's show database. Share only pictures you want everyone at the venue to see.
+
+Your host can hide sources from the singer catalog. Songs you already requested stay in your queue; an unavailable source cannot be used for a new request. An old result may remain visible until the page refreshes, normally within 15 seconds.
 
 When a requested online song is still downloading at its turn, the host can continue with the next ready song. Your request stays in the rotation and is reconsidered after each performance.
 
@@ -22,21 +24,23 @@ The host double-clicks a playable result or chooses **Add to Queue**. They may l
 
 The host starts the show with Play. By default subsequent performances start after the configured gap when the recording and singer are ready. The host can disable automatic advancement or stop/pause it. Order follows fair rotation or request order, with host overrides and a locked staged turn. Preparation alone never starts a new show, and restarting never resumes karaoke automatically.
 
-The host may limit pending, accepted and staged future requests; playback does not count. They may edit the track or singer of a waiting/staged request without changing its identity. Remote requests always remain assigned to the singer who joined the session; guests cannot submit or take ownership of unassigned host requests. Multiple performers per request remain planned.
+The host may limit pending, accepted and staged future requests; playback does not count. They may edit the track or singer of a waiting/staged request without changing its identity. Remote requests always remain assigned to the singer who joined the session; guests cannot submit or take ownership of unassigned host requests. A duet can have two assigned singers when the host marks the recording as a duet; larger groups remain planned.
 
 Native KaraFun checks the host's subscription for each start/resume. Its remembered session uses operating-system protection where available; expiry may require another official sign-in. Signing out silences native playback and forgets the session. Retained media never guarantees future access. The optional external KHost queue is separate and unnecessary for native TPV playback. Physical audio and native provider playback on Linux/macOS remain unverified.
 
 ## Join a Session
 
-For a local room, connect to the venue network and open the private invitation. Enter your name and choose **Join the show**. Browse loaded songs, request one and check status. You may withdraw your pending/accepted request; ask the host if it is staged or playing. Anyone holding an invitation may use it until expiry/revocation. Access belongs to the open page; after closing/reloading ask for another invitation. Your device must trust the local hostname/certificate; do not bypass browser certificate warnings.
+For a local room, connect to the venue network and open the private invitation. Enter your name and choose **Join the show**. Search the host’s saved library, load more matching results if needed, request one and check status. Search does not reach every provider’s complete catalog. You may withdraw your pending/accepted request; ask the host if it is staged or playing. Anyone holding an invitation may use it until expiry/revocation. Access belongs to the open page; after closing/reloading ask for another invitation. Your device must trust the local hostname/certificate; do not bypass browser certificate warnings.
 
-For an internet session, open the host's `queue.thepropervolume.com` link over Wi-Fi or mobile internet. Public browser recovery rehearsals passed; real iOS/Android and venue checks remain. After an uncertain connection result, check its outcome, then explicitly retry the original action if offered. Ending the session revokes access.
+For an internet session, open the host's `queue.thepropervolume.com` link over Wi-Fi or mobile internet. Public browser recovery rehearsals passed; real iOS/Android and venue checks remain. After an uncertain connection result, check its outcome, then explicitly retry the original action if offered. Ending the session revokes access. If the host removes you from the show, your session and resume access also end; ask the host to join again.
 
 The [mobile web app](https://queue.thepropervolume.com/app/) offers **Full Host Mode** for your own player/show and **Piggyback Mode** to join another host and request songs. A detected room still needs your **Join Room** choice. Native apps use local network discovery; browser suggestions share the internet connection and may include another venue. Manual room names/links also work. See the [mobile guide](mobile-app.md) for local storage, phone hosting and platform limits.
 
 ## Watch the Singer Screen
 
 If the host enables LAN Singer Screens, open their address, such as `http://192.168.1.20:4051`, on the venue network. It is a silent visual mirror; sound stays on the host. It works while the separate singer window is hidden. A `.local` name works only if the network resolves it. Viewing does not join the request queue.
+
+The 0.10.3 source also adds an optional internet singer-screen link for an active room. This experimental path needs the updated relay to be deployed before use. The host shares a complete private link; it shows still images without audio, and its access ends when the host stops sharing or the stream expires. A disconnected viewer may temporarily retain a previously received image.
 
 On Windows, screen sharing listens on verified Private interfaces, with loopback fallback when classification is unavailable or Public. Network rechecks may stop sharing; ask for a current address. This read-only screen and authenticated singer-request rooms are separate services.
 
@@ -48,7 +52,7 @@ Use **Can't find your song?** to send a title and optional artist. This creates 
 
 Use availability to step away for 1–60 minutes or return immediately. While away, at most one future request is allowed; existing extras remain. At return you become eligible in the existing fair/FIFO order, subject to host overrides and staged lock. If already staged or singing, speak to the host first.
 
-Hearts rate recording quality from 1–10, not your singing or Clean/Explicit classification. YouTube/Karaoke Nerds votes use the shared service; source-less file votes stay on this host. Version 0.7 also identifies KaraFun catalog/community recordings for shared ratings; the matching production validator is deployed and verified. Remote singer voting, personal accounts, favorites and self-service data management remain planned.
+Stars rate recording quality from 1–10, not your singing or Clean/Explicit classification. YouTube/Karaoke Nerds votes use the shared service; source-less file votes stay on this host. Version 0.7 also identifies KaraFun catalog/community recordings for shared ratings; the matching production validator is deployed and verified. Remote singer voting, personal accounts, favorites and self-service data management remain planned.
 
 Singer/request information stays in the host show; internet requests also pass through the relay. Installers exclude private profiles, song media, yt-dlp and FFmpeg. Development versions remain `0.x.y`; `1.0.0` is the approved official-release target.
 

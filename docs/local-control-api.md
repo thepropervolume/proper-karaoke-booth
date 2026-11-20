@@ -2,6 +2,8 @@
 
 This is the initial adapter-based foundation in `src/control`. The current desktop source connects read/navigation adapters and provides **Preferences → Local API and CLI**, disabled by default. Save the explicit enable preference to start the listener. The actual Windows and Linux 0.4.0 packages and bundled wrappers passed private-profile rehearsals. Constructing the server without `enabled: true` also leaves it disabled: no listener or discovery file is created. API startup failures must not interrupt the show.
 
+On supported packaged installs, **Preferences → Local API and CLI → Install CLI to PATH** verifies the bundled launcher, then adds its application directory to the current-user Windows PATH or creates a managed `~/.local/bin/tpv-karaoke` launcher on Linux/macOS. It adds managed PATH blocks to Bash or Zsh startup files; other shells and a custom Zsh `ZDOTDIR` receive manual PATH instructions. Open a new terminal, or sign out and back in on Windows if necessary. It preserves unrelated configuration, refuses unsafe file conflicts, provides removal instructions, and does not support automatic AppImage installation. This action does not enable the API; control commands still require explicit opt-in, while `--help` does not.
+
 The implemented foundation exposes bounded reads and optional desktop navigation only. It does not claim general playback, queue, import, provider, rating, user, or database control. It never opens SQLite or establishes a second show writer. Future mutations must delegate to the existing authenticated main-process authority and advertise only implemented capabilities.
 
 ## Routes and adapter

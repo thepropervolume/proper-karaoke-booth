@@ -124,6 +124,14 @@ Mark each case **Pass**, **Fail**, **Blocked** or **Not run**. Use Blocked when 
 2. Confirm the performer receives 70 points for the four applauses plus 50 once all three other singers have applauded. The three singers should each spend one credit and receive 8 giver points. No more than three sounds should overlap; wait for a sound to finish if a press is rejected and retry it.
 3. Complete the song and confirm the performer gains one credit, with no more than five credits in total. Repeat with one listener missing; no 50-point bonus should appear.
 4. Check that a singer cannot applaud their own performance, and that failed audio does not deduct credits. Turn each setting off separately and confirm its behavior. Test the selected physical output as well as the default device.
+5. On an installed desktop build and a mobile host, trigger the six supplied recordings in sequence and listen for clear playback. Confirm the longest clip continues for roughly 11 seconds without cutting off, and a fourth overlapping press is refused until a clip ends. These are manual checks; automated tests do not verify real speaker output.
+
+### R07 Source discovery switches
+
+1. In **Sources → Show in Search**, turn one source off at a time and search a known song. Confirm other enabled sources continue to appear and the disabled source is hidden.
+2. Turn YouTube off while Karaoke Nerds stays on. Confirm a newly added, unbranded Karaoke Nerds recording remains discoverable. Older unbranded records without stored provenance may appear as YouTube; do not guess their origin.
+3. In a joined singer page, keep an already queued request, then disable its source. Confirm the request remains visible and playback continues. A new request for that source must be rejected, even if a cached search row is briefly visible before the next 15-second refresh.
+4. Re-enable the source; verify search works again without signing in again. A failed settings write must not silently activate the switches.
 
 ### R06 Queue points, suggestions and photos
 

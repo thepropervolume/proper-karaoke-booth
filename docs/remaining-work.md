@@ -1,8 +1,15 @@
 # Remaining work
 
-Updated 17 November 2026 for source development 0.9.1. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 19 November 2026 for source development 0.10.3. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
 
-The current source is 0.9.1; dated release sections below retain historical evidence. Native desktop KaraFun playback, OS-protected remembered sign-in and per-channel mixing are experimental. Signed-out KaraFun results are now hidden, and generic YouTube results defer to other song sources. The mobile web app is deployed with Full Host/Piggyback modes and real YouTube streaming; Android and iOS development builds compile, while GitHub Actions artifact uploads currently hit the account storage quota. Installation and physical-show gates remain separate. See installation, mobile and source-status guides.
+The current source milestone is 0.10.3; version 0.10.2 is published on the Linode release site. Dated release sections below retain historical evidence. Native desktop KaraFun and Party Tyme consumer playback are experimental. The mobile web app supports Full Host/Piggyback modes and YouTube playback. The unified release workflow stages Android debug and iOS Simulator builds directly on Linode; neither this nor successful compilation establishes physical-device or store readiness. Installation and physical-show gates remain separate. See the installation, mobile and source-status guides.
+
+## 0.10.3 Source Controls
+
+- [x] Add separate Sources switches for local files, Karaoke Nerds, YouTube, KaraFun, Party Tyme, Sunfly and Stingray, with default-on migration and host/singer discovery gating.
+- [x] Invalidate stale searches while preserving connected accounts, existing queue entries and active media preparation.
+- [x] Record the origin of newly added unbranded Karaoke Nerds results without changing existing YouTube identities.
+- [ ] Review legacy unbranded YouTube/Karaoke Nerds entries whose origin was not stored; do not guess their provenance.
 
 ## Party Tyme Consumer Playback
 
@@ -10,6 +17,7 @@ The current source is 0.9.1; dated release sections below retain historical evid
 - [x] Add authenticated unified results, common context actions and optional-singer queueing with automatic background preparation.
 - [x] Require fresh playback approval, remember accepted sessions with OS encryption and fence sign-out/expiry.
 - [x] Pass a real muted Windows recording/preparation/restart/sign-out rehearsal; preserve original account/show data.
+- [x] Retry an empty multiword consumer search with one bounded token and show a clear no-match state; tested account returned no Coldplay matches, which does not establish global availability.
 - [ ] Add interactive provider sign-in, aggregate cache management and wider real-platform/full-song acceptance.
 - [ ] Confirm provider partnership, distribution and commercial-hosting terms; add Pro and mobile playback only with suitable access.
 
@@ -23,7 +31,7 @@ The current source is 0.9.1; dated release sections below retain historical evid
 - [x] Independently audit protocol, usability and native packaging; document findings and regression fixes in [QA](qa/mobile-090-summary.md).
 - [ ] Complete physical Android/iOS playback, local-network permissions/discovery, prolonged background/reconnect and output checks.
 - [ ] Add mobile KaraFun/paid-provider account playback, key/tempo, vocal stems and native casting.
-- [ ] Add stable app signing and store/TestFlight distribution; resolve GitHub artifact storage capacity for downloadable CI builds.
+- [ ] Add stable app signing, real-device distribution and store/TestFlight releases; Android debug and iOS Simulator artifacts are published directly to Linode, avoiding the former GitHub artifact quota problem.
 - [ ] Retain exact mobile playback position across app/mode restarts, show aggregate storage usage and synchronize personal accounts/favorites.
 
 ## Current foundation
@@ -119,7 +127,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add a guided missing/moved-file review and relinking workflow; current relinking accepts an exact original only.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [ ] Add restore from a checked backup; existing backup does not restore or include media/settings.
-- [x] Add versioned SQLite migrations (current schema 4) with upgrade, interrupted-write and rollback tests.
+- [x] Add versioned SQLite migrations (current schema 7) with upgrade, interrupted-write and rollback tests.
 - [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
@@ -136,7 +144,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Add indefinite singer hold and skip-turn controls.
 - [x] Show current singer, upcoming singers and the ordered queue.
 - [ ] Add clearly approximate wait times with assumptions and unavailable states.
-- [ ] Support duets and groups with multiple performers on one request.
+- [x] Support a two-singer duet on one request, including host-editable duet metadata and points.
+- [ ] Support groups with more than two performers and verify full duet/group workflows on physical show equipment.
 - [ ] Start, save, restore and end named shows without losing or accidentally replaying requests.
 - [x] Make recorded singer/song history searchable by singer, artist and title.
 - [x] Export matching recorded singer/song history to CSV with spreadsheet-formula protection and no overwrite.
@@ -152,6 +161,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Extend settings coverage and migration/recovery guidance as remaining features are implemented.
 - [ ] Extend the registered shortcut actions to every remaining specialized command. Multiple bindings, the grouped editor, conflict detection, saved reset and tooltip hints are implemented.
 - [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
+- [x] Provide a user-invoked PATH installer for the bundled CLI on supported packaged Windows, Linux and macOS builds; AppImage needs manual handling.
+- [ ] Verify CLI install/removal on real Windows, Linux and macOS accounts, including shell startup and PATH collisions.
 - [ ] Complete general CLI actions through the existing authenticated local authority. Initial source provides structured capability/state/settings/shortcut reads and queued settings navigation with stable exit codes; the actual Windows app and compiled CLI passed a private-profile rehearsal. Mutation control remains planned; Windows and Linux bundled-wrapper/package checks passed. Do not introduce another SQLite writer.
 
 ## Priority 1 — playback and display
