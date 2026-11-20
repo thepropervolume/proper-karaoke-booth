@@ -1,6 +1,6 @@
 {
   "name": "proper-karaoke-mobile",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "description": "TPV mobile web, Android and iOS host and singer app",
   "scripts": {

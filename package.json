@@ -1,6 +1,6 @@
 {
   "name": "proper-karaoke-booth",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": true,
   "description": "Local-first karaoke host and singer display",
   "main": "dist/main/index.cjs",
