@@ -25,6 +25,7 @@ Run checks with `npm test`. Install yt-dlp for YouTube downloads, FFmpeg for CD+
 
 ## Documentation
 
+- [Documentation index](docs/help.md). The desktop app opens the same guides from **Help → Documentation**.
 - [Host guide](docs/host-workspace.md) · [Singer guide](docs/singer-guide.md)
 - [Plain-language QA test guide](docs/qa/qa-test-guide.md)
 - [Mobile Host and Piggyback modes](docs/mobile-app.md)
