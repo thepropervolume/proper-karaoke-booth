@@ -43,7 +43,7 @@ jobs:
           if ($baseline -notmatch '^\d+\.\d+\.\d+$' -or $candidate -notmatch '^\d+\.\d+\.\d+$' -or
               [version]$baseline -ge [version]$candidate) { throw 'Provide increasing published versions.' }
           $installDir = Join-Path $env:RUNNER_TEMP 'tpv-install-qa-app'
-          $exe = Join-Path $installDir 'The Proper Volume Karaoke.exe'
+          $exe = Join-Path $installDir 'proper-karaoke-booth.exe'
           if (Test-Path -LiteralPath $installDir) { throw 'The QA installation path is already in use.' }
 
           function Invoke-SilentProcess($path, $arguments) {
