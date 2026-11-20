@@ -32,6 +32,10 @@ The application suite passed 1,243 tests with eight skips. All 29 release tests 
 
 GitHub blocked the release workflow before planning, citing an account payment or spending-limit issue. The public download page still serves 0.10.8. The publisher accepts both new PKGs when the complete 0.10.9 build is available. Native macOS build and installation remain open. [0.10.9 build status](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44786846939)
 
+## 0.10.10 Windows delivery
+
+The local Windows x64 Setup and ZIP were built from `d63a3721ac0b2d71d337572cfeec12acfd04257e`. A Windows NSIS rehearsal used the installer’s directory macros with disposable registry keys and verified the fresh default `C:\Program Files\The Proper Volume Karaoke Booth`, preservation of a legacy registered folder, and custom folder handling. Packaged launch, restart, and isolated CLI PATH registration passed. The full installation rehearsal needs an elevated disposable Windows runner. GitHub blocked the release job before planning, citing an account payment or spending-limit issue. [0.10.10 build status](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44817365444)
+
 ## Official release gates
 
 - [ ] Install, upgrade and uninstall on supported Windows, Linux and macOS systems. Verify signing and launch behavior for the intended public distribution and cover both supported Mac architectures. Rehearse rollback against a copy of a representative show. [Handoff](handoff.md)
