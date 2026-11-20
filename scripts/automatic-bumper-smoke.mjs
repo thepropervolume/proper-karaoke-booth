@@ -41,7 +41,7 @@ const launch = async () => {
   await host.waitForFunction(() => !!window.tpv); return host;
 };
 try {
-  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=navy:s=320x180:r=10:d=5', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', fixture], { windowsHide: true });
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=navy:s=320x180:r=10:d=30', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=30', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', fixture], { windowsHide: true });
   await viteBuild({ configFile: false, root: repo, base: './', build: { outDir: join(stage, 'dist/ui'), emptyOutDir: true, manifest: true,
     rollupOptions: { input: { host: join(repo, 'src/renderer/index.html'), display: join(repo, 'src/display/index.html'), singer: join(repo, 'src/remote/index.html') } } } });
   await Promise.all(['main', 'preload'].map(name => bundle({ entryPoints: [join(repo, `src/${name}/index.ts`)], outfile: join(stage, `dist/${name}/index.cjs`), bundle: true, platform: 'node', format: 'cjs', target: 'node24', external: ['electron'] })));
@@ -63,6 +63,12 @@ try {
   await display.waitForFunction(() => { const v = document.querySelector('video'); return v && v.videoWidth > 0 && !v.paused; }, null, { timeout: 15000 });
   assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'auto-two');
   assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped');
+  await host.waitForFunction(() => document.querySelectorAll('[data-queue-list] [aria-label^="Approximate wait "]').length === 2);
+  assert.equal(await host.locator('[data-queue-list] [aria-label^="Approximate wait "]').first().getAttribute('aria-label'), 'Approximate wait ~1 min');
+  const paused = await host.evaluate(() => window.tpv.playPause()); assert.equal(paused.ok, true, paused.error);
+  await host.waitForFunction(() => document.querySelectorAll('[data-queue-list] [aria-label^="Approximate wait "]').length === 0);
+  assert.equal(await host.getByText('Some waits unavailable ⓘ').isVisible(), true);
+  const continued = await host.evaluate(() => window.tpv.playPause()); assert.equal(continued.ok, true, continued.error);
   // Native Close hides the same renderer. Capturing it must not reopen it or
   // create a second audio player when the next singer begins.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('/display/')).close());
