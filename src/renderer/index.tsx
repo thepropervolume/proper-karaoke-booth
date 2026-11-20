@@ -810,7 +810,27 @@ function App() {
         onDragOver={event => { if (!busy && ['accepted', 'staged'].includes(request.status) && draggedRequest.current && draggedRequest.current !== request.id) event.preventDefault(); }}
         onDrop={event => { event.preventDefault(); const id = draggedRequest.current; draggedRequest.current = ''; if (!busy && id && id !== request.id && ['accepted', 'staged'].includes(request.status)) void command({ type: 'moveRequest', requestId: id, beforeRequestId: request.id }); }}
         onContextMenu={event => { event.preventDefault(); setSelectedRequestId(request.id); setQueueMenu({ request, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 240)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 230)) }); }}
-        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{held ? 'Singer on hold' : request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Next · unavailable under current policy' : 'Next in queue') : returnAt > clockMs ? `Unavailable · back in ${Math.ceil((returnAt - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? 'Promoted · next' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}{queueWaits.get(request.id) != null && <Tooltip text="Approximate wait assumes four minutes per queued song, the configured gap, uninterrupted playback, and playable files. Actual wait can change."><small tabIndex={0} aria-label={`Approximate wait ${formatQueueWait(queueWaits.get(request.id)!)}`}>{formatQueueWait(queueWaits.get(request.id)!)}</small></Tooltip>}</div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget || event.defaultPrevented) return;
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault();
+            const rect = event.currentTarget.getBoundingClientRect();
+            setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) });
+            return;
+          }
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          let destination: number;
+          switch (event.key) {
+            case 'ArrowUp': destination = Math.max(0, index - 1); break;
+            case 'ArrowDown': destination = Math.min(future.length - 1, index + 1); break;
+            case 'Home': destination = 0; break;
+            case 'End': destination = future.length - 1; break;
+            default: return;
+          }
+          event.preventDefault();
+          const row = event.currentTarget.parentElement?.children.item(destination);
+          if (row instanceof HTMLElement) row.focus();
+        }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{held ? 'Singer on hold' : request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Next · unavailable under current policy' : 'Next in queue') : returnAt > clockMs ? `Unavailable · back in ${Math.ceil((returnAt - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? 'Promoted · next' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}{queueWaits.get(request.id) != null && <Tooltip text="Approximate wait assumes four minutes per queued song, the configured gap, uninterrupted playback, and playable files. Actual wait can change."><small tabIndex={0} aria-label={`Approximate wait ${formatQueueWait(queueWaits.get(request.id)!)}`}>{formatQueueWait(queueWaits.get(request.id)!)}</small></Tooltip>}</div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       </div>
       {settings.hostPreviewPosition === 'below' && <>{previewSeparator}{preview}</>}
