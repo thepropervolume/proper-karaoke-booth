@@ -16,6 +16,7 @@ const isNative = (state: PlaybackState | null): state is NativePlayback => state
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number };
 declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; applauseResult?(value: unknown): void; onApplause?(callback: (request: ApplauseRequest) => void): () => void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
+let failedVideo: HTMLVideoElement | null = null;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
 const caption = document.querySelector<HTMLElement>('#caption')!;
 const next = document.querySelector<HTMLElement>('#next')!;
@@ -179,18 +180,26 @@ window.addEventListener('keydown', event => {
 
 // A fresh element and generation-bound listeners prevent delayed events from an
 // old decoder from being attributed to a newly started performance.
+function reportVideoFailure(player: HTMLVideoElement, generation: string, code: MediaFailure): void {
+  if (video !== player || current?.generation !== generation || isNative(current) || failedVideo === player) return;
+  failedVideo = player;
+  ++updateSequence;
+  const position = player.currentTime || 0;
+  output.invalidate(player);
+  window.tpvDisplay.event({ type: 'error', generation, code, position });
+}
 function playerFor(state: PlaybackState): HTMLVideoElement {
   const player = document.createElement('video');
   player.id = 'video';
   player.playsInline = true;
   const generation = state.generation;
   let lastCheckpoint = 0;
-  const report = (type: string, code?: MediaFailure) => {
-    if (video !== player || current?.generation !== generation || isNative(current)) return;
-    window.tpvDisplay.event({ type, generation, position: player.currentTime || 0, ...(code ? { code } : {}) });
+  const report = (type: string) => {
+    if (video !== player || current?.generation !== generation || isNative(current) || failedVideo === player) return;
+    window.tpvDisplay.event({ type, generation, position: player.currentTime || 0 });
   };
   player.addEventListener('ended', () => report('ended'));
-  player.addEventListener('error', () => report('error', mediaFailure(player.error?.code)));
+  player.addEventListener('error', () => reportVideoFailure(player, generation, mediaFailure(player.error?.code)));
   player.addEventListener('pause', () => { report('checkpoint'); reportTimeline(true); });
   for (const event of ['loadedmetadata', 'durationchange', 'progress', 'canplay', 'seeked']) player.addEventListener(event, () => {
     if (video === player && current?.generation === generation && !isNative(current)) reportTimeline(true);
@@ -202,6 +211,7 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
   video.pause();
   video.replaceWith(player);
   video = player;
+  failedVideo = null;
   player.src = state.src;
   player.load();
   if (state.position > 0) {
@@ -227,6 +237,7 @@ window.tpvDisplay.subscribe(async (view) => {
     ++updateSequence;
     const previousGeneration = current?.generation;
     current = null;
+    failedVideo = null;
     outputRecoveryGeneration = null; rerouteRequested = false;
     nativeRecovery = null; nativeLoading = null; nativePlayer.stop(); stopNativeVisuals();
     output.invalidate(video); video.removeAttribute('src'); video.load();
@@ -236,6 +247,9 @@ window.tpvDisplay.subscribe(async (view) => {
     return;
   }
   const changed = !current || current.generation !== state.generation || current.src !== state.src || current.kind !== state.kind;
+  // Media errors poison an HTML media element. Only a later authorized Resume
+  // can create a fresh decoder for the same performance and checkpoint.
+  const retry = !changed && current?.status === 'paused' && state.status === 'playing' && failedVideo === video;
   const transportChanged = changed || current?.status !== state.status || current.outputId !== state.outputId;
   const previousOutput = current?.outputId;
   if (changed) { outputRecoveryGeneration = null; rerouteRequested = false; }
@@ -272,7 +286,7 @@ window.tpvDisplay.subscribe(async (view) => {
     return;
   }
   if (nativePlayer.snapshot()) { nativePlayer.stop(); nativeLoading = null; nativeRecovery = null; stopNativeVisuals(); }
-  const player = changed ? playerFor(state) : video;
+  const player = changed || retry ? playerFor(state) : video;
   player.volume = state.volume;
   // Queue, caption, branding, shortcut and volume refreshes do not affect the
   // current route, including one which is still being prepared asynchronously.
@@ -292,9 +306,9 @@ window.tpvDisplay.subscribe(async (view) => {
         reportOutputFailure(state.generation, error instanceof Error ? error.message : 'Could not use the selected output.');
       }
     }
-    if (ready) {
+    if (ready && sequence === updateSequence && video === player && current?.status === 'playing') {
       try { await player.play(); }
-      catch (reason) { if (sequence === updateSequence && video === player && current?.generation === state.generation) window.tpvDisplay.event({ type: 'error', code: playFailure(reason), generation: state.generation, position: player.currentTime || 0 }); }
+      catch (reason) { if (sequence === updateSequence) reportVideoFailure(player, state.generation, playFailure(reason)); }
     }
   } else output.invalidate(player);
 });

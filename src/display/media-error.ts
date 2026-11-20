@@ -13,6 +13,7 @@ export function mediaFailure(code: number | undefined): MediaFailure {
 
 export function playFailure(reason: unknown): MediaFailure {
   if (reason && typeof reason === 'object' && 'name' in reason) {
+    if (reason.name === 'AbortError') return 'MEDIA_ERR_ABORTED';
     if (reason.name === 'NotAllowedError') return 'PLAY_BLOCKED';
     if (reason.name === 'NotSupportedError') return 'MEDIA_ERR_SRC_NOT_SUPPORTED';
   }

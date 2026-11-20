@@ -9,6 +9,7 @@ test('media failures use bounded codes without propagating decoder messages', ()
   assert.equal(mediaFailure(4), 'MEDIA_ERR_SRC_NOT_SUPPORTED');
   assert.equal(mediaFailure(undefined), 'PLAY_FAILED');
   assert.equal(playFailure({ name: 'NotAllowedError', message: 'private path' }), 'PLAY_BLOCKED');
+  assert.equal(playFailure({ name: 'AbortError', message: 'private path' }), 'MEDIA_ERR_ABORTED');
   assert.equal(playFailure({ name: 'NotSupportedError' }), 'MEDIA_ERR_SRC_NOT_SUPPORTED');
   assert.equal(playFailure(new Error('private path')), 'PLAY_FAILED');
 });

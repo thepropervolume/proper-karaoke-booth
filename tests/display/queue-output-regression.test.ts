@@ -11,11 +11,12 @@ test('queue updates do not interrupt the currently playing output', async () => 
   let finishEnumeration: (() => void) | undefined;
   let pending: Promise<void> | undefined;
   const devices = [{ kind: 'audiooutput', deviceId: 'speaker' }];
+  const events: { type: string; code?: string; generation: string; position?: number }[] = [];
   let publish: ((value: unknown) => Promise<void>) | undefined;
 
   class FakeMedia extends EventTarget {
     id = ''; src = ''; muted = false; volume = 1; paused = true; playsInline = false;
-    currentTime = 0; duration = 60; seekable = { length: 0 };
+    currentTime = 0; duration = 60; seekable = { length: 0 }; error: { code: number } | null = null;
     sinkCalls = 0; pauseCalls = 0; playCalls = 0; loadCalls = 0;
     async setSinkId(_id: string) { this.sinkCalls++; }
     async play() { this.playCalls++; this.paused = false; }
@@ -36,7 +37,8 @@ test('queue updates do not interrupt the currently playing output', async () => 
   const fakeWindow = {
     addEventListener() {},
     tpvDisplay: {
-      onSeek() {}, onBumperCommand() {}, ready() {}, shortcut() {}, event() {}, bumperAck() {}, bumperEvent() {}, bumperDeviceChange() {},
+      onSeek() {}, onBumperCommand() {}, ready() {}, shortcut() {},
+      event(value: typeof events[number]) { events.push(value); }, bumperAck() {}, bumperEvent() {}, bumperDeviceChange() {},
       subscribe(callback: (value: unknown) => Promise<void>) { publish = callback; return () => {}; },
     },
   };
@@ -77,6 +79,33 @@ test('queue updates do not interrupt the currently playing output', async () => 
     assert.equal(video, playing); assert.equal(playing.currentTime, 23);
     assert.deepEqual({ pause: playing.pauseCalls, play: playing.playCalls, load: playing.loadCalls }, before,
       'Branding updates must not pause, restart or reload a playing song.');
+
+    playing.error = { code: 2 };
+    playing.dispatchEvent(new Event('error'));
+    assert.equal(playing.muted, true);
+    assert.equal(playing.paused, true);
+    assert.deepEqual(events.filter(event => event.type === 'error'), [{ type: 'error', generation: 'g1', code: 'MEDIA_ERR_NETWORK', position: 23 }]);
+    playing.dispatchEvent(new Event('error'));
+    playing.dispatchEvent(new Event('ended'));
+    assert.equal(events.filter(event => event.type === 'error').length, 1);
+    assert.equal(events.some(event => event.type === 'ended'), false, 'A failed decoder cannot complete the request.');
+    await publish({ ...view, next: ['Queue refresh after failure'] });
+    assert.equal(video, playing, 'A queue refresh cannot retry the decoder.');
+    await publish({ ...view, playback: { ...view.playback, status: 'paused', position: 23 } });
+    assert.equal(video, playing, 'Publishing the pause does not create the decoder.');
+
+    // Enumeration is delayed again for the fresh player, as with an actual sink.
+    pending = publish({ ...view, playback: { ...view.playback, position: 23 } });
+    const resumed = video as FakeMedia;
+    assert.notEqual(resumed, playing, 'Authorized Play retries with a fresh element.');
+    resumed.dispatchEvent(new Event('loadedmetadata'));
+    assert.equal(resumed.currentTime, 23);
+    finishEnumeration?.();
+    await pending; pending = undefined;
+    assert.equal(resumed.playCalls, 1);
+    assert.equal(resumed.muted, false);
+    playing.dispatchEvent(new Event('ended'));
+    assert.equal(events.some(event => event.type === 'ended'), false, 'Late events cannot affect retry on the same generation.');
   } finally {
     finishEnumeration?.();
     await pending?.catch(() => {});

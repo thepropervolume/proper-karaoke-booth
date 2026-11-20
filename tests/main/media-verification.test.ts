@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { fingerprintMedia, mediaIdentityMatches, verifyAndRelinkMedia } from '../../src/main/media-verification';
 import { Store } from '../../src/main/store';
-import { mediaErrorDetail } from '../../src/main/media-error-message';
+import { mediaErrorDetail, mediaVerificationDetail } from '../../src/main/media-error-message';
 
 test('fingerprints source bytes and detects missing, replaced or edited files', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-media-verify-'));
@@ -31,6 +31,12 @@ test('playback warnings map only bounded codes and never echo arbitrary renderer
   assert.match(mediaErrorDetail('MEDIA_ERR_SRC_NOT_SUPPORTED'), /codec/i);
   assert.match(mediaErrorDetail('PLAY_BLOCKED'), /blocked/i);
   assert.doesNotMatch(mediaErrorDetail('C:\\private\\song.mp4'), /private|song\.mp4/i);
+  const denied = { code: 'EACCES', message: 'C:\\private\\song.mp4' };
+  assert.match(mediaVerificationDetail(denied, false), /permissions.+Relink File/);
+  assert.doesNotMatch(mediaVerificationDetail(denied, false), /private|song\.mp4/i);
+  assert.match(mediaVerificationDetail({ code: 'ENOENT' }, true), /Restore access and press Play.+return the request/);
+  assert.match(mediaVerificationDetail({ code: 'EIO' }, false), /drive connection/);
+  assert.match(mediaErrorDetail('MEDIA_ERR_SRC_NOT_SUPPORTED'), /return the request to the queue.+supported codec/);
 });
 
 test('conditional relink updates only the matched row and preserves fingerprint and show state', () => {
