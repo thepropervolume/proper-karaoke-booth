@@ -1,10 +1,10 @@
 # Remaining work
 
-Updated 20 November 2026 for **0.10.5 development**, with 1.0.0 reserved for the official release. The public download page identifies each published build and its source commit. Earlier milestone sections preserve their original evidence and unfinished work as recorded at the time. [Booth downloads](https://release.thepropervolume.com/booth/)
+Updated 20 November 2026 for **0.10.6 development**, with 1.0.0 reserved for the official release. The public download page lists each published build and source commit. Earlier milestone sections retain their original evidence. [Booth downloads](https://release.thepropervolume.com/booth/) · [Release acceptance checklist](release-acceptance.md)
 
 ## Next work in priority order
 
-1. **Reliable show operation:** complete actionable playback/import errors and guided relinking, finish the safe in-app backup restore flow and verify automatic upgrade protection on installed systems, and continue recovery tests for crashes, devices and displays. A restore-to-new-file primitive exists; it is not yet the in-app restore workflow.
+1. **Reliable show operation:** verify the new backup restore, missing-file review, and failed-video recovery on installed show systems. Continue fault testing for upgrades, interruptions, imports, real output devices, and external displays.
 2. **Catalog freshness and acquisition:** reconcile the unknown previous Karaoke Nerds refresh history before enabling a single centrally coordinated, at-most-daily feed refresh. Add monitored recovery, indexed queries and load tests; implement reviewed brand/artist bulk caching and newest-version selection. The recovered shared snapshot is searchable, but its upstream freshness is unknown.
 3. **Provider playback:** harden the experimental desktop KaraFun and Party Tyme flows for account expiry, network failure, caching and recovery. Complete real-account and provider-specific integration for Sunfly and Stingray when partner access and playback rights exist; metadata search alone is not playback.
 4. **Queue, library and controls:** finish named-show lifecycle, refine approximate waits after real-show checks, support broader group performance, folder rescan/duplicate review and reversible metadata editing. The filename-template preview/apply workflow already exists; embedded-tag precedence and optional write-back remain open. Complete the authenticated local API/CLI beyond its current read/navigation subset without another database writer.
@@ -89,7 +89,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 
 - [x] Send KaraFun an OEM content/playback API inquiry (owner submitted through Business support on 11 November 2026; reply pending).
 - [x] Inspect the owner-provided Business API specification and test the dashboard token read-only: device listing returned 402 and room-token listing 403; content/playback access remains unverified.
-- [ ] Review KaraFun's reply and obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees. The existing subscription has now authorized one native recording acquisition; this does not settle distribution or venue terms.
+- [x] Review KaraFun's 16 November reply and send the project summary it invited. KaraFun gave early 2027 as the earliest likely API availability.
+- [ ] Obtain OEM documentation, developer/sandbox credentials, eligible account-linking rules, applicable usage/territory rights and all fees when KaraFun opens access.
 - [x] Implement native official-window sign-in, OS-protected remembered session/restore/sign-out, canonical search and per-performance authorization without copying a vendor application key.
 - [x] Queue native catalog recordings with the ordinary singer dialog and durable TPV rotation; prepare verified private KIT media in the background without autoplay.
 - [x] Implement one-clock native stems/timed lyrics and test the complete synthetic TPV queue/player/pause/seek/Previous/sign-out flow.
@@ -144,13 +145,13 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Verify actual install/upgrade/uninstall and representative codecs on Windows show hardware.
 - [ ] Verify audible output and routing through the connected sound device/mixer, including loss, reconnect and safe rerouting.
 - [ ] Verify the singer display on the external monitor, moving windows, fullscreen, disconnect/reconnect and deliberate recovery.
-- [ ] Make missing files, unreadable media, unsupported codecs and decode errors explain how to recover while retaining the singer's turn.
+- [x] Distinguish missing files, permission problems and unsupported or broken video. The Windows Electron rehearsal preserved the same request and playback checkpoint through explicit recovery.
 - [x] Add a guided missing/moved-file review and keep exact-copy relinking. The isolated Windows rehearsal found a moved file, rejected a different video, and played the relinked original.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [x] Restore from a checked backup after native confirmation, with automatic current-show rollback and a silent restart. Windows Electron verified both cancellation and successful restore.
 - [x] Add versioned SQLite migrations (current schema 7) with upgrade, interrupted-write and rollback tests.
 - [x] Add a validated, standalone pre-migration show backup before opening an older database; stop the upgrade if the backup fails.
-- [ ] Verify pre-migration backup, upgrade and rollback on installed show systems and real filesystems; in-app restore remains separate.
+- [ ] Verify pre-migration backup, upgrade and rollback on installed show systems and real filesystems. The new in-app flow passed an isolated Windows restart test.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
 - [x] Build Linux x64 AppImage and Debian packages, verify dependency metadata and payload, and pass final AppImage launch/restart under an isolated virtual display.
@@ -228,7 +229,7 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [x] Regenerate the 0.5.0 Word specification from [product specification](product-specification.md), render and visually review all 38 pages, then publish the current edition.
 - [x] Regenerate the 0.4.0 37-page Night/Day mockup PDF from Markdown and visually verify every page; repeat whenever requirements or screens change.
 - [ ] Complete platform install/update/uninstall, signing/icon and distribution checks; private catalog configuration and media tools remain separately provisioned. Keep delivery versions 0.x.y until approved 1.0.0.
-- [ ] Prepare a release checklist covering backups, migration/rollback, real-hardware tests, privacy and provider/venue terms.
+- [x] Prepare the [release acceptance checklist](release-acceptance.md) for backup, rollback, hardware, store readiness and provider/venue terms.
 
 Provider notes: [provider research](provider-research.md), [Sunfly operator](sunfly-account-status.md), [Stingray operator](stingray-catalog.md), and [Karaoke Nerds catalog](karaokenerds-catalog.md). Current automated tests and prior muted rehearsals are useful evidence, but they do not replace real hardware, real accounts or production verification.
 

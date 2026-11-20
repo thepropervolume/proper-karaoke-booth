@@ -1,5 +1,6 @@
 // Real loopback API and compiled CLI; only a private, disposable muted show.
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -12,6 +13,7 @@ const repo = await realpath(resolve('.')), root = await realpath(tmpdir());
 const require = createRequire(join(repo, 'package.json')), { _electron: electron } = require('playwright-core');
 if (process.argv.length > 3) throw new Error('Usage: node scripts/local-control-app-smoke.mjs [packaged-executable]');
 const packagedExecutable = process.argv[2] ? await realpath(resolve(process.argv[2])) : null;
+const queueMedia = process.env.TPV_CONTROL_QUEUE_MEDIA && await realpath(resolve(process.env.TPV_CONTROL_QUEUE_MEDIA));
 const run = promisify(execFile), temp = await mkdtemp(join(root, 'tpv-control-app-'));
 const profile = join(temp, 'profile'); await mkdir(profile);
 const canonicalProfile = await realpath(profile), discoveryFile = join(profile, 'control-api.json');
@@ -50,10 +52,12 @@ const launch = async (navigationFlags = []) => {
   await waitForHostCondition(page, async () => !!(await window.tpv.getSettings()).path);
   return page;
 };
-const toggle = async (page, value) => {
+const toggle = async (page, value, queueEnabled = false) => {
   await page.getByRole('button', { name: 'Preferences', exact: true }).click();
-  await page.locator('summary').filter({ hasText: /^Local API and CLI$/ }).click();
+  const section = page.locator('summary').filter({ hasText: /^Local API and CLI$/ });
+  if (!await section.evaluate(element => element.parentElement.open)) await section.click();
   await page.getByRole('checkbox', { name: 'Enable Local API and CLI', exact: true }).setChecked(value);
+  if (queueEnabled) await page.getByRole('checkbox', { name: 'Allow Local API to change the queue', exact: true }).setChecked(true);
   await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
   await page.getByRole('dialog', { name: 'Preferences', exact: true }).waitFor({ state: 'hidden' });
   await waitForHostCondition(page, async expected => (await window.tpv.getLocalControlStatus()).status === expected, value ? 'ready' : 'disabled');
@@ -76,6 +80,24 @@ try {
   const added = await host.evaluate(() => window.tpv.command({ type: 'addSinger', singer: { id: 'control-smoke-singer', name: 'Control Smoke Singer' } }));
   assert.equal(added.ok, true);
   assert.ok((await successful('state')).result.singers.some(singer => singer.id === 'control-smoke-singer'));
+  let queueCommand;
+  if (queueMedia) {
+    // Supply an explicitly generated test file to the real import flow.
+    await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, queueMedia);
+    await host.evaluate(() => window.tpv.importFiles('files'));
+    await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 1);
+    const imported = await successful('state');
+    const { showId, hostEpoch, revision } = (await successful('queue')).result;
+    queueCommand = JSON.stringify({ commandId: randomUUID(), showId, hostEpoch, expectedRevision: revision,
+      command: { type: 'request', versionId: imported.result.versions[0].id, requestId: 'control-cli-queue-request', singerId: 'control-smoke-singer' } });
+    assert.equal((await cli('queue', 'command', queueCommand)).code, 6, 'Prior API opt-in must not enable queue writes.');
+    await toggle(host, true, true);
+    const accepted = await successful('queue', 'command', queueCommand);
+    assert.equal(accepted.result.ok, true);
+    assert.deepEqual((await successful('queue', 'command', queueCommand)).result, accepted.result);
+    assert.deepEqual((await successful('queue')).result.requests.map(request => request.id), ['control-cli-queue-request']);
+    assert.equal((await successful('state')).result.playback, null);
+  }
   await successful('open', 'keybindings');
   await host.getByRole('dialog', { name: 'Preferences', exact: true }).waitFor();
   assert.equal(await host.locator('[data-settings-section="keyboard-shortcuts"]').evaluate(element => element.open), true);
@@ -94,6 +116,12 @@ try {
   const stale = await fetch(`http://127.0.0.1:${restarted.port}/v1/state`, { headers: { Authorization: `Bearer ${initialDiscovery.token}` } });
   assert.equal(stale.status, 401); await stale.body?.cancel();
   assert.ok((await successful('state')).result.singers.some(singer => singer.id === 'control-smoke-singer'));
+  if (queueCommand) {
+    assert.deepEqual((await successful('queue')).result.requests.map(request => request.id), ['control-cli-queue-request']);
+    const prior = await cli('queue', 'command', queueCommand);
+    assert.equal(prior.code, 5);
+    assert.equal(JSON.parse(prior.err).result.code, 'STALE_SHOW');
+  }
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
   await toggle(host, false); await assert.rejects(access(discoveryFile));
   assert.equal((await cli('status')).code, 3);
@@ -118,7 +146,7 @@ try {
     await host.getByRole('dialog', { name: 'Preferences', exact: true }).waitFor();
     assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
   }
-  console.log('Local API/CLI (packaged wrapper when supplied): opt-in, owner-only discovery, live reads/navigation, no mutation fallback, token rotation, restart persistence, disabled cleanup and no autoplay passed.');
+  console.log(`Local API/CLI: opt-in, private discovery, live reads/navigation, token rotation, restart and no autoplay passed.${queueCommand ? ' Queue opt-in, replay receipt, persistence and epoch fencing passed.' : ''}`);
 } finally {
   if (app) await app.close();
   const actual = await realpath(temp);

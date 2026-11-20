@@ -1,4 +1,4 @@
-# Singer Guide for Development Version 0.10.3
+# Singer Guide for Development Version 0.10.6
 
 ## Applause, Points and Photos
 
@@ -6,7 +6,7 @@ When your host enables applause, tap **Applause** to play a clap sound. You begi
 
 Earn points for queueing songs, singing duets, applauding other performers, suggesting a missing song and sending a photo. Singers also earn points when others applaud their performances. Your host can turn the points system off.
 
-To share a photo, choose **Share a photo**, select a JPEG or PNG, and tap **Send to singer display**. It appears for about ten seconds when the display accepts it. If another photo is being shown or the display is unavailable, try again later. On a mobile-hosted show, the host needs to keep the host page visible and exit fullscreen before accepting a photo. Photos are reduced for transmission and are not saved in the host's show database. Share only pictures you want everyone at the venue to see.
+To share a photo, choose **Share a photo**, select a JPEG or PNG, and tap **Send to singer display**. A mobile host gets up to 45 seconds to review and approve it. If approved, it appears for about ten seconds and can earn points. If another photo is being reviewed or displayed, or the display is unavailable, try again later. Photos are reduced for transmission and stay out of the host's show database. Share only pictures you want everyone at the venue to see.
 
 Your host can hide sources from the singer catalog. Songs you already requested stay in your queue; an unavailable source cannot be used for a new request. An old result may remain visible until the page refreshes, normally within 15 seconds.
 

@@ -1,6 +1,6 @@
 # Karaoke Source Status
 
-Updated 20 November 2026 for development release **0.10.3**; provider correspondence below remains dated to its last review. Package verification is recorded separately in [installation](installation.md). Native KaraFun was delivered in 0.6.0; 0.7.0 unifies search results and adds remembered sign-in, global native ratings and automated transitions. A searchable catalog, a consumer subscription and permission to distribute an integration are different capabilities.
+Updated 20 November 2026 for development release **0.10.6**. Package verification is recorded in [installation](installation.md). Native KaraFun was delivered in 0.6.0. Version 0.7.0 unified search and added remembered sign-in, global native ratings, and automated transitions.
 
 
 In 0.9.0, KaraFun search results appear only while signed in, including saved recordings. Generic YouTube results are last and defer to artist/title matches from other visible sources. The [mobile web app](https://queue.thepropervolume.com/app/) streams Karaoke Nerds recordings through YouTube, plays user-imported local videos and supports Full Host/Piggyback rooms. Mobile paid-provider sign-in, vocal mixing and casting are still separate work; desktop KaraFun capability does not imply phone playback.
@@ -20,7 +20,7 @@ In 0.9.0, KaraFun search results appear only while signed in, including saved re
 
 ## Provider Correspondence
 
-The connected TPV Gmail account was searched again on **November 14** for provider replies. No new API/SDK access approval was found. The substantive existing reply is **Stingray on November 12**, explaining that API access is offered through commercial partnerships. A separate KaraFun subscription-cancellation notice supplies no effective access end date; it is not a determination that the account can no longer play songs. This search does not cover dashboard-only correspondence or other mail systems.
+KaraFun Business replied on **16 November** that its API is still in development. Early 2027 is its earliest likely availability, and documentation, pricing and access remain pending. On **20 November**, Ben's authorized reply described Booth and its intended users and requested consideration for an early sandbox or partner pilot. Stingray's **12 November** reply directs API inquiries to commercial partnerships. The 20 November review of the connected TPV mailbox found no newer access approval. Dashboard messages and other mail accounts were outside that review.
 
 With the owner's authorization, four messages were successfully sent from **ben@thepropervolume.com** through the connected TPV Gmail account on **November 14**:
 

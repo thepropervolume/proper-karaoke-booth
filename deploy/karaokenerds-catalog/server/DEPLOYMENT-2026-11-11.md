@@ -1,5 +1,9 @@
 # Shared catalog deployment — 11 November 2026
 
+## Reader update on 20 November 2026
+
+Deployed the revision-checking reader from `5833192` when the queue relay reported zero active rooms. The updated service returned 64,261 searchable records at revision 1. Public HTTPS exact-artist and text search found Nada Surf’s “Amateur”. The reader bundle SHA-256 is `9a29f723756feb77b07303daabdac20eabac6b9e86dd0797062dbd3be314bd24`. The previous reader bundle is preserved at `/var/backups/tpv-karaoke-catalog/reader-0106.xGo30jrO`. The schema and saved snapshot are unchanged, and the upstream refresh timer remains disabled.
+
 The Linode III server now runs the authenticated catalog at
 `https://apps.thepropervolume.com`. Both `/v1/catalog/status` and
 `/v1/catalog/tracks` require the scoped catalog bearer credential. The desktop
