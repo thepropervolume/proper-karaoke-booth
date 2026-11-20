@@ -88,6 +88,11 @@ try {
     await host.evaluate(() => window.tpv.importFiles('files'));
     await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 1);
     const imported = await successful('state');
+    if (status.result.reads.includes('library')) {
+      const confirmed = (await successful('library', imported.result.versions[0].artist)).result;
+      assert.deepEqual(confirmed.items.map(song => song.id), [imported.result.versions[0].id]);
+      assert.ok(!JSON.stringify(confirmed).includes(queueMedia));
+    }
     const { showId, hostEpoch, revision } = (await successful('queue')).result;
     queueCommand = JSON.stringify({ commandId: randomUUID(), showId, hostEpoch, expectedRevision: revision,
       command: { type: 'request', versionId: imported.result.versions[0].id, requestId: 'control-cli-queue-request', singerId: 'control-smoke-singer' } });
