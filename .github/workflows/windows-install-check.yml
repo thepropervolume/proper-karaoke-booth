@@ -1,0 +1,78 @@
+name: Rehearse Windows installation and upgrade
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Published version to install first
+        default: '0.10.5'
+        required: true
+        type: string
+      candidate:
+        description: Published version to upgrade to
+        default: '0.10.6'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows-install:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - run: npm ci --no-audit --no-fund
+      - name: Run the published installer, upgrade and uninstaller
+        shell: pwsh
+        env:
+          TPV_INSTALL_BASELINE: ${{ inputs.baseline }}
+          TPV_INSTALL_CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Use a disposable hosted runner.' }
+          $baseline = $env:TPV_INSTALL_BASELINE
+          $candidate = $env:TPV_INSTALL_CANDIDATE
+          if ($baseline -notmatch '^\d+\.\d+\.\d+$' -or $candidate -notmatch '^\d+\.\d+\.\d+$' -or
+              [version]$baseline -ge [version]$candidate) { throw 'Provide increasing published versions.' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'tpv-install-qa-app'
+          $exe = Join-Path $installDir 'The Proper Volume Karaoke.exe'
+          if (Test-Path -LiteralPath $installDir) { throw 'The QA installation path is already in use.' }
+
+          function Invoke-SilentProcess($path, $arguments) {
+            $process = Start-Process -FilePath $path -ArgumentList $arguments -WindowStyle Hidden -PassThru
+            if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'Windows installer did not finish.' }
+            if ($process.ExitCode -ne 0) { throw "Windows installer exited with code $($process.ExitCode)." }
+          }
+
+          foreach ($version in @($baseline, $candidate)) {
+            $base = "https://release.thepropervolume.com/booth/v$version"
+            $name = "Proper-Karaoke-Booth-$version-windows-x64-setup.exe"
+            $manifest = Invoke-RestMethod -TimeoutSec 30 "$base/release-manifest.json"
+            $expected = @($manifest.artifacts | Where-Object { $_.file -eq $name })
+            if ($manifest.version -ne $version -or $expected.Count -ne 1 -or $expected[0].sha256 -notmatch '^[a-fA-F0-9]{64}$') {
+              throw 'Expected installer is missing from the public manifest.'
+            }
+            $installer = Join-Path $env:RUNNER_TEMP $name
+            Invoke-WebRequest -TimeoutSec 120 "$base/$name" -OutFile $installer
+            if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $expected[0].sha256) { throw 'Installer checksum mismatch.' }
+            Invoke-SilentProcess $installer "/S /D=$installDir"
+            if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Expected installed program is missing.' }
+            $mode = if ($version -eq $baseline) { 'seed' } else { 'verify' }
+            node scripts/windows-install-profile-smoke.mjs $mode $exe $version
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          $uninstaller = @(Get-ChildItem -LiteralPath $installDir -File -Filter 'Uninstall*.exe')
+          if ($uninstaller.Count -ne 1) { throw 'Expected a single registered uninstaller executable.' }
+          Invoke-SilentProcess $uninstaller[0].FullName '/S'
+          for ($attempt = 0; $attempt -lt 15 -and (Test-Path -LiteralPath $exe); $attempt++) { Start-Sleep -Seconds 1 }
+          if (Test-Path -LiteralPath $exe) { throw 'The installed executable remains after uninstall.' }
+          if (!(Test-Path -LiteralPath (Join-Path $env:RUNNER_TEMP 'tpv-install-qa-profile/show.sqlite'))) { throw 'The isolated show disappeared after uninstall.' }
