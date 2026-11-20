@@ -1,5 +1,6 @@
 import { CONTROL_API_VERSION, CONTROL_LIMITS, ControlError, INSTANCE_HEADERS, type ControlAction, type ControlDiscovery, type ControlInstance } from './protocol';
 import { ownerOnlyDiscoveryAccess, processIsRunning, readControlDiscovery, type DiscoveryAccess } from './discovery';
+import type { ControlQueueEnvelope } from './queue';
 
 export type ControlReply={ok:true;instance:ControlInstance;result:unknown};
 type FetchFn=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
@@ -29,14 +30,14 @@ export class LocalControlClient{
     if(!(this.options.isRunning??processIsRunning)(value.pid))throw new ControlError('not-running','The discovered host process is no longer running.');
     return value;
   }
-  private async request(d:ControlDiscovery,path:string,action?:ControlAction):Promise<ControlReply>{
+  private async request(d:ControlDiscovery,path:string,payload?:object):Promise<ControlReply>{
     const controller=new AbortController();let expired=false,timer:ReturnType<typeof setTimeout>|undefined;
     const deadline=new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{expired=true;controller.abort();reject(new ControlError('timed-out','The local control API did not respond in time.'));},this.timeoutMs);});
     const work=(async()=>{
       let response:Response;
-      try{response=await(this.options.fetch??fetch)(`http://127.0.0.1:${d.port}${path}`,{method:action?'POST':'GET',
-        headers:{Authorization:'Bearer '+d.token,Accept:'application/json',...(action?{'Content-Type':'application/json'}:{})},
-        ...(action?{body:JSON.stringify({action})}:{}),redirect:'error',credentials:'omit',cache:'no-store',signal:controller.signal});}
+      try{response=await(this.options.fetch??fetch)(`http://127.0.0.1:${d.port}${path}`,{method:payload?'POST':'GET',
+        headers:{Authorization:'Bearer '+d.token,Accept:'application/json',...(payload?{'Content-Type':'application/json'}:{})},
+        ...(payload?{body:JSON.stringify(payload)}:{}),redirect:'error',credentials:'omit',cache:'no-store',signal:controller.signal});}
       catch{throw new ControlError(expired?'timed-out':'unavailable',expired?'The local control API did not respond in time.':'The discovered local control API could not be reached.');}
       if(expired){void response.body?.cancel().catch(()=>{});throw new ControlError('timed-out','The local control API did not respond in time.');}
       if(!response.body||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')??'')||Number(response.headers.get('content-length')??0)>CONTROL_LIMITS.responseBytes){void response.body?.cancel().catch(()=>{});throw new ControlError('invalid-response','The local control API returned an invalid response.');}
@@ -61,14 +62,27 @@ export class LocalControlClient{
       throw new ControlError('invalid-response','The running host uses an unsupported control API contract.');
     return value;
   }
-  async get(resource:'capabilities'|'state'|'settings'|'shortcuts',includePrivatePaths=false):Promise<ControlReply>{
+  async get(resource:'capabilities'|'state'|'settings'|'shortcuts'|'queue',includePrivatePaths=false):Promise<ControlReply>{
     const d=await this.discover(),capabilities=await this.capabilitiesFor(d);
     if(resource==='capabilities')return capabilities;
+    if(resource==='queue'&&!(capabilities.result as {reads:string[]}).reads.includes('queue'))throw new ControlError('unsupported','This host does not publish a queue view.');
     return this.request(d,`/v1/${resource}`+(resource==='settings'&&includePrivatePaths?'?includePrivatePaths=true':''));
   }
   async open(action:ControlAction):Promise<ControlReply>{
     const d=await this.discover(),capabilities=await this.capabilitiesFor(d);
     if(!(capabilities.result as {actions:Record<ControlAction,boolean>}).actions[action])throw new ControlError('unsupported','This host does not provide that desktop navigation action.');
-    return this.request(d,'/v1/actions',action);
+    return this.request(d,'/v1/actions',{action});
+  }
+  async applyQueueCommand(envelope: ControlQueueEnvelope): Promise<ControlReply> {
+    const d = await this.discover(), capabilities = await this.capabilitiesFor(d);
+    const advertised = (capabilities.result as { queueCommands?: unknown }).queueCommands;
+    if (!Array.isArray(advertised) || !advertised.includes(envelope.command.type))
+      throw new ControlError('unsupported', 'Enable queue changes in Local API and CLI preferences.');
+    const reply = await this.request(d, '/v1/queue/commands', envelope);
+    const outcome = reply.result;
+    if (!record(outcome) || !Number.isSafeInteger(outcome.revision) || typeof outcome.revision !== 'number' || outcome.revision < 0 ||
+      !(outcome.ok === true || outcome.ok === false && typeof outcome.code === 'string' && typeof outcome.message === 'string'))
+      throw new ControlError('invalid-response', 'The host returned an invalid queue outcome.');
+    return reply;
   }
 }

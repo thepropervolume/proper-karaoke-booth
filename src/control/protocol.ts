@@ -1,5 +1,7 @@
 import { parseSettings } from '../domain/settings';
 import { PROVIDER_CATALOG_IDS } from '../domain/provider-catalog';
+import type { Outcome } from '../domain';
+import type { ControlQueueEnvelope, ControlQueueView } from './queue';
 
 export const CONTROL_API_VERSION = 1;
 export const CONTROL_DISCOVERY_NAME = 'control-api.json';
@@ -13,6 +15,9 @@ export type ControlAdapter = {
   getShortcuts(signal:AbortSignal):unknown | Promise<unknown>;
   openSettings?(signal:AbortSignal):void | Promise<void>;
   openKeybindings?(signal:AbortSignal):void | Promise<void>;
+  getQueue?(signal: AbortSignal): ControlQueueView;
+  isQueueControlEnabled?(): boolean;
+  applyQueueCommand?(command: ControlQueueEnvelope, signal: AbortSignal): Outcome;
 };
 export type ControlErrorCode = 'disabled' | 'not-running' | 'already-running' | 'unsafe-discovery' | 'unauthorized' | 'request-denied' | 'invalid-request' | 'not-found' | 'method-not-allowed' | 'body-too-large' | 'busy' | 'timed-out' | 'unsupported' | 'adapter-failed' | 'response-too-large' | 'invalid-response' | 'unavailable';
 export class ControlError extends Error {

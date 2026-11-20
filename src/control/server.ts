@@ -5,6 +5,7 @@ import { realpath } from 'node:fs/promises';
 import { parseShortcuts } from '../domain/shortcuts';
 import { ownerOnlyDiscoveryAccess, profileIdentity, publishControlDiscovery, type DiscoveryAccess } from './discovery';
 import { CONTROL_API_VERSION, CONTROL_DISCOVERY_NAME, CONTROL_LIMITS, ControlError, INSTANCE_HEADERS, controlJson, controlSettings, type ControlAdapter, type ControlDiscovery, type ControlInstance } from './protocol';
+import { CONTROL_QUEUE_COMMANDS, parseControlQueueEnvelope } from './queue';
 
 type Lease={controller:AbortController;pending?:Promise<unknown>};
 export type LocalControlStatus={status:'disabled'}|{status:'stopped';pendingOperations:number}|{status:'ready';port:number;instance:ControlInstance;discoveryFile:string};
@@ -94,7 +95,7 @@ export class LocalControlServer{
       throw new ControlError('unauthorized','Local control authorization is required.');
     return d;
   }
-  private async readAction(request:IncomingMessage,signal:AbortSignal):Promise<'settings'|'keybindings'>{
+  private async readJson(request:IncomingMessage,signal:AbortSignal):Promise<unknown>{
     if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')||request.headers['content-encoding']!==undefined&&request.headers['content-encoding']!=='identity')
       throw new ControlError('invalid-request','Actions require an uncompressed JSON body.');
     const length=request.headers['content-length'];
@@ -110,10 +111,16 @@ export class LocalControlServer{
       if(signal.aborted)aborted();
     });
     try{
-      const value:unknown=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));
-      if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).join(',')!=='action'||!['settings','keybindings'].includes((value as {action:string}).action))throw Error();
-      return(value as {action:'settings'|'keybindings'}).action;
-    }catch{throw new ControlError('invalid-request','Choose the settings or keybindings navigation action.');}
+      return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw)) as unknown;
+    }catch{throw new ControlError('invalid-request','Provide a valid UTF-8 JSON body.');}
+  }
+  private async readAction(request:IncomingMessage,signal:AbortSignal):Promise<'settings'|'keybindings'>{
+    const value=await this.readJson(request,signal);
+    if(value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).join(',')==='action'){
+      const action=(value as {action:unknown}).action;
+      if(action==='settings'||action==='keybindings')return action;
+    }
+    throw new ControlError('invalid-request','Choose the settings or keybindings navigation action.');
   }
   private async handle(request:IncomingMessage,response:ServerResponse):Promise<void>{
     let authenticated=false,lease:Lease|undefined,timer:ReturnType<typeof setTimeout>|undefined;
@@ -125,6 +132,16 @@ export class LocalControlServer{
       const work=(async()=>{
         if(!request.url||request.url.length>2048||!request.url.startsWith('/')||request.url.startsWith('//'))throw new ControlError('invalid-request','Invalid control API path.');
         const url=new URL(request.url,`http://127.0.0.1:${d.port}`);
+        if(url.pathname==='/v1/queue/commands'){
+          if(request.method!=='POST')throw new ControlError('method-not-allowed','Use POST for queue commands.');
+          if(url.search)throw new ControlError('invalid-request','Queue commands do not accept URL parameters.');
+          const {applyQueueCommand,isQueueControlEnabled}=this.options.adapter;
+          if(!applyQueueCommand||!isQueueControlEnabled?.())throw new ControlError('unsupported','Queue changes are disabled on this host.');
+          const command=parseControlQueueEnvelope(await this.readJson(request,signal));
+          if(signal.aborted)throw new ControlError('timed-out','The local control request timed out.');
+          if(!isQueueControlEnabled())throw new ControlError('unsupported','Queue changes are disabled on this host.');
+          return applyQueueCommand(command,signal);
+        }
         if(url.pathname==='/v1/actions'){
           if(request.method!=='POST')throw new ControlError('method-not-allowed','Use POST for navigation actions.');
           if(url.search)throw new ControlError('invalid-request','Navigation actions do not accept URL parameters.');
@@ -138,8 +155,13 @@ export class LocalControlServer{
         if(request.headers['transfer-encoding']!==undefined||request.headers['content-length']!==undefined&&request.headers['content-length']!=='0')throw new ControlError('invalid-request','Read-only requests do not accept a body.');
         if(url.pathname!=='/v1/settings'&&url.search)throw new ControlError('invalid-request','This control resource does not accept URL parameters.');
         if(url.pathname==='/v1/capabilities')return{apiVersion:CONTROL_API_VERSION,applicationVersion:this.options.applicationVersion??'unknown',
-          reads:['capabilities','state','settings','shortcuts'],actions:{settings:!!this.options.adapter.openSettings,keybindings:!!this.options.adapter.openKeybindings},
+          reads:['capabilities','state','settings','shortcuts',...(this.options.adapter.getQueue?['queue']:[])],actions:{settings:!!this.options.adapter.openSettings,keybindings:!!this.options.adapter.openKeybindings},
+          ...(this.options.adapter.getQueue ? { queueCommands: this.options.adapter.applyQueueCommand && this.options.adapter.isQueueControlEnabled?.() ? CONTROL_QUEUE_COMMANDS : [] } : {}),
           limits:{requestBytes:this.maxRequestBytes,responseBytes:this.maxResponseBytes,concurrent:this.maxConcurrent,deadlineMs:this.deadlineMs},completeApplicationControl:false};
+        if(url.pathname==='/v1/queue'){
+          if(!this.options.adapter.getQueue)throw new ControlError('unsupported','This host does not publish a queue view.');
+          return this.options.adapter.getQueue(signal);
+        }
         if(url.pathname==='/v1/state')return await this.options.adapter.getState(signal);
         if(url.pathname==='/v1/shortcuts')return parseShortcuts(await this.options.adapter.getShortcuts(signal));
         if(url.pathname==='/v1/settings'){

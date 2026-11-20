@@ -25,6 +25,7 @@ import { readShortcuts, writeShortcuts } from './shortcuts';
 import type { AppAction } from '../domain/app-action';
 import { applicationMenu } from './application-menu';
 import { LocalControlServer } from '../control/server';
+import { projectControlQueue, type ControlQueueEnvelope } from '../control/queue';
 import type { LocalControlUiStatus } from '../renderer/LocalControlSettings';
 import { parseLaunchIntent } from './launch-intent';
 import { loadLogo, saveLogo } from './logo';
@@ -541,11 +542,13 @@ function publishDisplay(): void {
 }
 // The state transition and completion history are committed together. A renderer
 // callback from an older generation must never consume the current singer's turn.
-function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnType<typeof applyCommand>['outcome'] {
+function perform(command: Command, actor: 'host' | 'engine' = 'host', control?: ControlQueueEnvelope): ReturnType<typeof applyCommand>['outcome'] {
   const previousGeneration = state.playback?.generationId;
-  const result = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
-    expectedRevision: state.revision, actor: { role: actor, id: actor }, command }, settings, Date.now(),
+  const expected = control ?? { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch, expectedRevision: state.revision };
+  const result = applyCommand(state, { ...expected, actor: { role: actor, id: control ? 'local-cli' : actor }, command }, settings, Date.now(),
     { songSeenBefore: version => store.songSeenBefore(version) });
+  // Returning a saved CLI receipt must not repeat any post-commit effects.
+  if (result.state === state) return result.outcome;
   let history: HistoryEntry | undefined;
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip') && state.playback) {
     const request = state.requests.find(r => r.id === state.playback?.requestId);
@@ -634,6 +637,9 @@ async function reconcileLocalControl(): Promise<void> {
   const available = (signal: AbortSignal) => { signal.throwIfAborted(); if (shuttingDown) throw new Error('The host is closing.'); };
   const service = new LocalControlServer({ enabled: true, profileDirectory: app.getPath('userData'), applicationVersion: app.getVersion(), adapter: {
     getState: signal => { available(signal); return state; },
+    getQueue: signal => { available(signal); return projectControlQueue(state, settings.rotationMode, Date.now()); },
+    isQueueControlEnabled: () => settings.localControlEnabled && settings.localQueueControlEnabled && !shuttingDown,
+    applyQueueCommand: (envelope, signal) => { available(signal); return perform(envelope.command, 'host', envelope); },
     getSettings: signal => { available(signal); return settings; },
     getShortcuts: signal => { available(signal); return shortcuts; },
     openSettings: signal => { available(signal); dispatchHostAction('preferences'); },

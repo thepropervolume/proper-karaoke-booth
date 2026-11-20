@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 
 export type LocalControlUiStatus = { enabled: boolean; status: 'disabled' | 'stopped' | 'ready' | 'failed'; port?: number; message?: string };
-export function LocalControlSettings({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
+export function LocalControlSettings({ enabled, queueEnabled, onChange, onQueueChange }:
+  { enabled: boolean; queueEnabled: boolean; onChange: (enabled: boolean) => void; onQueueChange: (enabled: boolean) => void }) {
   const [status, setStatus] = useState<LocalControlUiStatus | null>(null);
   const [error, setError] = useState('');
   const [installing, setInstalling] = useState(false);
@@ -21,7 +22,8 @@ export function LocalControlSettings({ enabled, onChange }: { enabled: boolean; 
   };
   return <div className="local-control-settings">
     <label className="settings-check"><input type="checkbox" checked={enabled} onChange={event => onChange(event.target.checked)} /> Enable Local API and CLI</label>
-    <p className="muted">Save Preferences to apply. The initial API reads this running show, settings and shortcuts, and opens Preferences or Keyboard Shortcuts. Playback and queue changes through the API are not available yet.</p>
+    <label className="settings-check"><input type="checkbox" checked={enabled && queueEnabled} disabled={!enabled} onChange={event => onQueueChange(event.target.checked)} /> Allow Local API to change the queue</label>
+    <p className="muted">Save Preferences to apply. With queue changes enabled, a local script can add, moderate and reorder requests. Playback stays under the host’s control.</p>
     <p className="muted">Access is limited to this computer and a private host token. The CLI reads the protected connection file automatically; no database password is required.</p>
     <div className="settings-logo-actions"><button type="button" onClick={() => void check()}>Check Local API</button><button type="button" onClick={() => { void window.tpv.showControlCli().catch(() => setError('The CLI files are not built yet. Build or install the latest app first.')); }}>Show CLI Tool</button><button type="button" disabled={installing} onClick={() => void install()}>{installing ? 'Installing…' : 'Install CLI to PATH'}</button></div>
     {status && <p role="status">{status.status === 'ready' ? `Local API ready on 127.0.0.1:${status.port}.` : status.status === 'disabled' ? 'Local API is disabled.' : status.message || 'Local API is not running.'}{enabled !== status.enabled ? ' Save Preferences to apply your draft.' : ''}</p>}

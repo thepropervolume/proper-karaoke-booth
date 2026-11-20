@@ -1,17 +1,20 @@
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { LocalControlClient } from './client';
-import { CONTROL_DISCOVERY_NAME, ControlError, controlJson } from './protocol';
+import { CONTROL_DISCOVERY_NAME, CONTROL_LIMITS, ControlError, controlJson } from './protocol';
 import type { DiscoveryAccess } from './discovery';
+import { parseControlQueueEnvelope } from './queue';
 
 export const CONTROL_CLI_EXIT={ok:0,usage:2,notRunning:3,access:4,service:5,unsupported:6,invalidResponse:7} as const;
-export const CONTROL_CLI_HELP=`The Proper Volume local control CLI (initial API foundation)
+export const CONTROL_CLI_HELP=`The Proper Volume local control CLI
 
 Usage: tpv-karaoke [--profile-dir DIR | --discovery FILE] COMMAND
 Commands:
   status              Check this profile's running API and capabilities
   capabilities        List implemented reads and desktop navigation actions
   state               Read the authorized host show snapshot
+  queue               Read upcoming and pending requests
+  queue command JSON  Submit a revisioned queue command (use - to read stdin)
   settings            Read settings with private paths redacted
   shortcuts           Read effective keyboard shortcuts
   open settings       Open Preferences if the running host provides that action
@@ -24,17 +27,34 @@ Options:
   --json                  Structured JSON is already the default
   --help, -h              Show this help without reading credentials
 
-The API is off by default. This foundation cannot control playback, queues,
-imports, databases, or arbitrary application commands. Existing desktop launch
-flags --settings and --keybindings work separately without the local API.
+The API and queue changes are both off by default. The API does
+not control playback, imports, databases, or arbitrary application commands.
+Existing desktop launch flags work separately without the local API.
 `;
 type CliIO={out?:(text:string)=>void;err?:(text:string)=>void;env?:NodeJS.ProcessEnv;platform?:NodeJS.Platform;home?:string;
-  access?:DiscoveryAccess;fetch?:typeof fetch;isRunning?:(pid:number)=>boolean};
+  access?:DiscoveryAccess;fetch?:typeof fetch;isRunning?:(pid:number)=>boolean; input?: AsyncIterable<Buffer | string>};
 export function defaultControlProfile(env:NodeJS.ProcessEnv=process.env,platform:NodeJS.Platform=process.platform,userHome=homedir()):string{
   if(platform==='win32')return join(env.APPDATA||join(userHome,'AppData','Roaming'),'proper-karaoke-booth');
   if(platform==='darwin')return join(userHome,'Library','Application Support','proper-karaoke-booth');
   if(env.XDG_CONFIG_HOME&&!isAbsolute(env.XDG_CONFIG_HOME))throw new ControlError('invalid-request','XDG_CONFIG_HOME must be an absolute path.');
   return join(env.XDG_CONFIG_HOME||join(userHome,'.config'),'proper-karaoke-booth');
+}
+async function readQueueInput(argument: string, input: AsyncIterable<Buffer | string>): Promise<string> {
+  const failure = () => new ControlError('invalid-request', 'Queue JSON must fit within 2048 UTF-8 bytes.');
+  if (argument !== '-') {
+    if (Buffer.byteLength(argument) > CONTROL_LIMITS.requestBytes) throw failure();
+    return argument;
+  }
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of input) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > CONTROL_LIMITS.requestBytes) throw failure();
+    chunks.push(buffer);
+  }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, bytes)); }
+  catch { throw new ControlError('invalid-request', 'Queue JSON must be valid UTF-8.'); }
 }
 function exitFor(error:ControlError):number{
   if(error.code==='not-running'||error.code==='disabled')return CONTROL_CLI_EXIT.notRunning;
@@ -58,18 +78,28 @@ export async function runControlCli(args:string[],io:CliIO={}):Promise<number>{
       }else if(value==='--include-private-paths')privatePaths=true;
       else if(value==='--settings'||value==='--keybindings'){if(alias)throw new ControlError('invalid-request','Choose one navigation action.');alias=value.slice(2);}
       else if(value==='--json')continue;
-      else if(value.startsWith('-'))throw new ControlError('invalid-request','Unknown CLI option. Use --help.');
+      else if(value.startsWith('-')&&!(value==='-'&&commands.length===2&&commands[0]==='queue'&&commands[1]==='command'))throw new ControlError('invalid-request','Unknown CLI option. Use --help.');
       else commands.push(value);
     }
     if(profile&&discovery||alias&&commands.length)throw new ControlError('invalid-request','Choose one profile selector and one command.');
     if(discovery&&basename(discovery)!==CONTROL_DISCOVERY_NAME)throw new ControlError('invalid-request','The discovery filename must be control-api.json.');
     const selected=profile??(discovery?dirname(discovery):defaultControlProfile(io.env,io.platform,io.home));
     const command=alias?['open',alias]:commands.length?commands:['status'];
-    const read=command.length===1&&['status','capabilities','state','settings','shortcuts'].includes(command[0]);
+    const read=command.length===1&&['status','capabilities','state','settings','shortcuts','queue'].includes(command[0]);
     const open=command.length===2&&command[0]==='open'&&['settings','keybindings'].includes(command[1]);
-    if(!read&&!open||privatePaths&&command[0]!=='settings')throw new ControlError('invalid-request','Unknown command or incompatible option. Use --help.');
+    const queue=command.length===3&&command[0]==='queue'&&command[1]==='command';
+    if(!read&&!open&&!queue||privatePaths&&command[0]!=='settings')throw new ControlError('invalid-request','Unknown command or incompatible option. Use --help.');
     const client=new LocalControlClient(selected,{access:io.access,fetch:io.fetch,isRunning:io.isRunning});
-    const result=open?await client.open(command[1] as 'settings'|'keybindings'):await client.get(command[0]==='status'?'capabilities':command[0] as 'capabilities'|'state'|'settings'|'shortcuts',privatePaths);
+    if(queue){
+      const input=await readQueueInput(command[2],io.input??process.stdin);
+      let value:unknown;
+      try{value=JSON.parse(input);}catch{throw new ControlError('invalid-request','Provide the queue command as JSON.');}
+      const result=await client.applyQueueCommand(parseControlQueueEnvelope(value));
+      const ok=(result.result as {ok:boolean}).ok;
+      (ok?out:err)(controlJson(result)+'\n');
+      return ok?CONTROL_CLI_EXIT.ok:CONTROL_CLI_EXIT.service;
+    }
+    const result=open?await client.open(command[1] as 'settings'|'keybindings'):await client.get(command[0]==='status'?'capabilities':command[0] as 'capabilities'|'state'|'settings'|'shortcuts'|'queue',privatePaths);
     out(controlJson(command[0]==='status'?{...result,status:'ready'}:result)+'\n');return CONTROL_CLI_EXIT.ok;
   }catch(error){
     const failure=error instanceof ControlError?error:new ControlError('unavailable','The local control request could not be completed.');

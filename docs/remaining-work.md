@@ -185,7 +185,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [x] Add the blue/pink/purple primary-color switch with a persisted choice, day/night palettes, accessible name, tooltip and tested contrast.
 - [x] Provide a user-invoked PATH installer for the bundled CLI on supported packaged Windows, Linux and macOS builds; AppImage needs manual handling.
 - [ ] Verify CLI install/removal on real Windows, Linux and macOS accounts, including shell startup and PATH collisions.
-- [ ] Complete general CLI actions through the existing authenticated local authority. Initial source provides structured capability/state/settings/shortcut reads and queued settings navigation with stable exit codes; the actual Windows app and compiled CLI passed a private-profile rehearsal. Mutation control remains planned; Windows and Linux bundled-wrapper/package checks passed. Do not introduce another SQLite writer.
+- [x] Add an authenticated queue view and separately enabled queue changes through the existing show writer, with revision checks and original-outcome retries.
+- [ ] Complete general CLI actions, events, pagination and scoped callers. Playback, library import, providers and other specialized commands remain open.
 
 ## Priority 1 — playback and display
 

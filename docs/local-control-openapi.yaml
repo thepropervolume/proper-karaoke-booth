@@ -1,12 +1,11 @@
 openapi: 3.1.0
 info:
   title: The Proper Volume Local Control API
-  version: 0.4.0
+  version: 0.10.6
   description: |
-    Initial owner-only read/navigation API. Disabled by default; enable and save
-    Preferences > Local API and CLI in the desktop app. This contract documents
-    current routes only. Playback, queue mutations, imports, SQL, generic IPC,
-    remote users and full application control are not implemented here.
+    Owner-only loopback API. Enable it in Preferences > Local API and CLI.
+    Queue changes have a separately disabled preference. This contract covers
+    reads, navigation and the listed queue commands.
 
     Read control-api.json from the selected canonical app profile, never from a
     shared or untrusted location. The file must belong to the current user with
@@ -105,6 +104,56 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '429': {$ref: '#/components/responses/Busy'}
         default: {$ref: '#/components/responses/ControlFailure'}
+  /v1/queue:
+    get:
+      operationId: readUpcomingQueue
+      summary: Read up to 100 upcoming and pending requests and the current show revision.
+      responses:
+        '200':
+          description: Upcoming requests in rotation order, followed by pending requests.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessIdentity'
+                  - type: object
+                    required: [result]
+                    properties:
+                      result: {$ref: '#/components/schemas/QueueView'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '501': {$ref: '#/components/responses/Unsupported'}
+        default: {$ref: '#/components/responses/ControlFailure'}
+  /v1/queue/commands:
+    post:
+      operationId: applyQueueCommand
+      summary: Send a revisioned, owner-authorized queue command to the show authority.
+      description: |
+        Queue writes must be explicitly enabled. A retry can submit the identical
+        envelope in the same host epoch. Reusing an ID with new contents is
+        rejected. There is no automatic replay or playback command.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueueEnvelope'}
+      responses:
+        '200':
+          description: Committed original command outcome, including a domain rejection when applicable.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessIdentity'
+                  - type: object
+                    required: [result]
+                    properties:
+                      result: {$ref: '#/components/schemas/QueueOutcome'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/BodyTooLarge'}
+        '501': {$ref: '#/components/responses/Unsupported'}
+        default: {$ref: '#/components/responses/ControlFailure'}
   /v1/shortcuts:
     get:
       operationId: readShortcuts
@@ -193,12 +242,12 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
     BodyTooLarge:
-      description: HTTP 413; declared or received navigation body exceeds requestBytes.
+      description: HTTP 413; declared or received command body exceeds requestBytes.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
     Unsupported:
-      description: HTTP 501; a recognized navigation callback is not supplied by this host.
+      description: HTTP 501; the recognized capability is disabled or unavailable on this host.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -252,8 +301,12 @@ components:
           type: array
           uniqueItems: true
           minItems: 4
-          maxItems: 4
-          items: {type: string, enum: [capabilities, state, settings, shortcuts]}
+          maxItems: 5
+          items: {type: string, enum: [capabilities, state, settings, shortcuts, queue]}
+        queueCommands:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [request, accept, rejectRequest, removeRequest, moveRequest, promoteRequest]}
         actions:
           type: object
           additionalProperties: false
@@ -288,6 +341,79 @@ components:
       type: string
       maxLength: 4096
       description: Empty means default/unset or redacted. Otherwise the application validates a local absolute path; file contents are never returned.
+    QueueId:
+      type: string
+      pattern: '^[A-Za-z0-9_.:-]{1,128}$'
+    QueueView:
+      type: object
+      required: [showId, hostEpoch, revision, requests, truncated]
+      properties:
+        showId: {type: string}
+        hostEpoch: {type: string}
+        revision: {type: integer, minimum: 0}
+        truncated: {type: boolean}
+        requests:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [id, versionId, singerId, status, title, artist, singer]
+            properties:
+              id: {type: string}
+              versionId: {type: string}
+              singerId: {type: [string, 'null']}
+              status: {type: string, enum: [pending, queued]}
+              title: {type: string}
+              artist: {type: string}
+              singer: {type: string}
+    QueueEnvelope:
+      type: object
+      additionalProperties: false
+      required: [showId, hostEpoch, expectedRevision, commandId, command]
+      properties:
+        showId: {$ref: '#/components/schemas/QueueId'}
+        hostEpoch: {$ref: '#/components/schemas/QueueId'}
+        expectedRevision: {type: integer, minimum: 0, maximum: 9007199254740991}
+        commandId: {type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'}
+        command:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [type, requestId, versionId, singerId]
+              properties:
+                type: {const: request}
+                requestId: {$ref: '#/components/schemas/QueueId'}
+                versionId: {$ref: '#/components/schemas/QueueId'}
+                singerId:
+                  anyOf: [{$ref: '#/components/schemas/QueueId'}, {type: 'null'}]
+            - type: object
+              additionalProperties: false
+              required: [type, requestId, beforeRequestId]
+              properties:
+                type: {const: moveRequest}
+                requestId: {$ref: '#/components/schemas/QueueId'}
+                beforeRequestId:
+                  anyOf: [{$ref: '#/components/schemas/QueueId'}, {type: 'null'}]
+            - type: object
+              additionalProperties: false
+              required: [type, requestId]
+              properties:
+                type: {type: string, enum: [accept, rejectRequest, removeRequest, promoteRequest]}
+                requestId: {$ref: '#/components/schemas/QueueId'}
+    QueueOutcome:
+      oneOf:
+        - type: object
+          required: [ok, revision]
+          properties:
+            ok: {const: true}
+            revision: {type: integer, minimum: 0}
+        - type: object
+          required: [ok, revision, code, message]
+          properties:
+            ok: {const: false}
+            revision: {type: integer, minimum: 0}
+            code: {type: string}
+            message: {type: string}
     SelectionList:
       type: array
       maxItems: 500
@@ -295,7 +421,7 @@ components:
       items: {type: string, minLength: 1, maxLength: 200}
     Settings:
       type: object
-      additionalProperties: false
+      additionalProperties: true
       description: Current settings fields. The five private path fields may be blanked by projection, independently of their saved mode.
       required: [appearance, accentColor, autoApprove, localControlEnabled, rotationMode, maxFutureRequestsPerSinger, layout, metadataFormat, metadataTemplates, masterVolume, audioOutputId, autoBumper, autoBumperTrackId, showNextSingers, showDisplayLogo, singerDisplayFullscreen, lyricBackdrop, lyricBackdropFile, pauseIntervalSeconds, karaokeNerdsCacheDirectory, ytDlpExecutable, sharedCatalogEnabled, sharedCatalogConfigFile, ratingProfileConfigFile, karaokeNerdsAutoCache, karaokeNerdsBrands, karaokeNerdsArtists]
       properties:
@@ -303,6 +429,7 @@ components:
         accentColor: {type: string, enum: [blue, pink, purple]}
         autoApprove: {type: boolean}
         localControlEnabled: {type: boolean, default: false}
+        localQueueControlEnabled: {type: boolean, default: false}
         rotationMode: {type: string, enum: [singer, fifo]}
         maxFutureRequestsPerSinger: {type: integer, minimum: 0, maximum: 50}
         layout: {type: string, enum: [standard, rotation, library]}

@@ -201,7 +201,9 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
         </details>
         <details className="settings-group">
           <summary>Local API and CLI</summary>
-          <div className="settings-group__content"><LocalControlSettings enabled={draft.localControlEnabled} onChange={localControlEnabled => setDraft({ ...draft, localControlEnabled })} /></div>
+          <div className="settings-group__content"><LocalControlSettings enabled={draft.localControlEnabled} queueEnabled={draft.localQueueControlEnabled}
+            onChange={localControlEnabled => setDraft({ ...draft, localControlEnabled, localQueueControlEnabled: localControlEnabled && draft.localQueueControlEnabled })}
+            onQueueChange={localQueueControlEnabled => setDraft({ ...draft, localQueueControlEnabled })} /></div>
         </details>
       </div>
       {error && <p role="alert">{error}</p>}
