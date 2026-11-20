@@ -8,6 +8,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile, access } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { waitForHostCondition } from './wait-for-host-condition.mjs';
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 
 const repo = await realpath(resolve('.')), root = await realpath(tmpdir());
 const require = createRequire(join(repo, 'package.json')), { _electron: electron } = require('playwright-core');
@@ -48,7 +49,7 @@ const launch = async (navigationFlags = []) => {
   app = await electron.launch({ executablePath: packagedExecutable || require('electron'), args: [...(packagedExecutable ? [] : [bootstrap]), `--user-data-dir=${canonicalProfile}`, '--mute-audio', ...navigationFlags], cwd: repo, env });
   assert.equal(await app.evaluate(({ app }) => app.isPackaged), !!packagedExecutable);
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
-  const page = await app.firstWindow(); await page.waitForFunction(() => !!window.tpv);
+  const page = await waitForHostWindow(app); await page.waitForFunction(() => !!window.tpv);
   await waitForHostCondition(page, async () => !!(await window.tpv.getSettings()).path);
   return page;
 };

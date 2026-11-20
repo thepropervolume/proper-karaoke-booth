@@ -4,6 +4,7 @@ import { mkdir, realpath } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { _electron as electron } from 'playwright-core';
 import { waitForHostCondition } from './wait-for-host-condition.mjs';
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 
 const [mode, executable, version] = process.argv.slice(2);
 assert.equal(process.platform, 'win32');
@@ -21,7 +22,7 @@ const app = await electron.launch({ executablePath: appPath, args: [`--user-data
 try {
   assert.equal(await app.evaluate(({ app }) => app.getVersion()), version);
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
-  const host = await app.firstWindow();
+  const host = await waitForHostWindow(app);
   await waitForHostCondition(host, async () => !!window.tpv && !!(await window.tpv.getSettings()).path);
   if (mode === 'seed') {
     const result = await host.evaluate(() => window.tpv.command({ type: 'addSinger', singer: { id: 'installer-qa-singer', name: 'Installer QA Singer' } }));
