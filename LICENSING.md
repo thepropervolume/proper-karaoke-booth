@@ -4,6 +4,8 @@ The Proper Volume licenses its original Karaoke Booth source code, build scripts
 
 > This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+The MPL grant includes the interface changes in the `opencode-audit` branch and the parts adapted into Booth.
+
 Existing third-party and contributor notices retain their terms. Preserve the notices for dependencies and bundled fonts, the Gradle wrapper, and the optional KHost integration. See the [dependency notices](docs/dependency-notices.md) and [KHost bridge guide](docs/khost-bridge.md).
 
 TPV names, logos, icons, and branded artwork, including the [original microphone logo reference](design/branding/2026-11-13-microphone-play/owner-reference.jpg), are covered by the separate [branding terms](TRADEMARKS.md).
