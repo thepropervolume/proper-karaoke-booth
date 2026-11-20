@@ -116,6 +116,12 @@ export function partyTymeSongs(value: unknown): PartyTymeSong[] {
             }];
     }).slice(0, 100);
 }
+
+/** Normalize locally for a strict artist-and-title comparison after fallback search. */
+function searchTokens(value: string): string[] {
+    return value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('en-US')
+        .replace(/['’]/gu, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
 /** Parse a narrow literal supplied by the provider; never evaluate remote JavaScript. */
 export function partyTymeProgressive(script: string): {
     url: string;
@@ -374,7 +380,25 @@ export class PartyTymeAccount {
     search(query: string, signal?: AbortSignal): Promise<PartyTymeSong[]> {
         if (typeof query !== 'string' || query.trim().length < 2 || query.length > 200 || /[\x00-\x1f\x7f]/.test(query))
             return Promise.resolve([]);
-        return this.guarded(async (record, combined) => partyTymeSongs(await this.api('search', { key: query.trim(), object_type: 'video', video_type: 'non_episode', start: '0', max: '100' }, record, combined)), signal);
+        return this.guarded(async (record, combined) => {
+            const search = async (key: string) => partyTymeSongs(await this.api('search', { key, object_type: 'video', video_type: 'non_episode', start: '0', max: '100' }, record, combined));
+            const exact = await search(query.trim());
+            if (exact.length) return exact;
+            // The consumer catalog often searches one metadata field at a time.
+            // A full "artist title" query can otherwise hide a known recording.
+            // Retry at most once, only after a successful empty exact search, and
+            // retain only candidates matching every query token across both fields.
+            const tokens = searchTokens(query);
+            if (tokens.length < 2 || tokens.length > 20) return exact;
+            const term = [...tokens].sort((a, b) => b.length - a.length)[0];
+            if (term.length < 3) return exact;
+            combined.throwIfAborted();
+            const candidates = await search(term);
+            return candidates.filter(song => {
+                const fields = searchTokens(`${song.artist} ${song.title}`);
+                return tokens.every(token => fields.some(field => field.startsWith(token)));
+            });
+        }, signal);
     }
     requestMedia(videoId: string, signal?: AbortSignal): Promise<PartyTymeAuthorization> {
         if (!partyTymeId(videoId))

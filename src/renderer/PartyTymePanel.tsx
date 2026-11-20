@@ -9,12 +9,14 @@ export function usePartyTymeAccount(bridge?: PartyTymeBridge) {
         if (!bridge)
             return;
         let alive = true;
+        const accept = (value: PartyTymeStatus) => {
+            if (alive) setStatus(current => value.revision >= current.revision ? value : current);
+        };
         void bridge.status().then(v => {
-            if (alive)
-                setStatus(v);
+            accept(v);
         }).catch(() => {
         });
-        const unsubscribe = bridge.subscribe(setStatus);
+        const unsubscribe = bridge.subscribe(accept);
         return () => {
             alive = false;
             unsubscribe();

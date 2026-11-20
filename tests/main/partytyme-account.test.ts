@@ -13,6 +13,7 @@ function fixture(options: {
     premium?: boolean;
     expired?: () => boolean;
     searchGate?: () => Promise<void>;
+    searchResponse?: (query: string) => unknown;
 } = {}) {
     const calls: {
         url: string;
@@ -32,7 +33,7 @@ function fixture(options: {
             return options.expired?.() ? json({ objects: [] }) : json({ objects: [{ type: 'user', user_permission: options.premium === false ? 'UR' : 'UR,PR' }] });
         if (location === PARTY_TYME_API + '/search') {
             await options.searchGate?.();
-            return json({ objects: [video] });
+            return json(options.searchResponse?.(params.get('key') ?? '') ?? { objects: [video] });
         }
         if (location.startsWith(PARTY_TYME_API + '/embeddedVideoPlayer?'))
             return new Response(script);
@@ -40,6 +41,41 @@ function fixture(options: {
     };
     return { account: new PartyTymeAccount({ fetch: fetcher }), fetcher, calls };
 }
+test('an empty artist-and-title search retries once using the longest word and filters unrelated recordings', async () => {
+    const f = fixture({ searchResponse: key => ({ objects: key === 'wonderwall' ? [video, { ...video, id: '39854', short_description: 'Made Popular By The Mike Flowers Pops' }, video] : [] }) });
+    await f.account.connect({ username: 'user', password: 'secret' });
+    const found = await f.account.search('Oasis - Wonderwall');
+    assert.deepEqual(found.map(song => song.videoId), ['34962']);
+    assert.deepEqual(f.calls.filter(call => call.url.endsWith('/search')).map(call => call.params.get('key')), ['Oasis - Wonderwall', 'wonderwall']);
+});
+test('fallback normalizes punctuation and accents but does not guess missing query words', async () => {
+    const matched = { ...video, id: '36061', name: "Mr. Brightside", short_description: 'Made Popular By The Killers' };
+    const f = fixture({ searchResponse: key => ({ objects: key === 'brightside' ? [matched] : [] }) });
+    await f.account.connect({ username: 'user', password: 'secret' });
+    assert.deepEqual((await f.account.search('The Killers - Mr Brightside')).map(song => song.videoId), ['36061']);
+    assert.deepEqual(await f.account.search('The Killers - Mr Brightside live'), []);
+});
+test('an exact hit avoids fallback and a provider error is never retried', async () => {
+    const f = fixture();
+    await f.account.connect({ username: 'user', password: 'secret' });
+    assert.equal((await f.account.search('Oasis Wonderwall')).length, 1);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/search')).length, 1);
+    const bad = fixture({ searchResponse: () => ({ error: true }) });
+    await bad.account.connect({ username: 'user', password: 'secret' });
+    await assert.rejects(bad.account.search('Oasis Wonderwall'));
+    assert.equal(bad.calls.filter(call => call.url.endsWith('/search')).length, 1);
+});
+test('cancelling an empty exact search prevents the fallback request', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const f = fixture({ searchGate: () => gate, searchResponse: () => ({ objects: [] }) });
+    await f.account.connect({ username: 'user', password: 'secret' });
+    const abort = new AbortController();
+    const pending = f.account.search('Oasis Wonderwall', abort.signal);
+    abort.abort(); release();
+    await assert.rejects(pending);
+    assert.equal(f.calls.filter(call => call.url.endsWith('/search')).length, 1);
+});
 test('consumer login encodes the real form and returns only account status; artists do not become songwriters', async () => {
     const { account, calls } = fixture();
     const status = await account.connect({ username: 'person@example.test', password: 'p+@ &word' });
