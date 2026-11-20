@@ -27,3 +27,9 @@ Updated the relay, singer page, and mobile web app from `b002f4470cb7ffde1b53f09
 Fresh public Full Host and Piggyback browser profiles verified the 0.10.7 asset, guest admission, a synthetic local-track request and its withdrawal without autoplay. Closing the disposable room revoked guest access, and its lookup reported offline.
 
 The relay bundle SHA-256 is `1b4e079610958e0bd1616efef1c2548e7af20321569ecfbff31c0f0566d9eb0e`. The rollback copy is `/var/backups/tpv-queue-relay/code/queue-0107.lmMpclWL`.
+
+## 0.10.8 follow-up
+
+Deployed the relay, singer page and mobile web build from `6128041cc689ae51aaa2a1632458138c7ae45964` after checking for active rooms. Public HTTPS reported 0.10.8. In fresh Chromium host and singer profiles, the guest requested and withdrew a generated local song, and playback stayed stopped. Keyboard removal focused the next queue row and announced the remaining count in the same status region. Both disposable rooms closed and guest access was revoked.
+
+The relay bundle SHA-256 is `e564036bc0c1ecdaa73bf70e75f73c2fa4d3d1fff5c1fb33cc5360f8e84d856d`. The rollback copy is `/var/backups/tpv-queue-relay/code/queue-0108.lfZNUFnS`.

@@ -4,6 +4,8 @@ This is the initial adapter-based foundation in `src/control`. The current deskt
 
 On supported packaged installs, **Preferences → Local API and CLI → Install CLI to PATH** verifies the bundled launcher, then adds its application directory to the current-user Windows PATH or creates a managed `~/.local/bin/tpv-karaoke` launcher on Linux/macOS. It adds managed PATH blocks to Bash or Zsh startup files; other shells and a custom Zsh `ZDOTDIR` receive manual PATH instructions. Open a new terminal, or sign out and back in on Windows if necessary. It preserves unrelated configuration, refuses unsafe file conflicts, provides removal instructions, and does not support automatic AppImage installation. This action does not enable the API; control commands still require explicit opt-in, while `--help` does not.
 
+After upgrading a Debian installation from 0.10.7 or earlier to 0.10.8, run **Install CLI to PATH** again if you used it before. The launcher needs the new installation path.
+
 The API provides bounded reads, desktop navigation and a separate opt-in for queue changes. It delegates changes to the running desktop host and its existing show database writer.
 
 ## Routes and adapter

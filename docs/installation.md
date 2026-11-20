@@ -4,6 +4,14 @@ Download installers and checksums from the [Karaoke Booth downloads page](https:
 
 The Android debug APK is for development testing, and the unsigned Android App Bundle is not directly installable. The unsigned iOS Simulator ZIP is for the simulator only; it is not an iPhone installer. Native device testing, production signing and store distribution remain open.
 
+## Upgrading to 0.10.8
+
+Back up your show before upgrading. The built-in backup covers the show database. Back up media and preferences separately. A show last opened before 0.10.7 upgrades to schema 8 and gets a checked pre-upgrade database copy for rollback. [Show database safety](show-database-safety.md)
+
+The Debian package now installs to `/opt/proper-karaoke-booth`. If you previously added `tpv-karaoke` to PATH through Preferences, choose **Local API and CLI → Install CLI to PATH** again after the upgrade to update the managed launcher. [Local API and CLI](local-control-api.md)
+
+See [the 0.10.8 release notes](release-notes/v0.10.8.md) and the [release acceptance record](release-acceptance.md) for which install and playback checks ran.
+
 ## 0.9.1 Party Tyme Update
 
 Development **0.9.1** adds the experimental desktop Party Tyme consumer Premium connection described in [setup and limits](partytyme-consumer-integration.md). The provided account passed actual muted Windows queue/preparation/playback, seek/Previous, protected-session restart and sign-out checks. Consumer and Pro accounts are different; Pro and mobile playback remain unimplemented. Source regression checks passed 1,090 tests with eight explicit skips, all 20 release-rule tests, and type checking.

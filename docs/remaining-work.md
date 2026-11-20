@@ -19,7 +19,7 @@ Apple Developer and Google Play Console enrollment are pending. The first target
 
 **Live remote status**
 
-The public queue relay and mobile/singer assets are at 0.10.7. The private visual-only viewer is available at `booth.thepropervolume.com`. Public Chrome checks covered paged search, withdrawal, mobile storage, guest photo review and room closure. Synthetic frames verified private viewer access and revocation. Physical show capture, phones, venue-network performance and long sessions still need testing. [Deployment record](../deploy/queue-relay/DEPLOYMENT-2026-11-20-SCREEN-SEARCH.md)
+The public queue relay and mobile/singer assets are at 0.10.8. The private visual-only viewer is available at `booth.thepropervolume.com`. Public Chrome checks covered paged search, withdrawal, mobile storage, guest photo review, queue focus recovery and room closure. Synthetic frames verified private viewer access and revocation. Physical show capture, phones, venue-network performance and long sessions still need testing. [Deployment record](../deploy/queue-relay/DEPLOYMENT-2026-11-20-SCREEN-SEARCH.md)
 
 ## 0.10.3 Source Controls
 
