@@ -14,6 +14,8 @@ Isolated Windows Electron rehearsals already covered backup restore, moved-file 
 
 The published 0.10.6 Windows ZIP was verified against its manifest, launched and restarted with a disposable profile, and passed portable CLI checks using JSON on stdin. Separate public Chromium profiles verified 0.10.6 mobile storage, photo approval and room closure. The 0.10.7 source rehearsal covered playlist transfer between two profiles and a host-only hold across a schema 7→8 upgrade.
 
+On a disposable Windows GitHub runner, the published 0.10.5 installer installed successfully. The 0.10.6 upgrade retained the seeded profile and preferences without autoplay, and uninstall left the disposable show database intact. [Windows install rehearsal](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44714836985)
+
 ## Official release gates
 
 - [ ] Install, upgrade and uninstall on supported Windows, Linux and macOS systems. Verify signing and launch behavior for the intended public distribution and cover both supported Mac architectures. Rehearse rollback against a copy of a representative show. [Handoff](handoff.md)
