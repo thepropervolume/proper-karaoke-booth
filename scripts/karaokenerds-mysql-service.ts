@@ -31,9 +31,11 @@ async function main(): Promise<void> {
   let started = false;
   try {
     const store = new MySqlCommunityCatalogStore(pool);
+    const reader = createMySqlCatalogReader(store);
     // Ensure the database is provisioned and initialized before opening a socket.
-    await store.searchSnapshot();
-    const service = await startCatalogService({ port: Number(rawPort), token, reader: createMySqlCatalogReader(store),
+    // Warm the same projection the listener will use for its first request.
+    await reader.status();
+    const service = await startCatalogService({ port: Number(rawPort), token, reader,
       publicReadEnabled: process.env.TPV_KN_PUBLIC_READ_ENABLED === 'yes',
       closeDependencies: () => pool.end(), onFailure: () => { process.exitCode = 1; console.error('Catalog service stopped unexpectedly.'); } });
     started = true;
