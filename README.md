@@ -7,7 +7,7 @@ A desktop app for hosting karaoke: find songs, manage singer rotation, accept re
 - A host preview, customizable singer screen and bumper music between songs.
 - Phone requests through remote sessions and optional local-network singer screens.
 
-**Pre-release 0.10.3:** desktop KaraFun and Party Tyme consumer Premium playback are experimental. Other paid services currently provide search results only. The official release target is **1.0.0**. See [source status](docs/source-status.md) for availability and limitations.
+Desktop KaraFun and Party Tyme consumer Premium playback are experimental. Other paid services currently provide search results only. The official release target is **1.0.0**. See [source status](docs/source-status.md) for availability and limitations.
 
 ## Install or Run
 
@@ -21,7 +21,7 @@ npm run build
 npm start
 ```
 
-Run checks with `npm test`. YouTube downloads require yt-dlp; CD+G and LRC conversion require FFmpeg. Neither tool is bundled.
+Run checks with `npm test`. Install yt-dlp for YouTube downloads, FFmpeg for CD+G and LRC conversion, and FFprobe for LRC conversion and embedded MP4 metadata preview.
 
 ## Documentation
 

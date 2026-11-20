@@ -14,6 +14,7 @@ import type { HistoryEntry } from '../domain/collections';
 import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
 import { previewMetadata } from './metadata-preview';
+import { readEmbeddedMp4, type EmbeddedMetadataResult } from './embedded-metadata';
 import { Store, type StoredMedia } from './store';
 import { readSettings, writeSettings } from './settings';
 import { nextAccentColor, type Settings } from '../domain/settings';
@@ -311,6 +312,7 @@ const playlistTransfer = new PlaylistTransfer({
   },
 });
 const mediaChecks = new Set<AbortController>();
+let metadataRead: { id: string; controller: AbortController } | null = null;
 const mediaReview = new MediaReview();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
@@ -1412,6 +1414,32 @@ else {
   ipcMain.handle('host:preview-filename-metadata', event => {
     guardHost(event.sender.id);
     return previewMetadata(state.versions, id => store.media(id), settings.metadataTemplates, settings.metadataFormat);
+  });
+  ipcMain.handle('host:read-embedded-metadata', async (event, versionId: unknown, requestId: unknown): Promise<EmbeddedMetadataResult> => {
+    guardHost(event.sender.id);
+    if (shuttingDown || typeof versionId !== 'string' || versionId.length > 500 || typeof requestId !== 'string' ||
+        !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requestId)) return { status: 'unsupported' };
+    const version = state.versions.find(item => item.id === versionId);
+    if (!version || version.source || !isVersionAllowed(state, versionId, settings)) return { status: 'unsupported' };
+    const original = store.media(versionId);
+    if (!original) return { status: 'unsupported' };
+    if (metadataRead) return { status: 'busy' };
+    const controller = new AbortController();
+    metadataRead = { id: requestId, controller };
+    mediaChecks.add(controller);
+    try {
+      const result = await readEmbeddedMp4(original, [app.getPath('userData')], controller.signal);
+      if (controller.signal.aborted || !senderIsHost(event.sender.id)) return { status: 'cancelled' };
+      if (result.status !== 'ready') return result;
+      const current = store.media(versionId);
+      if (!current || current.path !== original.path || current.fingerprint !== original.fingerprint ||
+          state.versions.find(item => item.id === versionId)?.source || !isVersionAllowed(state, versionId, settings)) return { status: 'changed' };
+      return result;
+    } finally { mediaChecks.delete(controller); metadataRead = null; }
+  });
+  ipcMain.handle('host:cancel-embedded-metadata', (event, requestId: unknown) => {
+    guardHost(event.sender.id);
+    if (metadataRead && metadataRead.id === requestId) metadataRead.controller.abort();
   });
   singerCapture.start();
   await reconcileSingerScreen();

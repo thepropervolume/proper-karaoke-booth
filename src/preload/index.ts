@@ -88,6 +88,8 @@ contextBridge.exposeInMainWorld('tpv', {
   },
   getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
   previewFilenameMetadata: () => ipcRenderer.invoke('host:preview-filename-metadata'),
+  readEmbeddedMetadata: (versionId: string, requestId: string) => ipcRenderer.invoke('host:read-embedded-metadata', versionId, requestId),
+  cancelEmbeddedMetadata: (requestId: string) => ipcRenderer.invoke('host:cancel-embedded-metadata', requestId),
   backupShow: () => ipcRenderer.invoke('host:backup-show'),
   restoreShow: () => ipcRenderer.invoke('host:restore-show'),
   retryBackupCleanup: () => ipcRenderer.invoke('host:backup-cleanup'),

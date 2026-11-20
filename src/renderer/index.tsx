@@ -110,6 +110,8 @@ declare global {
       seek: (input: PlaybackSeek) => Promise<PlaybackSeekResult>;
       getLibraryFilenames: () => Promise<Record<string, string>>;
       previewFilenameMetadata: () => Promise<import('../main/metadata-preview').MetadataProposal[]>;
+      readEmbeddedMetadata: (versionId: string, requestId: string) => Promise<import('../main/embedded-metadata').EmbeddedMetadataResult>;
+      cancelEmbeddedMetadata: (requestId: string) => Promise<void>;
       backupShow: () => Promise<BackupResult>;
       restoreShow: () => Promise<RestoreResult>;
       retryBackupCleanup: () => Promise<BackupResult>;

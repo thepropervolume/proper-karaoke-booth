@@ -191,6 +191,8 @@ Choose **Share Internet Screen** under an active internet session. Share the com
 
 In **Preferences → Library Settings**, choose **Preview filename metadata changes** to compare existing artist/title metadata with the current saved filename templates. Review the before/after list, choose individual entries or **Select all**, then **Apply selected**. Nothing is selected initially. The app skips songs changed since the preview, reports success and failure, and does not write file tags. Older manual changes cannot always be recognized; inspect the suggestions before applying.
 
+For an imported local MP4, right-click the song and open **Edit Song Details → Read Embedded Tags**. Booth checks that the file still matches the imported recording and shows the title and artist that FFprobe reports. Choose either field, then **Save Details** to update the library. The original file is read-only throughout this edit. Install FFprobe on `PATH` to use this feature.
+
 
 ### Upgrade backups and approximate queue waits
 
