@@ -2,7 +2,6 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, matchesShortcut, type ShortcutActi
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { createApplausePlayer, type ApplauseRequest } from './applause-player';
-import { applauseClips } from './applause-clips';
 import { createPhotoOverlay } from './photo-overlay';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
@@ -113,8 +112,17 @@ window.tpvDisplay.onSeek((value) => {
 });
 const bumperPlayer = createBumperPlayer(value => window.tpvDisplay.bumperAck(value), value => window.tpvDisplay.bumperEvent(value));
 window.tpvDisplay.onBumperCommand(request => bumperPlayer.handle(request));
-const applausePlayer = createApplausePlayer(applauseClips);
-window.tpvDisplay.onApplause?.(request => { void applausePlayer.play(request).then(result => window.tpvDisplay.applauseResult?.(result)); });
+// The browser entry supplies bundled recordings; keeping asset imports there
+// also lets the display controller run independently in native-display tests.
+let applausePlayer: ReturnType<typeof createApplausePlayer> | null = null;
+export function setApplauseRecordings(recordings: readonly string[]): void {
+  applausePlayer?.stop();
+  applausePlayer = createApplausePlayer(recordings);
+}
+window.tpvDisplay.onApplause?.(request => {
+  if (!applausePlayer) { window.tpvDisplay.applauseResult?.({ id: request.id, ok: false, error: 'Applause recordings are unavailable.' }); return; }
+  void applausePlayer.play(request).then(result => window.tpvDisplay.applauseResult?.(result));
+});
 const photoDisplay = window.tpvDisplay as typeof window.tpvDisplay & { onPhoto?: (callback: (request: { id: string; dataUrl: string }) => void) => () => void; photoResult?: (value: unknown) => void };
 const photoOverlay = createPhotoOverlay(result => photoDisplay.photoResult?.(result));
 photoDisplay.onPhoto?.(request => photoOverlay.show(request));
@@ -155,7 +163,7 @@ function reportOutputFailure(generation: string, message: string): void {
   window.tpvDisplay.event({ type: 'output-error', generation, revision: outputRevision, position: video.currentTime || 0, message });
 }
 navigator.mediaDevices?.addEventListener('devicechange', () => {
-  applausePlayer.stop();
+  applausePlayer?.stop();
   bumperPlayer.muteForOutputChange();
   window.tpvDisplay.bumperDeviceChange();
   if (!current) return;
@@ -208,7 +216,7 @@ function playerFor(state: PlaybackState): HTMLVideoElement {
 // when its native window is hidden.
 window.tpvDisplay.subscribe(async (view) => {
   bumperPlayer.setVolume(view.bumperVolume);
-  applausePlayer.setVolume(view.bumperVolume);
+  applausePlayer?.setVolume(view.bumperVolume);
   shortcuts = view.shortcuts;
   const state = view.playback;
   document.body.classList.toggle('idle', !state);
