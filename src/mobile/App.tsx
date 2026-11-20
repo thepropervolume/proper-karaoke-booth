@@ -26,7 +26,7 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   const [client, setClient] = useState<SingerClient | null>(null), [query, setQuery] = useState(''), [results, setResults] = useState<MobileSong[]>([]), [searching, setSearching] = useState(false);
   const [notice, setNotice] = useState(''), [error, setError] = useState(''), [nearby, setNearby] = useState<DiscoveredRoom[]>([]), [roomInput, setRoomInput] = useState(''), [joining, setJoining] = useState(false);
   const [queueSong, setQueueSong] = useState<MobileSong | null>(null), [youtubeUrl, setYoutubeUrl] = useState('');
-  const [playing, setPlaying] = useState(false), [elapsed, setElapsed] = useState(0), [duration, setDuration] = useState(0), [gapUntil, setGapUntil] = useState(0), [tick, setTick] = useState(Date.now());
+  const [playing, setPlaying] = useState(false), [elapsed, setElapsed] = useState(state.positionSeconds), [duration, setDuration] = useState(0), [gapUntil, setGapUntil] = useState(0), [tick, setTick] = useState(Date.now());
   const [roomStatus, setRoomStatus] = useState<MobileRoomStatus>({ state: 'stopped', link: '', message: '' }), [roomBusy, setRoomBusy] = useState(false), [discoverable, setDiscoverable] = useState(true);
   const [roomName, setRoomName] = useState(state.name), [slug, setSlug] = useState(`karaoke-${crypto.randomUUID().slice(0, 8)}`);
   const [photo, setPhoto] = useState<{ id: string; dataUrl: string } | null>(null);
@@ -34,6 +34,12 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   const joinEpoch = useRef(0), modeRef = useRef(mode); modeRef.current = mode;
   const alive = useRef(true), discoveryEnabled = useRef(discoverable); discoveryEnabled.current = discoverable;
   const player = useRef<PlayerHandle>(null), playRef = useRef(playing); playRef.current = playing;
+  const lastCheckpointAt = useRef(0);
+  const checkpointNow = useCallback(() => {
+    if (modeRef.current !== 'host') return;
+    const id = model.current()?.id, position = player.current?.position();
+    if (id && position != null) { model.checkpoint(id, position); lastCheckpointAt.current = Date.now(); }
+  }, [model]);
   const applausePlayer = useMemo(() => createApplausePlayer(applauseClips), []);
   const activePhoto = useRef<{ id: string; timer: ReturnType<typeof setTimeout>; resolve?: () => void; reject?: (error: Error) => void } | null>(null);
   const playApplause = useCallback(async () => {
@@ -59,10 +65,11 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
       const value = model.state(); setState(value);
       if (writable) { pendingSaves.current = pendingSaves.current.catch(() => {}).then(() => saveMobileShow(value)); void pendingSaves.current.catch(error => { if (alive.current) { setPlaying(false); setError(errorText(error)); } }); }
     });
-    const pause = () => { if (document.hidden) { setPlaying(false); setNotice('Playback paused while the app is in the background.'); } };
+    const pause = () => { if (document.hidden) { checkpointNow(); setPlaying(false); setNotice('Playback paused while the app is in the background.'); } };
     document.addEventListener('visibilitychange', pause);
     return () => { alive.current = false; unsubscribe(); document.removeEventListener('visibilitychange', pause); applausePlayer.stop(); const photo = activePhoto.current; activePhoto.current = null; if (photo) { clearTimeout(photo.timer); photo.reject?.(new Error('The host screen closed.')); } void room.stop().catch(() => {}); void stopMobileDiscovery().catch(() => {}); };
-  }, [model, room, writable, pendingSaves]);
+  }, [model, room, writable, pendingSaves, checkpointNow]);
+  useEffect(() => { setElapsed(state.positionSeconds); setDuration(0); lastCheckpointAt.current = 0; }, [state.currentId]);
   useEffect(() => {
     model.setPlaybackActive(mode === 'host' && playing && !gapUntil && !!state.currentId);
   }, [model, mode, playing, gapUntil, state.currentId]);
@@ -119,7 +126,7 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   };
   const togglePlay = () => {
     setError('');
-    if (playing) { setPlaying(false); return; }
+    if (playing) { checkpointNow(); setPlaying(false); return; }
     if (gapUntil) { setGapUntil(0); }
     if (!model.current() && !model.start()) { setNotice('Add a song to the queue first.'); return; }
     setPlaying(true);
@@ -130,7 +137,7 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     const epoch = ++joinEpoch.current;
     try {
       const remote = await lookupInternetSingerRoom(target, mobileFetch); if (!remote.online) throw new Error('That host is offline. Try again when the room is connected.');
-      await room.stop(); setPlaying(false); setGapUntil(0); setMode('guest');
+      await room.stop(); checkpointNow(); setPlaying(false); setGapUntil(0); setMode('guest');
       setClient(new SingerClient(internetGuestTransport(remote, { fetch: mobileFetch, onEnded: () => { if (joinEpoch.current === epoch && modeRef.current === 'guest') { setClient(null); setError('This room ended. Ask the host for a new link.'); } } }), ''));
     } catch (error) { setError(errorText(error)); } finally { setJoining(false); }
   };
@@ -161,8 +168,8 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     </div></details>
   </li>;
   return <div className="mobile-app">
-    <header className="mobile-header"><a href="./" onClick={event => { event.preventDefault(); setMode('choose'); setPlaying(false); }} aria-label="The Proper Volume home"><img src="./icon-192.png" alt="" /><strong>TPV Karaoke</strong></a><span className="mobile-version">{appVersion}</span>
-      {mode !== 'choose' && <button type="button" onClick={() => { setMode('choose'); setPlaying(false); }}>Switch Mode</button>}</header>
+    <header className="mobile-header"><a href="./" onClick={event => { event.preventDefault(); checkpointNow(); setMode('choose'); setPlaying(false); }} aria-label="The Proper Volume home"><img src="./icon-192.png" alt="" /><strong>TPV Karaoke</strong></a><span className="mobile-version">{appVersion}</span>
+      {mode !== 'choose' && <button type="button" onClick={() => { checkpointNow(); setMode('choose'); setPlaying(false); }}>Switch Mode</button>}</header>
     {error && <div className="mobile-alert" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
     {notice && <div className="mobile-notice" role="status">{notice}<button aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}
     {mode !== 'guest' && nearby.length > 0 && <section className="mobile-nearby" aria-label="Detected karaoke rooms"><h2>Join a Karaoke Room?</h2>
@@ -176,9 +183,9 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     {mode === 'guest' && <><div className="mobile-mode-label">Piggyback Mode · Singers</div>{client ? <SingerPage client={client} /> : <main><p>Choose another room to continue.</p><button onClick={() => setMode('choose')}>Find a Room</button></main>}</>}
     {mode === 'host' && <>
       <main className="mobile-host-main"><div className="mobile-mode-label">Full Host Mode</div><h1>{state.name}</h1>
-        <MobilePlayer onPlayback={setPlaying} ref={player} song={currentSong} playing={playing && !gapUntil} volume={state.volume} generation={`${current?.id ?? 'idle'}:${mediaRevision}`} onEnded={() => next(false)}
+        <MobilePlayer onPlayback={active => { if (!active) checkpointNow(); setPlaying(active); }} ref={player} song={currentSong} playing={playing && !gapUntil} volume={state.volume} generation={`${current?.id ?? 'idle'}:${mediaRevision}`} startPosition={state.positionSeconds} onEnded={() => next(false)}
           onBlocked={() => { setPlaying(false); setNotice('Tap Play in the video to allow audio on this device.'); }}
-          onError={message => { setPlaying(false); setError(message); }} onTime={(time, total) => { setElapsed(time); setDuration(Number.isFinite(total) ? total : 0); }} />
+          onError={message => { checkpointNow(); setPlaying(false); setError(message); }} onTime={(time, total) => { setElapsed(time); setDuration(Number.isFinite(total) ? total : 0); if (current?.id && Date.now() - lastCheckpointAt.current >= 1000) { model.checkpoint(current.id, time); lastCheckpointAt.current = Date.now(); } }} />
         {gapUntil > 0 && <p role="status">Next song in {Math.max(0, Math.ceil((gapUntil - tick) / 1000))}s{!playing ? ' · Paused' : ''}</p>}
         <nav className="mobile-tabs" aria-label="Host workspace">{(['songs', 'queue', 'favorites', 'history', 'room'] as const).map(value => <button aria-current={tab === value ? 'page' : undefined} key={value} onClick={() => setTab(value)}>{value === 'queue' ? `Queue (${state.queue.filter(r => r.status === 'accepted').length})` : value[0].toUpperCase() + value.slice(1)}</button>)}</nav>
         {tab === 'songs' && <section><label className="mobile-search">Search Songs<input type="search" placeholder="Artist or song title" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} /></label>
@@ -210,8 +217,8 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
         </section>}
       </main>
       <footer className="mobile-transport"><div className="mobile-now"><strong>{currentSong?.title || 'Ready to Sing'}</strong><span>{current?.singer || currentSong?.artist || `${state.queue.filter(r => r.status === 'accepted').length} songs waiting`}</span></div>
-        <div className="mobile-time"><span>{clock(elapsed)}</span><input aria-label="Track position" type="range" min={0} max={Math.max(duration, 1)} step={1} value={Math.min(elapsed, Math.max(duration, 1))} disabled={!currentSong || duration <= 0} onChange={event => { const time = Number(event.target.value); player.current?.seek(time); setElapsed(time); }} /><span>{clock(duration)}</span></div>
-        <div className="mobile-play-buttons"><button aria-label="Restart song" disabled={!current} onClick={() => { player.current?.seek(0); setElapsed(0); }}>↶</button><button className="mobile-primary" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button><button aria-label="Skip song" disabled={!current} onClick={() => next(true)}>⏭</button><button aria-label="Fullscreen video" disabled={!currentSong} onClick={() => player.current?.fullscreen()}>⛶</button>
+        <div className="mobile-time"><span>{clock(elapsed)}</span><input aria-label="Track position" type="range" min={0} max={Math.max(duration, 1)} step={1} value={Math.min(elapsed, Math.max(duration, 1))} disabled={!currentSong || duration <= 0} onChange={event => { const time = Number(event.target.value); player.current?.seek(time); if (current) model.checkpoint(current.id, time); setElapsed(time); }} /><span>{clock(duration)}</span></div>
+        <div className="mobile-play-buttons"><button aria-label="Restart song" disabled={!current} onClick={() => { player.current?.seek(0); model.checkpoint(current!.id, 0); setElapsed(0); }}>↶</button><button className="mobile-primary" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>{playing ? '❚❚' : '▶'}</button><button aria-label="Skip song" disabled={!current} onClick={() => next(true)}>⏭</button><button aria-label="Fullscreen video" disabled={!currentSong} onClick={() => player.current?.fullscreen()}>⛶</button>
           <button aria-label="Applause" disabled={!state.applauseEnabled} onClick={() => void run(() => model.applaud({ role: 'host' }, crypto.randomUUID(), playApplause))}>👏</button>
           <label className="mobile-volume">Volume<input type="range" min={0} max={1} step={0.01} value={state.volume} onChange={event => model.settings({ volume: Number(event.target.value) })} /></label></div>
       </footer>

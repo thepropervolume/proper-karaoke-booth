@@ -8,11 +8,28 @@ test('a restored mobile show retains its active turn but has no persisted play o
   const show = new MobileShow(); show.add(songs); show.request(songs[0].id); show.start();
   const saved = show.state(), restored = new MobileShow(restoreMobileShow(saved));
   assert.equal(restored.current()?.songId, songs[0].id);
-  assert.deepEqual(Object.keys(saved).sort(), ['applauseEnabled','autoAdvance','currentId','favorites','format','gapSeconds','history','missingRequests','name','points','pointsEnabled','queue','singers','songs','volume'].sort());
+  assert.deepEqual(Object.keys(saved).sort(), ['applauseEnabled','autoAdvance','currentId','positionSeconds','favorites','format','gapSeconds','history','missingRequests','name','points','pointsEnabled','queue','singers','songs','volume'].sort());
   const changed = show.state(); changed.songs[0].title = 'Other'; assert.equal(show.state().songs[0].title, 'Wonderwall');
   assert.throws(() => restoreMobileShow({ ...saved, volume: NaN }));
   assert.throws(() => restoreMobileShow({ ...saved, currentId: 'missing' }));
   assert.throws(() => restoreMobileShow({ ...saved, songs: [...songs, songs[0]] }));
+});
+test('position checkpoints survive restart without persisting playback and reject stale turns', () => {
+  const show = new MobileShow(); show.add(songs);
+  const first = show.request(songs[0].id), second = show.request(songs[1].id); show.start();
+  const revision = show.revision; let saves = 0; show.subscribe(() => saves++);
+  show.checkpoint(first, 42.375); assert.equal(show.revision, revision); assert.equal(saves, 1);
+  const saved = show.state(), restored = new MobileShow(restoreMobileShow(saved));
+  assert.equal(restored.current()?.id, first); assert.equal(restored.state().positionSeconds, 42.375);
+  assert.equal('playing' in restored.state(), false);
+  show.finish(); assert.equal(show.state().positionSeconds, 0); show.start();
+  show.checkpoint(first, 99); assert.equal(show.current()?.id, second); assert.equal(show.state().positionSeconds, 0);
+  for (const value of [NaN, Infinity, -1, 86401]) show.checkpoint(second, value);
+  assert.equal(show.state().positionSeconds, 0);
+  const legacy = { ...saved } as Partial<typeof saved>; delete legacy.positionSeconds;
+  assert.equal(restoreMobileShow(legacy).positionSeconds, 0);
+  assert.throws(() => restoreMobileShow({ ...saved, positionSeconds: -1 }));
+  assert.throws(() => restoreMobileShow({ ...saved, positionSeconds: Infinity }));
 });
 test('queue edits preserve the playing turn and guests can withdraw only their own waiting requests', () => {
   const show = new MobileShow(); show.add(songs);

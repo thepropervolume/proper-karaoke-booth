@@ -4,7 +4,7 @@ import { sameSong } from '../domain/song-identity';
 /** Portable mobile show state. No provider sessions or room capabilities are persisted. */
 export type MobileSong = { id: string; title: string; artist: string; provider: 'karaokenerds' | 'youtube' | 'local'; videoId?: string; fileName?: string; brand?: string; isDuet?: boolean };
 export type MobileRequest = { id: string; songId: string; singer: string; singerId: string | null; coSingerId?: string | null; status: 'accepted' | 'playing' | 'completed' | 'skipped' | 'withdrawn' };
-export type MobileShowState = { format: 1; name: string; songs: MobileSong[]; queue: MobileRequest[]; currentId: string | null; favorites: string[];
+export type MobileShowState = { format: 1; name: string; songs: MobileSong[]; queue: MobileRequest[]; currentId: string | null; positionSeconds: number; favorites: string[];
   history: { songId: string; singer: string; at: number }[]; missingRequests: { singer: string; title: string; artist: string }[]; volume: number; autoAdvance: boolean; gapSeconds: number;
   applauseEnabled: boolean; pointsEnabled: boolean; singers: { id: string; name: string }[]; points: PointsLedger | null };
 const text = (value: unknown, max: number, empty = false): value is string => typeof value === 'string' && value.length <= max && (empty || !!value.trim()) && !/[\x00-\x1f\x7f]/.test(value);
@@ -16,11 +16,12 @@ export function validMobileSong(value: unknown): value is MobileSong {
     (v.provider === 'local' ? text(v.fileName, 500) && v.videoId === undefined : ['youtube', 'karaokenerds'].includes(v.provider) && typeof v.videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(v.videoId)) &&
     (v.brand === undefined || text(v.brand, 200)) && (v.isDuet === undefined || typeof v.isDuet === 'boolean');
 }
-export function newMobileShow(): MobileShowState { return { format: 1, name: 'My Karaoke Room', songs: [], queue: [], currentId: null, favorites: [], history: [], missingRequests: [], volume: 0.8, autoAdvance: true, gapSeconds: 5, applauseEnabled: true, pointsEnabled: true, singers: [], points: null }; }
+export function newMobileShow(): MobileShowState { return { format: 1, name: 'My Karaoke Room', songs: [], queue: [], currentId: null, positionSeconds: 0, favorites: [], history: [], missingRequests: [], volume: 0.8, autoAdvance: true, gapSeconds: 5, applauseEnabled: true, pointsEnabled: true, singers: [], points: null }; }
 /** Restores the queue paused. Playing is process state, never an instruction saved on disk. */
 export function restoreMobileShow(value: unknown): MobileShowState {
   if (!value || typeof value !== 'object') throw new Error('Saved mobile show is invalid.');
   const v = { ...(value as MobileShowState) };
+  if (v.positionSeconds === undefined) v.positionSeconds = 0;
   if (v.missingRequests === undefined) v.missingRequests = [];
   if (v.applauseEnabled === undefined) v.applauseEnabled = true;
   if (v.pointsEnabled === undefined) v.pointsEnabled = true;
@@ -41,7 +42,7 @@ export function restoreMobileShow(value: unknown): MobileShowState {
         r.singerId !== null && r.singerId !== r.coSingerId && v.singers.some(s => s.id === r.coSingerId)) &&
       ['accepted', 'playing', 'completed', 'skipped', 'withdrawn'].includes(r.status)) ||
     new Set(v.queue.map(r => r.id)).size !== v.queue.length || (v.currentId !== null && !v.queue.some(r => r.id === v.currentId && r.status === 'playing')) ||
-    v.queue.filter(r => r.status === 'playing').length !== (v.currentId ? 1 : 0) || !Array.isArray(v.favorites) || v.favorites.length > 2000 ||
+    v.queue.filter(r => r.status === 'playing').length !== (v.currentId ? 1 : 0) || typeof v.positionSeconds !== 'number' || !Number.isFinite(v.positionSeconds) || v.positionSeconds < 0 || v.positionSeconds > 86400 || (!v.currentId && v.positionSeconds !== 0) || !Array.isArray(v.favorites) || v.favorites.length > 2000 ||
     !v.favorites.every(id => v.songs.some(s => s.id === id)) || !Array.isArray(v.history) || v.history.length > 1000 ||
     !v.history.every(h => h && v.songs.some(s => s.id === h.songId) && text(h.singer, 100, true) && Number.isSafeInteger(h.at) && h.at >= 0) ||
     !Array.isArray(v.missingRequests) || v.missingRequests.length > 200 || !v.missingRequests.every(r => r && text(r.singer, 100) && text(r.title, 200) && text(r.artist, 200, true)) ||
@@ -104,6 +105,13 @@ export class MobileShow {
     this.changed();
   }
   setPlaybackActive(value: boolean): void { this.playing = value; }
+  /** Ignore late player callbacks from a previous turn; playback state is never persisted. */
+  checkpoint(requestId: string, seconds: number): void {
+    if (requestId !== this.value.currentId || !Number.isFinite(seconds) || seconds < 0 || seconds > 86400 || seconds === this.value.positionSeconds) return;
+    this.value.positionSeconds = seconds;
+    // Position is host-only and must not invalidate a singer's queue revision.
+    for (const listener of this.listeners) listener();
+  }
   add(songs: readonly MobileSong[]): void {
     if (!songs.every(validMobileSong)) throw new Error('Invalid song.');
     const known = new Set(this.value.songs.map(s => s.id));
@@ -165,7 +173,7 @@ export class MobileShow {
     if (this.current()) return this.current();
     const next = this.next(); if (!next) return null;
     const ledger = this.startPoints(this.ledger(), next);
-    next.status = 'playing'; this.value.currentId = next.id; this.value.points = ledger; this.changed(); return structuredClone(next);
+    next.status = 'playing'; this.value.currentId = next.id; this.value.positionSeconds = 0; this.value.points = ledger; this.changed(); return structuredClone(next);
   }
   finish(skipped = false): void {
     const current = this.value.queue.find(r => r.id === this.value.currentId);
@@ -175,7 +183,7 @@ export class MobileShow {
       current.status = skipped ? 'skipped' : 'completed'; if (!skipped) this.value.history.unshift({ songId: current.songId, singer: current.singer, at: this.now() });
     }
     this.playing = false;
-    this.value.history = this.value.history.slice(0, 1000); this.value.currentId = null; this.changed();
+    this.value.history = this.value.history.slice(0, 1000); this.value.currentId = null; this.value.positionSeconds = 0; this.changed();
   }
   remove(id: string, singerId?: string): void {
     const request = this.value.queue.find(r => r.id === id);

@@ -94,6 +94,13 @@ try {
   await host.locator('video').evaluate(video => video.play()); await host.getByRole('button', { name: 'Pause', exact: true }).waitFor();
   await host.getByLabel('Track position').fill('5'); assert.ok(await host.locator('video').evaluate(video => video.currentTime) >= 4.9);
   checks.push('Real synthetic local video plays; embedded controls synchronize; timeline seeks.');
+  await host.getByRole('button', { name: 'Pause', exact: true }).click();
+  await host.getByRole('button', { name: 'Switch Mode', exact: true }).click();
+  await host.getByRole('button', { name: /^Full Host Mode/ }).click();
+  await host.waitForFunction(() => { const video = document.querySelector('video'); return !!video && video.readyState >= 1 && video.paused && video.currentTime >= 4.8; });
+  await host.getByRole('button', { name: 'Play', exact: true }).waitFor();
+  await host.getByRole('button', { name: 'Play', exact: true }).click();
+  checks.push('Switching modes restores the same local-video checkpoint paused; the host must press Play.');
   // Exercise completion through the actual player and verify the host's gap
   // and auto-advance setting while another request remains in the queue.
   for (let i = 0; i < 2; i++) {
@@ -126,6 +133,15 @@ try {
   await host.getByRole('button', { name: /^Room$/ }).click(); await host.getByRole('button', { name: 'Close Room', exact: true }).click();
   await guest.getByRole('button', { name: 'Refresh', exact: true }).click(); await guest.getByText('This room ended. Ask the host for a new link.').waitFor();
   checks.push('Closing the mobile room revokes guest access.');
+  await host.getByLabel('Track position').fill('5');
+  await host.waitForFunction(async () => await new Promise<boolean>(resolve => {
+    const open = indexedDB.open('tpv-mobile', 1); open.onsuccess = () => { const db = open.result, tx = db.transaction('show', 'readonly'), request = tx.objectStore('show').get('active');
+      tx.oncomplete = () => { db.close(); resolve(request.result?.positionSeconds >= 4.8); }; }; open.onerror = () => resolve(false);
+  }));
+  await host.reload(); await host.getByRole('button', { name: /^Full Host Mode/ }).click();
+  await host.waitForFunction(() => { const video = document.querySelector('video'); return !!video && video.readyState >= 1 && video.paused && video.currentTime >= 4.8; });
+  await host.getByRole('button', { name: 'Play', exact: true }).waitFor();
+  checks.push('Reload restores the saved local-video checkpoint paused.');
   for (const width of [320, 390, 768]) { await host.setViewportSize({ width, height: 844 }); assert.ok(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); await host.screenshot({ path: resolve(directory, `room-${width}.png`), fullPage: true }); }
   checks.push('320/390/768px layouts have no page overflow.');
   assert.deepEqual(errors, []);
