@@ -31,9 +31,9 @@ Add a dedicated CI deploy key to the publishing account's `authorized_keys` with
 restrict,command="/usr/bin/python3 /opt/tpv-booth-releases/release-command.py" ssh-ed25519 <CI public key>
 ```
 
-The Cloudflare DNS-only CNAME `release.thepropervolume.com` resolves to `apps.thepropervolume.com`. Install [the Apache virtual host](apache.conf) on Linode III and issue a Let's Encrypt certificate named `tpv-booth-releases` for the release hostname. Its certificate renews through the existing DNS challenge setup. The separate release vhost serves only the release `public` directory.
+The Cloudflare DNS-only CNAME `release.thepropervolume.com` resolves to `apps.thepropervolume.com`. Install [the Apache virtual host](apache.conf) on Linode III with the existing `tpv-booth-releases` certificate. Install [the download hub](release-index.html) as `/srv/tpv-downloads/public/index.html`. The vhost mounts the existing Booth release directory at `/booth/` and the Studio release directory at `/studio/`.
 
-The download page, retained files, release history and stable `/latest/` redirects are publicly readable without a preview sign-in. The old Basic-auth password file and CI deploy key are separate from public access; do not delete or rotate them as part of making downloads public. The dedicated Apache vhost must load its checked-in public rules, including the hidden `/srv/tpv-booth-releases/public/.latest.map` rewrite map. Versionless `/latest/` aliases return HTTP 302 to their exact verified `/vVERSION/` paths. Test the configuration before reloading Apache and verify anonymous GET and HEAD for the index, retained artifacts and aliases.
+The download pages and stable aliases are publicly readable. Each publisher maintains its own hidden `.latest.map`. Booth versionless `/booth/latest/` aliases redirect to `/booth/vVERSION/`. Legacy `/latest/`, `/vVERSION/`, and `/archive/` links keep working. The alternate `/boothl/` path redirects to the canonical Booth path. Test Apache configuration before reload, then verify anonymous GET and HEAD for both products and the legacy routes.
 
 ## Verification and recovery
 

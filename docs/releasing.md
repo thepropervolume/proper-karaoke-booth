@@ -1,6 +1,6 @@
 # Automatic releases
 
-The **Release on version change** GitHub Actions workflow builds the desktop and mobile development packages and publishes verified artifacts to [Karaoke Booth downloads](https://release.thepropervolume.com/). Anyone with the link can download the files; no preview sign-in is required. A successful run publishes a complete desktop, mobile and planning set from one source commit directly to Linode. Cloudflare points the release hostname to `apps.thepropervolume.com`.
+The **Release on version change** GitHub Actions workflow builds the desktop and mobile development packages and publishes verified artifacts to [Karaoke Booth downloads](https://release.thepropervolume.com/booth/). Anyone with the link can download the files; no preview sign-in is required. A successful run publishes a complete desktop, mobile and planning set from one source commit directly to Linode. Cloudflare points the release hostname to `apps.thepropervolume.com`.
 
 ## Publish an update
 
@@ -21,12 +21,12 @@ Each retained release has an immutable page under `/vVERSION/`. The `/latest/` a
 
 Stable links remove the version component from a verified artifact name. They issue a temporary HTTP redirect to its current `/vVERSION/` file. Examples:
 
-- [Windows setup](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-windows-x64-setup.exe)
-- [Linux AppImage](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-linux-x86_64.AppImage)
-- [macOS Apple silicon DMG](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-mac-arm64.dmg)
-- [Android debug APK](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-android-debug.apk)
-- [iOS Simulator ZIP](https://release.thepropervolume.com/latest/Proper-Karaoke-Booth-ios-simulator.zip)
-- [Checksums](https://release.thepropervolume.com/latest/SHA256SUMS.txt) and [release manifest](https://release.thepropervolume.com/latest/release-manifest.json)
+- [Windows setup](https://release.thepropervolume.com/booth/latest/Proper-Karaoke-Booth-windows-x64-setup.exe)
+- [Linux AppImage](https://release.thepropervolume.com/booth/latest/Proper-Karaoke-Booth-linux-x86_64.AppImage)
+- [macOS Apple silicon DMG](https://release.thepropervolume.com/booth/latest/Proper-Karaoke-Booth-mac-arm64.dmg)
+- [Android debug APK](https://release.thepropervolume.com/booth/latest/Proper-Karaoke-Booth-android-debug.apk)
+- [iOS Simulator ZIP](https://release.thepropervolume.com/booth/latest/Proper-Karaoke-Booth-ios-simulator.zip)
+- [Checksums](https://release.thepropervolume.com/booth/latest/SHA256SUMS.txt) and [release manifest](https://release.thepropervolume.com/booth/latest/release-manifest.json)
 
 Archived versions are listed on the download page and their records are kept under `/archive/vVERSION/`. The archive page explains when installers have been pruned. Existing written release notes, including the v0.8.0 GitHub release text, are preserved; versions that never had written notes retain their available metadata without invented summaries.
 

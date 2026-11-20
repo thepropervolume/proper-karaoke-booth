@@ -1,6 +1,6 @@
 # Installing The Proper Volume Karaoke Booth
 
-Download installers and checksums from the [Karaoke Booth downloads page](https://release.thepropervolume.com/). Anyone with the link can download them without signing in. Stable `/latest/` links lead to the latest verified files; version-specific downloads are kept for the five most recent releases, while older release records and notes remain available. See [release automation](releasing.md) for platform options and recovery steps. Each release records its exact source commit.
+Download installers and checksums from the [Karaoke Booth downloads page](https://release.thepropervolume.com/booth/). Anyone with the link can download them without signing in. Stable `/booth/latest/` links lead to the latest verified files; version-specific downloads are kept for the five most recent releases, while older release records and notes remain available. See [release automation](releasing.md) for platform options and recovery steps. Each release records its exact source commit.
 
 The Android debug APK is for development testing, and the unsigned Android App Bundle is not directly installable. The unsigned iOS Simulator ZIP is for the simulator only; it is not an iPhone installer. Native device testing, production signing and store distribution remain open.
 
@@ -14,7 +14,7 @@ The local Windows x64 setup and ZIP use clean commit `d924fb05315079370d6722df85
 
 The native project versions are aligned to 0.9.1. This does not add paid playback to phones or establish new native device/store acceptance. The live mobile website remains the previously verified 0.9.0 deployment. Existing guest catalog responses contain only recording ID, title and artist, so requesting a saved Party Tyme recording does not require a new provider identifier in the singer client; playback stays on the connected desktop.
 
-GitHub Actions artifact storage blocked the [original 0.9.1 delivery](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44185403036). The subsequent [direct-to-Linode run](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44382316384) built and verified every desktop platform from `26f05c9` and published all 28 files, including the generated planning editions and checksums. The hosted installer set has been checked over HTTPS, including partial downloads on all eight packages and a full SHA-256 match for the Windows setup. Get the packages from the [0.9.1 download page](https://release.thepropervolume.com/v0.9.1/).
+GitHub Actions artifact storage blocked the [original 0.9.1 delivery](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44185403036). The subsequent [direct-to-Linode run](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44382316384) built and verified every desktop platform from `26f05c9` and published all 28 files, including the generated planning editions and checksums. The hosted installer set has been checked over HTTPS, including partial downloads on all eight packages and a full SHA-256 match for the Windows setup. Get the packages from the [0.9.1 download page](https://release.thepropervolume.com/booth/v0.9.1/).
 
 ## Historical 0.9.0 Delivery
 

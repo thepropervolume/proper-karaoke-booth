@@ -9,7 +9,7 @@ import { MOBILE_PLATFORMS, PLANNING_NAMES, mobilePlatformNames, platformNames, r
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sshHost = '45.79.137.117';
 const sshUser = `tpv-booth-release@${sshHost}`;
-const publicBase = 'https://release.thepropervolume.com';
+const publicBase = 'https://release.thepropervolume.com/booth';
 const windows = process.platform === 'win32';
 const quiet = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true };
 const git = (...args) => execFileSync('git', args, { ...quiet, cwd: repo }).trim();
