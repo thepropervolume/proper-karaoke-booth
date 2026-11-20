@@ -8,6 +8,8 @@ The Android debug APK is for development testing, and the unsigned Android App B
 
 Starting with 0.10.9, open a new terminal after installing Booth and run `tpv-karaoke-booth --help`.
 
+On a fresh Windows installation, 0.10.10 Setup selects **All users** and uses `C:\Program Files\The Proper Volume Karaoke Booth` on a standard Windows system. Approve the Windows administrator prompt or choose **Only for me** for a per-user install. Upgrades reuse the registered installation directory. For unattended installs, run `/S` from an elevated process or use `/currentuser /S` for a per-user install.
+
 | Desktop package | Where setup installs the command |
 | --- | --- |
 | Windows setup EXE | `tpv-karaoke-booth.exe` in the application directory. Setup registers that directory in user PATH for an individual install or system PATH for an all-users install. Uninstall removes the entry if setup added it. |

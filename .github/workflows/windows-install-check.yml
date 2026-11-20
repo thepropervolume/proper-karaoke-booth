@@ -65,7 +65,8 @@ jobs:
             $installer = Join-Path $env:RUNNER_TEMP $name
             Invoke-WebRequest -TimeoutSec 120 "$base/$name" -OutFile $installer
             if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $expected[0].sha256) { throw 'Installer checksum mismatch.' }
-            Invoke-SilentProcess $installer "/S /D=$installDir"
+            $arguments = if ($version -eq $baseline) { "/currentuser /S /D=$installDir" } else { '/currentuser /S' }
+            Invoke-SilentProcess $installer $arguments
             if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Expected installed program is missing.' }
             $mode = if ($version -eq $baseline) { 'seed' } else { 'verify' }
             node scripts/windows-install-profile-smoke.mjs $mode $exe $version
@@ -93,4 +94,31 @@ jobs:
           if (!(Test-Path -LiteralPath (Join-Path $env:RUNNER_TEMP 'tpv-install-qa-profile/show.sqlite'))) { throw 'The isolated show disappeared after uninstall.' }
           if ($expectCli -and [Environment]::GetEnvironmentVariable('Path', 'User') -cne $originalUserPath) {
             throw 'Uninstall failed to restore the original user PATH.'
+          }
+
+          if ([version]$candidate -ge [version]'0.10.10') {
+            # A clean, elevated install without a scope or /D option must use Program Files.
+            $defaultDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'The Proper Volume Karaoke Booth'
+            if (Test-Path -LiteralPath $defaultDir) { throw 'Default installation path is already in use.' }
+            $originalMachinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            Invoke-SilentProcess $installer '/S'
+            $defaultExe = Join-Path $defaultDir 'proper-karaoke-booth.exe'
+            $defaultCli = Join-Path $defaultDir 'tpv-karaoke-booth.exe'
+            if (!(Test-Path -LiteralPath $defaultExe -PathType Leaf) -or !(Test-Path -LiteralPath $defaultCli -PathType Leaf)) {
+              throw 'Fresh setup did not install both executables in the default Program Files directory.'
+            }
+            $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            if (@($machinePath.Split(';') | Where-Object { $_ -ieq $defaultDir }).Count -ne 1) {
+              throw 'Default setup did not register machine PATH exactly once.'
+            }
+            $help = & $defaultCli --help
+            if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch 'Usage: tpv-karaoke-booth') { throw 'Default CLI help failed.' }
+            $uninstaller = @(Get-ChildItem -LiteralPath $defaultDir -File -Filter 'Uninstall*.exe')
+            if ($uninstaller.Count -ne 1) { throw 'Expected one uninstaller in the default directory.' }
+            Invoke-SilentProcess $uninstaller[0].FullName '/S'
+            for ($attempt = 0; $attempt -lt 15 -and (Test-Path -LiteralPath $defaultExe); $attempt++) { Start-Sleep -Seconds 1 }
+            if (Test-Path -LiteralPath $defaultExe) { throw 'Uninstall left the default executable in place.' }
+            if ([Environment]::GetEnvironmentVariable('Path', 'Machine') -cne $originalMachinePath) {
+              throw 'Uninstall failed to restore the original machine PATH.'
+            }
           }

@@ -1,5 +1,38 @@
+; NSIS uses APP_FILENAME to choose the installation directory. Keep the
+; executable name independent for existing shortcuts and CLI launchers.
+!undef APP_FILENAME
+!define APP_FILENAME "${PRODUCT_NAME}"
+
 !macro customWelcomePage
   !insertmacro MUI_PAGE_WELCOME
+!macroend
+
+!macro customInit
+  ; A silent first install defaults to Program Files. Deploy it from an
+  ; elevated process, or use /currentuser for an unattended per-user install.
+  ${If} ${Silent}
+  ${AndIf} $installMode == "all"
+  ${AndIf} $hasPerMachineInstallation == "0"
+  ${AndIfNot} ${UAC_IsAdmin}
+    SetErrorLevel 740
+    Quit
+  ${EndIf}
+!macroend
+
+!macro customPageAfterChangeDir
+  ; The stock directory-page callback appends APP_FILENAME to a path without
+  ; that folder name. Bypass it for an existing registered install directory.
+  !undef MUI_PAGE_CUSTOMFUNCTION_PRE
+  !define MUI_PAGE_CUSTOMFUNCTION_PRE boothInstFilesPre
+  Function boothInstFilesPre
+    Push $0
+    ReadRegStr $0 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" InstallLocation
+    ${If} $0 == ""
+    ${OrIf} $0 != $INSTDIR
+      Call instFilesPre
+    ${EndIf}
+    Pop $0
+  FunctionEnd
 !macroend
 
 !macro customInstall

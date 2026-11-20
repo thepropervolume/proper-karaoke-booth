@@ -23,7 +23,8 @@ export default {
   nsis: {
     oneClick: false,
     perMachine: false,
-    allowElevation: false,
+    selectPerMachineByDefault: true,
+    allowElevation: true,
     allowToChangeInstallationDirectory: true,
     runAfterFinish: false,
     createDesktopShortcut: false,
