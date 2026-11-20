@@ -6,6 +6,7 @@ import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
 import { RemoteQueue, type RemoteApplause, type RemotePhoto } from './remote-queue';
 import { migrateShowSchema } from './schema-migrations';
+import { openHostShowDatabase } from './show-upgrade';
 import { createShowSnapshot } from './show-snapshots';
 import { recordQueuedSongs, songSeenBefore } from './song-history';
 import { isLocalRecordingKey, validHeartVote, parseRecordingKeys, type LocalRecordingKey, type SongRating } from '../domain/song-rating';
@@ -25,10 +26,14 @@ export class Store<T> {
   private remoteQueueDisabled = false;
   readonly collections: Collections;
 
-  constructor(filename: string) {
-    this.db = new DatabaseSync(filename);
+  static async openForHost(filename: string): Promise<Store<ShowState>> {
+    return new Store<ShowState>(await openHostShowDatabase(filename));
+  }
+
+  constructor(filename: string | DatabaseSync) {
+    this.db = typeof filename === 'string' ? new DatabaseSync(filename) : filename;
     try {
-      migrateShowSchema(this.db);
+      if (typeof filename === 'string') migrateShowSchema(this.db);
       // WAL keeps reads responsive; FULL asks SQLite to durably commit before
       // we acknowledge a show edit. Media bytes remain separate from this DB.
       this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');

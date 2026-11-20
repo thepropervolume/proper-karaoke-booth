@@ -1169,7 +1169,7 @@ else {
   communityBrowser = new LocalCommunityBrowser(join(localData || app.getPath('userData'), 'ProperKaraokeBooth', 'karaokenerds', 'community.sqlite'));
   sharedCatalog = new SharedCatalogConnection(join(app.getPath('userData'), 'shared-catalog-cache', 'queries.json'));
   logoData = await loadLogo(logoPath);
-  store = new Store<ShowState>(join(app.getPath('userData'), 'show.sqlite'));
+  store = await Store.openForHost(join(app.getPath('userData'), 'show.sqlite'));
   hostRatings = new HostSongRatings(store, () => {
     const connection = ratingsConnection(), path = ratingConfigFile();
     return {

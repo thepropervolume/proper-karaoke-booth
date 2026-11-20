@@ -104,11 +104,12 @@ export type SnapshotSummary = { revision: number; singers: number; songs: number
 export function inspectShowSnapshot(db: DatabaseSync): SnapshotSummary {
   const result = db.prepare('PRAGMA integrity_check').all() as Record<string, unknown>[];
   if (result.length !== 1 || Object.values(result[0])[0] !== 'ok') throw new Error('Backup integrity check failed.');
-  inspectShowSchema(db);
+  const version = inspectShowSchema(db);
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'show_state'").get())
+    throw new Error('Backup show state is incomplete or incompatible.');
   const row = db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: string } | undefined;
   if (!row) throw new Error('Backup show state is incomplete or incompatible.');
   const state: unknown = JSON.parse(row.value);
-  const version = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
   if (!validState(state, version >= 5) || !record(state)) throw new Error('Backup show state is incomplete or incompatible.');
   if (version < 6 && (state.versions as Record<string,unknown>[]).some(item=>record(item.source)&&item.source.provider==='partytyme')) throw new Error('Backup show state is incomplete or incompatible.');
   if (version < 7 && (state.points !== undefined ||
@@ -142,8 +143,14 @@ export async function createShowSnapshot(source: DatabaseSync, destination: stri
   try {
     inspectShowSnapshot(source);
     await backup(source, temporary);
-    const copy = new DatabaseSync(temporary, { readOnly: true });
-    try { inspectShowSnapshot(copy); } finally { copy.close(); }
+    const copy = new DatabaseSync(temporary);
+    try {
+      // A WAL-mode source leaves that mode in the backup header. Switch the
+      // private copy to a standalone file before validation and publication.
+      const mode = copy.prepare('PRAGMA journal_mode = DELETE').get();
+      if (mode?.journal_mode !== 'delete') throw new Error('Could not make the backup a standalone database.');
+      inspectShowSnapshot(copy);
+    } finally { copy.close(); }
     const file = await open(temporary, 'r+'); try { await file.sync(); } finally { await file.close(); }
     hooks.beforePublish?.();
     await absent(`${target}-wal`); await absent(`${target}-shm`); await absent(`${target}-journal`);

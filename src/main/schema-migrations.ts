@@ -98,11 +98,26 @@ function validateExisting(db: DatabaseSync, complete: boolean, schemaVersion = S
   }
 }
 
-/** Read-only compatibility check for a standalone versioned backup. */
-export function inspectShowSchema(db: DatabaseSync): void {
-  const current = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-  if (current < 1 || current > SHOW_SCHEMA_VERSION) throw new Error('Backup schema is unsupported.');
-  validateExisting(db, true, current);
+function schemaVersion(db: DatabaseSync): number {
+  return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+}
+
+/** Read-only compatibility check for a standalone backup, including legacy upgrades. */
+export function inspectShowSchema(db: DatabaseSync): number {
+  const current = schemaVersion(db);
+  if (current < 0 || current > SHOW_SCHEMA_VERSION) throw new Error('Backup schema is unsupported.');
+  validateExisting(db, current > 0, current);
+  return current;
+}
+
+/** Called while holding the writer reservation that covers snapshot and migration. */
+export function inspectShowUpgrade(db: DatabaseSync): { current: number; hasShow: boolean } {
+  const current = schemaVersion(db);
+  if (!Number.isSafeInteger(current) || current < 0 || current > SHOW_SCHEMA_VERSION)
+    throw new Error('This show database was created by a newer or unsupported version.');
+  validateExisting(db, current > 0, current);
+  const hasStateTable = !!db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'show_state'").get();
+  return { current, hasShow: hasStateTable && !!db.prepare('SELECT 1 FROM show_state WHERE id = 1').get() };
 }
 
 /** Baseline the existing unversioned schema in one transaction, preserving all rows. */
@@ -111,10 +126,15 @@ export function migrateShowSchema(db: DatabaseSync): void {
   // rows and the version marker must either all commit or all roll back.
   db.exec('BEGIN IMMEDIATE');
   try {
-    const current = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
-    if (!Number.isSafeInteger(current) || current < 0 || current > SHOW_SCHEMA_VERSION) throw new Error('This show database was created by a newer or unsupported version.');
-    validateExisting(db, current > 0, current);
-    if (current === SHOW_SCHEMA_VERSION) { db.exec('COMMIT'); return; }
+    migrateReservedShowSchema(db, inspectShowUpgrade(db).current);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+
+/** Apply a validated migration inside the caller's existing writer transaction. */
+export function migrateReservedShowSchema(db: DatabaseSync, current: number): void {
+    if (!db.isTransaction) throw new Error('Show schema changes require a write transaction.');
+    if (current === SHOW_SCHEMA_VERSION) return;
     db.exec(`CREATE TABLE IF NOT EXISTS show_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), generation TEXT NOT NULL, position REAL NOT NULL);
@@ -152,6 +172,4 @@ export function migrateShowSchema(db: DatabaseSync): void {
     // resulting table layout before declaring this migration successful.
     validateExisting(db, true);
     db.exec(`PRAGMA user_version = ${SHOW_SCHEMA_VERSION}`);
-    db.exec('COMMIT');
-  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
