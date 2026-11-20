@@ -24,6 +24,14 @@ GitHub Actions built and staged all 0.10.8 packages. GitHub blocked the final pu
 
 The downloaded 0.10.8 Windows ZIP matched its published checksum and passed launch, restart without autoplay, profile retention and bundled CLI help. The application suite passed 1,236 tests with eight skips on a clean rerun. All 29 release tests passed, including a disposable signature check of the downloaded Android bundle. All 10 planning tests passed, and the 17 changed pages of the generated Word specification passed visual review. Store signing and physical device checks remain open.
 
+## 0.10.9 local delivery
+
+Built Windows x64 Setup and ZIP and Linux x64 Debian and AppImage from clean source `04ccf4a2b06a69b0b079c5a22327fac057cc74a0`. Windows launch, restart, bundled Help, and CLI registration in temporary registry keys passed. The Windows setup ran through the compiler. Full setup and uninstall on Windows remain open. A disposable Debian 12 install verified the package-owned `/usr/bin/tpv-karaoke-booth`, PATH invocation, and purge. Linux AppImage launch and restart passed headlessly.
+
+The application suite passed 1,243 tests with eight skips. All 29 release tests and 10 planning tests passed. Native menu rehearsal checked video, folder and paired-lyrics pickers, Preferences, search, font persistence, host and singer fullscreen independence, and the offline documentation window. Visual review covered all 16 changed Word pages and three changed mockup pages.
+
+GitHub blocked the release workflow before planning, citing an account payment or spending-limit issue. The public download page still serves 0.10.8. The publisher accepts both new PKGs when the complete 0.10.9 build is available. Native macOS build and installation remain open. [0.10.9 build status](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44786846939)
+
 ## Official release gates
 
 - [ ] Install, upgrade and uninstall on supported Windows, Linux and macOS systems. Verify signing and launch behavior for the intended public distribution and cover both supported Mac architectures. Rehearse rollback against a copy of a representative show. [Handoff](handoff.md)

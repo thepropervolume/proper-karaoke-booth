@@ -17,6 +17,8 @@ CI uses `BOOTH_RELEASE_SSH_KEY` and the pinned `BOOTH_RELEASE_KNOWN_HOST`. The k
 
 The hosted set contains Windows x64 setup and portable ZIP; Linux x64 AppImage and Debian packages; macOS Apple silicon and Intel DMG/ZIP files; Android debug APK and unsigned Android App Bundle; an unsigned iOS Simulator ZIP; generated Word specification and mockup PDF; plus checksums and build verification receipts. The Android App Bundle is not a directly installable APK. The iOS Simulator ZIP runs only in the simulator and cannot be installed on an iPhone. Physical-device testing, production signing and store distribution remain separate work. Windows/Linux desktop builds are unsigned; macOS uses ad hoc signing without notarization.
 
+Starting with 0.10.9, the macOS build adds an unsigned PKG for each supported architecture. The verifier expands each PKG and checks the app bundle, CLI launcher, and installer preflight before staging it. The publisher requires both PKGs for 0.10.9 and later and accepts the earlier file list for older release manifests.
+
 Each retained release has an immutable page under `/vVERSION/`. The `/latest/` aliases redirect to the latest verified files and are suitable for sharing stable download links. Only the five newest release download sets are retained on Linode. When a release ages out, its installers are removed, but the release history and available notes and metadata remain accessible. A version-specific installer URL for a pruned release no longer downloads a file.
 
 Stable links remove the version component from a verified artifact name. They issue a temporary HTTP redirect to its current `/vVERSION/` file. Examples:
