@@ -33,7 +33,7 @@ Object.assign(env, { TPV_MENU_QA_PROFILE: profile, TPV_MENU_QA_REPO: repo, TPV_M
   APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'), XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data') });
 const args = [bootstrap, `--user-data-dir=${profile}`, '--mute-audio', '--disable-background-networking'];
 if (process.env.TPV_TEST_NO_SANDBOX === '1') args.push('--no-sandbox');
-let app;
+let app, phase = 'launch';
 try {
   app = await electron.launch({ executablePath: require('electron'), args, cwd: repo, env });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), await realpath(profile));
@@ -53,6 +53,7 @@ try {
     return true;
   }, { labels, enabled });
 
+  phase = 'Preferences menu';
   await click(['Playback', 'Play / Pause'], false);
   await click(['Edit', 'Preferences…']);
   const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true });
@@ -61,14 +62,26 @@ try {
   await preferences.getByRole('button', { name: 'Cancel', exact: true }).click();
   for (const [label, title] of [['Import Video…', 'Import local MP4 files'], ['Import Folder…', 'Import MP4 folder'],
     ['Import CD+G / LRC / ZIP…', 'Import CD+G, LRC or ZIP']]) {
+    phase = label;
     await click(['File', label]);
     await check((_electron, title) => globalThis.menuQa.dialogs.includes(title), title);
+    // Picker entry is recorded before its cancellation reaches the renderer.
+    await host.evaluate(async () => {
+      await window.tpv.getState();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    await waitForHostCondition(host, () => {
+      const button = document.querySelector('button[aria-label="Import Video File"]');
+      return !!button && !button.disabled;
+    });
   }
+  phase = 'Find Song and font';
   await click(['Edit', 'Find Song']);
   await waitForHostCondition(host, () => document.activeElement?.getAttribute('aria-label') === 'Search library');
   await click(['View', 'Font', 'Serif']);
   await waitForHostCondition(host, async () => (await window.tpv.getSettings()).settings.fontFamily === 'serif');
 
+  phase = 'host and singer fullscreen';
   await click(['Window', 'Toggle Singer Display Full Screen'], false);
   await click(['Window', 'Open Singer Display']);
   await windowState('/display/index.html', false);
@@ -90,6 +103,7 @@ try {
   await host.keyboard.press('F11');
   await windowState('/renderer/index.html', false);
 
+  phase = 'Help window';
   const openHelp = app.waitForEvent('window', { predicate: page => page !== host && page !== singer });
   await click(['Help', 'Documentation']);
   const help = await openHelp;
@@ -106,6 +120,10 @@ try {
   assert.deepEqual(await app.evaluate(() => globalThis.menuQa.external), []);
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
   console.log('Native File, Edit, font, separate host/singer fullscreen, F11 and offline Help menu passed.');
+} catch (error) {
+  const child = app?.process();
+  console.error(`Menu rehearsal failed during ${phase}. Electron exit status: ${child?.exitCode ?? child?.signalCode ?? 'unavailable'}.`);
+  throw error;
 } finally {
   if (app) await app.close().catch(() => {});
   const actual = await realpath(temp);
