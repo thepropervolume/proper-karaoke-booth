@@ -24,4 +24,6 @@ The relay bundle SHA-256 is `7290530b7457c1e18af8297cf58294bc362f8e260d69acf1323
 
 Updated the relay, singer page, and mobile web app from `b002f4470cb7ffde1b53f090fc7b0f2b34a17201` after checking for active rooms. HTTPS reported 0.10.7 and the current mobile entry matched the tested build. The updated guest page recognizes desktop singer holds. Release tests cover hold behavior through the relay protocol, and an isolated Windows rehearsal verified the host flow after a schema 7→8 upgrade.
 
+Fresh public Full Host and Piggyback browser profiles verified the 0.10.7 asset, guest admission, a synthetic local-track request and its withdrawal without autoplay. Closing the disposable room revoked guest access, and its lookup reported offline.
+
 The relay bundle SHA-256 is `1b4e079610958e0bd1616efef1c2548e7af20321569ecfbff31c0f0566d9eb0e`. The rollback copy is `/var/backups/tpv-queue-relay/code/queue-0107.lmMpclWL`.
