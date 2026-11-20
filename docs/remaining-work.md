@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 20 November 2026 for **0.10.6 development**, with 1.0.0 reserved for the official release. The public download page lists each published build and source commit. Earlier milestone sections retain their original evidence. [Booth downloads](https://release.thepropervolume.com/booth/) · [Release acceptance checklist](release-acceptance.md)
+Updated 20 November 2026 for **0.10.7 development**, with 1.0.0 reserved for the official release. The public download page lists each published build and source commit. Earlier milestones retain their original evidence. [Booth downloads](https://release.thepropervolume.com/booth/) · [Release acceptance checklist](release-acceptance.md)
 
 ## Next work in priority order
 

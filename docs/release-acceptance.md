@@ -1,6 +1,6 @@
 # Release acceptance
 
-Use this checklist for the **0.10.6 development release** and again before approving **1.0.0**. Record the version, commit, platform or phone model, test result, and any issue for each check. Use a disposable show or a verified copy of an existing show. Keep account and room credentials out of test evidence.
+Use this checklist for development releases and before approving **1.0.0**. Record the version, commit, platform or phone model, test result and issues. Use a disposable show or a verified copy of an existing show. Keep account and room credentials out of test evidence.
 
 ## Development release checks
 
@@ -11,6 +11,8 @@ Use this checklist for the **0.10.6 development release** and again before appro
 - [ ] Open a disposable remote room. From a separate singer browser, find a song past the first search page, request it, and withdraw it before playback starts. Check reconnect, permission denial, private screen access and revocation when the host ends the room. Confirm the production room count before any relay restart. [Singer guide](singer-guide.md) · [Screen sharing](singer-screen-sharing.md)
 
 Isolated Windows Electron rehearsals already covered backup restore, moved-file relinking, and timed LRC playback with persisted pause and seek. Published 0.10.5 browser tests covered remote search pagination, withdrawal and private viewer revocation. GitHub Actions compiled an unsigned iPhone device app and built and verified an Android release bundle using a disposable key. Repeat the affected cases on the exact candidate build and record hardware results separately. [Remaining work and build evidence](remaining-work.md)
+
+The published 0.10.6 Windows ZIP was verified against its manifest, launched and restarted with a disposable profile, and passed portable CLI checks using JSON on stdin. Separate public Chromium profiles verified 0.10.6 mobile storage, photo approval and room closure. The 0.10.7 source rehearsal covered playlist transfer between two profiles and a host-only hold across a schema 7→8 upgrade.
 
 ## Official release gates
 

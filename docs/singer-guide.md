@@ -1,4 +1,4 @@
-# Singer Guide for Development Version 0.10.6
+# Singer Guide for Development Version 0.10.7
 
 If the host puts you on hold, your queued songs stay in rotation and you become eligible again when the host selects **Return now**. Ask the host when you are ready to return. A timed break still ends automatically.
 
