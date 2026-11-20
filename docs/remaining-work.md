@@ -1,8 +1,19 @@
 # Remaining work
 
-Updated 19 November 2026 for source development 0.10.3. This is the working checklist for the karaoke application; an unchecked item means work or verification remains, and a partial implementation is called out explicitly. Priorities follow the owner's requests: dependable show operation and native subscription playback. Time and complexity are not estimates. The broader historical comparison is in [feature review](feature-review.md); [handoff](handoff.md) and [product specification](product-specification.md) explain decisions and current boundaries.
+Updated 20 November 2026 for **0.10.4 source in development** (0.10.3 public), with 1.0.0 reserved for the official release. The [public download page](https://release.thepropervolume.com/booth/) lists 0.10.3 installers and planning documents. It identifies source commit `efd9ba1`; later commits document and verify the relay deployment and must not be assumed to be in those installers. Earlier milestone sections below preserve their original evidence and unfinished work as recorded at the time, not a second current-status dashboard.
 
-The current source milestone is 0.10.3; version 0.10.2 is published on the Linode release site. Dated release sections below retain historical evidence. Native desktop KaraFun and Party Tyme consumer playback are experimental. The mobile web app supports Full Host/Piggyback modes and YouTube playback. The unified release workflow stages Android debug and iOS Simulator builds directly on Linode; neither this nor successful compilation establishes physical-device or store readiness. Installation and physical-show gates remain separate. See the installation, mobile and source-status guides.
+## Next work in priority order
+
+1. **Reliable show operation:** complete actionable playback/import errors and guided relinking, finish the safe in-app backup restore flow and verify automatic upgrade protection on installed systems, and continue recovery tests for crashes, devices and displays. A restore-to-new-file primitive exists; it is not yet the in-app restore workflow.
+2. **Catalog freshness and acquisition:** reconcile the unknown previous Karaoke Nerds refresh history before enabling a single centrally coordinated, at-most-daily feed refresh. Add monitored recovery, indexed queries and load tests; implement reviewed brand/artist bulk caching and newest-version selection. The recovered shared snapshot is searchable, but its upstream freshness is unknown.
+3. **Provider playback:** harden the experimental desktop KaraFun and Party Tyme flows for account expiry, network failure, caching and recovery. Complete real-account and provider-specific integration for Sunfly and Stingray when partner access and playback rights exist; metadata search alone is not playback.
+4. **Queue, library and controls:** finish named-show lifecycle, refine approximate waits after real-show checks, support broader group performance, folder rescan/duplicate review and reversible metadata editing. The filename-template preview/apply workflow already exists; embedded-tag precedence and optional write-back remain open. Complete the authenticated local API/CLI beyond its current read/navigation subset without another database writer.
+5. **Singers, mobile and accessibility:** complete persistent profiles/roles, privacy and data controls, accessibility coverage, verify mobile playback-position recovery on real devices, and add mobile paid-source integration. Singer-room search already searches the host's saved library, not every provider's entire catalog.
+6. **Release readiness:** verify desktop installers/upgrades/removal, signing and CLI setup; define and implement a safe update path, then close documented QA findings. Published Android debug/unsigned and iOS Simulator artifacts are development builds, not production app-store or iPhone installers.
+
+**Hardware and owner/provider gates:** verify audible output, bumper/applause levels, codecs, external display loss/recovery and complete provider songs on the actual show equipment; verify Android/iOS on real phones and venue networks. Obtain provider-approved partnership, distribution, territory, venue and offline terms and fees. Signing/notarization, store access and commercial policy decisions remain separate from code completion. A successful build or synthetic rehearsal does not establish those results.
+
+**Live remote status:** on 20 November the public queue relay and mobile/singer assets were updated to 0.10.3, and the private visual-only viewer was deployed at `booth.thepropervolume.com`. A disposable public room verified a result past the first 50, matching-page pagination, legacy request compatibility and room closure; Chrome verified the singer search, and synthetic frames verified private viewer access and revocation. The published 0.10.3 desktop build copies the compatible queue-host viewer URL; later source also supports the booth hostname. Actual show capture, phones, venue-network performance and long sessions still need testing. See the [deployment record](../deploy/queue-relay/DEPLOYMENT-2026-11-20-SCREEN-SEARCH.md).
 
 ## 0.10.3 Source Controls
 
@@ -32,13 +43,14 @@ The current source milestone is 0.10.3; version 0.10.2 is published on the Linod
 - [ ] Complete physical Android/iOS playback, local-network permissions/discovery, prolonged background/reconnect and output checks.
 - [ ] Add mobile KaraFun/paid-provider account playback, key/tempo, vocal stems and native casting.
 - [ ] Add stable app signing, real-device distribution and store/TestFlight releases; Android debug and iOS Simulator artifacts are published directly to Linode, avoiding the former GitHub artifact quota problem.
-- [ ] Retain exact mobile playback position across app/mode restarts, show aggregate storage usage and synchronize personal accounts/favorites.
+- [x] Restore a mobile Full Host request paused at its last saved playback checkpoint across app/mode restarts; YouTube positions are approximate.
+- [ ] Verify mobile resume on real Android/iOS devices and under abrupt termination; show aggregate storage usage and synchronize personal accounts/favorites.
 
 ## Current foundation
 
-The host can import local MP4s, search and locally edit artist/title, create singers and queue requests, use FIFO or simple fair rotation, play to a separate singer window, back up the show database, change settings and configure common action shortcuts through the grouped editor. The host has implemented shared catalog connection/preferences and offline query-cache support, with public read-only shared discovery on fresh installs and a legacy local-catalog mode when shared discovery is disabled. Live Windows HTTPS status/search and durable saved-query offline reuse have passed. The deployed dedicated MySQL service is seeded from the recovered 64,261-record raw snapshot, but upstream freshness/retirement state is unknown and refresh is disabled; supported YouTube recordings can be downloaded permanently with yt-dlp and played through the normal local library and queue; a separate preview also remains available. MP3/CDG and single-pair ZIP import convert to managed MP4 through external FFmpeg. An opt-in experimental local-network singer page and an offline synthetic native singer preview exist. None of these establish that the app is ready for a live show. Experimental native KaraFun is now connected; other paid-provider playback remains pending. Windows 0.4.2 adds verified public KaraFun/Party Tyme metadata search plus profile-configured Sunfly/Stingray adapters; those results remain search-only. Linux 0.4.2 AppImage/Debian package checks also passed.
+The desktop host supports local MP4 and converted MP3/CDG imports, unified search, singer and queue management, playback on a singer display, configurable inter-song gaps and bumper audio, backups, settings and shortcuts. It also has experimental KaraFun and Party Tyme consumer playback, with platform and licensing limits detailed in [source status](source-status.md). Karaoke Nerds discovery uses a dedicated shared MySQL catalog and saved-query offline cache; the recovered 64,261-record snapshot has unknown upstream freshness and automatic refresh remains disabled. Individual YouTube/catalog requests can be acquired with yt-dlp. The mobile web app supports Full Host and Piggyback modes. These capabilities and synthetic checks do not by themselves establish live-show readiness.
 
-## 0.7.1 Current Update
+## 0.7.1 Historical Update
 
 - [x] Allow host/staff requests without a singer across local and connected queue sources, storing null rather than a fake singer.
 - [x] Let the host assign, change or clear a waiting/prepared request while preserving its staged identity and manual slot; retain remote singer ownership boundaries.
@@ -47,7 +59,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Replace the inner search focus glow with one unclipped outer ring across Day/Night and all accents.
 - [ ] Record 0.7.1 package receipts and platform-specific verification separately from earlier releases.
 
-## 0.7.0 Delivered Update
+## 0.7.0 Historical Update
 
 - [x] Put an always-visible global search above Workspace; focus it from every host area using the assigned shortcut.
 - [x] Combine local, Karaoke Nerds, YouTube, native KaraFun and public metadata into one dominant readable list with shared context menus and capability-disabled actions.
@@ -86,14 +98,14 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Verify Sunfly account, change-feed pagination, subscription and withdrawal handling with a real approved account.
 - [ ] Integrate Sunfly encrypted media, license acquisition/expiry, SDK playback and required play reporting.
 - [ ] Investigate Party Tyme and Karaoke Cloud Pro vendor access, account compatibility and complete costs; evaluate each additional service against the owner's under-$20/month per-service target.
-- [ ] Add provider-specific login/logout, connection state, credential redaction, subscription eligibility and clear renewal/outage errors.
+- [ ] Extend provider-specific login/logout, connection state, credential redaction, subscription eligibility and clear renewal/outage errors to supported services; experimental KaraFun and Party Tyme flows already implement parts of this.
 - [ ] Keep app billing and each provider subscription separate; do not assume one grants another.
 - [x] Unify local and Karaoke Nerds search in Song Library, preserving exact recording identity, host edits, filters and offline local results.
 - [x] Queue a catalog recording with singer selection in one host-authority operation; approved requests dispatch serial yt-dlp acquisition without autoplay.
 - [x] Put public service metadata in the unified library list and Sources, with names/colors, bounded results/errors and explicit search-only status.
 - [ ] Verify real Sunfly and Stingray developer catalog access; their desktop metadata adapters are fixture-tested only.
-- [x] Make connected native KaraFun and eligible YouTube/Karaoke Nerds results requestable through normal singer/rotation rules; other paid playback remains pending.
-- [x] Route experimental native KaraFun and acquired YouTube/Karaoke Nerds to the normal display/output/transport; extend to other approved playable providers when available.
+- [x] Make connected native KaraFun and eligible YouTube/Karaoke Nerds results requestable through normal singer/rotation rules. Party Tyme consumer playback was added later; other paid playback remains pending.
+- [x] Route experimental native KaraFun, Party Tyme consumer recordings and acquired YouTube/Karaoke Nerds to the normal display/output/transport; other approved providers remain separate work.
 - [ ] Handle expired links, network failure, provider unavailability, rate limits, ads and unsupported or region-blocked recordings without consuming a singer's turn.
 - [x] Add permanent yt-dlp downloads, progress/cancel/retry, exact-ID hash-verified reuse and local/offline playback through the regular queue and singer display.
 - [ ] Verify the installed application identity, visible-player and referrer requirements for the separate distributed YouTube preview; queued performances now use downloaded local media.
@@ -108,7 +120,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Verify an actual catalog result download, playback and recovery on the host show system.
 - [ ] Locate/reconcile every old Karaoke Nerds refresher and its last attempt/retirement state. The original SQLite/cooldown database was not recovered; lastAttempt/lastSuccess/sqlite_retired_ms remain null and refresh stays disabled.
 - [ ] Schedule a single centrally coordinated refresh at most once per day, including failed attempts and recovery after restart; keep the provider key out of clients.
-- [ ] Expand desktop network/recovery checks beyond the passed live status/search and saved-query offline test, and define any future remote singer catalog access; singers currently use only the host library.
+- [ ] Expand desktop network/recovery checks beyond the passed live status/search and saved-query offline test. Remote singers can search the host’s saved, policy-filtered library; provider-wide singer catalog access is still unimplemented.
 - [ ] Improve brand mapping and review unknown/conflicting brand codes, creator track codes, and alternate video versions.
 - [x] Download individually selected YouTube/catalog videos and attach completed media to the same library identity without overwriting other recordings.
 - [ ] Connect the host's opt-in brand/artist selection to reviewed automatic/bulk yt-dlp jobs; individual downloads are available.
@@ -128,7 +140,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [ ] Add restore from a checked backup; existing backup does not restore or include media/settings.
 - [x] Add versioned SQLite migrations (current schema 7) with upgrade, interrupted-write and rollback tests.
-- [ ] Add automatic pre-upgrade backup and verify upgrade/rollback on installed show systems.
+- [x] Add a validated, standalone pre-migration show backup before opening an older database; stop the upgrade if the backup fails.
+- [ ] Verify pre-migration backup, upgrade and rollback on installed show systems and real filesystems; in-app restore remains separate.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.
 - [ ] Extend the existing isolated end-to-end queue, transport, import and shortcut rehearsals to real device loss, display recovery and supported platform combinations.
 - [x] Build Linux x64 AppImage and Debian packages, verify dependency metadata and payload, and pass final AppImage launch/restart under an isolated virtual display.
@@ -143,7 +156,8 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Add timed singer absence and return (1–60 minutes), one future request while away, authenticated self-service and tested return fairness.
 - [ ] Add indefinite singer hold and skip-turn controls.
 - [x] Show current singer, upcoming singers and the ordered queue.
-- [ ] Add clearly approximate wait times with assumptions and unavailable states.
+- [x] Show approximate host-queue waits using current remaining playback, configured gaps and four minutes per preceding ready song; withhold uncertain estimates and explain assumptions.
+- [ ] Verify estimates under real show conditions and refine them with trustworthy durations when available.
 - [x] Support a two-singer duet on one request, including host-editable duet metadata and points.
 - [ ] Support groups with more than two performers and verify full duet/group workflows on physical show equipment.
 - [ ] Start, save, restore and end named shows without losing or accidentally replaying requests.
@@ -151,7 +165,7 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Export matching recorded singer/song history to CSV with spreadsheet-formula protection and no overwrite.
 - [ ] Add folder watching/rescanning and review for duplicates, moved media and alternate versions.
 - [ ] Verify and improve search, scrolling, filtering and sorting with a genuinely large library.
-- [ ] Add batch metadata review/editing, source provenance, reversible overrides and safe rescan preview.
+- [ ] Extend batch metadata review/editing with source provenance, reversible overrides and broader rescan preview. A filename-template before/after preview with explicit selection and changed-since-preview protection is already implemented.
 - [ ] Read embedded metadata and allow the host to set precedence among tags, filename templates and manual overrides.
 - [ ] Offer an explicit per-edit choice to update supported embedded artist/title tags; default local-only and retain local edits if writing fails.
 - [ ] Finish playlist/favorite management, singer organization and playlist import/export; current playlists/history are partial.
@@ -189,10 +203,10 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 - [x] Deploy the experimental authenticated MySQL-backed internet relay with role-limited singer operations, bounded requests, rate limits and same-generation recovery.
 - [ ] Complete production load/abuse testing, real-phone/venue checks, owner provisioning and broader account/privacy administration.
 - [ ] Test existing local-network singer access with real phones, certificate trust, venue DNS/firewalls and network interruptions.
-- [ ] Connect the native singer preview to the real service with secure credentials, admission, browsing, requests and withdrawal.
+- [ ] Verify the existing native-wrapper Piggyback room flow on physical devices, including secure admission, browsing, requests and withdrawal.
 - [ ] Test native Android/iOS devices, lifecycle, secure storage, certificate validation and uncertain request outcomes.
 - [ ] Add personal-data view/export/delete controls and protect host-only notes.
-- [ ] Add configurable content policy, rating visibility and explicit-content restrictions at discovery, request and playback boundaries.
+- [ ] Extend configurable content policy and rating visibility across sources and roles. Existing age and blacklist restrictions already apply at supported discovery, request and playback boundaries.
 - [ ] Add privacy-preserving diagnostic logs and error reporting; redact credentials, private notes, account data and media paths.
 - [ ] Add localization and accessible date, time and text formatting.
 - [ ] Define product subscription plans, billing, device limits, offline grants and recovery without cutting off an active show.
@@ -208,7 +222,11 @@ The host can import local MP4s, search and locally edit artist/title, create sin
 
 Provider notes: [provider research](provider-research.md), [Sunfly operator](sunfly-account-status.md), [Stingray operator](stingray-catalog.md), and [Karaoke Nerds catalog](karaokenerds-catalog.md). Current automated tests and prior muted rehearsals are useful evidence, but they do not replace real hardware, real accounts or production verification.
 
-## 0.3.0 verification follow-up
+## Historical milestone follow-up
+
+These dated checkpoints record what was known at each milestone. For current priorities, use the sections above.
+
+### 0.3.0 verification follow-up
 
 - [x] Owner reports the 0.2.0 installers ran successfully; exact platforms were not specified.
 - [x] Provide four TPV lettermarks plus vintage microphone/volume and darker headphones options, all with light/dark editions in the preferred palette; later vintage/cursive exploration led to the approved Velvet Script selection.
