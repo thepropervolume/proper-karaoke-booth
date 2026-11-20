@@ -142,8 +142,12 @@ export class Store<T> {
 
   /** Host library search receives filenames only, never private directories. */
   mediaFilenames(): Record<string, string> {
-    const rows = this.db.prepare('SELECT id, path FROM media').all() as { id: string; path: string }[];
-    return Object.fromEntries(rows.map(row => [row.id, row.path.split(/[\\/]/).pop() ?? '']));
+    return Object.fromEntries(this.mediaLocations().map(row => [row.id, row.path.split(/[\\/]/).pop() ?? '']));
+  }
+
+  /** Saved locations for main-process storage checks. */
+  mediaLocations(): Pick<StoredMedia, 'id' | 'path'>[] {
+    return this.db.prepare('SELECT id, path FROM media').all() as Pick<StoredMedia, 'id' | 'path'>[];
   }
 
   media(id: string): StoredMedia | undefined {

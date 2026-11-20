@@ -1,0 +1,12 @@
+.settings-dialog.media-review {
+  width: min(46rem, calc(100vw - 2rem));
+  > * + * { margin-top: .7rem; }
+  .media-review__list {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 0;
+    overflow-y: auto;
+    max-height: 48dvh;
+  }
+  .media-review__list button { flex: none; }
+}

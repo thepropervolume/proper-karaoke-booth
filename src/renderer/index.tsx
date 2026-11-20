@@ -9,6 +9,8 @@ import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, singerAvailable, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
 import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/settings';
 import type { LibraryFilter, LibrarySort } from '../domain/library-view';
+import type { MediaReviewResult } from '../domain/media-review';
+import { MediaReviewDialog } from './MediaReviewDialog';
 import { unifiedLibrary, type LibrarySearchVersion } from '../domain/unified-library';
 import type { CatalogRequestTrack } from '../domain/catalog-request';
 import { recordingKeyFor, type RecordingKey, type SongRating } from '../domain/song-rating';
@@ -175,6 +177,8 @@ declare global {
       onBumperState: (callback: (state: BumperInfo) => void) => () => void;
       revealMedia: (versionId: string) => Promise<void>;
       relinkMedia: (versionId: string) => Promise<Result>;
+      reviewMedia: (id: string) => Promise<MediaReviewResult>;
+      cancelMediaReview: (id: string) => Promise<void>;
       remote: HostRemoteBridge;
       internetSessions: InternetSessionBridge;
     };
@@ -240,6 +244,7 @@ function App() {
   const [backupCleanup, setBackupCleanup] = useState(false);
   const [importPickerBusy, setImportPickerBusy] = useState(false);
   const [relinkBusy, setRelinkBusy] = useState(false);
+  const [mediaReviewOpen, setMediaReviewOpen] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [panelSizes, setPanelSizes] = useState<HostPanelSizes>({ ...DEFAULT_HOST_PANEL_SIZES });
   const panelSizesRef = useRef(panelSizes), panelSaveSequence = useRef(0), panelSavePending = useRef(false);
@@ -289,9 +294,9 @@ function App() {
   useEffect(() => { setRatings({}); setCanRateByKey({}); setRatingDialog(null); ++ratingOpenSequence.current; }, [settings.ratingProfileConfigFile]);
   useEffect(() => {
     ++ratingOpenSequence.current;
-    if (settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion) setRatingDialog(null);
-  }, [screen, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion]);
-  useEffect(() => { void window.tpv.updateMenuContext({ busy, modal: !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || ratingDialog) }).catch(() => {}); }, [busy, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, !!ratingDialog]);
+    if (settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || mediaReviewOpen) setRatingDialog(null);
+  }, [screen, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, mediaReviewOpen]);
+  useEffect(() => { void window.tpv.updateMenuContext({ busy, modal: !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || ratingDialog || mediaReviewOpen) }).catch(() => {}); }, [busy, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, !!ratingDialog, mediaReviewOpen]);
 
   useEffect(() => {
     let deadline = state?.nextStartAtMs ?? 0;
@@ -493,11 +498,19 @@ function App() {
     catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
     finally { setImportPickerBusy(false); }
   };
-  const relinkSong = async (id: string) => {
-    if (relinkBusy) return;
+  const relinkSong = async (id: string): Promise<Result> => {
+    if (relinkBusy) return { ok: false, error: 'Finish the current file operation first.' };
     setRelinkBusy(true); setNotice('Checking the selected file…');
-    try { const result = await window.tpv.relinkMedia(id); if (result.ok && !result.cancelled) setFilenameRefresh(value => value + 1); setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.', result.ok ? 'success' : 'error'); }
-    catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
+    try {
+      const result = await window.tpv.relinkMedia(id);
+      if (result.ok && !result.cancelled) setFilenameRefresh(value => value + 1);
+      setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.', result.ok ? 'success' : 'error');
+      return result;
+    } catch (reason) {
+      const error = reason instanceof Error ? reason.message : String(reason);
+      setNotice(error, 'error');
+      return { ok: false, error };
+    }
     finally { setRelinkBusy(false); }
   };
   const playPause = async () => {
@@ -592,6 +605,7 @@ function App() {
     return window.tpv.seek({ generation: timeline.generation, position: Math.max(0, Math.min(timeline.duration - .001, timeline.position + seconds)) });
   });
   actionHandler.current = action => {
+    if (mediaReviewOpen && action !== 'stop') return;
     if (action === 'search') { focusSearch(); return; }
     if (action === 'preferences' || action === 'keybindings' || action === 'appearance' || action === 'accentColor') {
       openPreferences(action === 'keybindings' ? 'keyboard-shortcuts' : action === 'appearance' || action === 'accentColor' ? 'appearance' : 'general'); return;
@@ -711,6 +725,7 @@ function App() {
           <div className="library-meta">
             <span role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</span>
             {(search.trim() || libraryFilter !== 'all') && <button type="button" className="link" onClick={() => { setSearch(''); setLibraryFilter('all'); }}>Clear search and filters</button>}
+            {settings.sourceVisibility.local && <button type="button" className="link" disabled={busy || relinkBusy} onClick={() => setMediaReviewOpen(true)}>Review Missing Files</button>}
           </div>
           <div className="search-service-status" role="status">
             {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || partyTymeSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
@@ -881,6 +896,7 @@ function App() {
       setNotice(queueNotice || (settings.autoApprove ? 'Song added to the queue.' : 'Request submitted for review.'), 'success');
     }} />}
     {playlistVersion && state && <AddToPlaylistDialog song={playlistVersion} singers={state.singers.filter(s => !s.archived)} playlists={collections.playlists} onClose={() => setPlaylistVersion(null)} onSave={async playlistId => { if (!await mutateCollections({ type: 'add', playlistId, versionId: playlistVersion.id })) throw new Error('Could not add the song.'); }} />}
+    {mediaReviewOpen && <MediaReviewDialog bridge={window.tpv} versions={versions} onRelink={relinkSong} onClose={() => setMediaReviewOpen(false)} />}
   </div>;
 }
 

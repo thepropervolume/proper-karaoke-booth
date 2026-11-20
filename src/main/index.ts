@@ -43,18 +43,19 @@ import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { InternetQueueClient } from './internet-queue-client';
 import { createSingerStaticHandler } from './remote-static';
 import { fingerprintMedia, mediaIdentityMatches, verifyAndRelinkMedia, type MediaIdentity } from './media-verification';
+import { MediaReview } from './media-review';
 import { startPolicyError } from './playback-policy';
 import { openVerifiedMediaFile, VerifiedMediaFileError } from './verified-media-file';
 import { cachedVideoIdentityMatches, inspectCachedVideo, sameStoredMedia } from './cached-video-integrity';
-import { mediaErrorDetail } from './media-error-message';
+import { mediaErrorDetail, mediaVerificationDetail } from './media-error-message';
 import { mediaRange } from './media-range';
 import { ImportJob } from './import-job';
 import { CdgImport } from './cdg-import';
-import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
 import { LYRIC_FILE_EXTENSIONS } from './lrc-import';
+import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
 import { ShowBackup } from './show-backup';
-import { HistoryExport } from './history-export';
 import { InvalidShowBackupError, prepareShowRestore, type PreparedShowRestore, type RestoreResult } from './show-restore';
+import { HistoryExport } from './history-export';
 import { DisplayFullscreen } from './display-fullscreen';
 import { selectSingerDisplay } from './display-placement';
 import { readSingerDisplayId, writeSingerDisplayId } from './display-placement-store';
@@ -222,7 +223,6 @@ const showBackup = new ShowBackup(async () => {
     filters: [{ name: 'Show backup', extensions: ['sqlite'] }], properties: ['showOverwriteConfirmation'] });
   return result.canceled ? null : result.filePath ?? null;
 }, destination => store.backup(destination));
-const historyExport = new HistoryExport(() => store.collections.snapshot().history, async () => {
 let restoreRequest: Promise<RestoreResult> | null = null;
 let restorePending: PreparedShowRestore | null = null;
 function restoreBusy(): boolean {
@@ -265,12 +265,14 @@ function chooseShowRestore(): Promise<RestoreResult> {
   restoreRequest = operation().finally(() => { restoreRequest = null; });
   return restoreRequest;
 }
+const historyExport = new HistoryExport(() => store.collections.snapshot().history, async () => {
   if (!host || host.isDestroyed() || shuttingDown) return null;
   const result = await dialog.showSaveDialog(host, { title: 'Export shown history to a new CSV file', defaultPath: 'karaoke-history.csv',
     filters: [{ name: 'CSV file', extensions: ['csv'] }], properties: ['showOverwriteConfirmation'] });
   return shuttingDown || !host || host.isDestroyed() || result.canceled ? null : result.filePath ?? null;
 });
 const mediaChecks = new Set<AbortController>();
+const mediaReview = new MediaReview();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
 let youtubeDownloads: YouTubeDownloads | null = null;
@@ -969,7 +971,7 @@ function playable(command: Command): string | null {
   if (streaming?.provider === 'partytyme' && partyTymeAccount?.status().state !== 'connected') return 'Sign in to Party Tyme in Sources before playing this recording.';
   if (streaming?.provider === 'youtube' && !media) return null;
   if (streaming?.provider === 'youtube' && media && !existsSync(media.path)) return 'The saved video is missing. Right-click the library song and choose Download Video / Retry, or relink the original file.';
-  if (!media || !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
+  if (!media || streaming && !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
 }
 async function executeHostCommand(command: Command, transportOwned = false, observedRecovery?: { generation: string; revision: number } | null, automaticCurrent?: () => boolean, transportCurrent?: () => boolean): Promise<{ ok: boolean; error?: string }> {
@@ -1037,7 +1039,7 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
           if (checked.fingerprint !== media.fingerprint) return { ok: false, error: 'The song file has changed since import. Relink the original file before playing.' };
           sourceIdentity = checked.identity;
         }
-      } catch { return { ok: false, error: current() ? 'The song file could not be verified. Check its location or relink the original file.' : 'Playback was cancelled.' }; }
+      } catch (error) { return { ok: false, error: current() ? mediaVerificationDetail(error, command.type === 'resume') : 'Playback was cancelled.' }; }
       finally { mediaChecks.delete(check); }
       if (shuttingDown || !await mediaIdentityMatches(media.path, sourceIdentity)) return { ok: false, error: 'The song file changed during verification. Check or relink the original file.' };
       if (!current()) return { ok: false, error: 'Playback was cancelled.' };
@@ -1196,7 +1198,7 @@ async function serveMedia(request: Request): Promise<Response> {
       if (reportedMediaError !== playback.generationId && host && !host.isDestroyed()) {
         reportedMediaError = playback.generationId;
         void dialog.showMessageBox(host, { type: 'warning', message: 'Song source changed or became unavailable',
-          detail: 'Playback was paused without advancing the turn. Restore the original file, or Stop and use Relink File in Song Library. Reopen the singer display before resuming.' }).catch(() => {});
+          detail: 'Playback was paused without advancing the turn. Restore access to the original file and press Play. To relink a moved file, Stop to return the request to the queue, then choose Relink File in Song Library.' }).catch(() => {});
       }
       return new Response(null, { status: 409 });
     }
@@ -1341,13 +1343,29 @@ else {
     } finally { cdgPickerOpen = false; }
   });
   ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
+  ipcMain.handle('host:restore-show', event => { guardHost(event.sender.id); return chooseShowRestore(); });
   ipcMain.handle('host:backup-cleanup', event => { guardHost(event.sender.id); return showBackup.retryCleanup(); });
+  const reviewableMedia = () => new Set(settings.sourceVisibility.local ? visibleVersions(state, settings).filter(version => !version.source).map(version => version.id) : []);
+  ipcMain.handle('host:review-media', async (event, id: unknown) => {
+    guardHost(event.sender.id);
+    if (shuttingDown || typeof id !== 'string' || id.length !== 36) return { status: 'cancelled' };
+    const result = await mediaReview.scan(id, () => {
+      const permitted = reviewableMedia();
+      return store.mediaLocations().filter(file => permitted.has(file.id));
+    });
+    if (result.status !== 'completed') return result;
+    const permitted = reviewableMedia();
+    return { ...result, issues: result.issues.filter(issue => permitted.has(issue.versionId)) };
+  });
+  ipcMain.handle('host:cancel-media-review', (event, id: unknown) => {
+    guardHost(event.sender.id);
+    if (typeof id === 'string' && id.length === 36) mediaReview.cancel(id);
+  });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
   ipcMain.handle('host:preview-filename-metadata', event => {
     guardHost(event.sender.id);
     return previewMetadata(state.versions, id => store.media(id), settings.metadataTemplates, settings.metadataFormat);
   });
-  ipcMain.handle('host:restore-show', event => { guardHost(event.sender.id); return chooseShowRestore(); });
   singerCapture.start();
   await reconcileSingerScreen();
   ipcMain.handle('host:singer-preview', event => { guardHost(event.sender.id); return previewFrame(); });
@@ -1925,7 +1943,10 @@ else {
       }
       return;
     }
-    if (!playbackTimeline.snapshot().seeking && typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0) store.checkpoint(state.playback.generationId, value.position);
+    // A failed decoder can reset currentTime to zero. Preserve the last
+    // durable checkpoint in that case so Retry does not restart the song.
+    if (!playbackTimeline.snapshot().seeking && typeof value.position === 'number' && Number.isFinite(value.position) && value.position >= 0 &&
+        (value.type !== 'error' || value.position > 0)) store.checkpoint(state.playback.generationId, value.position);
     if (value.type === 'ended' && state.playback.status === 'playing') perform({ type: 'complete', generationId: state.playback.generationId }, 'engine');
     else if (value.type === 'output-error') {
       showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false;
@@ -1935,10 +1956,11 @@ else {
       if (host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Audio output needs attention', detail: typeof value.message === 'string' ? value.message.slice(0, 500) : 'Choose the output in Preferences and resume when ready.' });
     } else if (value.type === 'error') {
       showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false;
+      verifiedPlayback = null;
       pauseForOutputLoss();
       if (reportedMediaError !== value.generation && host && !host.isDestroyed()) {
         reportedMediaError = value.generation as string;
-        void dialog.showMessageBox(host, { type: 'warning', message: 'Song playback paused', detail: mediaErrorDetail(value.code) });
+        void dialog.showMessageBox(host, { type: 'warning', message: 'Song playback paused', detail: mediaErrorDetail(value.code) }).catch(() => {});
       }
     }
   });
@@ -1964,12 +1986,6 @@ else {
 }
 let quitStarted = false, quitReady = false, storeClosed = false;
 function closeStore(): void { if (!storeClosed && store) { storeClosed = true; communityBrowser?.close(); store.close(); } }
-function waitForImport(job: ImportJob): Promise<boolean> {
-  return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(false), 5000);
-    void job.wait().then(() => { clearTimeout(timer); resolve(true); }, () => { clearTimeout(timer); resolve(false); });
-  });
-}
 async function finishShowRestore(candidate: PreparedShowRestore): Promise<void> {
   try { await candidate.install(destination => store.backupBeforeRestore(destination), closeStore); }
   catch {
@@ -1984,12 +2000,18 @@ async function stopBeforeRestore(): Promise<void> {
   await restorePending.discard().catch(() => {});
   dialog.showErrorBox('Show restore stopped', 'Booth could not finish shutting down. Your current show is unchanged. Reopen Booth, end any active sessions and imports, then try again.');
 }
+function waitForImport(job: ImportJob): Promise<boolean> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    void job.wait().then(() => { clearTimeout(timer); resolve(true); }, () => { clearTimeout(timer); resolve(false); });
+  });
+}
 // Fence new work before awaiting shutdown. Otherwise a late download, seek or
 // guest reply could still mutate the show after its database connection closes.
 app.on('before-quit', event => {
   automaticBumper.close(); showAdvance.close();
   cancelPendingPlayback();
-  shuttingDown = true; for (const check of mediaChecks) check.abort();
+  shuttingDown = true; mediaReview.cancel(); for (const check of mediaChecks) check.abort();
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.setAudioMuted(true);
   if (display && !display.isDestroyed() && displayReady) display.webContents.send('display:state', { playback: null, next: [], logo: null, shortcuts, bumperVolume: 0 });
   const nativePending = (karaFunHost?.needsShutdownWait() ?? false) || (partyTymeHost?.needsShutdownWait() ?? false);
@@ -2021,20 +2043,20 @@ app.on('before-quit', event => {
   quitStarted = true;
   const importShutdown = importing && importJob ? waitForImport(importJob) : Promise.resolve(true);
   const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
+  const boundedRestore = restoreRequest ? Promise.race([restoreRequest.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]) : Promise.resolve(true);
   const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedControl = Promise.race([controlShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
   void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl,singerScreenShutdown,boundedRestore]).then(async ([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean,controlClean,singerScreenClean,restoreClean]) => {
     if (!singerScreenClean || !controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean || !restoreClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
-  const boundedRestore = restoreRequest ? Promise.race([restoreRequest.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]) : Promise.resolve(true);
       // without closing it underneath that work; the OS releases it on exit.
+      await stopBeforeRestore();
       app.exit(1); return;
     }
-    quitReady = true; closeStore(); app.quit();
-  }).catch(async () => { await stopBeforeRestore(); app.exit(1); });
-});
-      await stopBeforeRestore();
     const restore = restorePending;
     restorePending = null;
     if (restore) await finishShowRestore(restore);
+    quitReady = true; closeStore(); app.quit();
+  }).catch(async () => { await stopBeforeRestore(); app.exit(1); });
+});

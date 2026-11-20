@@ -98,6 +98,8 @@ contextBridge.exposeInMainWorld('tpv', {
   mutateCollections: (action: unknown) => ipcRenderer.invoke('host:mutate-collections', action),
   revealMedia: (versionId: string) => ipcRenderer.invoke('host:reveal-media', versionId),
   relinkMedia: (versionId: string) => ipcRenderer.invoke('host:relink-media', versionId),
+  reviewMedia: (id: string) => ipcRenderer.invoke('host:review-media', id),
+  cancelMediaReview: (id: string) => ipcRenderer.invoke('host:cancel-media-review', id),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
   searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
   getProviderCatalogStatus: () => ipcRenderer.invoke('host:provider-catalog-status'),

@@ -145,7 +145,7 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Verify audible output and routing through the connected sound device/mixer, including loss, reconnect and safe rerouting.
 - [ ] Verify the singer display on the external monitor, moving windows, fullscreen, disconnect/reconnect and deliberate recovery.
 - [ ] Make missing files, unreadable media, unsupported codecs and decode errors explain how to recover while retaining the singer's turn.
-- [ ] Add a guided missing/moved-file review and relinking workflow; current relinking accepts an exact original only.
+- [x] Add a guided missing/moved-file review and keep exact-copy relinking. The isolated Windows rehearsal found a moved file, rejected a different video, and played the relinked original.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [x] Restore from a checked backup after native confirmation, with automatic current-show rollback and a silent restart. Windows Electron verified both cancellation and successful restore.
 - [x] Add versioned SQLite migrations (current schema 7) with upgrade, interrupted-write and rollback tests.
