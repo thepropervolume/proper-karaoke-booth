@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MobileShow, newMobileShow, restoreMobileShow, type MobileShowState } from '../../src/mobile/show';
 import { MobileRoomAuthority, mobileSecret } from '../../src/mobile/room-authority';
+import { MobilePhotoReview, type GuestPhotoPreview } from '../../src/mobile/photo-review';
 import { validMobilePhoto } from '../../src/mobile/photo-validation';
 
 const jpegHeader = (width: number, height: number) => 'data:image/jpeg;base64,' + Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0, 8, 8, height >> 8, height & 255, width >> 8, width & 255, 1, 0xff, 0xd9]).toString('base64');
@@ -67,9 +68,11 @@ test('late audio acknowledgements cannot transfer points to another song', async
   assert.equal(options(show, 'singer_lead')?.points, 18);
 });
 
-test('mobile room binds applause and photo to its authenticated guest and retries once', async () => {
+test('mobile room binds applause and moderated photo delivery to its authenticated guest and retries once', async () => {
   const show = new MobileShow(); show.add([song]); let played = 0, shown = 0;
-  const authority = new MobileRoomAuthority(show, () => {}, async () => { played++; }, async () => { shown++; });
+  const previews: GuestPhotoPreview[] = [];
+  const review = new MobilePhotoReview(preview => { if (preview) previews.push(preview); }, async () => { shown++; }, () => {}, () => true);
+  const authority = new MobileRoomAuthority(show, () => {}, async () => { played++; }, review);
   const call = (operation: string, payload: unknown, session?: string) => ({ requestId: crypto.randomUUID(), operation, payload, ...(session ? { session } : {}) });
   const join = authority.dispatch(call('join', { joinId: mobileSecret(), resumeSecret: mobileSecret(), name: 'Guest', expectedRevision: show.revision }));
   const { session, singerId } = join.body as { session: string; singerId: string };
@@ -83,6 +86,16 @@ test('mobile room binds applause and photo to its authenticated guest and retrie
   const photo = { commandId: mobileSecret(), ...info, expectedRevision: 0, dataUrl: jpegHeader(100, 100) };
   const photoFirst = await authority.dispatchPhoto(call('photo', { command: photo }, session));
   const photoAgain = await authority.dispatchPhoto(call('photo', { command: photo }, session));
-  assert.deepEqual(photoFirst.body, photoAgain.body); assert.equal(shown, 1); assert.equal(options(show, singerId)?.points, 24);
+  assert.deepEqual(photoFirst.body, photoAgain.body); assert.equal(previews.length, 1); assert.equal(shown, 0); assert.equal(options(show, singerId)?.points, 0);
+  const conflict = await authority.dispatchPhoto(call('photo', { command: { ...photo, dataUrl: jpegHeader(50, 50) } }, session));
+  assert.equal(conflict.status, 400);
+  await review.approve(previews[0].id); await review.approve(previews[0].id);
+  assert.equal(shown, 1); assert.equal(options(show, singerId)?.points, 24);
+  const recovered = authority.dispatch(call('outcome', { commandId: photo.commandId }, session));
+  assert.deepEqual(recovered.body, photoFirst.body);
+  await authority.dispatchPhoto(call('photo', { command: { ...photo, commandId: mobileSecret() } }, session));
+  authority.reset();
+  await review.approve(previews[1].id);
+  assert.equal(shown, 1); assert.equal(options(show, singerId)?.points, 24);
   assert.equal(JSON.stringify(show.state()).includes(photo.dataUrl), false);
 });

@@ -2,6 +2,7 @@ import { matchesCatalogQuery, validCatalogQuery } from '../domain/guest-catalog-
 import { MobileShow } from './show';
 import type { InternetGuestCall, InternetGuestReply } from '../main/internet-queue-client';
 import { validMobilePhoto } from './photo-validation';
+import type { MobilePhotoReview } from './photo-review';
 type Guest = { id: string; name: string; session: string; resume: string };
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown, max: number, empty = false): v is string => typeof v === 'string' && v.length <= max && (empty || !!v.trim()) && !/[\x00-\x1f\x7f]/.test(v);
@@ -16,19 +17,19 @@ export class MobileRoomAuthority {
   private joins = new Map<string, { name: string; resume: string; guest: Guest }>();
   private receipts = new Map<string, { payload: string; body: Record<string, unknown> }>();
   private applausePending = new Map<string, { payload: string; promise: Promise<Record<string, unknown>> }>();
-  private photoPending = new Map<string, { payload: string; promise: Promise<Record<string, unknown>> }>();
   private epoch = crypto.randomUUID();
   get missing(): { singer: string; title: string; artist: string }[] { return this.show.state().missingRequests; }
   constructor(private show: MobileShow, private changed: () => void = () => {}, private playApplause?: () => Promise<void>,
-    private displayPhoto?: (dataUrl: string) => Promise<void>) {}
+    private photoReview?: Pick<MobilePhotoReview, 'submit' | 'clear'>) {}
   reset(): void {
     this.show.forgetGuestAvailability([...this.guests.values()].map(guest => guest.id));
-    this.guests.clear(); this.joins.clear(); this.receipts.clear(); this.applausePending.clear(); this.photoPending.clear(); this.epoch = crypto.randomUUID();
+    this.guests.clear(); this.joins.clear(); this.receipts.clear(); this.applausePending.clear(); this.epoch = crypto.randomUUID();
+    this.photoReview?.clear();
   }
   async dispatchPhoto(call: InternetGuestCall): Promise<InternetGuestReply> {
     const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
     const guest = this.guests.get(call.session ?? ''), payload = call.payload;
-    if (!guest || !this.displayPhoto || !record(payload) || !exact(payload, ['command']) || !record(payload.command)) return denied();
+    if (!guest || !this.photoReview || !record(payload) || !exact(payload, ['command']) || !record(payload.command)) return denied();
     const c = payload.command;
     if (!exact(c, ['commandId', 'showId', 'hostEpoch', 'expectedRevision', 'dataUrl']) || !id(c.commandId) ||
       c.showId !== this.show.showId || c.hostEpoch !== this.epoch || !Number.isSafeInteger(c.expectedRevision) || !validMobilePhoto(c.dataUrl)) return denied();
@@ -39,26 +40,19 @@ export class MobileRoomAuthority {
     const key = `${guest.id}:${c.commandId}`, serialized = JSON.stringify(['photo', c.commandId, c.showId, c.hostEpoch, c.expectedRevision, hash]);
     const old = this.receipts.get(key);
     if (old) return old.payload === serialized ? { requestId: call.requestId, status: 200, body: old.body } : denied();
-    const pending = this.photoPending.get(key);
-    if (pending && pending.payload !== serialized) return denied();
-    if (!pending && (this.receipts.size >= 10000 || this.photoPending.size)) return denied();
+    if (this.receipts.size >= 10000) return denied();
     const epoch = this.epoch, session = guest.session;
-    const promise = pending?.promise ?? (async () => {
-      let result: Record<string, unknown>;
-      try {
-        await this.displayPhoto!(dataUrl);
-        if (this.epoch !== epoch || this.guests.get(session) !== guest) throw new Error('This room is no longer available.');
-        this.show.awardPhoto(guest.id, `remote-photo:${key}`);
-        result = { ok: true, revision: this.show.revision };
-      } catch (error) {
-        result = { ok: false, code: 'PHOTO', message: error instanceof Error ? error.message : 'Photo is unavailable.', revision: this.show.revision };
-      }
-      if (this.epoch === epoch && this.guests.get(session) === guest) this.receipts.set(key, { payload: serialized, body: result });
-      return result;
-    })();
-    if (!pending) this.photoPending.set(key, { payload: serialized, promise });
-    try { return { requestId: call.requestId, status: 200, body: await promise }; }
-    finally { if (this.photoPending.get(key)?.promise === promise) this.photoPending.delete(key); }
+    let result: Record<string, unknown>;
+    try {
+      this.photoReview.submit(guest.name, dataUrl, () => {
+        if (this.epoch === epoch && this.guests.get(session) === guest) this.show.awardPhoto(guest.id, `remote-photo:${key}`);
+      });
+      result = { ok: true, revision: this.show.revision };
+    } catch (error) {
+      result = { ok: false, code: 'PHOTO', message: error instanceof Error ? error.message : 'Photo is unavailable.', revision: this.show.revision };
+    }
+    this.receipts.set(key, { payload: serialized, body: result });
+    return { requestId: call.requestId, status: 200, body: result };
   }
   async dispatchApplause(call: InternetGuestCall): Promise<InternetGuestReply> {
     const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
@@ -127,7 +121,7 @@ export class MobileRoomAuthority {
             unavailableUntilMs: this.show.unavailableUntil(guest.id), serverNowMs: Date.now(),
             ...(this.playApplause ? { applauseEnabled: state.applauseEnabled, applauseCredits: account?.credits ?? 3,
               ...(state.pointsEnabled ? { points: account?.points ?? 0 } : {}) } : {}),
-            ...(this.displayPhoto ? { photoEnabled: true } : {}) };
+            ...(this.photoReview ? { photoEnabled: true } : {}) };
         } else if (call.operation === 'catalog' && (exact(p, ['offset', 'limit']) || exact(p, ['offset', 'limit', 'query'])) && (p.query === undefined || validCatalogQuery(p.query)) && Number.isSafeInteger(p.offset) && (p.offset as number) >= 0 && Number.isInteger(p.limit) && (p.limit as number) >= 1 && (p.limit as number) <= 100) body = catalog(p.offset as number, p.limit as number, p.query as string | undefined);
         else if (call.operation === 'outcome' && exact(p, ['commandId']) && id(p.commandId)) body = this.receipts.get(`${guest.id}:${p.commandId}`)?.body ?? null;
         else if (exact(p, ['command']) && record(p.command) && id(p.command.commandId)) {

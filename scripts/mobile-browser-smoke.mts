@@ -62,16 +62,27 @@ try {
   await guest.getByLabel('Your name').fill('Alice'); await guest.getByRole('button', { name: 'Join the show', exact: true }).click();
   const photoBytes = await guest.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 8; const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#601ce9'; ctx.fillRect(0, 0, 8, 8); return canvas.toDataURL('image/png').split(',')[1]; });
   await guest.getByLabel('JPEG or PNG').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: Buffer.from(photoBytes, 'base64') });
+  await host.bringToFront();
   await guest.getByRole('button', { name: 'Send to singer display' }).click();
   await host.bringToFront();
-  try { await host.locator('.mobile-photo-overlay img').waitFor({ timeout: 7000 }); }
-  catch (error) { console.error('Guest photo state:', await guest.locator('body').innerText(), 'Host state:', await host.locator('body').innerText()); throw error; }
-  await host.getByText(/Alice.*24 points/).waitFor();
-  checks.push('Authenticated guest photo displays and scores under the actual production CSP.');
+  await guest.getByText('Photo sent to the host.', { exact: true }).waitFor();
+  const photoReview = host.getByRole('complementary', { name: 'Photo from Alice' });
+  await photoReview.waitFor();
+  assert.equal(await photoReview.locator('img').count(), 0);
+  assert.equal(await host.locator('.mobile-photo-overlay img').count(), 0);
+  await host.getByText(/Alice · 0 points/).waitFor();
   await guest.getByRole('button', { name: 'Request', exact: true }).click();
   await guest.getByText('Queued', { exact: true }).waitFor();
   await host.getByRole('button', { name: /^Queue \(2\)$/ }).waitFor();
-  checks.push('Nearby suggestion requires consent; real singer client queues into phone host.');
+  await host.getByText(/Alice · 18 points/).waitFor();
+  checks.push('Nearby suggestion requires consent; the singer can queue a song while photo review is pending.');
+  await photoReview.getByRole('button', { name: 'Review Photo', exact: true }).click();
+  assert.equal(await host.locator('.mobile-photo-overlay img').count(), 0);
+  await photoReview.getByRole('button', { name: 'Show Photo', exact: true }).click();
+  try { await host.locator('.mobile-photo-overlay img').waitFor({ timeout: 7000 }); }
+  catch (error) { console.error('Guest photo state:', await guest.locator('body').innerText(), 'Host state:', await host.locator('body').innerText()); throw error; }
+  await host.getByText(/Alice · 42 points/).waitFor();
+  checks.push('Authenticated guest photo is acknowledged immediately, then displays and scores only after host review and approval under the production CSP.');
   await host.getByRole('button', { name: /^Queue \(2\)$/ }).click();
   await host.getByRole('button', { name: 'Move Wonderwall up', exact: true }).last().click();
   assert.match(await host.locator('.mobile-queue li').first().innerText(), /Alice/);

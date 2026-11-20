@@ -14,6 +14,8 @@ The 0.10.3 mobile web assets are deployed. An earlier 0.9.2 browser rehearsal ch
 
 **Storage** shows how much space imported video copies use on this device. Search by song, artist, or filename and remove unused copies after confirmation. The app protects copies used by the queue or player and keeps the song’s details, favorites, and history. Choose **Relink** to restore playback or let guests request that song again. The original file remains available wherever you saved it.
 
+When a singer sends a photo, the mobile host sees a review notice. Tap **Review Photo**, then **Show Photo** or **Discard**. One photo can wait for up to 45 seconds. An approved photo earns points after it appears. Closing the room or leaving the active host view clears the photo.
+
 To invite singers, choose **Room**, keep or edit its address and tap **Open Room**. Share the singer link; anyone with the active link can join. Temporary phone-host capabilities stay in memory and expire within 12 hours. Closing a room revokes its guests. Interrupted openings offer **Retry Open** or **Close Pending Room**; unresolved closure must be retried before opening another room. A closed/crashed host becomes unavailable to guests rather than replaying commands later. Reloading a phone host requires a new room; an old address may remain reserved until expiry.
 
 ## Piggyback Mode

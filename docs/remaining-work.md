@@ -51,6 +51,7 @@ The public queue relay and mobile/singer assets are at 0.10.5. The private visua
 - [ ] Add stable app signing, real-device distribution and store/TestFlight releases; Android debug and iOS Simulator artifacts are published directly to Linode, avoiding the former GitHub artifact quota problem.
 - [x] Restore a mobile Full Host request paused at its last saved playback checkpoint across app/mode restarts; YouTube positions are approximate.
 - [x] Show aggregate and per-copy video storage in Full Host, with search and safe removal of unused copies. Verified through reload and relink in Chromium.
+- [x] Add mobile Full Host approval before guest photos appear on screen. Chromium verified sender receipt, uninterrupted queue requests, explicit approval and a single points award.
 - [ ] Verify mobile resume and storage on real Android/iOS devices and under abrupt termination. Personal account and favorites sync remain open.
 
 ## Current foundation

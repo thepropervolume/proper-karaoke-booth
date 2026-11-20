@@ -1,5 +1,6 @@
 import { QueueDialog } from './QueueDialog';
 import { DeviceStorage } from './DeviceStorage';
+import { PhotoReviewPanel } from './PhotoReviewPanel';
 import { version as appVersion } from '../../package.json';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MobileShow, type MobileSong, type MobileShowState } from './show';
@@ -12,6 +13,7 @@ import { createApplausePlayer } from '../display/applause-player';
 import { applauseClips } from '../display/applause-clips';
 import { MobileHostedRoom, type MobileRoomStatus } from './hosted-room';
 import { MobileRoomAuthority } from './room-authority';
+import { MobilePhotoReview, type GuestPhotoPreview } from './photo-review';
 import { advertiseMobileRoom, discoverRooms, roomSlug, stopMobileDiscovery, type DiscoveredRoom } from './discovery';
 import { SingerClient } from '../remote/client';
 import { SingerPage } from '../remote/SingerPage';
@@ -31,6 +33,7 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   const [roomStatus, setRoomStatus] = useState<MobileRoomStatus>({ state: 'stopped', link: '', message: '' }), [roomBusy, setRoomBusy] = useState(false), [discoverable, setDiscoverable] = useState(true);
   const [roomName, setRoomName] = useState(state.name), [slug, setSlug] = useState(`karaoke-${crypto.randomUUID().slice(0, 8)}`);
   const [photo, setPhoto] = useState<{ id: string; dataUrl: string } | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<GuestPhotoPreview | null>(null);
   const [deviceCopies, setDeviceCopies] = useState<LocalVideoCopy[] | null>(null);
   const [mediaLoadFailed, setMediaLoadFailed] = useState(false), [mediaScan, setMediaScan] = useState(0), [mediaBusy, setMediaBusy] = useState(false);
   const mediaWrite = useRef(false);
@@ -46,13 +49,22 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   }, [model]);
   const applausePlayer = useMemo(() => createApplausePlayer(applauseClips), []);
   const activePhoto = useRef<{ id: string; timer: ReturnType<typeof setTimeout>; resolve?: () => void; reject?: (error: Error) => void } | null>(null);
+  const canReviewPhotos = useCallback(() => alive.current && modeRef.current === 'host' && !document.fullscreenElement && !document.hidden, []);
+  const clearShownPhoto = useCallback(() => {
+    const shown = activePhoto.current;
+    if (!shown) return;
+    activePhoto.current = null;
+    clearTimeout(shown.timer);
+    if (alive.current) setPhoto(null);
+    shown.reject?.(new Error('The host screen is no longer available.'));
+  }, []);
   const playApplause = useCallback(async () => {
     if (modeRef.current !== 'host') throw new Error('The host screen is not available.');
     const result = await applausePlayer.play({ id: crypto.randomUUID(), volume: model.state().volume, outputId: '' });
     if (!result.ok) throw new Error(result.error || 'Could not play applause.');
   }, [applausePlayer, model]);
   const displayPhoto = useCallback((dataUrl: string) => new Promise<void>((resolve, reject) => {
-    if (!alive.current || modeRef.current !== 'host' || document.fullscreenElement) { reject(new Error('The host screen is not available for photos.')); return; }
+    if (!canReviewPhotos()) { reject(new Error('The host screen is not available for photos.')); return; }
     if (activePhoto.current) { reject(new Error('A photo is already being shown.')); return; }
     const id = crypto.randomUUID();
     const timer = setTimeout(() => {
@@ -60,8 +72,10 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     }, 8000);
     activePhoto.current = { id, timer, resolve, reject };
     setPhoto({ id, dataUrl });
-  }), []);
-  const authority = useMemo(() => new MobileRoomAuthority(model, () => setState(model.state()), playApplause, displayPhoto), [model, playApplause, displayPhoto]);
+  }), [canReviewPhotos]);
+  const photoReview = useMemo(() => new MobilePhotoReview(preview => { if (alive.current) setPhotoPreview(preview); }, displayPhoto,
+    clearShownPhoto, canReviewPhotos), [displayPhoto, clearShownPhoto, canReviewPhotos]);
+  const authority = useMemo(() => new MobileRoomAuthority(model, () => setState(model.state()), playApplause, photoReview), [model, playApplause, photoReview]);
   const room = useMemo(() => new MobileHostedRoom(authority, status => { if (alive.current) setRoomStatus(status); }, () => discoveryEnabled.current, async () => { await pendingSaves.current; }), [authority]);
   useEffect(() => {
     alive.current = true;
@@ -69,10 +83,13 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
       const value = model.state(); setState(value);
       if (writable) { pendingSaves.current = pendingSaves.current.catch(() => {}).then(() => saveMobileShow(value)); void pendingSaves.current.catch(error => { if (alive.current) { setPlaying(false); setError(errorText(error)); } }); }
     });
-    const pause = () => { if (document.hidden) { checkpointNow(); setPlaying(false); setNotice('Playback paused while the app is in the background.'); } };
+    const pause = () => { if (document.hidden) { photoReview.clear(); checkpointNow(); setPlaying(false); setNotice('Playback paused while the app is in the background.'); } };
+    const fullscreen = () => { if (document.fullscreenElement) photoReview.clear(); };
     document.addEventListener('visibilitychange', pause);
-    return () => { alive.current = false; unsubscribe(); document.removeEventListener('visibilitychange', pause); applausePlayer.stop(); const photo = activePhoto.current; activePhoto.current = null; if (photo) { clearTimeout(photo.timer); photo.reject?.(new Error('The host screen closed.')); } void room.stop().catch(() => {}); void stopMobileDiscovery().catch(() => {}); };
-  }, [model, room, writable, pendingSaves, checkpointNow]);
+    document.addEventListener('fullscreenchange', fullscreen);
+    return () => { alive.current = false; unsubscribe(); document.removeEventListener('visibilitychange', pause); document.removeEventListener('fullscreenchange', fullscreen); applausePlayer.stop(); photoReview.clear(); void room.stop().catch(() => {}); void stopMobileDiscovery().catch(() => {}); };
+  }, [model, room, writable, pendingSaves, checkpointNow, photoReview]);
+  useEffect(() => { if (mode !== 'host') photoReview.clear(); }, [mode, photoReview]);
   useEffect(() => { setElapsed(state.positionSeconds); setDuration(0); lastCheckpointAt.current = 0; }, [state.currentId]);
   useEffect(() => {
     if (!writable) return;
@@ -219,6 +236,8 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
       {mode !== 'choose' && <button type="button" onClick={() => { checkpointNow(); setMode('choose'); setPlaying(false); }}>Switch Mode</button>}</header>
     {error && <div className="mobile-alert" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
     {notice && <div className="mobile-notice" role="status">{notice}<button aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}
+    {mode === 'host' && photoPreview && <PhotoReviewPanel key={photoPreview.id} preview={photoPreview} displaying={!!photo}
+      onShow={() => void run(() => photoReview.approve(photoPreview.id))} onDiscard={() => photoReview.discard(photoPreview.id)} />}
     {mode !== 'guest' && nearby.length > 0 && <section className="mobile-nearby" aria-label="Detected karaoke rooms"><h2>Join a Karaoke Room?</h2>
       <p>{nearby.some(r => r.method === 'bonjour') ? 'A host is advertising on your local network.' : 'These hosts share your internet connection; confirm the room with your host.'}</p>
       {nearby.map(found => <div key={found.instance}><strong>{found.name}</strong><button disabled={joining} onClick={() => void join(found.slug)}>Join Room</button><button aria-label={`Dismiss ${found.name}`} onClick={() => { dismissedRooms.current.add(found.instance); setNearby(rows => rows.filter(r => r.instance !== found.instance)); }}>×</button></div>)}</section>}

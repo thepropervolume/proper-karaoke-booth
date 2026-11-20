@@ -234,7 +234,7 @@ export class SingerClient {
   }
   private async afterOutcome(result: Outcome, listener: (view: GuestView) => void, kind: 'song' | 'missing' | 'withdraw' | 'availability' | 'applause' | 'photo'): Promise<void> {
     this.emit(listener, { uncertain: false, retryAvailable: false });
-    const success = kind === 'photo' ? 'Photo sent to the singer display.' : kind === 'applause' ? 'Applause sent.' : kind === 'availability' ? 'Availability updated.' : kind === 'missing' ? 'Missing-song request sent to the host.' : kind === 'withdraw' ? 'Request withdrawn.' : 'Request received.';
+    const success = kind === 'photo' ? 'Photo sent to the host.' : kind === 'applause' ? 'Applause sent.' : kind === 'availability' ? 'Availability updated.' : kind === 'missing' ? 'Missing-song request sent to the host.' : kind === 'withdraw' ? 'Request withdrawn.' : 'Request received.';
     try { await this.loadSnapshot(listener); }
     catch { this.emit(listener, { message: result.ok ? `${success} Refresh when connected for status.` : `${result.message} Refresh when connected.` }); return; }
     this.emit(listener, { message: result.ok ? success : `${result.message} Review the refreshed list before trying again.` });
