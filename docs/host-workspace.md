@@ -96,6 +96,10 @@ To restore a show, stop playback, finish any active import or relink, and choose
 
 After moving media or restoring a show, open **Song Library → Review Missing Files**. Search the affected songs, then use **Relink File** to choose the original or an identical copy. Choose **Check Again** after reconnecting a drive. The review shows filenames without folder paths and checks saved locations for local songs that the current show permits.
 
+Under **Singers**, open a singer’s **Actions** menu and choose **Hold until returned** to let the queue continue while they are away. Their existing requests and any current performance stay in place. Only the host can choose **Return now** after an indefinite hold.
+
+To move a playlist, choose **Export Playlist** in **Singer Playlists** or **KJ Picks**. On the receiving booth, choose **Import Playlist** and review the exact matches. Confirm a new playlist for an active singer, or add the available matches to KJ Picks. Import the media separately. Export asks for a new file and keeps an existing file at the chosen location.
+
 **View → Appearance** opens appearance settings or selects System, Night or Day. **View → Choose Accent Color** selects Blue, Pink or Purple. **View → Layout** selects Standard, Wider Singer Rotation or Wide Song Library. The palette icon opens the Appearance preferences section. These choices do not interrupt a performance.
 
 ## Booth Branding and Bumper Music

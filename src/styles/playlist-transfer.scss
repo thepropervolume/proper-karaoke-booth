@@ -1,0 +1,7 @@
+.playlist-transfer {
+  margin-block: .75rem;
+  .settings-inline-help { display: flex; gap: .5rem; flex-wrap: wrap; }
+  form { display: grid; gap: .65rem; margin-top: .65rem; }
+  h3, p { margin: 0; }
+  .playlist-transfer__matches { margin: 0; padding: 0; max-height: 20rem; overflow-y: auto; list-style: none; }
+}

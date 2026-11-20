@@ -11,6 +11,7 @@ import { SINGER_ON_HOLD, timedSingerReturnAt } from '../domain/singer-availabili
 import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/settings';
 import type { LibraryFilter, LibrarySort } from '../domain/library-view';
 import type { MediaReviewResult } from '../domain/media-review';
+import type { PlaylistApplyResult, PlaylistDestination, PlaylistExportResult, PlaylistPreviewResult } from '../domain/playlist-transfer';
 import { MediaReviewDialog } from './MediaReviewDialog';
 import { unifiedLibrary, type LibrarySearchVersion } from '../domain/unified-library';
 import type { CatalogRequestTrack } from '../domain/catalog-request';
@@ -113,6 +114,11 @@ declare global {
       restoreShow: () => Promise<RestoreResult>;
       retryBackupCleanup: () => Promise<BackupResult>;
       getCollections: () => Promise<CollectionsSnapshot>;
+      exportPlaylist: (id: string) => Promise<PlaylistExportResult>;
+      previewPlaylist: () => Promise<PlaylistPreviewResult>;
+      discardPlaylistPreview: (token: string) => Promise<void>;
+      applyPlaylist: (token: string, destination: PlaylistDestination) => Promise<PlaylistApplyResult>;
+      retryPlaylistExportCleanup: () => Promise<PlaylistExportResult>;
       exportHistory: (filter: { query: string; singerId: string }) => Promise<HistoryExportResult>;
       historyExportStatus: () => Promise<{ cleanupNeeded: boolean; published: boolean }>;
       retryHistoryExportCleanup: () => Promise<HistoryExportResult>;
@@ -778,7 +784,7 @@ function App() {
           <h3>In This Show</h3><p className="muted">Timed absences expire automatically. A hold lasts until you choose Return now. Both keep existing requests and limit new arrivals to one upcoming request.</p>{state.singers.filter(s => !s.archived).map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} onHold={() => holdSinger(s.id)} removeBlocked={state.requests.some(r => ['pending', 'accepted', 'staged', 'playing'].includes(r.status) && (r.singerId === s.id || r.coSingerId === s.id))} onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
           {!state.singers.some(s => !s.archived) && <p className="empty">No singers yet.</p>}
         </>}
-        {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
+        {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} refreshCollections={async () => setCollections(await window.tpv.getCollections())} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
       </>}
     </main>
     <PanelSeparator className="queue-separator" label={libraryLayout ? 'Resize Host Queue Height' : 'Resize Host Queue Width'} orientation={libraryLayout ? 'horizontal' : 'vertical'} reverse value={libraryLayout ? fittedPanels.libraryQueue : Math.min(fittedPanels.queue, queueMaximum)} minimum={libraryLayout ? 100 : 260} maximum={libraryLayout ? libraryQueueMaximum : queueMaximum} defaultValue={libraryLayout ? DEFAULT_HOST_PANEL_SIZES.libraryQueue : DEFAULT_HOST_PANEL_SIZES.queue} onChange={value => changePanelSize(libraryLayout ? 'libraryQueue' : 'queue', value)} onCommit={value => commitPanelSize(libraryLayout ? 'libraryQueue' : 'queue', value)} />

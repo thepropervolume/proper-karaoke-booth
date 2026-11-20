@@ -59,6 +59,7 @@ import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
 import { ShowBackup } from './show-backup';
 import { InvalidShowBackupError, prepareShowRestore, type PreparedShowRestore, type RestoreResult } from './show-restore';
 import { HistoryExport } from './history-export';
+import { PlaylistTransfer } from './playlist-transfer';
 import { DisplayFullscreen } from './display-fullscreen';
 import { selectSingerDisplay } from './display-placement';
 import { readSingerDisplayId, writeSingerDisplayId } from './display-placement-store';
@@ -273,6 +274,41 @@ const historyExport = new HistoryExport(() => store.collections.snapshot().histo
   const result = await dialog.showSaveDialog(host, { title: 'Export shown history to a new CSV file', defaultPath: 'karaoke-history.csv',
     filters: [{ name: 'CSV file', extensions: ['csv'] }], properties: ['showOverwriteConfirmation'] });
   return shuttingDown || !host || host.isDestroyed() || result.canceled ? null : result.filePath ?? null;
+});
+const playlistTransfer = new PlaylistTransfer({
+  async pickExport() {
+    if (!host || host.isDestroyed() || shuttingDown || restorePending) return null;
+    const result = await dialog.showSaveDialog(host, { title: 'Export playlist to a new file', defaultPath: 'karaoke-playlist.tpv.json',
+      filters: [{ name: 'Booth playlist JSON', extensions: ['json'] }], properties: ['showOverwriteConfirmation'] });
+    return shuttingDown || restorePending || result.canceled ? null : result.filePath ?? null;
+  },
+  async pickImport() {
+    if (!host || host.isDestroyed() || shuttingDown || restorePending) return null;
+    const result = await dialog.showOpenDialog(host, { title: 'Preview a Booth playlist', properties: ['openFile'],
+      filters: [{ name: 'Booth playlist JSON', extensions: ['json'] }] });
+    return shuttingDown || restorePending || result.canceled ? null : result.filePaths[0] ?? null;
+  },
+  snapshot(playlistId) {
+    const playlist = store.collections.playlistForTransfer(playlistId);
+    if (!playlist) return null;
+    const visible = new Map(visibleVersions(state, settings).map(song => [song.id, song]));
+    const songs = playlist.versionIds.flatMap(id => {
+      const song = visible.get(id);
+      return song ? [{ title: song.title, artist: song.artist, recording: recordingKeyFor(song.source, store.media(id)?.fingerprint) }] : [];
+    });
+    return { file: { format: 'tpv-playlist', version: 1, name: playlist.name, songs }, omitted: playlist.versionIds.length - songs.length };
+  },
+  candidates() {
+    const fingerprints = store.mediaFingerprints();
+    const allowed = new Set(visibleVersions(state, settings).map(version => version.id));
+    return state.versions.flatMap(version => {
+      const recording = recordingKeyFor(version.source, fingerprints.get(version.id));
+      return recording ? [{ versionId: version.id, recording, allowed: allowed.has(version.id) }] : [];
+    });
+  },
+  apply(destination, versionIds) {
+    return store.importPlaylist(destination, versionIds, state.singers.filter(singer => !singer.archived), visibleVersions(state, settings));
+  },
 });
 const mediaChecks = new Set<AbortController>();
 const mediaReview = new MediaReview();
@@ -1479,6 +1515,14 @@ else {
     const error = await shell.openPath(directory); if (error) throw new Error('The download folder could not be opened.');
   });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
+  ipcMain.handle('host:export-playlist', (event, id: unknown) => { guardHost(event.sender.id); return playlistTransfer.export(id); });
+  ipcMain.handle('host:preview-playlist', event => { guardHost(event.sender.id); return playlistTransfer.preview(); });
+  ipcMain.handle('host:discard-playlist-preview', (event, token: unknown) => { guardHost(event.sender.id); playlistTransfer.discard(token); });
+  ipcMain.handle('host:apply-playlist', (event, token: unknown, destination: unknown) => {
+    guardHost(event.sender.id);
+    return shuttingDown || restorePending || restoreRequest ? { status: 'busy' } : playlistTransfer.apply(token, destination);
+  });
+  ipcMain.handle('host:playlist-export-cleanup', event => { guardHost(event.sender.id); return playlistTransfer.retryCleanup(); });
   ipcMain.handle('host:export-history', (event, filter: unknown) => { guardHost(event.sender.id); return historyExport.start(filter); });
   ipcMain.handle('host:history-export-status', event => { guardHost(event.sender.id); return historyExport.status(); });
   ipcMain.handle('host:history-export-cleanup', event => { guardHost(event.sender.id); return historyExport.retryCleanup(); });
@@ -2044,11 +2088,11 @@ app.on('before-quit', event => {
   const downloading = !!youtubeDownloads?.active() || preparingDownload || !!queuedDownloads.snapshot().activeVersionId || nativePending;
   const controlShutdown = localControl?.stop().then(() => true, () => false) ?? Promise.resolve(true);
   const downloadShutdown = Promise.race([Promise.all([queuedDownloads.shutdown(),youtubeDownloads?.shutdown(),nativeShutdown]).then(() => true, () => false), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  const wait = singerScreenWasActive || !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || !!restoreRequest || !!restorePending || historyExport.needsShutdownWait() || playbackTimeline.snapshot().seeking;
+  const wait = singerScreenWasActive || !!localControl || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait() || importing || convertingCdg || downloading || showBackup.needsShutdownWait() || !!restoreRequest || !!restorePending || historyExport.needsShutdownWait() || playlistTransfer.needsShutdownWait() || playbackTimeline.snapshot().seeking;
   const shutdown = remoteHost.shutdown();
   const internetShutdown=internetQueue?.shutdown() ?? Promise.resolve(true);
   const backupShutdown = showBackup.shutdown();
-  const historyShutdown = historyExport.shutdown();
+  const exportShutdown = Promise.all([historyExport.shutdown(), playlistTransfer.shutdown()]).then(results => results.every(Boolean));
   if (!wait) { quitReady = true; closeStore(); return; }
   event.preventDefault();
   quitStarted = true;
@@ -2056,10 +2100,10 @@ app.on('before-quit', event => {
   const boundedBackup = Promise.race([backupShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedRestore = restoreRequest ? Promise.race([restoreRequest.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]) : Promise.resolve(true);
   const boundedSeek = Promise.race([playbackTimeline.waitForSeek().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
-  const boundedHistory = Promise.race([historyShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
+  const boundedExports = Promise.race([exportShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 5000))]);
   const boundedControl = Promise.race([controlShutdown, new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000))]);
-  void Promise.all([shutdown, importShutdown, boundedBackup, boundedHistory, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl,singerScreenShutdown,boundedRestore]).then(async ([remoteClean, importClean, backupClean, historyClean, , seekClean, downloadClean,internetClean,controlClean,singerScreenClean,restoreClean]) => {
-    if (!singerScreenClean || !controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !historyClean || !seekClean || !downloadClean || !restoreClean) {
+  void Promise.all([shutdown, importShutdown, boundedBackup, boundedExports, cdgShutdown, boundedSeek, downloadShutdown,internetShutdown,boundedControl,singerScreenShutdown,boundedRestore]).then(async ([remoteClean, importClean, backupClean, exportsClean, , seekClean, downloadClean,internetClean,controlClean,singerScreenClean,restoreClean]) => {
+    if (!singerScreenClean || !controlClean || !remoteClean || !internetClean || !importClean || !backupClean || !exportsClean || !seekClean || !downloadClean || !restoreClean) {
       // Pending asynchronous room work may still hold the Store. Exit the process
       // without closing it underneath that work; the OS releases it on exit.
       await stopBeforeRestore();

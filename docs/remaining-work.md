@@ -179,7 +179,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [ ] Extend batch metadata review/editing with source provenance, reversible overrides and broader rescan preview. A filename-template before/after preview with explicit selection and changed-since-preview protection is already implemented.
 - [ ] Read embedded metadata and allow the host to set precedence among tags, filename templates and manual overrides.
 - [ ] Offer an explicit per-edit choice to update supported embedded artist/title tags; default local-only and retain local edits if writing fails.
-- [ ] Finish playlist/favorite management, singer organization and playlist import/export; current playlists/history are partial.
+- [x] Add playlist import/export with preview and exact recording matching. A two-profile Windows rehearsal matched a renamed identical file and skipped an unavailable recording.
+- [ ] Finish playlist and favorite organization, including personal accounts and cross-device sync.
 - [ ] Add genre metadata and make the genre browser functional.
 - [ ] Verify the existing standard, rotation and library layouts at small and large window sizes and keep critical controls visible.
 - [x] Validate and persist the implemented settings in editable JSON with defaults and error messages.

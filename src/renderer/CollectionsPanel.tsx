@@ -3,6 +3,7 @@ import type { CollectionsAction, CollectionsSnapshot } from '../domain/collectio
 import type { Singer, Version } from '../domain/index';
 import { historyView } from '../domain/history-view';
 import type { HistoryExportResult } from '../main/history-export';
+import { PlaylistTransferPanel } from './PlaylistTransferPanel';
 
 type Props = {
   data: CollectionsSnapshot;
@@ -11,11 +12,12 @@ type Props = {
   selectedVersionId: string;
   busy: boolean;
   mutate: (action: CollectionsAction) => Promise<boolean>;
+  refreshCollections: () => Promise<void>;
   selectVersion: (versionId: string) => void;
 };
 
 /** Host-managed lists are tied to local singer IDs. No account or sharing is implied. */
-export function CollectionsPanel({ data, singers, versions, selectedVersionId, busy, mutate, selectVersion }: Props) {
+export function CollectionsPanel({ data, singers, versions, selectedVersionId, busy, mutate, refreshCollections, selectVersion }: Props) {
   const [view, setView] = useState<'playlists' | 'kj' | 'artists' | 'genres' | 'history'>('playlists');
   const [playlistId, setPlaylistId] = useState('');
   const [playlistSearch, setPlaylistSearch] = useState('');
@@ -84,6 +86,12 @@ export function CollectionsPanel({ data, singers, versions, selectedVersionId, b
         <button key={id} type="button" aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}
     </nav>
     {(view === 'playlists' || view === 'kj') && <>
+      <PlaylistTransferPanel bridge={window.tpv} busy={busy} selected={playlist?.id} singers={singers} onImported={async id => {
+        await refreshCollections();
+        setView(id === 'kj-picks' ? 'kj' : 'playlists');
+        setPlaylistId(id);
+        setPlaylistSearch('');
+      }} />
       {view === 'playlists' && <details><summary>Create a playlist</summary><form className="inline-form" onSubmit={make}>
         <label>Singer<select value={ownerId} onChange={e => setOwnerId(e.target.value)}><option value="">Choose a singer</option>{singers.filter(s => !s.archived).map(s => <option value={s.id} key={s.id}>{s.name}</option>)}</select></label>
         <label>New playlist name<input value={name} onChange={e => setName(e.target.value)} maxLength={100} /></label>

@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
 import type { CollectionsAction, CollectionsSnapshot, HistoryEntry, Playlist, PlaylistItem } from '../domain/collections';
+import { MAX_PLAYLIST_ENTRIES, type PlaylistDestination } from '../domain/playlist-transfer';
 
 export const KJ_PICKS_ID = 'kj-picks';
 function validString(value: unknown, maximum = 500): value is string {
@@ -30,6 +32,28 @@ export class Collections {
     const items = this.db.prepare('SELECT playlist_id AS playlistId, version_id AS versionId FROM playlist_items ORDER BY rowid').all() as unknown as PlaylistItem[];
     const history = this.db.prepare('SELECT generation_id AS generationId, singer_id AS singerId, singer, version_id AS versionId, title, artist, outcome, performed_at AS at FROM performance_history ORDER BY rowid DESC').all() as unknown as HistoryEntry[];
     return { playlists: playlists.map(p => ({ ...p })), items: items.map(i => ({ ...i })), history: history.map(h => ({ ...h })) };
+  }
+
+  playlistForTransfer(id: string): { name: string; versionIds: string[] } | null {
+    const playlist = this.db.prepare('SELECT name FROM playlists WHERE id = ?').get(id) as { name: string } | undefined;
+    if (!playlist) return null;
+    const items = this.db.prepare('SELECT version_id AS versionId FROM playlist_items WHERE playlist_id = ? ORDER BY rowid').all(id) as { versionId: string }[];
+    return { name: playlist.name, versionIds: items.map(item => item.versionId) };
+  }
+
+  /** Call within Store's write transaction so a whole imported list can roll back. */
+  importMatches(destination: PlaylistDestination, versionIds: readonly string[], singers: readonly { id: string }[],
+    versions: readonly { id: string }[]): { playlistId: string; added: number } {
+    this.assertWritable();
+    const allowed = new Set(versions.map(version => version.id));
+    if (versionIds.length > MAX_PLAYLIST_ENTRIES || new Set(versionIds).size !== versionIds.length ||
+        versionIds.some(id => !validString(id) || !allowed.has(id))) throw new Error('The available songs changed. Preview the playlist again.');
+    const playlistId = destination.kind === 'kj' ? KJ_PICKS_ID : randomUUID();
+    if (destination.kind === 'singer') this.mutate({ type: 'create', id: playlistId, name: destination.name, singerId: destination.singerId }, singers, versions);
+    const add = this.db.prepare('INSERT OR IGNORE INTO playlist_items (playlist_id, version_id) VALUES (?, ?)');
+    let added = 0;
+    for (const versionId of versionIds) added += Number(add.run(playlistId, versionId).changes);
+    return { playlistId, added };
   }
 
   /** IDs must resolve in the current show; no arbitrary paths or personal data cross this boundary. */

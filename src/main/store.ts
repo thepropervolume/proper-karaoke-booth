@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { isMissingSongStatus, type MissingSongRequest, type MissingSongReview, type MissingSongStatus } from '../domain/missing-request';
 import type { HistoryEntry } from '../domain/collections';
+import type { PlaylistDestination } from '../domain/playlist-transfer';
 import type { ShowState } from '../domain';
 import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
@@ -63,16 +64,28 @@ export class Store<T> {
   // An imported version without its media row (or a completed turn without
   // its history) is an invalid partial outcome, so these share one transaction.
   save(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
-    this.assertAuthority();
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    this.writeTransaction(() => {
       const before = this.load();
       const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
       for (const item of media) putMedia.run(item.id, item.path, item.fingerprint);
       recordQueuedSongs(this.db, before, state);
       this.db.prepare('INSERT INTO show_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(JSON.stringify(state));
       if (history) this.collections.record(history);
+    });
+  }
+
+  importPlaylist(destination: PlaylistDestination, versions: readonly string[], singers: readonly { id: string }[],
+    allowed: readonly { id: string }[]): { playlistId: string; added: number } {
+    return this.writeTransaction(() => this.collections.importMatches(destination, versions, singers, allowed));
+  }
+
+  private writeTransaction<R>(write: () => R): R {
+    this.assertAuthority();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = write();
       this.db.exec('COMMIT');
+      return result;
     } catch (error) {
       try { this.db.exec('ROLLBACK'); }
       catch {
@@ -148,6 +161,12 @@ export class Store<T> {
   /** Saved locations for main-process storage checks. */
   mediaLocations(): Pick<StoredMedia, 'id' | 'path'>[] {
     return this.db.prepare('SELECT id, path FROM media').all() as Pick<StoredMedia, 'id' | 'path'>[];
+  }
+
+  /** Build a private lookup for portable recording matches without reading stored paths. */
+  mediaFingerprints(): Map<string, string> {
+    const rows = this.db.prepare('SELECT id, fingerprint FROM media').all() as Pick<StoredMedia, 'id' | 'fingerprint'>[];
+    return new Map(rows.map(row => [row.id, row.fingerprint]));
   }
 
   media(id: string): StoredMedia | undefined {
