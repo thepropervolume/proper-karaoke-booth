@@ -77,6 +77,23 @@ test('browser IndexedDB recovery, local media identity and cross-tab host owners
       assert.deepEqual(result, { replaced: 'replacement', deleted: true, other: 'other' });
       assert.deepEqual(await rawActive(first), { format: 1, name: 'Replacement' });
     });
+    await t.test('the inventory reads saved copy sizes, then reflects relinking and removal after reload', async () => {
+      const initial = await first.evaluate(async () => {
+        const storage = (window as unknown as { mobileStorage: typeof import('../../src/mobile/storage') }).mobileStorage;
+        await storage.saveLocalMedia('recording_one', new File(['video'], 'first.mp4', { type: 'video/mp4' }));
+        return storage.listLocalVideoCopies();
+      });
+      assert.deepEqual(initial, [{ id: 'recording_one', bytes: 5, fileName: 'first.mp4' }, { id: 'recording_two', bytes: 5 }]);
+      await first.evaluate(async () => {
+        const storage = (window as unknown as { mobileStorage: typeof import('../../src/mobile/storage') }).mobileStorage;
+        await storage.relinkLocalMedia('recording_one', new File(['larger-video'], 'replacement.webm', { type: 'video/webm' }));
+        await storage.deleteLocalMedia('recording_two');
+      });
+      await first.reload();
+      assert.deepEqual(await first.evaluate(async () => (window as unknown as { mobileStorage: typeof import('../../src/mobile/storage') }).mobileStorage.listLocalVideoCopies()),
+        [{ id: 'recording_one', bytes: 12, fileName: 'replacement.webm' }]);
+      assert.deepEqual(await rawActive(first), { format: 1, name: 'Replacement' });
+    });
     await t.test('another tab cannot acquire the host until release, and release is idempotent', async () => {
       const second = await context.newPage(); await second.goto(origin);
       const firstAcquired = await first.evaluate(async () => {

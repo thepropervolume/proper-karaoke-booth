@@ -1,8 +1,9 @@
 import { QueueDialog } from './QueueDialog';
+import { DeviceStorage } from './DeviceStorage';
 import { version as appVersion } from '../../package.json';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MobileShow, type MobileSong, type MobileShowState } from './show';
-import { loadMobileShow, saveLocalMedia, saveMobileShow, acquireMobileHostLock, MobileHostLockUnsupported, preserveMobileRecovery, listMobileRecoveries, readMobileRecovery, deleteLocalMedia, relinkLocalMedia } from './storage';
+import { loadMobileShow, saveLocalMedia, saveMobileShow, acquireMobileHostLock, MobileHostLockUnsupported, preserveMobileRecovery, listMobileRecoveries, readMobileRecovery, deleteLocalMedia, relinkLocalMedia, listLocalVideoCopies, type LocalVideoCopy } from './storage';
 import { Capacitor } from '@capacitor/core';
 import { parseMobileCatalog, youtubeLink } from './catalog';
 import { mobileFetch, mobileJson } from './api';
@@ -22,7 +23,7 @@ const clock = (value: number) => Number.isFinite(value) && value >= 0 ? `${Math.
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'That action could not be completed.';
 export function MobileApp({ model, writable = true, pendingSaves }: { model: MobileShow; writable?: boolean; pendingSaves: React.RefObject<Promise<unknown>> }) {
   const [state, setState] = useState<MobileShowState>(() => model.state());
-  const [mode, setMode] = useState<'choose' | 'host' | 'guest'>('choose'), [tab, setTab] = useState<'songs' | 'queue' | 'favorites' | 'history' | 'room'>('songs');
+  const [mode, setMode] = useState<'choose' | 'host' | 'guest'>('choose'), [tab, setTab] = useState<'songs' | 'queue' | 'favorites' | 'history' | 'storage' | 'room'>('songs');
   const [client, setClient] = useState<SingerClient | null>(null), [query, setQuery] = useState(''), [results, setResults] = useState<MobileSong[]>([]), [searching, setSearching] = useState(false);
   const [notice, setNotice] = useState(''), [error, setError] = useState(''), [nearby, setNearby] = useState<DiscoveredRoom[]>([]), [roomInput, setRoomInput] = useState(''), [joining, setJoining] = useState(false);
   const [queueSong, setQueueSong] = useState<MobileSong | null>(null), [youtubeUrl, setYoutubeUrl] = useState('');
@@ -30,6 +31,9 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   const [roomStatus, setRoomStatus] = useState<MobileRoomStatus>({ state: 'stopped', link: '', message: '' }), [roomBusy, setRoomBusy] = useState(false), [discoverable, setDiscoverable] = useState(true);
   const [roomName, setRoomName] = useState(state.name), [slug, setSlug] = useState(`karaoke-${crypto.randomUUID().slice(0, 8)}`);
   const [photo, setPhoto] = useState<{ id: string; dataUrl: string } | null>(null);
+  const [deviceCopies, setDeviceCopies] = useState<LocalVideoCopy[] | null>(null);
+  const [mediaLoadFailed, setMediaLoadFailed] = useState(false), [mediaScan, setMediaScan] = useState(0), [mediaBusy, setMediaBusy] = useState(false);
+  const mediaWrite = useRef(false);
   const dismissedRooms = useRef(new Set<string>()), [mediaRevision, setMediaRevision] = useState(0);
   const joinEpoch = useRef(0), modeRef = useRef(mode); modeRef.current = mode;
   const alive = useRef(true), discoveryEnabled = useRef(discoverable); discoveryEnabled.current = discoverable;
@@ -70,6 +74,17 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     return () => { alive.current = false; unsubscribe(); document.removeEventListener('visibilitychange', pause); applausePlayer.stop(); const photo = activePhoto.current; activePhoto.current = null; if (photo) { clearTimeout(photo.timer); photo.reject?.(new Error('The host screen closed.')); } void room.stop().catch(() => {}); void stopMobileDiscovery().catch(() => {}); };
   }, [model, room, writable, pendingSaves, checkpointNow]);
   useEffect(() => { setElapsed(state.positionSeconds); setDuration(0); lastCheckpointAt.current = 0; }, [state.currentId]);
+  useEffect(() => {
+    if (!writable) return;
+    let active = true;
+    setMediaLoadFailed(false);
+    void listLocalVideoCopies().then(copies => {
+      if (!active) return;
+      model.loadLocalCopies(copies.map(copy => copy.id));
+      setDeviceCopies(copies);
+    }).catch(() => { if (active) setMediaLoadFailed(true); });
+    return () => { active = false; };
+  }, [model, writable, mediaScan]);
   useEffect(() => {
     model.setPlaybackActive(mode === 'host' && playing && !gapUntil && !!state.currentId);
   }, [model, mode, playing, gapUntil, state.currentId]);
@@ -118,6 +133,27 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     return [...local, ...results.filter(s => !known.has(s.id))];
   }, [state.songs, query, results]);
   const run = async (work: () => void | Promise<void>) => { setError(''); try { await work(); } catch (error) { setError(errorText(error)); } };
+  const writeMedia = (work: () => Promise<void>) => run(async () => {
+    if (!writable || !deviceCopies || mediaWrite.current) return;
+    mediaWrite.current = true; setMediaBusy(true);
+    try { await work(); } finally { mediaWrite.current = false; setMediaBusy(false); }
+  });
+  const recordCopy = (id: string, file: File) => {
+    model.setLocalCopy(id, true);
+    setDeviceCopies(copies => copies && [...copies.filter(copy => copy.id !== id), { id, bytes: file.size, fileName: file.name }]);
+  };
+  const removeDeviceCopy = (id: string) => writeMedia(async () => {
+    await model.removeLocalCopy(id, deleteLocalMedia);
+    setDeviceCopies(copies => copies?.filter(copy => copy.id !== id) ?? null);
+    setNotice('Device copy removed.');
+  });
+  const relinkDeviceCopy = (id: string, file: File) => writeMedia(async () => {
+    await relinkLocalMedia(id, file);
+    recordCopy(id, file);
+    const active = model.current()?.songId === id;
+    if (active) { checkpointNow(); setPlaying(false); setMediaRevision(value => value + 1); }
+    setNotice(active ? 'Video relinked. Press Play to continue.' : 'Video relinked.');
+  });
   const next = (skipped = false) => {
     if (!model.current()) return;
     model.finish(skipped); setElapsed(0); setDuration(0);
@@ -128,7 +164,12 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     setError('');
     if (playing) { checkpointNow(); setPlaying(false); return; }
     if (gapUntil) { setGapUntil(0); }
-    if (!model.current() && !model.start()) { setNotice('Add a song to the queue first.'); return; }
+    const active = model.current();
+    if (active && currentSong && !model.canRequest(currentSong)) { setNotice('Relink the active video in Songs before playing it.'); return; }
+    if (!active && !model.start()) {
+      setNotice(state.queue.some(request => request.status === 'accepted') ? 'No queued song is ready. Check the queue for missing videos or unavailable singers.' : 'Add a song to the queue first.');
+      return;
+    }
     setPlaying(true);
   };
   const join = async (value: string) => {
@@ -141,14 +182,20 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
       setClient(new SingerClient(internetGuestTransport(remote, { fetch: mobileFetch, onEnded: () => { if (joinEpoch.current === epoch && modeRef.current === 'guest') { setClient(null); setError('This room ended. Ask the host for a new link.'); } } }), ''));
     } catch (error) { setError(errorText(error)); } finally { setJoining(false); }
   };
-  const importFiles = async (files: FileList | null) => {
-    if (!files) return;
-    const selection = Array.from(files), failures: string[] = []; let count = 0;
+  const importFiles = async (selection: File[]) => {
+    if (!selection.length) return;
+    const failures: string[] = []; let count = 0;
     for (const file of selection.slice(0, 20)) {
       if (!/\.(mp4|webm|m4v|mov)$/i.test(file.name)) { failures.push(`${file.name}: unsupported file type`); continue; }
       const song: MobileSong = { id: crypto.randomUUID(), provider: 'local', fileName: file.name, title: file.name.replace(/\.[^.]+$/, ''), artist: '' };
-      try { await saveLocalMedia(song.id, file); model.add([song]); count++; }
-      catch { await deleteLocalMedia(song.id).catch(() => {}); failures.push(`${file.name}: could not save; check device storage`); }
+      try { await saveLocalMedia(song.id, file); }
+      catch { failures.push(`${file.name}: could not save; check device storage`); continue; }
+      try { model.add([song]); recordCopy(song.id, file); count++; }
+      catch (error) {
+        // If rollback fails, the unlinked copy is still visible in Device Storage and can be removed there.
+        await deleteLocalMedia(song.id).catch(() => recordCopy(song.id, file));
+        failures.push(`${file.name}: ${errorText(error)}`);
+      }
     }
     setNotice(`${count} video${count === 1 ? '' : 's'} imported.${selection.length > 20 ? ` ${selection.length - 20} skipped; import up to 20 at a time.` : ''}`);
     if (failures.length) setError(failures.join(' · '));
@@ -158,13 +205,13 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
     const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const renderSong = (song: MobileSong) => <li key={song.id} className={`mobile-song source-${song.provider}`}>
-    <div><strong>{song.title}</strong><span>{song.artist || 'Unknown Artist'}</span><small>{song.provider === 'karaokenerds' ? `Karaoke Nerds${song.brand ? ` · ${song.brand}` : ''}` : song.provider === 'youtube' ? 'YouTube' : 'On This Device'}</small></div>
+    <div><strong>{song.title}</strong><span>{song.artist || 'Unknown Artist'}</span><small>{song.provider === 'karaokenerds' ? `Karaoke Nerds${song.brand ? ` · ${song.brand}` : ''}` : song.provider === 'youtube' ? 'YouTube' : model.canRequest(song) ? 'On This Device' : deviceCopies ? 'Relink Video' : mediaLoadFailed ? 'Storage Unavailable' : 'Checking Device Copy'}</small></div>
     <button type="button" aria-label={`${state.favorites.includes(song.id) ? 'Unfavorite' : 'Favorite'} ${song.title}`} aria-pressed={state.favorites.includes(song.id)} onClick={() => void run(() => { model.add([song]); model.favorite(song.id); })}>{state.favorites.includes(song.id) ? '♥' : '♡'}</button>
-    <button type="button" aria-label={`Queue ${song.title}`} onClick={() => { setQueueSong(song); }}>＋</button>
+    <button type="button" aria-label={`Queue ${song.title}`} disabled={!model.canRequest(song)} onClick={() => { setQueueSong(song); }}>＋</button>
     <details className="mobile-song-options"><summary aria-label={`Manage ${song.provider === 'local' ? 'local video ' : ''}${song.title}`}>⋯</summary><div>
       <button type="button" onClick={() => void run(() => { model.add([song]); model.setDuet(song.id, !song.isDuet); })}>{song.isDuet ? 'Mark as Solo' : 'Mark as Duet'}</button>
-      {song.provider === 'local' && <><label>Relink Video<input type="file" accept="video/*" onChange={event => { const file = event.currentTarget.files?.[0]; if (!file) return; void run(async () => { await relinkLocalMedia(song.id, file); setPlaying(false); setMediaRevision(value => value + 1); setNotice('Video relinked. Press Play to continue.'); }); event.currentTarget.value = ''; }} /></label>
-      <button type="button" disabled={state.queue.some(r => r.songId === song.id && ['accepted', 'playing'].includes(r.status))} onClick={() => void run(async () => { await deleteLocalMedia(song.id); setNotice('Device copy removed. Metadata and history are kept; relink this song to play again.'); })}>Remove Device Copy</button><small>Remove waiting requests first. Your original file is untouched.</small></>}
+      {song.provider === 'local' && <><label>Relink Video<input type="file" accept="video/*" disabled={!deviceCopies || mediaBusy} onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void relinkDeviceCopy(song.id, file); event.currentTarget.value = ''; }} /></label>
+      <button type="button" onClick={() => setTab('storage')}>Manage Device Copies</button></>}
     </div></details>
   </li>;
   return <div className="mobile-app">
@@ -187,19 +234,21 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
           onBlocked={() => { setPlaying(false); setNotice('Tap Play in the video to allow audio on this device.'); }}
           onError={message => { checkpointNow(); setPlaying(false); setError(message); }} onTime={(time, total) => { setElapsed(time); setDuration(Number.isFinite(total) ? total : 0); if (current?.id && Date.now() - lastCheckpointAt.current >= 1000) { model.checkpoint(current.id, time); lastCheckpointAt.current = Date.now(); } }} />
         {gapUntil > 0 && <p role="status">Next song in {Math.max(0, Math.ceil((gapUntil - tick) / 1000))}s{!playing ? ' · Paused' : ''}</p>}
-        <nav className="mobile-tabs" aria-label="Host workspace">{(['songs', 'queue', 'favorites', 'history', 'room'] as const).map(value => <button aria-current={tab === value ? 'page' : undefined} key={value} onClick={() => setTab(value)}>{value === 'queue' ? `Queue (${state.queue.filter(r => r.status === 'accepted').length})` : value[0].toUpperCase() + value.slice(1)}</button>)}</nav>
+        <nav className="mobile-tabs" aria-label="Host workspace">{(['songs', 'queue', 'favorites', 'history', 'storage', 'room'] as const).map(value => <button aria-current={tab === value ? 'page' : undefined} key={value} onClick={() => setTab(value)}>{value === 'queue' ? `Queue (${state.queue.filter(r => r.status === 'accepted').length})` : value[0].toUpperCase() + value.slice(1)}</button>)}</nav>
         {tab === 'songs' && <section><label className="mobile-search">Search Songs<input type="search" placeholder="Artist or song title" value={query} maxLength={200} onChange={event => setQuery(event.target.value)} /></label>
           {searching && <p role="status">Searching Karaoke Nerds…</p>}<ul className="mobile-songs">{songs.map(renderSong)}</ul>{!songs.length && !searching && <p className="mobile-empty">Search the catalog or import a video below.</p>}
-          <details><summary>Add a Video</summary><label className="mobile-file">Import Local Video<input type="file" accept="video/mp4,video/webm,video/quicktime,.m4v" multiple onChange={event => { const files = event.currentTarget.files; void run(() => importFiles(files)); event.currentTarget.value = ''; }} /></label>
+          <details><summary>Add a Video</summary><label className="mobile-file">Import Local Video<input type="file" accept="video/mp4,video/webm,video/quicktime,.m4v" disabled={!deviceCopies || mediaBusy} multiple onChange={event => { const files = Array.from(event.currentTarget.files ?? []); void writeMedia(() => importFiles(files)); event.currentTarget.value = ''; }} /></label>
             <form onSubmit={event => { event.preventDefault(); void run(() => { const song = youtubeLink(youtubeUrl); if (!song) throw new Error('Use an HTTPS YouTube watch or youtu.be link.'); setQueueSong(song); setYoutubeUrl(''); }); }}><label>YouTube karaoke link<input type="url" value={youtubeUrl} onChange={event => setYoutubeUrl(event.target.value)} required /></label><button>Add YouTube Video</button></form></details>
         </section>}
         {tab === 'queue' && <section><h2>Singer Queue</h2>{current && <p><strong>Now: {currentSong?.title}</strong> · {[current.singer, state.singers.find(s => s.id === current.coSingerId)?.name].filter(Boolean).join(' & ') || 'Unassigned'}</p>}
-          <ol className="mobile-queue">{state.queue.filter(r => r.status === 'accepted').map((request, i, waiting) => { const song = state.songs.find(s => s.id === request.songId); return <li key={request.id}><div><strong>{song?.title}</strong><span>{[request.singer, state.singers.find(s => s.id === request.coSingerId)?.name].filter(Boolean).join(' & ') || 'Unassigned'}</span></div>
+          <ol className="mobile-queue">{state.queue.filter(r => r.status === 'accepted').map((request, i, waiting) => { const song = state.songs.find(s => s.id === request.songId); return <li key={request.id}><div><strong>{song?.title}</strong><span>{[request.singer, state.singers.find(s => s.id === request.coSingerId)?.name].filter(Boolean).join(' & ') || 'Unassigned'}</span>{song && !model.canRequest(song) && <span>Waiting for a device copy</span>}</div>
             <button aria-label={`Move ${song?.title} up`} disabled={i === 0} onClick={() => model.move(request.id, -1)}>↑</button><button aria-label={`Move ${song?.title} down`} disabled={i === waiting.length - 1} onClick={() => model.move(request.id, 1)}>↓</button><button aria-label={`Remove ${song?.title}`} onClick={() => void run(() => model.remove(request.id))}>×</button></li>; })}</ol>
           {!state.queue.some(r => r.status === 'accepted') && <p>No songs waiting. Add one from Songs.</p>}
           {authority.missing.length > 0 && <details><summary>Unavailable Song Requests ({authority.missing.length})</summary><ul>{authority.missing.map((r, i) => <li key={i}>{r.singer}: {r.artist} — {r.title}</li>)}</ul></details>}</section>}
         {tab === 'favorites' && <section><h2>Your Favorites</h2><ul className="mobile-songs">{state.songs.filter(s => state.favorites.includes(s.id)).map(renderSong)}</ul>{!state.favorites.length && <p>Tap a heart beside a song to save it here.</p>}</section>}
         {tab === 'history' && <section><h2>Show History</h2><ol className="mobile-history">{state.history.map((entry, i) => <li key={i}><strong>{state.songs.find(s => s.id === entry.songId)?.title}</strong><span>{entry.singer || 'Unassigned'} · {new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(entry.at)}</span></li>)}</ol>{!state.history.length && <p>Completed songs will appear here.</p>}</section>}
+        {tab === 'storage' && <DeviceStorage copies={deviceCopies} songs={state.songs} queue={state.queue} loadFailed={mediaLoadFailed} busy={mediaBusy}
+          onRetry={() => setMediaScan(value => value + 1)} onRemove={id => void removeDeviceCopy(id)} />}
         {tab === 'room' && <section className="mobile-room"><h2>Your Room</h2><label>Booth name<input value={roomName} maxLength={100} onChange={event => setRoomName(event.target.value)} onBlur={() => void run(() => model.settings({ name: roomName.trim() }))} /></label>
           <label>Room address<input value={slug} disabled={roomStatus.state === 'online' || roomStatus.state === 'reconnecting' || roomBusy || roomStatus.pending} maxLength={48} autoCapitalize="none" autoCorrect="off" onChange={event => setSlug(event.target.value)} /></label>
           <label className="mobile-check"><input type="checkbox" checked={discoverable} onChange={event => setDiscoverable(event.target.checked)} />Suggest this room to nearby singers</label>

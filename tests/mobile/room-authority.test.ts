@@ -69,3 +69,18 @@ test('mobile host searches beyond its initial page, with bounded authenticated c
   assert.throws(()=>call('catalog',{offset:0,limit:50,query:'x'.repeat(201)},mobileSecret()));
   assert.throws(()=>call('catalog',{offset:0,limit:50,query:'Rare'}));
 });
+test('a device copy that is unavailable is excluded from the singer catalog and cannot be requested directly', async () => {
+  const { show, transport } = fixture();
+  const local = { id: 'local_video_file', title: 'Only Local', artist: '', provider: 'local' as const, fileName: 'private.mp4' };
+  show.add([local]); show.loadLocalCopies([local.id]);
+  const admission = await transport.admission(''), guest = await transport.join('', mobileSecret(), mobileSecret(), 'Alice', show.revision);
+  assert.equal((await transport.snapshot(guest.session)).catalog.some(song => song.id === local.id), true);
+  await show.removeLocalCopy(local.id, async () => {});
+  const snapshot = await transport.snapshot(guest.session);
+  assert.equal(snapshot.catalog.some(song => song.id === local.id), false);
+  assert.deepEqual((await transport.catalog(guest.session, 0, 50, 'Only Local')).items, []);
+  const result = await transport.submit(guest.session, { commandId: mobileSecret(), showId: show.showId, hostEpoch: admission.hostEpoch, expectedRevision: snapshot.revision, versionId: local.id });
+  assert.equal(result.ok, false);
+  assert.equal(show.state().queue.length, 0);
+  assert.equal(JSON.stringify(snapshot).includes(local.fileName), false);
+});

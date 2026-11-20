@@ -98,7 +98,7 @@ export class MobileRoomAuthority {
       const revision = () => this.show.revision;
       const admission = () => ({ showId: this.show.showId, hostEpoch: this.epoch, revision: revision() });
       const catalog = (offset: number, limit: number, query = '') => {
-        const all = this.show.state().songs.filter(song => matchesCatalogQuery(song, query));
+        const all = this.show.state().songs.filter(song => this.show.canRequest(song) && matchesCatalogQuery(song, query));
         return { revision: revision(), items: all.slice(offset, offset + limit).map(({ id, title, artist }) => ({ id, title, artist })), nextOffset: all.length > offset + limit ? offset + limit : null };
       };
       let body: Record<string, unknown> | null;

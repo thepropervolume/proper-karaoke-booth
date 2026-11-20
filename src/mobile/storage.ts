@@ -22,6 +22,31 @@ export const deleteLocalMedia = (id: string) => operation('media', 'readwrite', 
 /** Replacing a blob keeps every request, favorite and history reference on its existing song ID. */
 export const relinkLocalMedia = saveLocalMedia;
 
+export type LocalVideoCopy = { id: string; bytes: number; fileName?: string };
+
+/** Read Blob metadata one entry at a time without loading video contents into memory. */
+export async function listLocalVideoCopies(): Promise<LocalVideoCopy[]> {
+  const db = await database();
+  try {
+    return await new Promise<LocalVideoCopy[]>((resolve, reject) => {
+      const tx = db.transaction('media', 'readonly');
+      const request = tx.objectStore('media').openCursor();
+      const copies: LocalVideoCopy[] = [];
+      tx.oncomplete = () => resolve(copies);
+      tx.onerror = tx.onabort = () => reject(new Error('Could not read the saved video list.'));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const blob: unknown = cursor.value;
+        if (typeof cursor.key === 'string' && blob instanceof Blob) {
+          copies.push({ id: cursor.key, bytes: blob.size, ...(blob instanceof File ? { fileName: blob.name } : {}) });
+        }
+        cursor.continue();
+      };
+    });
+  } finally { db.close(); }
+}
+
 const RECOVERY_KEY = /^recovery:([0-9]{13,16}):[a-f0-9-]{36}$/;
 export type MobileRecoveryRecord = { key: string; createdAt: number; value: unknown };
 

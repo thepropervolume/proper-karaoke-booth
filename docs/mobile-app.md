@@ -10,7 +10,9 @@ Press **Play** to start the queue. The bottom transport provides pause, restart,
 
 The 0.10.3 mobile web assets are deployed. An earlier 0.9.2 browser rehearsal checked the two-second gap and disabling automatic advancement during that gap using a synthetic video. Physical-phone and audible-output checks remain open.
 
-**Queue** provides move-up/down and removal controls. Mobile hearts save favorites; the desktop's 1–10-star recording rating is a separate feature. Favorites and completed-song history stay on this device. **Room** changes the booth name, automatic advancement and gap, and exports show/history metadata. A local video's **⋯** menu relinks its device copy without changing its song ID or removes an unqueued copy to free storage. Your original file is untouched. Imported files are not included in the metadata export.
+**Queue** provides move-up/down and removal controls. Mobile hearts save favorites. Favorites and completed-song history stay on this device. **Room** changes the booth name, automatic advancement and gap, and exports show/history metadata. Imported files require a separate backup.
+
+**Storage** shows how much space imported video copies use on this device. Search by song, artist, or filename and remove unused copies after confirmation. The app protects copies used by the queue or player and keeps the song’s details, favorites, and history. Choose **Relink** to restore playback or let guests request that song again. The original file remains available wherever you saved it.
 
 To invite singers, choose **Room**, keep or edit its address and tap **Open Room**. Share the singer link; anyone with the active link can join. Temporary phone-host capabilities stay in memory and expire within 12 hours. Closing a room revokes its guests. Interrupted openings offer **Retry Open** or **Close Pending Room**; unresolved closure must be retried before opening another room. A closed/crashed host becomes unavailable to guests rather than replaying commands later. Reloading a phone host requires a new room; an old address may remain reserved until expiry.
 

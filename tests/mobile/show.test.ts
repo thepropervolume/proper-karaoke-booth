@@ -16,6 +16,7 @@ test('a restored mobile show retains its active turn but has no persisted play o
 });
 test('position checkpoints survive restart without persisting playback and reject stale turns', () => {
   const show = new MobileShow(); show.add(songs);
+  show.loadLocalCopies([songs[1].id]);
   const first = show.request(songs[0].id), second = show.request(songs[1].id); show.start();
   const revision = show.revision; let saves = 0; show.subscribe(() => saves++);
   show.checkpoint(first, 42.375); assert.equal(show.revision, revision); assert.equal(saves, 1);
@@ -33,11 +34,49 @@ test('position checkpoints survive restart without persisting playback and rejec
 });
 test('queue edits preserve the playing turn and guests can withdraw only their own waiting requests', () => {
   const show = new MobileShow(); show.add(songs);
+  show.loadLocalCopies([songs[1].id]);
   const playing = show.request(songs[0].id), a = show.request(songs[1].id, 'Alice', 'singer_alice'), b = show.request(songs[0].id, 'Ben', 'singer_ben');
   show.start(); show.move(b, -1); assert.equal(show.current()?.id, playing); assert.equal(show.next()?.id, b);
   assert.throws(() => show.remove(playing)); assert.throws(() => show.remove(a, 'singer_ben'));
   show.remove(a, 'singer_alice'); show.finish(); assert.equal(show.state().history.length, 1); assert.equal(show.start()?.id, b);
   show.finish(true); assert.equal(show.state().history.length, 1);
+});
+test('device copies cannot be removed while in use and in-flight removal fences new requests', async () => {
+  const show = new MobileShow(), local = songs[1];
+  show.add(songs); show.loadLocalCopies([local.id]); show.favorite(local.id);
+  const id = show.request(local.id);
+  const unexpected = async () => { assert.fail('A protected copy must not be deleted.'); };
+  await assert.rejects(show.removeLocalCopy(local.id, unexpected), /Finish or withdraw/);
+  assert.equal(show.start()?.id, id);
+  await assert.rejects(show.removeLocalCopy(local.id, unexpected), /Finish or withdraw/);
+  show.finish();
+  await assert.rejects(show.removeLocalCopy(local.id, async () => { throw new Error('Failed to delete'); }), /Failed to delete/);
+  assert.equal(show.canRequest(local), true);
+  let completed = false;
+  const removal = show.removeLocalCopy(local.id, async songId => {
+    assert.equal(songId, local.id);
+    await Promise.resolve();
+    completed = true;
+  });
+  assert.equal(completed, false);
+  assert.throws(() => show.request(local.id), /relink/);
+  await removal;
+  assert.deepEqual(show.state().favorites, [local.id]);
+  assert.equal(show.state().history[0].songId, local.id);
+  assert.equal(show.state().songs.some(song => song.id === local.id), true);
+  show.setLocalCopy(local.id, true);
+  assert.ok(show.request(local.id));
+});
+test('a missing queued device copy waits for relinking while another available song can start', () => {
+  const show = new MobileShow(), local = songs[1];
+  show.add(songs); show.loadLocalCopies([local.id]);
+  const waiting = show.request(local.id), available = show.request(songs[0].id);
+  const restored = new MobileShow(restoreMobileShow(show.state()));
+  assert.equal(restored.start()?.id, available);
+  restored.finish();
+  assert.equal(restored.state().queue.find(request => request.id === waiting)?.status, 'accepted');
+  restored.loadLocalCopies([local.id]);
+  assert.equal(restored.start()?.id, waiting);
 });
 test('unavailable singers keep one upcoming request and become eligible at their exact return time', () => {
   let now = 10_000; const show = new MobileShow(newMobileShow(), () => now); show.add(songs);

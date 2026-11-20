@@ -78,6 +78,7 @@ export class MobileShow {
   readonly hostEpoch = crypto.randomUUID();
   private listeners = new Set<() => void>();
   private away = new Map<string, number>();
+  private localCopies = new Set<string>();
   private playing = false;
   private applauseTurn: Promise<void> = Promise.resolve();
   private applauseInFlight = new Map<string, { fingerprint: string; promise: Promise<void> }>();
@@ -127,11 +128,33 @@ export class MobileShow {
     song.isDuet = isDuet;
     this.changed();
   }
+  canRequest(song: MobileSong): boolean { return song.provider !== 'local' || this.localCopies.has(song.id); }
+  loadLocalCopies(ids: readonly string[]): void {
+    const copies = new Set(ids);
+    if (copies.size === this.localCopies.size && [...copies].every(id => this.localCopies.has(id))) return;
+    this.localCopies = copies;
+    // The guest catalog changed. Availability is derived from IndexedDB and is never saved in show metadata.
+    this.revision++;
+  }
+  setLocalCopy(id: string, available: boolean): void {
+    if (this.localCopies.has(id) === available) return;
+    if (available) this.localCopies.add(id); else this.localCopies.delete(id);
+    this.revision++;
+  }
+  async removeLocalCopy(id: string, remove: (id: string) => Promise<unknown>): Promise<void> {
+    if (this.value.queue.some(request => request.songId === id && (request.status === 'accepted' || request.status === 'playing')))
+      throw new Error('Finish or withdraw the queued song before removing its device copy.');
+    const available = this.localCopies.has(id);
+    // Withhold it from the catalog before the delete so a singer cannot request it in the meantime.
+    this.setLocalCopy(id, false);
+    try { await remove(id); } catch (error) { this.setLocalCopy(id, available); throw error; }
+  }
   request(songId: string, singer = '', singerId: string | null = null, id: string = crypto.randomUUID(), coSinger = ''): string {
-    if (!this.value.songs.some(s => s.id === songId) || !text(singer, 100, true) || !ID.test(id)) throw new Error('Choose an available song and a name of up to 100 characters.');
+    const song = this.value.songs.find(item => item.id === songId);
+    if (!song || !text(singer, 100, true) || !ID.test(id)) throw new Error('Choose an available song and a name of up to 100 characters.');
     if (this.value.queue.some(r => r.id === id)) return id;
+    if (!this.canRequest(song)) throw new Error('The host needs to relink this video before it can be queued.');
     if (this.value.queue.length >= 2000) throw new Error('The mobile show queue is full.');
-    const song = this.value.songs.find(item => item.id === songId)!;
     const name = singer.trim();
     let personId = singerId;
     if (!personId && name) personId = this.value.singers.find(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase())?.id ?? crypto.randomUUID();
@@ -168,7 +191,11 @@ export class MobileShow {
     this.value.queue.push({ id, songId, singer: name, singerId: personId, ...(coId ? { coSingerId: coId } : {}), status: 'accepted' }); this.changed(); return id;
   }
   current(): MobileRequest | null { return this.value.queue.find(r => r.id === this.value.currentId) ?? null; }
-  next(): MobileRequest | null { return this.value.queue.find(r => r.status === 'accepted' && (!r.singerId || this.unavailableUntil(r.singerId) <= this.now())) ?? null; }
+  next(): MobileRequest | null {
+    const ready = new Set(this.value.songs.filter(song => this.canRequest(song)).map(song => song.id));
+    const now = this.now();
+    return this.value.queue.find(r => r.status === 'accepted' && ready.has(r.songId) && (!r.singerId || this.unavailableUntil(r.singerId) <= now)) ?? null;
+  }
   start(): MobileRequest | null {
     if (this.current()) return this.current();
     const next = this.next(); if (!next) return null;

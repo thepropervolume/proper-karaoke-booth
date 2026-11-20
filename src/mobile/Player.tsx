@@ -84,7 +84,7 @@ export const MobilePlayer = forwardRef<PlayerHandle, { song: MobileSong | null; 
     let active = true, url = ''; setLocalAsset({ generation, url: '' });
     if (props.song?.provider === 'local') void loadLocalMedia(props.song.id).then(blob => {
       if (!active || !current()) return;
-      if (!blob) throw new Error('This local video is missing. Import it again on this device.');
+      if (!blob) throw new Error('This device copy is missing. In Songs, open this song’s options and choose Relink Video.');
       url = URL.createObjectURL(blob); setLocalAsset({ generation, url });
     }).catch(error => { if (active && current()) latest.current.onError(error instanceof Error ? error.message : 'Local video unavailable.'); });
     return () => { active = false; if (url) URL.revokeObjectURL(url); };

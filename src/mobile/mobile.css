@@ -22,3 +22,33 @@
   border-radius: .65rem;
   box-shadow: 0 3px 18px #0009;
 }
+
+.mobile-device-videos {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+.mobile-device-videos li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6rem;
+  border-bottom: 1px solid var(--line);
+  padding: .75rem 0;
+}
+.mobile-device-videos li > div:first-child {
+  flex: 1 1 9rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mobile-device-videos span {
+  display: block;
+  color: #becbdf;
+  font-size: .9rem;
+  margin-top: .3rem;
+}
+.mobile-device-remove-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
