@@ -34,7 +34,7 @@ This guide describes 0.7.1 source behavior. Earlier Windows/Linux/macOS packages
 
 ## Optional Singer Assignment
 
-In **Add to Queue**, leave **Singer (optional)** empty to add a song without assigning anyone. This works for local, Karaoke Nerds, YouTube and connected native KaraFun recordings. The queue shows **Unassigned**; no singer profile is created. Right-click a waiting or prepared request to assign, change or clear its singer later. A prepared request retains its ID and queue slot; an active performance cannot be edited.
+In **Add to Queue**, leave **Singer (optional)** empty to add a song without assigning anyone. This works for local, Karaoke Nerds, YouTube and connected native KaraFun recordings. The queue shows **Unassigned**; no singer profile is created. Queued requests remain editable, removable and reorderable until playback starts, including a song that has already been prepared. Right-click to change the track or singer; use drag, arrow controls or promotion to adjust the order. The app can prepare a different next song without starting it. If the host changes a request while its Start checks are still running, the obsolete start is cancelled and the host is asked to review the queue and press Play again. An active performance remains protected.
 
 Unassigned requests retain FIFO order and each gets its own place in the current eligible fair round (the next round if the final turn has already begun). They do not share a fake singer, singer absence state or per-singer request limit. Remote singer requests still belong to the signed-in session's singer. Back up before the schema-5 upgrade; older apps cannot open the upgraded database.
 

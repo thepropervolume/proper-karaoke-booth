@@ -1,6 +1,6 @@
 # Remaining work
 
-Updated 20 November 2026 for **0.10.4 source in development** (0.10.3 public), with 1.0.0 reserved for the official release. The [public download page](https://release.thepropervolume.com/booth/) lists 0.10.3 installers and planning documents. It identifies source commit `efd9ba1`; later commits document and verify the relay deployment and must not be assumed to be in those installers. Earlier milestone sections below preserve their original evidence and unfinished work as recorded at the time, not a second current-status dashboard.
+Updated 20 November 2026 for **0.10.4 development**, with 1.0.0 reserved for the official release. The public download page identifies each published build and its source commit. Earlier milestone sections preserve their original evidence and unfinished work as recorded at the time. [Booth downloads](https://release.thepropervolume.com/booth/)
 
 ## Next work in priority order
 
@@ -149,9 +149,9 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 
 ## Priority 1 — host, queue and library
 
-- [x] Allow the host to promote one waiting request without displacing the staged song.
-- [x] Add persisted manual request reordering without unexpectedly changing the staged song.
-- [x] Edit waiting or staged track/singer with the same request identity/staged status, next-free-round reassignment and preserved manual slot; active playback stays protected.
+- [x] Allow the host to promote a waiting request and select a different next song before playback.
+- [x] Add persisted manual request reordering, including changing the next prepared song before playback.
+- [x] Edit a queued track/singer with the same request identity, next-free-round reassignment and preserved manual slot; active playback stays protected.
 - [ ] Add actor/reason audit history for queue edits.
 - [x] Add timed singer absence and return (1–60 minutes), one future request while away, authenticated self-service and tested return fairness.
 - [ ] Add indefinite singer hold and skip-turn controls.
