@@ -353,7 +353,7 @@ export class RemoteQueue {
     if (committed) this.onCommitted(committed);
     return result;
   }
-  /** Withdraw only an authenticated singer's pending or accepted request. */
+  /** Withdraw only an authenticated singer's pending or queued request. */
   withdraw(token: unknown, input: unknown, scope = ''): Outcome {
     const guest = this.authenticate(token, scope);
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw denied();

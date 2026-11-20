@@ -126,6 +126,23 @@ test('uncertain withdrawal recovers its receipt without resending or a singer id
   await client.checkOutcome(listen); assert.equal(outcomeId, 'secret-3'); assert.equal(client.state().message, 'Request withdrawn.');
 });
 
+test('the singer client sends withdrawal for the prepared request and refuses an active performance', async () => {
+  const transport = fake();
+  let status: GuestSnapshot['requests'][number]['status'] = 'staged';
+  transport.snapshot = async () => ({ ...show(), requests: [
+    { id: 'request-123', versionId: 'song-123', status },
+    { id: 'request-playing', versionId: 'song-123', status: 'playing' },
+  ] });
+  const calls: string[] = [];
+  transport.withdraw = async (_session, command) => { calls.push(command.requestId); status = 'withdrawn'; return { ok: true, revision: 5 }; };
+  const client = new SingerClient(transport, 'invite', secrets());
+  await client.join('Sam', listen);
+  await client.withdraw('request-playing', listen);
+  await client.withdraw('request-123', listen);
+  assert.deepEqual(calls, ['request-123']);
+  assert.equal(client.state().message, 'Request withdrawn.');
+});
+
 
 test('availability uses its own outcome receipt and never repeats an uncertain deadline update', async () => {
   const transport = fake(); let calls = 0, sent: unknown, outcomeId = '';

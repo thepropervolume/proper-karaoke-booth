@@ -152,7 +152,7 @@ export class SingerClient {
   }
   async withdraw(requestId: string, listener: (view: GuestView) => void): Promise<void> {
     const snapshot = this.view.snapshot;
-    if (!this.session || !snapshot || this.view.busy || this.pendingRequest || !snapshot.requests.some(item => item.id === requestId && ['pending', 'accepted'].includes(item.status))) return;
+    if (!this.session || !snapshot || this.view.busy || this.pendingRequest || !snapshot.requests.some(item => item.id === requestId && ['pending', 'accepted', 'staged'].includes(item.status))) return;
     this.pendingRequest = { kind: 'withdraw', command: { commandId: this.random(), showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, requestId } };
     await this.sendPending(listener);
   }
