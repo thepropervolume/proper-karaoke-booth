@@ -11,7 +11,7 @@ test('applause reserves at most three simultaneous sounds, including pending sta
   await assert.rejects(output.play(0.7, 'device'), /Three applause/);
   output.acknowledge({ id: requests[0].id, ok: true, durationMs: 3000 });
   output.acknowledge({ id: requests[1].id, ok: false, error: 'Audio output unavailable.' });
-  output.acknowledge({ id: requests[2].id, ok: true, durationMs: 8000 });
+  output.acknowledge({ id: requests[2].id, ok: true, durationMs: 11184 });
   await first;
   await assert.rejects(second, /Audio output unavailable/);
   await third;

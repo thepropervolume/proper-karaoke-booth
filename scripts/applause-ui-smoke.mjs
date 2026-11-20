@@ -110,15 +110,25 @@ try {
   assert.equal(account(after).points, 100);
   assert.equal(after.points.accounts.find(row => row.singerId === 'qa-partner').points, 64);
   assert.equal(account(after).credits, 3);
+  // Wait for the first three real recordings to finish, then exercise all six
+  // in the actual file:// singer renderer, including the eleven-second clip.
+  await new Promise(resolve => setTimeout(resolve, 9800));
+  const remaining = await host.evaluate(async () => Promise.all([
+    window.tpv.applause.trigger(), window.tpv.applause.trigger(), window.tpv.applause.trigger(),
+  ]));
+  assert.equal(remaining.filter(result => result.ok).length, 3, JSON.stringify(remaining));
+  const allClips = await host.evaluate(() => window.tpv.getState());
+  assert.equal(account(allClips).points, 115);
+  assert.equal(allClips.points.accounts.find(row => row.singerId === 'qa-partner').points, 79);
   await app.close();
   app = undefined;
   host = await launch();
   const restored = await host.evaluate(() => window.tpv.getState());
   assert.equal(restored.playback.status, 'paused');
-  assert.equal(account(restored).points, 100);
-  assert.equal(restored.points.accounts.find(row => row.singerId === 'qa-partner').points, 64);
+  assert.equal(account(restored).points, 115);
+  assert.equal(restored.points.accounts.find(row => row.singerId === 'qa-partner').points, 79);
   assert.equal(account(restored).credits, 3);
-  console.log('PASS: host duet metadata and partner dialogs, duet awards, applause button, three overlapping clips, fourth rejected, score and credits retained after restart. Synthetic video; audio muted.');
+  console.log('PASS: all six supplied applause recordings decoded and played, maximum three overlapping, duet awards and scores retained after restart. Synthetic video; audio muted.');
 } finally {
   if (app) await app.close().catch(() => {});
   const actual = await realpath(temporary);

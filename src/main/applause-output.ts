@@ -43,7 +43,7 @@ export class ApplauseOutput {
       pending.reject(new Error(typeof error === 'string' ? error.slice(0, 300) : 'Could not play applause.'));
       return;
     }
-    if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 3000 || durationMs > 8000) {
+    if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 3000 || durationMs > 15000) {
       pending.reject(new Error('The applause player returned an invalid duration.'));
       return;
     }

@@ -2,56 +2,28 @@
 export type ApplauseRequest = { id: string; volume: number; outputId: string };
 export type ApplauseResult = { id: string; ok: boolean; durationMs?: number; error?: string };
 
-const DURATIONS = [3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 8];
 const MAX_VOICES = 3;
-const LEVEL = 0.16;
+const LEVEL = 0.45;
+// Peak-calibrated for the supplied recordings. Even three maximum-volume
+// clips sum below full scale, while quieter recordings remain audible.
+const CLIP_GAINS = [2.3, 0.82, 1.35, 0.77, 0.75, 1.07] as const;
 
 type RoutedContext = AudioContext & { setSinkId?: (id: string) => Promise<void> };
-type Voice = { source?: AudioBufferSourceNode; gain?: GainNode };
+type Voice = { source?: AudioBufferSourceNode; gain?: GainNode; clipGain?: number };
 
-// Each synthetic clap is a short burst with a second palm-contact transient.
-// Distinct seeded timing and stereo placement create ten reproducible crowds.
-function crowdClip(context: AudioContext, variant: number): AudioBuffer {
-  const length = Math.floor(context.sampleRate * DURATIONS[variant]);
-  const buffer = context.createBuffer(2, length, context.sampleRate);
-  const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
-  let seed = (variant + 1) * 0x2345ab;
-  const random = () => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed / 0x100000000;
-  };
-  const clapLength = Math.floor(context.sampleRate * 0.105);
-  const count = Math.round(DURATIONS[variant] * (22 + variant % 4));
-  for (let clap = 0; clap < count; clap++) {
-    const position = Math.floor(random() * (length - clapLength));
-    const pan = random(), loudness = 0.35 + random() * 0.65;
-    let filtered = 0;
-    for (let i = 0; i < clapLength; i++) {
-      const seconds = i / context.sampleRate;
-      const noise = random() * 2 - 1;
-      filtered += 0.32 * (noise - filtered);
-      const attack = Math.min(1, seconds / 0.0015);
-      const envelope = Math.exp(-seconds * 44) + (seconds > 0.014 ? 0.48 * Math.exp(-(seconds - 0.014) * 62) : 0);
-      const value = filtered * envelope * attack * loudness;
-      left[position + i] += value * (0.45 + 0.55 * (1 - pan));
-      right[position + i] += value * (0.45 + 0.55 * pan);
-    }
-  }
-  let peak = 0;
-  for (let i = 0; i < length; i++) peak = Math.max(peak, Math.abs(left[i]), Math.abs(right[i]));
-  const gain = peak ? 0.85 / peak : 1;
-  for (let i = 0; i < length; i++) {
-    // Fade the crowd at the edges so buffers do not click.
-    const edge = Math.min(1, i / (context.sampleRate * 0.035), (length - i - 1) / (context.sampleRate * 0.16));
-    left[i] *= gain * edge;
-    right[i] *= gain * edge;
-  }
-  return buffer;
+function decodeBase64(dataUrl: string): ArrayBuffer {
+  const prefix = 'data:audio/mpeg;base64,';
+  if (!dataUrl.startsWith(prefix)) throw new Error('The applause recording is invalid.');
+  const binary = atob(dataUrl.slice(prefix.length));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes.buffer;
 }
 
-export function createApplausePlayer(createContext: () => RoutedContext = () => new AudioContext() as RoutedContext) {
+export function createApplausePlayer(recordings: readonly string[], createContext: () => RoutedContext = () => new AudioContext() as RoutedContext) {
+  if (recordings.length !== CLIP_GAINS.length) throw new Error('Six applause recordings are required.');
   let context: RoutedContext | null = null;
-  const clips = new Map<number, AudioBuffer>();
+  const clips = new Map<number, Promise<AudioBuffer>>();
   const voices = new Set<Voice>();
   let next = 0, revision = 0, sink = '';
   let routing: Promise<void> = Promise.resolve();
@@ -94,18 +66,25 @@ export function createApplausePlayer(createContext: () => RoutedContext = () => 
       await route;
       if (generation !== revision || !voices.has(voice)) throw new Error('Applause was cancelled.');
       const variant = next;
-      next = (next + 1) % DURATIONS.length;
-      let clip = clips.get(variant);
-      if (!clip) { clip = crowdClip(player, variant); clips.set(variant, clip); }
+      next = (next + 1) % recordings.length;
+      let pendingClip = clips.get(variant);
+      if (!pendingClip) {
+        pendingClip = player.decodeAudioData(decodeBase64(recordings[variant]));
+        clips.set(variant, pendingClip);
+        void pendingClip.catch(() => { if (clips.get(variant) === pendingClip) clips.delete(variant); });
+      }
+      const clip = await pendingClip;
+      if (generation !== revision || !voices.has(voice)) throw new Error('Applause was cancelled.');
+      if (!Number.isFinite(clip.duration) || clip.duration < 3 || clip.duration > 15) throw new Error('The applause recording has an invalid duration.');
       const source = player.createBufferSource();
       const gain = player.createGain();
-      voice.source = source; voice.gain = gain;
+      voice.source = source; voice.gain = gain; voice.clipGain = CLIP_GAINS[variant];
       source.buffer = clip;
-      gain.gain.value = request.volume * LEVEL;
+      gain.gain.value = request.volume * LEVEL * voice.clipGain;
       source.connect(gain); gain.connect(player.destination);
       source.onended = () => { voices.delete(voice); source.disconnect(); gain.disconnect(); };
       source.start();
-      return { id: request.id, ok: true, durationMs: Math.round(DURATIONS[variant] * 1000) };
+      return { id: request.id, ok: true, durationMs: Math.round(clip.duration * 1000) };
     } catch (error) {
       voices.delete(voice);
       voice.source?.disconnect();
@@ -117,7 +96,7 @@ export function createApplausePlayer(createContext: () => RoutedContext = () => 
   function setVolume(volume: number): void {
     if (!Number.isFinite(volume)) return;
     const target = Math.max(0, Math.min(1, volume)) * LEVEL;
-    for (const voice of voices) if (voice.gain) voice.gain.gain.value = target;
+    for (const voice of voices) if (voice.gain) voice.gain.gain.value = target * (voice.clipGain ?? 1);
   }
 
   return { play, stop, setVolume };

@@ -8,6 +8,7 @@ import { parseMobileCatalog, youtubeLink } from './catalog';
 import { mobileFetch, mobileJson } from './api';
 import { MobilePlayer, type PlayerHandle } from './Player';
 import { createApplausePlayer } from '../display/applause-player';
+import { applauseClips } from '../display/applause-clips';
 import { MobileHostedRoom, type MobileRoomStatus } from './hosted-room';
 import { MobileRoomAuthority } from './room-authority';
 import { advertiseMobileRoom, discoverRooms, roomSlug, stopMobileDiscovery, type DiscoveredRoom } from './discovery';
@@ -33,7 +34,7 @@ export function MobileApp({ model, writable = true, pendingSaves }: { model: Mob
   const joinEpoch = useRef(0), modeRef = useRef(mode); modeRef.current = mode;
   const alive = useRef(true), discoveryEnabled = useRef(discoverable); discoveryEnabled.current = discoverable;
   const player = useRef<PlayerHandle>(null), playRef = useRef(playing); playRef.current = playing;
-  const applausePlayer = useMemo(() => createApplausePlayer(), []);
+  const applausePlayer = useMemo(() => createApplausePlayer(applauseClips), []);
   const activePhoto = useRef<{ id: string; timer: ReturnType<typeof setTimeout>; resolve?: () => void; reject?: (error: Error) => void } | null>(null);
   const playApplause = useCallback(async () => {
     if (modeRef.current !== 'host') throw new Error('The host screen is not available.');

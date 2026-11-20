@@ -2,6 +2,7 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, matchesShortcut, type ShortcutActi
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { createApplausePlayer, type ApplauseRequest } from './applause-player';
+import { applauseClips } from './applause-clips';
 import { createPhotoOverlay } from './photo-overlay';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
@@ -112,7 +113,7 @@ window.tpvDisplay.onSeek((value) => {
 });
 const bumperPlayer = createBumperPlayer(value => window.tpvDisplay.bumperAck(value), value => window.tpvDisplay.bumperEvent(value));
 window.tpvDisplay.onBumperCommand(request => bumperPlayer.handle(request));
-const applausePlayer = createApplausePlayer();
+const applausePlayer = createApplausePlayer(applauseClips);
 window.tpvDisplay.onApplause?.(request => { void applausePlayer.play(request).then(result => window.tpvDisplay.applauseResult?.(result)); });
 const photoDisplay = window.tpvDisplay as typeof window.tpvDisplay & { onPhoto?: (callback: (request: { id: string; dataUrl: string }) => void) => () => void; photoResult?: (value: unknown) => void };
 const photoOverlay = createPhotoOverlay(result => photoDisplay.photoResult?.(result));
