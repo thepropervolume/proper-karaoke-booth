@@ -192,6 +192,85 @@ try {
   assert.deepEqual(active.usedGenerationIds, beforeCancelledStart.usedGenerationIds, 'Late display readiness after Stop must not allocate a playback generation.');
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true, 'A fresh deliberate Play remains available after the cancelled operation settles.');
   assert.equal((await host.evaluate(() => window.tpv.getState())).usedGenerationIds.length, beforeCancelledStart.usedGenerationIds.length + 1);
+  // Change the next turn while Play is waiting on a real display handshake.
+  // The edit must succeed, but the old intent must not start either song.
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'stop' }))).ok, true);
+  const beforeReorder = await host.evaluate(() => window.tpv.getState());
+  const versionId = beforeReorder.requests.find(request => request.id === 'qa-request').versionId;
+  assert.equal((await host.evaluate(versionId => window.tpv.command({ type: 'request', requestId: 'qa-request-two', singerId: null, versionId }), versionId)).ok, true);
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.__tpvQaReadyListeners = ipcMain.listeners('display:ready'); globalThis.__tpvQaHeldReadies = [];
+    ipcMain.removeAllListeners('display:ready'); ipcMain.on('display:ready', (...args) => globalThis.__tpvQaHeldReadies.push(args));
+  });
+  await destroySinger();
+  await host.evaluate(() => { window.__tpvQaPendingPlay = window.tpv.playPause(); });
+  deadline = performance.now() + 3000;
+  while (!await app.evaluate(() => globalThis.__tpvQaHeldReadies.length > 0)) {
+    assert.ok(performance.now() < deadline, 'The delayed display handshake was not captured.');
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'moveRequest', requestId: 'qa-request-two', beforeRequestId: 'qa-request' }))).ok, true, 'A queued song remains movable during playback preparation.');
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeAllListeners('display:ready');
+    for (const listener of globalThis.__tpvQaReadyListeners) ipcMain.on('display:ready', listener);
+    for (const args of globalThis.__tpvQaHeldReadies) for (const listener of globalThis.__tpvQaReadyListeners) listener(...args);
+    delete globalThis.__tpvQaReadyListeners; delete globalThis.__tpvQaHeldReadies;
+  });
+  const obsolete = await host.evaluate(() => window.__tpvQaPendingPlay);
+  assert.equal(obsolete.ok, false); assert.match(obsolete.error, /changed|cancelled/i);
+  active = await host.evaluate(() => window.tpv.getState());
+  assert.equal(active.playback, null); assert.equal(active.stagedRequestId, 'qa-request-two');
+  assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback.requestId, 'qa-request-two');
+  // Re-select the original singer, then hold and return them before the pending
+  // Start finishes. The same request ID reappears, but its old intent is stale.
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'stop' }))).ok, true);
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'moveRequest', requestId: 'qa-request', beforeRequestId: 'qa-request-two' }))).ok, true);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'qa-request');
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.__tpvQaReadyListeners = ipcMain.listeners('display:ready'); globalThis.__tpvQaHeldReadies = [];
+    ipcMain.removeAllListeners('display:ready'); ipcMain.on('display:ready', (...args) => globalThis.__tpvQaHeldReadies.push(args));
+  });
+  await destroySinger();
+  await host.evaluate(() => { window.__tpvQaPendingPlay = window.tpv.playPause(); });
+  deadline = performance.now() + 3000;
+  while (!await app.evaluate(() => globalThis.__tpvQaHeldReadies.length > 0)) {
+    assert.ok(performance.now() < deadline, 'The ABA display handshake was not captured.');
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'setSingerAvailability', singerId: 'qa-singer', minutes: 1 }))).ok, true);
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'setSingerAvailability', singerId: 'qa-singer', minutes: 0 }))).ok, true);
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'moveRequest', requestId: 'qa-request', beforeRequestId: 'qa-request-two' }))).ok, true);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'qa-request');
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeAllListeners('display:ready');
+    for (const listener of globalThis.__tpvQaReadyListeners) ipcMain.on('display:ready', listener);
+    for (const args of globalThis.__tpvQaHeldReadies) for (const listener of globalThis.__tpvQaReadyListeners) listener(...args);
+    delete globalThis.__tpvQaReadyListeners; delete globalThis.__tpvQaHeldReadies;
+  });
+  const staleReturn = await host.evaluate(() => window.__tpvQaPendingPlay);
+  assert.equal(staleReturn.ok, false); assert.match(staleReturn.error, /changed|cancelled/i);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.__tpvQaReadyListeners = ipcMain.listeners('display:ready'); globalThis.__tpvQaHeldReadies = [];
+    ipcMain.removeAllListeners('display:ready'); ipcMain.on('display:ready', (...args) => globalThis.__tpvQaHeldReadies.push(args));
+  });
+  await destroySinger();
+  await host.evaluate(() => { window.__tpvQaPendingPlay = window.tpv.playPause(); });
+  deadline = performance.now() + 3000;
+  while (!await app.evaluate(() => globalThis.__tpvQaHeldReadies.length > 0)) {
+    assert.ok(performance.now() < deadline, 'The unrelated-change display handshake was not captured.');
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'addSinger', singer: { id: 'qa-unrelated', name: 'New Singer' } }))).ok, true);
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeAllListeners('display:ready');
+    for (const listener of globalThis.__tpvQaReadyListeners) ipcMain.on('display:ready', listener);
+    for (const args of globalThis.__tpvQaHeldReadies) for (const listener of globalThis.__tpvQaReadyListeners) listener(...args);
+    delete globalThis.__tpvQaReadyListeners; delete globalThis.__tpvQaHeldReadies;
+  });
+  assert.equal((await host.evaluate(() => window.__tpvQaPendingPlay)).ok, true, 'An unrelated singer joining must not cancel Start.');
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback.requestId, 'qa-request');
   console.log('Automatic display, monitor persistence, concurrent Play, Previous/resume, host-only IPC, silent restarts, timeout/retry, Pause during delayed seek and Stop during delayed display readiness passed in an isolated muted show.');
 } finally {
   if (app) await app.close().catch(() => {});

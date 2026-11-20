@@ -19,18 +19,19 @@ function fixture() {
   return { send, ok, get: () => state, replace: (next: ShowState) => { state = next; } };
 }
 
-test('promotion stays behind the staged lock and overrides both rotation modes without changing assigned rounds', () => {
+test('promotion replaces the prepared next song without changing assigned rounds', () => {
   const f = fixture();
   f.ok({ type: 'stage' });
   const before = f.get().requests.map(({ id, round, order }) => ({ id, round, order }));
   f.ok({ type: 'promoteRequest', requestId: 'a2' });
-  assert.equal(f.get().stagedRequestId, 'a1');
-  assert.deepEqual(orderedFuture(f.get(), 'singer').map(r => r.id), ['a1', 'a2', 'b1', 'c1']);
-  assert.deepEqual(orderedFuture(f.get(), 'fifo').map(r => r.id), ['a1', 'a2', 'b1', 'c1']);
+  assert.equal(f.get().stagedRequestId, null);
+  assert.deepEqual(orderedFuture(f.get(), 'singer').map(r => r.id), ['a2', 'a1', 'b1', 'c1']);
+  assert.deepEqual(orderedFuture(f.get(), 'fifo').map(r => r.id), ['a2', 'a1', 'b1', 'c1']);
   assert.deepEqual(f.get().requests.map(({ id, round, order }) => ({ id, round, order })), before);
+  f.ok({ type: 'stage' }); assert.equal(f.get().stagedRequestId, 'a2');
   f.ok({ type: 'start', generationId: 'g1' });
   f.ok({ type: 'stage' });
-  assert.equal(f.get().stagedRequestId, 'a2');
+  assert.equal(f.get().stagedRequestId, 'a1');
   assert.equal(f.send({ type: 'complete', generationId: 'g1' }, 'singer', { role: 'engine', id: 'engine' }).ok, true);
 });
 

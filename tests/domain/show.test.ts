@@ -188,9 +188,9 @@ test('rejection and singer withdrawal preserve history, ownership and staged pla
   accept(s, 'staged-1', 'a');
   assert.equal(s.get().requests[2].round, 1, 'withdrawal returns the turn');
   s.ok({ type: 'stage' });
-  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'staged-1' }, alice).outcome.ok, false);
-  assert.equal(s.get().stagedRequestId, 'staged-1');
-  s.ok({ type: 'start', generationId: 'generation-1' });
-  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'staged-1' }, alice).outcome.ok, false);
-  assert.equal(s.get().playback?.requestId, 'staged-1');
+  s.ok({ type: 'withdrawRequest', requestId: 'staged-1' }, alice);
+  assert.equal(s.get().stagedRequestId, null);
+  accept(s, 'playing-1', 'a'); s.ok({ type: 'stage' }); s.ok({ type: 'start', generationId: 'generation-1' });
+  assert.equal(s.send({ type: 'withdrawRequest', requestId: 'playing-1' }, alice).outcome.ok, false);
+  assert.equal(s.get().playback?.requestId, 'playing-1');
 });

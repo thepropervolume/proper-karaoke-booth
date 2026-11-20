@@ -49,7 +49,7 @@ test('new requests follow manual order; reset restores scheduler order; finished
   f.ok({ type: 'resetQueueOrder' }); assert.deepEqual(f.ids(), ['a1', 'b1', 'c1', 'b2']);
 });
 
-test('only hosts can move or edit; staging cannot be displaced by stale edits or drop targets', () => {
+test('only hosts can rearrange; prepared requests move like the rest of the queue', () => {
   const f = fixture(); const commands: Command[] = [
     { type: 'moveRequest', requestId: 'c1', beforeRequestId: 'a1' },
     { type: 'editRequest', requestId: 'c1', singerId: 'a', versionId: 'v2' }, { type: 'resetQueueOrder' },
@@ -57,11 +57,15 @@ test('only hosts can move or edit; staging cannot be displaced by stale edits or
   for (const role of ['staff', 'singer'] as const) for (const command of commands)
     assert.equal(f.send(command, { role, id: 'a' }).ok, false);
   f.ok({ type: 'stage' });
-  for (const command of [
-    { type: 'moveRequest', requestId: 'c1', beforeRequestId: 'a1' },
-    { type: 'moveRequest', requestId: 'a1', beforeRequestId: null },
-  ] as Command[]) assert.equal(f.send(command).ok, false);
-  assert.equal(f.get().stagedRequestId, 'a1');
+  f.ok({ type: 'moveRequest', requestId: 'c1', beforeRequestId: 'a1' });
+  assert.equal(f.get().stagedRequestId, null);
+  assert.deepEqual(f.ids(), ['c1', 'a1', 'b1', 'a2']);
+  f.ok({ type: 'stage' }); assert.equal(f.get().stagedRequestId, 'c1');
+  f.ok({ type: 'moveRequest', requestId: 'c1', beforeRequestId: null });
+  assert.equal(f.get().stagedRequestId, null); assert.equal(f.ids().at(-1), 'c1');
+  f.ok({ type: 'stage' }); f.ok({ type: 'start', generationId: 'playing' });
+  assert.equal(f.send({ type: 'moveRequest', requestId: 'a1', beforeRequestId: null }).ok, false);
+  assert.equal(f.get().playback?.generationId, 'playing');
 });
 
 test('host can correct a prepared request without displacing its locked slot or starting it', () => {

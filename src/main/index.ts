@@ -75,6 +75,7 @@ import { catalogRequest } from '../domain/catalog-request';
 import { AutomaticBumper } from './automatic-bumper';
 import { ShowAdvance } from './show-advance';
 import { stageNextApproved } from './stage-next';
+import { StartIntentFence } from './start-intent';
 import { resolveYtDlpExecutable } from './youtube-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
@@ -135,6 +136,13 @@ function ratingsConnection(): SongRatingsConnection {
 }
 let state: ShowState;
 let settings: Settings;
+const startIntentFence = new StartIntentFence();
+// Every durable authority install records the selected turn before callbacks or
+// notifications, even if later work fails. This catches selection ABA changes.
+function installShowState(next: ShowState): void {
+  state = next;
+  if (settings) startIntentFence.observe(state, settings, Date.now());
+}
 const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, sourceVisibility: settings.sourceVisibility, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist, karaFunConnected: karaFunAccount?.status().state === 'connected' }));
 const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }));
 // In-flight discovery replies must not reappear after a source is toggled.
@@ -314,11 +322,12 @@ const showAdvance = new ShowAdvance(() => {
   } else if (request && (!media || !existsSync(media.path))) error = 'The next song file is missing. Relink it from the song menu, then press Play.';
   return { enabled: !!settings?.autoAdvance && !shuttingDown && !outputRecovery,
     playing: !!state?.playback, requestId: request?.id ?? null, notBeforeMs: state?.nextStartAtMs ?? 0,
-    ready: !!request && mediaPresent && singerAvailable(state, request.singerId, Date.now()) && !error,
+    ready: !!request && mediaPresent && singerAvailable(state, request.singerId, Date.now()) && singerAvailable(state, request.coSingerId ?? null, Date.now()) && !error,
     ...(error ? { error } : {}) };
 }, async (requestId, current) => {
+  const intent = startIntentFence.capture(state, settings, Date.now());
   await ensureSingerDisplayReady(false);
-  if (!current() || state.stagedRequestId !== requestId) return { ok: false, error: 'The next song changed. Review the queue and press Play.' };
+  if (!current() || intent?.requestId !== requestId || !startIntentFence.current(state, settings, Date.now(), intent)) return { ok: false, error: 'The next song changed. Review the queue and press Play.' };
   return executeHostCommand({ type: 'start', generationId: randomUUID() }, false, null, current);
 }, message => {
   bumperError = message; publishBumper();
@@ -430,9 +439,10 @@ function refreshAvailabilityDeadline(): void {
 // Only an existing show's completion/Skip can arm automatic playback.
 function broadcast(): void {
   if (shuttingDown) return;
+  startIntentFence.observe(state, settings, Date.now());
   if (!autoStageSuspended) {
     const prepared = stageNextApproved(state, settings, Date.now(), queueMediaReady);
-    if (prepared !== state) { store.save(prepared); state = prepared; }
+    if (prepared !== state) { store.save(prepared); installShowState(prepared); }
   }
   refreshAvailabilityDeadline();
   publishTimeline();
@@ -504,7 +514,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
     }
   }
   store.save(result.state, [], history);
-  state = result.state;
+  installShowState(result.state);
   if (result.outcome.ok && (command.type === 'pause' || command.type === 'stop' || command.type === 'release')) { showAdvance.cancel(); cancelPendingPlayback(); }
   if (result.outcome.ok && command.type === 'release') autoStageSuspended = true;
   if (result.outcome.ok && command.type === 'setPolicy') youtubeSearch.cancel();
@@ -521,7 +531,7 @@ function commitCatalogRequest(input: unknown, discoveryOrigin: 'karaokenerds' | 
     const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now(),
       { songSeenBefore: version => store.songSeenBefore(version) }, discoveryOrigin);
     if(!planned.result.ok)return planned.result;
-    store.save(planned.state);state=planned.state;
+    store.save(planned.state);installShowState(planned.state);
     let notice:string|undefined;
     try{syncQueuedDownloads();}catch{notice='Queued successfully. Use Download Video / Retry if its download does not appear.';}
     try{broadcast();}catch{/* A committed request remains successful even if a view closes. */}
@@ -758,7 +768,7 @@ function requestApplause(actor: Actor, commandId: string, showId: string, hostEp
       if (!receipt || !originalReceipt) throw new Error('Could not record applause.');
       receipt.fingerprint = originalReceipt.fingerprint;
       store.save(result.state);
-      state = result.state;
+      installShowState(result.state);
       try { broadcast(); } catch { /* Committed applause remains recorded. */ }
       return result.outcome;
     } catch (error) {
@@ -803,7 +813,7 @@ function requestPhoto(singerId: string, commandId: string, showId: string, hostE
       if (!receipt || !originalReceipt) throw new Error('Could not record the photo.');
       receipt.fingerprint = originalReceipt.fingerprint;
       store.save(result.state);
-      state = result.state;
+      installShowState(result.state);
       try { broadcast(); } catch { /* The photo award is already committed. */ }
       return result.outcome;
     } catch (error) {
@@ -833,11 +843,12 @@ function hostPlayPause(): Promise<TransportResult> {
     }
     const generation = state.playback?.generationId ?? null;
     const stagedId = state.stagedRequestId;
+    const startIntent = generation ? null : startIntentFence.capture(state, settings, Date.now());
     const policyError = startPolicyError(state, { type: generation ? 'resume' : 'start' }, stagedId, settings);
     if (policyError) return { ok: false, error: policyError };
     await ensureSingerDisplayReady();
     if (!current()) return { ok: false, error: 'Playback was cancelled.' };
-    if (generation ? state.playback?.generationId !== generation || state.playback.status !== 'paused' : !!state.playback || state.stagedRequestId !== stagedId)
+    if (generation ? state.playback?.generationId !== generation || state.playback.status !== 'paused' : !startIntentFence.current(state, settings, Date.now(), startIntent))
       return { ok: false, error: 'The selected track changed while opening the player. Review the queue and press Play again.' };
     return executeHostCommand(generation ? { type: 'resume' } : { type: 'start', generationId: randomUUID() }, true, recoveryIntent, undefined, current);
   });
@@ -916,14 +927,15 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
   if (!automaticCurrent && ['pause', 'stop', 'release', 'start', 'resume'].includes(command.type)) { showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false; }
   if (['pause', 'stop', 'release'].includes(command.type)) cancelPendingPlayback();
   const intentCurrent = transportCurrent ?? hostTransport.capture();
-  const current = () => intentCurrent() && (!automaticCurrent || automaticCurrent());
+  const startIntent = command.type === 'start' ? startIntentFence.capture(state, settings, Date.now()) : null;
+  const current = () => intentCurrent() && (!automaticCurrent || automaticCurrent()) && (command.type !== 'start' || startIntentFence.current(state, settings, Date.now(), startIntent));
   if ((command.type === 'start' || command.type === 'resume') && !current()) return { ok: false, error: 'Playback was cancelled.' };
   if (command.type === 'stop' && !state.playback) {
     try { await bumper?.stop(); publishBumper(); return { ok: true }; }
     catch { return { ok: false, error: 'Bumper audio did not confirm stopping. Check the audio output.' }; }
   }
   const recoveryAtIntent = observedRecovery === undefined ? command.type === 'resume' && outputRecovery ? { ...outputRecovery } : null : observedRecovery;
-  if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'skip', 'stage', 'release', 'removeRequest'].includes(command.type))
+  if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'skip', 'stage', 'release'].includes(command.type))
     return { ok: false, error: 'Wait for the current playback transition to finish.' };
   const initialPolicyError = startPolicyError(state, command, undefined, settings);
   if (initialPolicyError) return { ok: false, error: initialPolicyError };
@@ -1177,15 +1189,16 @@ else {
       vote: async (key, value) => { const result = await connection.vote(key, value); return path === ratingConfigFile() && connection === activeRatings ? result : { status: 'unavailable' as const }; },
     };
   });
-  state = store.load() ?? createInitialState(randomUUID(), randomUUID());
+  installShowState(store.load() ?? createInitialState(randomUUID(), randomUUID()));
   // A restarted host is a new authority; an interrupted performance is never resumed automatically.
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
   store.save(state);
+  startIntentFence.observe(state, settings, Date.now());
   karaFunAccount = new KaraFunAccount({ sessionStore: new KaraFunSessionVault(join(app.getPath('userData'), 'karafun-session.bin')) });
   karaFunHost = new KaraFunHost(karaFunAccount, new KaraFunMediaCache(join(app.getPath('userData'), 'karafun-cache')), {
     state: () => state, settings: () => settings, media: id => store.media(id), songSeenBefore: version => store.songSeenBefore(version),
-    commit: (next, media = []) => { if (shuttingDown) throw new Error('The application is closing.'); store.save(next, media); state = next; try { broadcast(); } catch { /* Durable success survives a closing view. */ } },
+    commit: (next, media = []) => { if (shuttingDown) throw new Error('The application is closing.'); store.save(next, media); installShowState(next); try { broadcast(); } catch { /* Durable success survives a closing view. */ } },
     changed: () => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:karafun-preparations', karaFunHost.status()); showAdvance.changed(); },
   });
   karaFunAccount.subscribe(value => {
@@ -1196,7 +1209,7 @@ else {
   partyTymeAccount = new PartyTymeAccount({vault:new KaraFunSessionVault(join(app.getPath('userData'),'partytyme-session.bin'))});
   partyTymeHost = new PartyTymeHost(partyTymeAccount,new PartyTymeMediaCache(join(app.getPath('userData'),'partytyme-cache')),{
     state:()=>state,settings:()=>settings,media:id=>store.media(id),songSeenBefore:version=>store.songSeenBefore(version),
-    commit:(next,media=[])=>{if(shuttingDown)throw new Error('The application is closing.');store.save(next,media);state=next;try{broadcast();}catch{}},
+    commit:(next,media=[])=>{if(shuttingDown)throw new Error('The application is closing.');store.save(next,media);installShowState(next);try{broadcast();}catch{}},
     changed:()=>showAdvance.changed(),
   });
   partyTymeAccount.subscribe(value=>{
@@ -1215,7 +1228,7 @@ else {
         ...(matchedTemplate ? { metadataTemplate: matchedTemplate } : {}), metadataAmbiguous: parsed.ambiguous } } }, settings, Date.now());
     if (!result.outcome.ok) throw new Error('The song metadata could not be added.');
     store.save(result.state, [{ id, path, fingerprint }]);
-    state = result.state;
+    installShowState(result.state);
     // A UI notification must not make a successful durable import look failed.
     try { broadcast(); } catch { /* The host can reload the persisted show. */ }
     return { outcome: 'imported' as const, needsReview: parsed.ambiguous };
@@ -1225,7 +1238,7 @@ else {
     commitImported(path, fingerprint, metadataPath.replace(/\.(mp3|cdg)$/i, '.mp4'), cdgImportParsing ?? settings).outcome);
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
-    const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); state = committed; syncQueuedDownloads(); broadcast(); };
+    const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); installShowState(committed); syncQueuedDownloads(); broadcast(); };
     remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted,
       (singerId, commandId, showId, hostEpoch, revision, authorized) => requestApplause({ role: 'singer', id: singerId }, commandId, showId, hostEpoch, revision, authorized),
       requestPhoto);
@@ -1675,7 +1688,7 @@ else {
         const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const sourceVisibilityChanged = JSON.stringify(settings.sourceVisibility) !== JSON.stringify(proposed.sourceVisibility);
         settings = sourceVisibilityChanged
-          ? saveWithDiscoveryRevision(state, next => store.save(next), next => { state = next; },
+          ? saveWithDiscoveryRevision(state, next => store.save(next), next => { installShowState(next); },
             () => writeSettings(settingsPath, proposed), () => broadcast())
           : writeSettings(settingsPath, proposed);
         if (sourceVisibilityChanged) {

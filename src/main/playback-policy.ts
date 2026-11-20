@@ -11,6 +11,6 @@ export function startPolicyError(state: ShowState, command: { type: Command['typ
   }
   if (command.type !== 'start') return null;
   const request = state.requests.find(item => item.id === state.stagedRequestId && item.status === 'staged');
-  if (!request || (expectedRequestId !== undefined && request.id !== expectedRequestId)) return 'The staged song changed or is no longer available.';
-  return isVersionAllowed(state, request.versionId, settings) ? null : 'The staged song is unavailable under the current policy. Release it or change the policy.';
+  if (!request || (expectedRequestId !== undefined && request.id !== expectedRequestId)) return 'The next song changed or is no longer available. Review the queue and press Play.';
+  return isVersionAllowed(state, request.versionId, settings) ? null : 'The next song is unavailable under the current policy. Change the queue or policy before starting.';
 }

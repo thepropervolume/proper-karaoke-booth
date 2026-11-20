@@ -62,18 +62,33 @@ test('availability accepts only minute increments, an existing singer, and host 
   assert.equal(f.get().singers[0].unavailableUntilMs, f.time() + 60000);
 });
 
-test('self cannot release staged/playing turns; host release must be explicitly confirmed; active playback is retained', () => {
+test('self can mark a queued singer unavailable, while active playback is retained', () => {
   const f = fixture(); f.ok({ type: 'request', requestId: 'a1', singerId: 'a', versionId: 'v' }); f.ok({ type: 'stage' });
-  assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'a', minutes: 1 }, { role: 'singer', id: 'a' }).ok, false);
-  assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'a', minutes: 1 }).ok, false);
   assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'a', minutes: 1, releaseStaged: true }, { role: 'singer', id: 'a' }).ok, false);
-  f.ok({ type: 'setSingerAvailability', singerId: 'a', minutes: 1, releaseStaged: true });
+  assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'a', minutes: 1 }, { role: 'singer', id: 'a' }).ok, true);
   assert.equal(f.get().stagedRequestId, null); assert.equal(f.get().requests[0].status, 'accepted');
   assert.equal(f.send({ type: 'stage' }).ok, false, 'no eligible singer before return');
   f.tick(60000); f.ok({ type: 'stage' }); f.ok({ type: 'start', generationId: 'g' });
   assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'a', minutes: 1 }, { role: 'singer', id: 'a' }).ok, false);
   f.ok({ type: 'setSingerAvailability', singerId: 'a', minutes: 1 });
   assert.equal(f.get().playback?.generationId, 'g'); assert.equal(f.get().playback?.status, 'playing');
+});
+
+test('a duet co-singer can hold a queued turn but cannot alter an active performance', () => {
+  for (const mode of ['fifo', 'singer'] as const) {
+    const f = fixture(mode);
+    f.ok({ type: 'editVersion', id: 'v', title: 'Song', artist: 'Artist', isDuet: true });
+    f.ok({ type: 'request', requestId: 'duet', singerId: 'a', coSingerId: 'b', versionId: 'v' });
+    f.ok({ type: 'request', requestId: 'solo', singerId: 'c', versionId: 'v' });
+    f.ok({ type: 'stage' }); assert.equal(f.get().stagedRequestId, 'duet');
+    assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'b', minutes: 1 }, { role: 'singer', id: 'b' }).ok, true);
+    assert.equal(f.get().stagedRequestId, null); assert.deepEqual(f.ids(), ['solo', 'duet']);
+    f.ok({ type: 'stage' }); assert.equal(f.get().stagedRequestId, 'solo');
+    f.ok({ type: 'release' }); f.tick(60000); f.ok({ type: 'stage', requestId: 'duet' });
+    f.ok({ type: 'start', generationId: 'duet-playing' });
+    assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'b', minutes: 1 }, { role: 'singer', id: 'b' }).ok, false);
+    assert.equal(f.get().playback?.generationId, 'duet-playing');
+  }
 });
 
 test('snapshot validation accepts legacy deadlines and rejects invalid availability values', () => {

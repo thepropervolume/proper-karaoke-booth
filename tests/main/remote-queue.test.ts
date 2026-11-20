@@ -245,7 +245,7 @@ test('state and receipt roll back together when persistence fails', () => {
 });
 
 
-test('withdrawal is guest-owned, idempotent and cannot disturb staged songs', () => {
+test('withdrawal is guest-owned, idempotent and includes the prepared queued song', () => {
   const s = setup();
   try {
     const service = s.service(), invite = service.createInvitation(5000);
@@ -268,8 +268,10 @@ test('withdrawal is guest-owned, idempotent and cannot disturb staged songs', ()
     assert.equal(service.submit(alice.session, { commandId: 'request-0002', showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, versionId: 'version-clean' }).ok, true);
     const state = s.read(); state.requests[1].status = 'staged'; state.stagedRequestId = state.requests[1].id;
     s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
-    const denied = service.withdraw(alice.session, { ...input, commandId: 'withdraw-0002', expectedRevision: state.revision, requestId: state.requests[1].id });
-    assert.equal(denied.ok, false); assert.equal(s.read().stagedRequestId, state.requests[1].id);
+    const stagedInput = { ...input, commandId: 'withdraw-0002', expectedRevision: state.revision, requestId: state.requests[1].id };
+    const accepted = service.withdraw(alice.session, stagedInput);
+    assert.equal(accepted.ok, true); assert.equal(s.read().stagedRequestId, null); assert.equal(s.read().requests[1].status, 'withdrawn');
+    assert.deepEqual(service.withdraw(alice.session, stagedInput), accepted);
   } finally { s.db.close(); }
 });
 
@@ -298,6 +300,22 @@ test('withdrawal accepts maximum-length generated and host request IDs while enf
   } finally { s.db.close(); }
 });
 
+
+test('a remote singer can put their prepared queued turn on hold', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invitation = service.createInvitation(5000);
+    const alice = service.join(invitation, 'join-id-0001', secret(), 'Alice', 0);
+    let snap = service.snapshot(alice.session);
+    assert.equal(service.submit(alice.session, { commandId: 'request-0001', showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, versionId: 'version-clean' }).ok, true);
+    const state = s.read(); state.requests[0].status = 'staged'; state.stagedRequestId = state.requests[0].id;
+    s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
+    snap = service.snapshot(alice.session);
+    assert.equal(service.setAvailability(alice.session, { commandId: 'away-0001', showId: snap.showId, hostEpoch: snap.hostEpoch, expectedRevision: snap.revision, minutes: 5 }).ok, true);
+    assert.equal(s.read().stagedRequestId, null); assert.equal(s.read().requests[0].status, 'accepted');
+    assert.equal(s.read().playback, null);
+  } finally { s.db.close(); }
+});
 
 test('availability is self-owned, minute-bounded, receipt-recoverable and does not extend on retry', () => {
   const s = setup();

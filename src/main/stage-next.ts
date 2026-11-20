@@ -5,7 +5,7 @@ import type { Settings } from '../domain/settings';
 /** Preparation is automatic; playback still requires Play or an already running
  * show's completion. Pending moderation and the staged lock remain authoritative. */
 export function stageNextApproved(state: ShowState, settings: Settings, now = Date.now(), ready: (versionId: string) => boolean = () => true): ShowState {
-  const eligible = (request: ShowState['requests'][number]) => singerAvailable(state, request.singerId, now) &&
+  const eligible = (request: ShowState['requests'][number]) => singerAvailable(state, request.singerId, now) && singerAvailable(state, request.coSingerId ?? null, now) &&
     isVersionAllowed(state, request.versionId, settings) && (!!state.playback || ready(request.versionId));
   const staged = state.requests.find(request => request.id === state.stagedRequestId && request.status === 'staged');
   if (staged && (state.playback || ready(staged.versionId))) return state;

@@ -58,6 +58,16 @@ try {
   await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'a1');
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'Preparing the queue at launch must never start a performance.');
   await host.waitForFunction(() => Array.from(document.querySelectorAll('[data-queue-list] strong')).map(e => e.textContent).join(',') === 'Alex,Ben,Casey');
+  assert.equal(await queue.getByText('Next in queue', { exact: true }).count(), 1);
+  assert.equal(await queue.getByText(/locked/i).count(), 0);
+  await queue.getByText('Alex', { exact: true }).click();
+  await host.getByRole('button', { name: 'Move down', exact: true }).click();
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'b1');
+  await host.waitForFunction(() => Array.from(document.querySelectorAll('[data-queue-list] strong')).map(e => e.textContent).join(',') === 'Ben,Alex,Casey');
+  await queue.getByText('Alex', { exact: true }).click();
+  await host.getByRole('button', { name: 'Move up', exact: true }).click();
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'a1');
+  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null, 'Changing the next song must never start playback.');
   await queue.getByText('Casey', { exact: true }).click();
   await host.getByRole('button', { name: 'Move up', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.getState()).manualQueueOrder?.[1] === 'c1');

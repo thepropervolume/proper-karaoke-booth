@@ -141,7 +141,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <summary>Queue Management</summary>
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.rotationMode === 'singer'} onChange={event => setDraft({ ...draft, rotationMode: event.target.checked ? 'singer' : 'fifo' })} /> Rotate singers fairly</label>
-            <SettingsHelp label="Singer rotation help" text="Fair rotation gives each singer a turn before their next song. Turn it off for request order. The prepared next song stays locked when changing modes." />
+            <SettingsHelp label="Singer rotation help" text="Fair rotation gives each singer a turn before their next song. Turn it off for request order. The next song stays first when changing modes, and you can move it in the queue." />
             <label className="settings-check"><input type="checkbox" checked={draft.autoApprove} onChange={event => setDraft({ ...draft, autoApprove: event.target.checked })} /> Automatically approve new requests</label>
             <label className="settings-check"><input type="checkbox" checked={draft.autoAdvance} onChange={event => setDraft({ ...draft, autoAdvance: event.target.checked })} /> Automatically play the next song</label>
             <label className="settings-check"><input type="checkbox" checked={draft.pointsEnabled} onChange={event => setDraft({ ...draft, pointsEnabled: event.target.checked })} /> Enable singer points</label>

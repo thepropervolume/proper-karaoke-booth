@@ -255,6 +255,8 @@ function App() {
       .catch(() => { if (sequence === panelSaveSequence.current) { panelSavePending.current = false; setNotice('Could not save panel sizes. Try moving the separator again.', 'error'); } });
   };
   const [accentSaving, setAccentSaving] = useState(false);
+  const [transportBusy, setTransportBusy] = useState(false);
+  const transportBusyRef = useRef(false);
   const accentSaveInFlight = useRef(false);
   const [settingsPath, setSettingsPath] = useState('');
   const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
@@ -408,10 +410,10 @@ function App() {
   const queueWaits = estimateQueueWaits({ generation: state?.playback?.generationId ?? null,
     playing: state?.playback?.status === 'playing', autoAdvance: settings.autoAdvance, timeline: queueTimeline,
     intervalSeconds: settings.pauseIntervalSeconds, items: future.map(request => ({ id: request.id,
-      ready: !!state && singerAvailable(state, request.singerId, clockMs) && hostVersionAllowed(request.versionId) &&
+      ready: !!state && singerAvailable(state, request.singerId, clockMs) && singerAvailable(state, request.coSingerId ?? null, clockMs) && hostVersionAllowed(request.versionId) &&
         !queuePreparation(state.versions.find(version => version.id === request.versionId), downloadStatus, providerPreparations)?.pending })) });
   const selectedFuture = future.find(request => request.id === selectedRequestId);
-  const eligibleFuture = state && future.some(r => r.status === 'accepted' && singerAvailable(state, r.singerId, clockMs) && hostVersionAllowed(r.versionId));
+  const eligibleFuture = state && future.some(r => r.status === 'accepted' && singerAvailable(state, r.singerId, clockMs) && singerAvailable(state, r.coSingerId ?? null, clockMs) && hostVersionAllowed(r.versionId));
   const staged = state?.requests.find(r => r.id === state.stagedRequestId);
   const stagedBlocked = !!(state && staged && !hostVersionAllowed(staged.versionId));
   const active = state?.requests.find(r => r.id === state.playback?.requestId);
@@ -486,12 +488,16 @@ function App() {
     catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
     finally { setRelinkBusy(false); }
   };
-  const playPause = () => {
+  const playPause = async () => {
+    if (transportBusyRef.current) return;
     if (!active && stagedBlocked) {
-      setNotice('The staged song is unavailable under the current policy. Release it or change the policy before starting.', 'error');
-      return Promise.resolve();
+      setNotice('The next song is unavailable under the current policy. Change the queue or policy before starting.', 'error');
+      return;
     }
-    return run(() => window.tpv.playPause());
+    transportBusyRef.current = true; setTransportBusy(true);
+    try { const result = await window.tpv.playPause(); if (!result.ok) setNotice(result.error || 'The action could not be completed.', 'error'); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); }
+    finally { transportBusyRef.current = false; setTransportBusy(false); }
   };
   const mutateCollections = async (action: CollectionsAction): Promise<boolean> => {
     try { setCollections(await window.tpv.mutateCollections(action)); setNotice(''); return true; }
@@ -539,10 +545,7 @@ function App() {
     }, 'Missing-song request saved.');
   };
   const setAvailability = (singerId: string, minutes: number) => {
-    const stagedForSinger = state?.requests.some(request => request.id === state.stagedRequestId && request.singerId === singerId);
-    const releaseStaged = !!stagedForSinger && minutes > 0;
-    if (releaseStaged && !window.confirm('Release this singer’s staged song and mark them unavailable? The waiting song will return to the queue.')) return;
-    void command({ type: 'setSingerAvailability', singerId, minutes, releaseStaged }, minutes ? `Singer unavailable for ${minutes} minutes. Existing requests stay saved; playback starts only when the host presses Play.` : 'Singer returned to the rotation.');
+    void command({ type: 'setSingerAvailability', singerId, minutes }, minutes ? `Singer unavailable for ${minutes} minutes. Existing requests stay saved.` : 'Singer returned to the rotation.');
   };
   const skip = () => {
     if (state?.playback && window.confirm('Skip this performance? This consumes the singer’s turn.'))
@@ -647,7 +650,7 @@ function App() {
       </div>
       <div className="topbar__status" role="status" aria-live="polite">
         <span className={`status-dot ${state?.playback?.status === 'playing' ? 'is-live' : state?.playback?.status === 'paused' ? 'is-paused' : ''}`} aria-hidden="true" />
-        <span>{state?.playback?.status === 'playing' ? `On stage · ${current.singer}` : state?.playback?.status === 'paused' ? `Paused · ${current.singer}` : staged ? `Staged · ${stage.singer}` : 'Player ready'}</span>
+        <span>{state?.playback?.status === 'playing' ? `On stage · ${current.singer}` : state?.playback?.status === 'paused' ? `Paused · ${current.singer}` : staged ? `Next · ${stage.singer}` : 'Player ready'}</span>
       </div>
       {busy && <span className="topbar__busy" role="status"><span className="spinner" aria-hidden="true" />Working…</span>}
       <div className="topbar__actions">
@@ -740,7 +743,7 @@ function App() {
         </>}
         {screen === 'singers' && <>
           <h2>Singers</h2><form className="inline-form" onSubmit={addSinger}><label>Singer name<input autoComplete="off" value={singerName} onChange={e => setSingerName(e.target.value)} placeholder="Enter a name" maxLength={100} /></label><button className="primary" disabled={busy || !singerName.trim()} type="submit">Add singer</button></form>
-          <h3>In This Show</h3><p className="muted">Unavailable singers can have one upcoming request. Existing requests are kept. They rejoin after their return time without interrupting a staged or playing song.</p>{state.singers.filter(s => !s.archived).map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} removeBlocked={state.requests.some(r => ['pending', 'accepted', 'staged', 'playing'].includes(r.status) && (r.singerId === s.id || r.coSingerId === s.id))} onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
+          <h3>In This Show</h3><p className="muted">Unavailable singers can have one upcoming request. Existing requests are kept. They rejoin after their return time without interrupting a playing song.</p>{state.singers.filter(s => !s.archived).map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} removeBlocked={state.requests.some(r => ['pending', 'accepted', 'staged', 'playing'].includes(r.status) && (r.singerId === s.id || r.coSingerId === s.id))} onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
           {!state.singers.some(s => !s.archived) && <p className="empty">No singers yet.</p>}
         </>}
         {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
@@ -761,33 +764,32 @@ function App() {
       <div className="rotation__section-heading"><span className="eyebrow">Up next · {future.length} waiting</span>{future.some(request => queueWaits.get(request.id) == null) && <Tooltip text="Waits are unavailable when playback is stopped or paused, automatic advance is off, the current timing is unknown, or a song or singer is not ready."><span tabIndex={0}>Some waits unavailable ⓘ</span></Tooltip>}</div>
       <div className="rotation__actions">
         <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || !state || !hostVersionAllowed(selectedFuture.versionId) || state.promotedRequestId === selectedFuture.id} onClick={() => { if (selectedFuture) void command({ type: 'promoteRequest', requestId: selectedFuture.id }, 'Request promoted to the front of the waiting queue.'); }}>Promote selected</button>
-        <div className="queue-actions"><button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').findIndex(r => r.id === selectedFuture.id) < 1} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i > 0) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i - 1].id }); }}>Move up</button> <button disabled={busy || !selectedFuture || selectedFuture.status !== 'accepted' || future.filter(r => r.status === 'accepted').at(-1)?.id === selectedFuture.id} onClick={() => { if (!selectedFuture) return; const waiting = future.filter(r => r.status === 'accepted'); const i = waiting.findIndex(r => r.id === selectedFuture.id); if (i >= 0 && i < waiting.length - 1) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: waiting[i + 2]?.id ?? null }); }}>Move down</button> <button disabled={busy || (!state?.manualQueueOrder?.length && !state?.promotedRequestId)} onClick={() => void command({ type: 'resetQueueOrder' }, 'Automatic queue order restored.')}>Automatic order</button></div>
+        <div className="queue-actions"><button disabled={busy || !selectedFuture || future.findIndex(r => r.id === selectedFuture.id) < 1} onClick={() => { if (!selectedFuture) return; const i = future.findIndex(r => r.id === selectedFuture.id); if (i > 0) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: future[i - 1].id }); }}>Move up</button> <button disabled={busy || !selectedFuture || future.at(-1)?.id === selectedFuture.id} onClick={() => { if (!selectedFuture) return; const i = future.findIndex(r => r.id === selectedFuture.id); if (i >= 0 && i < future.length - 1) void command({ type: 'moveRequest', requestId: selectedFuture.id, beforeRequestId: future[i + 2]?.id ?? null }); }}>Move down</button> <button disabled={busy || (!state?.manualQueueOrder?.length && !state?.promotedRequestId)} onClick={() => void command({ type: 'resetQueueOrder' }, 'Automatic queue order restored.')}>Automatic order</button></div>
       </div>
       {state?.manualQueueOrder?.length ? <p className="muted rotation__hint">Manual order · new requests follow the arranged queue.</p> : null}
-      <div role="listbox" aria-label="Singer Rotation" data-queue-list>{future.map((request, index) => { const item = describe(request); const preparation = queuePreparation(state?.versions.find(version => version.id === request.versionId), downloadStatus, providerPreparations); return <div className={`queue-row ${preparation?.pending ? 'queue-row--preparing' : ''} ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}
-        draggable={!busy && request.status === 'accepted'} onDragStart={event => { draggedRequest.current = request.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', request.id); }} onDragEnd={() => { draggedRequest.current = ''; }}
-        onDragOver={event => { if (!busy && request.status === 'accepted' && draggedRequest.current && draggedRequest.current !== request.id) event.preventDefault(); }}
-        onDrop={event => { event.preventDefault(); const id = draggedRequest.current; draggedRequest.current = ''; if (!busy && id && id !== request.id && request.status === 'accepted') void command({ type: 'moveRequest', requestId: id, beforeRequestId: request.id }); }}
+      <div role="listbox" aria-label="Singer Rotation" data-queue-list>{future.map((request, index) => { const item = describe(request); const preparation = queuePreparation(state?.versions.find(version => version.id === request.versionId), downloadStatus, providerPreparations); const returnAt = Math.max(0, ...(state?.singers.filter(s => s.id === request.singerId || s.id === request.coSingerId).map(s => s.unavailableUntilMs ?? 0) ?? [])); return <div className={`queue-row ${preparation?.pending ? 'queue-row--preparing' : ''} ${selectedRequestId === request.id ? 'selected' : ''}`} key={request.id} role="option" aria-selected={selectedRequestId === request.id} tabIndex={0} onClick={() => setSelectedRequestId(request.id)} onFocus={() => setSelectedRequestId(request.id)}
+        draggable={!busy && ['accepted', 'staged'].includes(request.status)} onDragStart={event => { draggedRequest.current = request.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', request.id); }} onDragEnd={() => { draggedRequest.current = ''; }}
+        onDragOver={event => { if (!busy && ['accepted', 'staged'].includes(request.status) && draggedRequest.current && draggedRequest.current !== request.id) event.preventDefault(); }}
+        onDrop={event => { event.preventDefault(); const id = draggedRequest.current; draggedRequest.current = ''; if (!busy && id && id !== request.id && ['accepted', 'staged'].includes(request.status)) void command({ type: 'moveRequest', requestId: id, beforeRequestId: request.id }); }}
         onContextMenu={event => { event.preventDefault(); setSelectedRequestId(request.id); setQueueMenu({ request, x: Math.max(0, Math.min(event.clientX, window.innerWidth - 240)), y: Math.max(0, Math.min(event.clientY, window.innerHeight - 230)) }); }}
-        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Staged · locked · unavailable under current policy' : 'Staged · locked') : state && !singerAvailable(state, request.singerId, clockMs) ? `Unavailable · back in ${Math.ceil(((state.singers.find(s => s.id === request.singerId)?.unavailableUntilMs ?? 0) - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? (staged ? 'Promoted · next after staged' : 'Promoted · next') : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}{queueWaits.get(request.id) != null && <Tooltip text="Approximate wait assumes four minutes per queued song, the configured gap, uninterrupted playback, and playable files. Actual wait can change."><small tabIndex={0} aria-label={`Approximate wait ${formatQueueWait(queueWaits.get(request.id)!)}`}>{formatQueueWait(queueWaits.get(request.id)!)}</small></Tooltip>}</div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
+        onKeyDown={event => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setQueueMenu({ request, x: Math.max(0, Math.min(rect.left, window.innerWidth - 240)), y: Math.max(0, Math.min(rect.top, window.innerHeight - 230)) }); } }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Next · unavailable under current policy' : 'Next in queue') : returnAt > clockMs ? `Unavailable · back in ${Math.ceil((returnAt - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? 'Promoted · next' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}{queueWaits.get(request.id) != null && <Tooltip text="Approximate wait assumes four minutes per queued song, the configured gap, uninterrupted playback, and playable files. Actual wait can change."><small tabIndex={0} aria-label={`Approximate wait ${formatQueueWait(queueWaits.get(request.id)!)}`}>{formatQueueWait(queueWaits.get(request.id)!)}</small></Tooltip>}</div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
-      {staged && <details className="queue-advanced"><summary>Queue options</summary><button disabled={busy} onClick={() => void command({ type: 'release' })}>Release Prepared Song</button></details>}
       </div>
       {settings.hostPreviewPosition === 'below' && <>{previewSeparator}{preview}</>}
     </aside>
     <footer className="transport" aria-label="Playback controls">
-      <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Staged' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Add a song to begin'}</small></div>
+      <div className="transport__track"><span className="eyebrow">{active ? 'Now playing' : staged ? 'Next in queue' : 'Player ready'}</span><strong>{active ? current.title : staged ? stage.title : 'No song selected'}</strong><small>{active ? current.singer : staged ? stage.singer : 'Add a song to begin'}</small></div>
       <div className="transport__controls">
         <KaraFunMixControl bridge={window.tpv.karaFunMix} generation={state?.playback?.generationId ?? null} />
         <Tooltip text={shortcutHint('Previous — Restart Current Song', 'previous')}><button className="icon-button" aria-label="Previous — Restart Current Song" disabled={busy || !active} onClick={() => void run(() => window.tpv.restartTrack())}><Icon name="previous" /></button></Tooltip>
-        <Tooltip text={!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || (!active && (stagedBlocked || pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
+        <Tooltip text={!active && stagedBlocked ? 'The next song is unavailable under the current policy. Change the queue or policy before starting.' : `Play/Pause (${shortcuts.playPause.map(formatShortcut).join(', ')})`}><button className="primary icon-button" aria-label="Play/Pause" disabled={busy || transportBusy || (!active && (stagedBlocked || pauseRemaining > 0 || (!staged && !eligibleFuture)))} onClick={() => void playPause()}><Icon name={state?.playback?.status === 'playing' ? 'pause' : 'play'} /></button></Tooltip>
         <Tooltip text={shortcutHint('Stop', 'stop')}><button className="icon-button" aria-label="Stop" disabled={!state} onClick={() => void command({ type: 'stop' })}><Icon name="stop" /></button></Tooltip>
         <Tooltip text={shortcutHint('Skip', 'skip')}><button className="icon-button" aria-label="Skip" disabled={busy || !active} onClick={skip}><Icon name="skip" /></button></Tooltip>
         <Tooltip text={settings.applauseEnabled ? 'Play applause' : 'Enable applause in Preferences'}><button className="icon-button" aria-label="Applause" disabled={!settings.applauseEnabled || !window.tpv.applause} onClick={() => { void window.tpv.applause?.trigger().then(result => { if (!result.ok) setNotice(result.error || 'Could not play applause.', 'error'); }).catch(() => setNotice('Could not play applause.', 'error')); }}><Icon name="applause" /></button></Tooltip>
       </div>
       <PlaybackTimeline generation={state?.playback?.generationId ?? null} disabled={busy} shortcuts={shortcuts} />
       <label className="transport__volume">Volume <input type="range" aria-label="Global Volume" min="0" max="100" disabled={accentSaving} value={Math.round(settings.masterVolume * 100)} onChange={event => { if (accentSaveInFlight.current) return; const masterVolume = Number(event.target.value) / 100; setSettings(current => ({ ...current, masterVolume })); void window.tpv.saveSettings({ masterVolume }).catch(error => setNotice(`Could not save volume: ${String(error)}`, 'error')); }} /></label>
-      <div className="transport__status" role="status">{!active && stagedBlocked ? 'The staged song is unavailable under the current policy. Release it or change the policy before starting.' : !active && pauseRemaining > 0 ? `Next song in ${pauseRemaining}s` : ''}</div>
+      <div className="transport__status" role="status">{!active && stagedBlocked ? 'The next song is unavailable under the current policy. Change the queue or policy before starting.' : !active && pauseRemaining > 0 ? `Next song in ${pauseRemaining}s` : ''}</div>
     </footer>
     {queueMenu && <div className="song-menu queue-menu" role="menu" aria-label="Queued request actions" style={{ left: queueMenu.x, top: queueMenu.y, maxHeight: `calc(100vh - ${queueMenu.y + 8}px)` }}>
       {(() => {
@@ -805,8 +807,8 @@ function App() {
         }}>Retry song preparation</button>;
       })()}
       <button role="menuitem" disabled={busy || !['accepted', 'pending', 'staged'].includes(queueMenu.request.status)} onClick={() => { setEditingRequest(queueMenu.request); setQueueMenu(null); }}>Edit track or singer…</button>
-      <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { const waiting = future.filter(r => r.status === 'accepted' && r.id !== queueMenu.request.id); void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: waiting[0]?.id ?? null }); setQueueMenu(null); }}>Move to first waiting</button>
-      <button role="menuitem" disabled={busy || queueMenu.request.status !== 'accepted'} onClick={() => { void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: null }); setQueueMenu(null); }}>Move to last waiting</button>
+      <button role="menuitem" disabled={busy || !['accepted', 'staged'].includes(queueMenu.request.status)} onClick={() => { const waiting = future.filter(r => r.id !== queueMenu.request.id); void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: waiting[0]?.id ?? null }); setQueueMenu(null); }}>Move to first waiting</button>
+      <button role="menuitem" disabled={busy || !['accepted', 'staged'].includes(queueMenu.request.status)} onClick={() => { void command({ type: 'moveRequest', requestId: queueMenu.request.id, beforeRequestId: null }); setQueueMenu(null); }}>Move to last waiting</button>
       <button role="menuitem" disabled={queueMenu.request.singerId === null} onClick={() => { setScreen('singers'); setQueueMenu(null); }}>Singer availability…</button>
       <button role="menuitem" disabled={busy} onClick={() => { void command({ type: 'removeRequest', requestId: queueMenu.request.id }); setQueueMenu(null); }}>Remove request</button>
     </div>}
