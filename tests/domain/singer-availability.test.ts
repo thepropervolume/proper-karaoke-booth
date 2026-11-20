@@ -4,6 +4,7 @@ import { applyCommand, createInitialState, orderedFuture, singerAvailable, type 
 import { DatabaseSync } from 'node:sqlite';
 import { migrateShowSchema } from '../../src/main/schema-migrations';
 import { inspectShowSnapshot } from '../../src/main/show-snapshots';
+import { nextSingerReturnAt, SINGER_ON_HOLD, timedSingerReturnAt } from '../../src/domain/singer-availability';
 
 function fixture(mode: 'singer' | 'fifo' = 'singer') {
   let state = createInitialState('show', 'epoch'), seq = 0, now = 1000;
@@ -98,5 +99,74 @@ test('snapshot validation accepts legacy deadlines and rejects invalid availabil
     save(f.get()); assert.equal(inspectShowSnapshot(db).singers, 3);
     f.ok({ type: 'setSingerAvailability', singerId: 'a', minutes: 60 }); save(f.get()); assert.equal(inspectShowSnapshot(db).singers, 3);
     for (const value of [-1, 1.5, '60000']) { const bad = JSON.parse(JSON.stringify(f.get())); bad.singers[0].unavailableUntilMs = value; save(bad); assert.throws(() => inspectShowSnapshot(db), /incomplete or incompatible/); }
+    f.ok({ type: 'holdSinger', singerId: 'a' }); save(f.get());
+    assert.equal(inspectShowSnapshot(db).singers, 3);
+    db.exec('PRAGMA user_version = 7;');
+    assert.throws(() => inspectShowSnapshot(db), /incomplete or incompatible/);
   } finally { db.close(); }
+});
+
+test('only a host can hold or return a singer and their original prepared duet stays in the queue', () => {
+  for (const mode of ['fifo', 'singer'] as const) {
+    const f = fixture(mode);
+    f.ok({ type: 'editVersion', id: 'v', title: 'Song', artist: 'Artist', isDuet: true });
+    f.ok({ type: 'request', requestId: 'duet', singerId: 'a', coSingerId: 'b', versionId: 'v' });
+    f.ok({ type: 'request', requestId: 'solo', singerId: 'c', versionId: 'v' });
+    f.ok({ type: 'stage' });
+    const original = f.get().requests.find(r => r.id === 'duet')!;
+    for (const role of ['singer', 'staff', 'engine'] as const)
+      assert.equal(f.send({ type: 'holdSinger', singerId: 'b' }, { role, id: 'b' }).ok, false);
+    f.ok({ type: 'holdSinger', singerId: 'b' });
+    assert.deepEqual(f.get().requests.find(r => r.id === 'duet'), { ...original, status: 'accepted' });
+    assert.deepEqual(f.ids(), ['solo', 'duet']);
+    assert.equal(f.get().stagedRequestId, null);
+    f.ok({ type: 'stage' });
+    assert.equal(f.get().stagedRequestId, 'solo');
+    f.replace(JSON.parse(JSON.stringify(f.get())));
+    f.tick(3_600_000 * 24);
+    assert.equal(singerAvailable(f.get(), 'b', f.time()), false);
+    assert.equal(singerAvailable(f.get(), 'b', SINGER_ON_HOLD), false);
+    assert.equal(f.get().singers.find(s => s.id === 'b')?.unavailableUntilMs, SINGER_ON_HOLD);
+    for (const minutes of [0, 5])
+      assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'b', minutes }, { role: 'singer', id: 'b' }).ok, false);
+    assert.equal(f.send({ type: 'setSingerAvailability', singerId: 'b', minutes: 10 }).ok, false);
+    f.ok({ type: 'setSingerAvailability', singerId: 'b', minutes: 0 });
+    assert.equal(singerAvailable(f.get(), 'b', f.time()), true);
+    assert.equal(f.get().stagedRequestId, 'solo', 'return respects the already prepared turn');
+    assert.equal(f.get().playback, null);
+    f.ok({ type: 'release' }); f.ok({ type: 'stage' });
+    assert.equal(f.get().stagedRequestId, 'duet');
+    f.ok({ type: 'start', generationId: 'g' });
+    f.ok({ type: 'holdSinger', singerId: 'b' });
+    assert.deepEqual(f.get().playback, { requestId: 'duet', generationId: 'g', status: 'playing' });
+  }
+});
+
+test('held requests remain owed without keeping earlier fair rounds open indefinitely', () => {
+  const f = fixture();
+  f.ok({ type: 'request', requestId: 'owed', singerId: 'a', versionId: 'v' });
+  f.ok({ type: 'request', requestId: 'b1', singerId: 'b', versionId: 'v' });
+  f.ok({ type: 'request', requestId: 'b2', singerId: 'b', versionId: 'v' });
+  f.ok({ type: 'holdSinger', singerId: 'a' });
+  assert.equal(f.send({ type: 'request', requestId: 'owed2', singerId: 'a', versionId: 'v' }).ok, false);
+  f.ok({ type: 'stage' }); f.ok({ type: 'start', generationId: 'g1' });
+  assert.equal(f.get().finalTurnBegun, true);
+  assert.equal(f.send({ type: 'complete', generationId: 'g1' }, { role: 'engine', id: 'player' }).ok, true);
+  f.ok({ type: 'stage' }); f.ok({ type: 'start', generationId: 'g2' });
+  assert.equal(f.get().currentRound, 2);
+  f.ok({ type: 'request', requestId: 'c1', singerId: 'c', versionId: 'v' });
+  assert.equal(f.get().requests.find(r => r.id === 'c1')?.round, 3);
+  f.ok({ type: 'setSingerAvailability', singerId: 'a', minutes: 0 });
+  assert.deepEqual(f.ids(), ['owed', 'c1']);
+  assert.equal(f.get().requests.find(r => r.id === 'owed')?.round, 1);
+  assert.equal(f.get().playback?.requestId, 'b2');
+});
+
+test('availability refresh only schedules future timed returns', () => {
+  const singers = [{ unavailableUntilMs: SINGER_ON_HOLD }, { unavailableUntilMs: 4000 }, { unavailableUntilMs: 6000 }, {}];
+  assert.equal(timedSingerReturnAt(SINGER_ON_HOLD), 0);
+  assert.equal(nextSingerReturnAt(singers, 3999), 4000);
+  assert.equal(nextSingerReturnAt(singers, 4000), 6000);
+  assert.equal(nextSingerReturnAt(singers, 6000), null);
+  assert.equal(nextSingerReturnAt(singers, 6001), null);
 });

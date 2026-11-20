@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { SINGER_ON_HOLD } from '../../src/domain/singer-availability';
+import { parseGuestSnapshot } from '../../src/remote/guest-response';
 import {
   RELAY_OPERATIONS, RESERVED_SLUGS, isRelaySecret, isRelaySlug, isRelayUuid,
   parseGuestRequest, parseHostOpen, parseHostReplyEnvelope, parseRoomIdentity, projectGuestResponse,
@@ -111,6 +113,13 @@ test('response schemas enforce song, request, status, timestamp and JSON depth l
   const cycle: Record<string, unknown> = {}; cycle.self = cycle;
   assert.equal(projectGuestResponse('snapshot', 200, cycle), null);
   assert.equal(projectGuestResponse('request', 200, { ok: false, code: 'INVALID', message: 'm'.repeat(501), revision: 0 }), null);
+});
+
+test('the existing relay snapshot accepts and preserves the reserved host hold deadline', () => {
+  const response = projectGuestResponse('snapshot', 200, { ...snapshot, unavailableUntilMs: SINGER_ON_HOLD });
+  assert.ok(response);
+  assert.equal(parseGuestSnapshot(response.body).unavailableUntilMs, SINGER_ON_HOLD);
+  assert.equal(parseGuestRequest('availability', { command: { ...command, minutes: SINGER_ON_HOLD } }, secret), null);
 });
 
 test('host reply envelope is bounded, strict and separately projects by the pending operation', () => {

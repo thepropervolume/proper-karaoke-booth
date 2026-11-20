@@ -73,7 +73,7 @@ test('the schema upgrade seeds saved queue and performance history in its transa
     const original = db.exec.bind(db);
     let interrupted = true;
     db.exec = (sql: string) => {
-      if (interrupted && sql.includes('PRAGMA user_version = 7')) { interrupted = false; throw new Error('interrupted'); }
+      if (interrupted && sql.includes(`PRAGMA user_version = ${SHOW_SCHEMA_VERSION}`)) { interrupted = false; throw new Error('interrupted'); }
       return original(sql);
     };
     assert.throws(() => migrateShowSchema(db), /interrupted/);

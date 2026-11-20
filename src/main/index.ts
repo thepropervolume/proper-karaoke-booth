@@ -9,6 +9,7 @@ import { dirname, extname, join } from 'node:path';
 import { userInfo } from 'node:os';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Actor, type Command, type Outcome, type ShowState } from '../domain';
+import { nextSingerReturnAt } from '../domain/singer-availability';
 import type { HistoryEntry } from '../domain/collections';
 import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
@@ -480,10 +481,10 @@ function publishBumper(): void { if (!shuttingDown && host && !host.isDestroyed(
 let availabilityTimer: NodeJS.Timeout | undefined;
 function refreshAvailabilityDeadline(): void {
   if (availabilityTimer) clearTimeout(availabilityTimer);
+  availabilityTimer = undefined;
   const now = Date.now();
-  let next = Infinity;
-  for (const singer of state.singers) if ((singer.unavailableUntilMs ?? 0) > now) next = Math.min(next, singer.unavailableUntilMs!);
-  if (Number.isFinite(next)) { availabilityTimer = setTimeout(() => { if (!shuttingDown) broadcast(); }, Math.min(2147483647, Math.max(1, next - now))); availabilityTimer.unref(); }
+  const next = nextSingerReturnAt(state.singers, now);
+  if (next !== null) { availabilityTimer = setTimeout(() => { if (!shuttingDown) broadcast(); }, Math.min(2147483647, Math.max(1, next - now))); availabilityTimer.unref(); }
 }
 // Publishing may prepare the next approved turn, but it never arms a new show.
 // Only an existing show's completion/Skip can arm automatic playback.
@@ -527,7 +528,7 @@ function publishDisplay(): void {
   const singerNames = (ids: (string | null | undefined)[]) =>
     ids.map(id => state.singers.find(s => s.id === id)?.name).filter((name): name is string => !!name).join(' & ');
   const next = settings.showNextSingers ? orderedFuture(state, settings.rotationMode, Date.now())
-    .filter(r => r.singerId !== null && singerAvailable(state, r.singerId, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
+    .filter(r => r.singerId !== null && singerAvailable(state, r.singerId, Date.now()) && singerAvailable(state, r.coSingerId ?? null, Date.now()) && isVersionAllowed(state, r.versionId, settings)).slice(0, 3)
     .map(r => singerNames([r.singerId, r.coSingerId]) || 'Unknown singer') : [];
   const native = currentNativeKaraFun();
   const backdrop = native ? lyricBackdropPath(settings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }) : undefined;
@@ -952,6 +953,7 @@ function validateCommand(value: unknown): Command | null {
         ? { type: 'request', requestId: value.requestId, singerId: value.singerId, versionId: value.versionId, ...(value.coSingerId !== undefined ? { coSingerId: value.coSingerId as string | null } : {}) } : null;
     case 'accept': return shortString(value.requestId) ? { type: 'accept', requestId: value.requestId } : null;
     case 'removeRequest': return shortString(value.requestId) ? { type: 'removeRequest', requestId: value.requestId } : null;
+    case 'holdSinger': return shortString(value.singerId) ? { type: 'holdSinger', singerId: value.singerId } : null;
     case 'setSingerAvailability': return shortString(value.singerId) && Number.isInteger(value.minutes) && (value.minutes as number) >= 0 && (value.minutes as number) <= 60 && (value.releaseStaged === undefined || typeof value.releaseStaged === 'boolean') ? { type: 'setSingerAvailability', singerId: value.singerId, minutes: value.minutes as number, releaseStaged: value.releaseStaged as boolean | undefined } : null;
     case 'moveRequest': return shortString(value.requestId) && (value.beforeRequestId === null || shortString(value.beforeRequestId)) ? { type: 'moveRequest', requestId: value.requestId, beforeRequestId: value.beforeRequestId } : null;
     case 'editRequest': return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) &&

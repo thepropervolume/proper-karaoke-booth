@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { createInitialState, type ShowState } from '../../src/domain';
+import { applyCommand, createInitialState, type ShowState } from '../../src/domain';
 import { DEFAULT_SETTINGS } from '../../src/domain/settings';
+import { SINGER_ON_HOLD } from '../../src/domain/singer-availability';
 import { JoinRevisionConflict, RemoteQueue } from '../../src/main/remote-queue';
 
 const secret = () => randomBytes(32).toString('base64url');
@@ -354,5 +355,27 @@ test('availability state and receipt roll back together when persistence fails',
     assert.equal(service.outcome(a.session, command.commandId), null);
     s.db.exec('DROP TRIGGER fail_away');
     assert.equal(service.setAvailability(a.session, command).ok, true);
+  } finally { s.db.close(); }
+});
+
+test('a held remote singer cannot return or replace the hold through the authenticated guest endpoint', () => {
+  const s = setup();
+  try {
+    const service = s.service(), invitation = service.createInvitation(60000);
+    const guest = service.join(invitation, 'join-hold-singer', secret(), 'Alice', 0);
+    const before = s.read();
+    const hostAction = applyCommand(before, { commandId: 'host-hold-singer', showId: before.showId, hostEpoch: before.hostEpoch,
+      expectedRevision: before.revision, actor: { role: 'host', id: 'host' }, command: { type: 'holdSinger', singerId: guest.singerId } }, DEFAULT_SETTINGS, 1000);
+    assert.equal(hostAction.outcome.ok, true);
+    s.db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(hostAction.state));
+    for (const minutes of [0, 5]) {
+      const current = service.snapshot(guest.session);
+      assert.equal(current.unavailableUntilMs, SINGER_ON_HOLD);
+      const result = service.setAvailability(guest.session, { commandId: `guest-hold-${minutes}`, showId: current.showId,
+        hostEpoch: current.hostEpoch, expectedRevision: current.revision, minutes });
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.message, /Ask the host/);
+    }
+    assert.equal(service.snapshot(guest.session).unavailableUntilMs, SINGER_ON_HOLD);
   } finally { s.db.close(); }
 });

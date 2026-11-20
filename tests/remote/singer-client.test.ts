@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { JoinRevisionConflict, SingerClient, takeInvitation, type GuestSnapshot, type GuestTransport } from '../../src/remote/client';
 import { httpsGuestTransport } from '../../src/remote/transport';
+import { SINGER_ON_HOLD } from '../../src/domain/singer-availability';
 
 const show = (): GuestSnapshot => ({ showId: 'show-123', hostEpoch: 'epoch-123', revision: 4, singerId: 'singer-123', singerName: 'Sam',
   catalog: [{ id: 'song-123', title: 'Popular', artist: 'Nada Surf' }], catalogNextOffset: null, requests: [] });
@@ -13,6 +14,17 @@ function fake(): GuestTransport {
     submit: async () => ({ ok: true, revision: 5 }), withdraw: async () => ({ ok: true, revision: 5 }), submitMissing: async () => ({ ok: true, revision: 4 }), outcome: async () => null };
 }
 const listen = () => {};
+
+test('a held guest sees how to return and does not submit a timed availability call', async () => {
+  const transport = fake();
+  transport.snapshot = async () => ({ ...show(), unavailableUntilMs: SINGER_ON_HOLD });
+  transport.setAvailability = async () => assert.fail('Only the host can return a held guest');
+  const client = new SingerClient(transport, 'invite', secrets());
+  await client.join('Sam', listen);
+  await client.setAvailability(0, listen);
+  assert.match(client.state().message, /Ask the host/);
+  assert.equal(client.state().uncertain, false);
+});
 
 test('an uncertain applause checks its original receipt before another applause', async () => {
   const transport = fake();

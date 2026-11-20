@@ -1,4 +1,5 @@
 import { validStreamingSource } from '../domain/streaming-source';
+import { SINGER_ON_HOLD } from '../domain/singer-availability';
 /** Snapshot primitives; callers must keep the source connection open until the promise settles. */
 import { backup, DatabaseSync } from 'node:sqlite';
 import { link, lstat, mkdtemp, open, realpath, rmdir, unlink } from 'node:fs/promises';
@@ -115,6 +116,8 @@ export function inspectShowSnapshot(db: DatabaseSync): SnapshotSummary {
   if (version < 7 && (state.points !== undefined ||
     (state.versions as Record<string, unknown>[]).some(item => item.isDuet !== undefined) ||
     (state.requests as Record<string, unknown>[]).some(item => item.coSingerId !== undefined)))
+    throw new Error('Backup show state is incomplete or incompatible.');
+  if (version < 8 && (state.singers as Record<string, unknown>[]).some(singer => singer.unavailableUntilMs === SINGER_ON_HOLD))
     throw new Error('Backup show state is incomplete or incompatible.');
   return { revision: state.revision as number, singers: (state.singers as unknown[]).length, songs: (state.versions as unknown[]).length, requests: (state.requests as unknown[]).length };
 }

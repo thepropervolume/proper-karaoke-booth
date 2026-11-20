@@ -1,4 +1,5 @@
 import type { Outcome, RequestStatus } from '../domain';
+import { SINGER_ON_HOLD } from '../domain/singer-availability';
 
 export type Song = { id: string; title: string; artist: string };
 export type GuestSnapshot = { showId: string; hostEpoch: string; revision: number; singerId: string; singerName: string;
@@ -159,6 +160,7 @@ export class SingerClient {
   async setAvailability(minutes: number, listener: (view: GuestView) => void): Promise<void> {
     const snapshot = this.view.snapshot;
     if (!this.session || !snapshot || this.view.busy || this.pendingRequest) return;
+    if (snapshot.unavailableUntilMs === SINGER_ON_HOLD) { this.emit(listener, { message: 'Ask the host to return you to the rotation.' }); return; }
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 60) { this.emit(listener, { message: 'Choose a whole number of minutes from 0 to 60.' }); return; }
     if (!this.transport.setAvailability) { this.emit(listener, { message: 'Availability controls are unavailable on this connection.' }); return; }
     this.pendingRequest = { kind: 'availability', command: { commandId: this.random(), showId: snapshot.showId, hostEpoch: snapshot.hostEpoch, expectedRevision: snapshot.revision, minutes } };

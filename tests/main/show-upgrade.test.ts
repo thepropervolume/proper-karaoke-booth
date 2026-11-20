@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { createInitialState, type ShowState } from '../../src/domain';
+import { SINGER_ON_HOLD } from '../../src/domain/singer-availability';
 import { SHOW_SCHEMA_VERSION } from '../../src/main/schema-migrations';
 import { inspectShowSnapshot } from '../../src/main/show-snapshots';
 import { Store } from '../../src/main/store';
@@ -33,7 +34,7 @@ test('host upgrade preserves committed WAL data in a checked snapshot of the old
     const backups = join(directory, 'show-upgrade-backups');
     const names = readdirSync(backups);
     assert.equal(names.length, 1);
-    assert.match(names[0], /^show-v6-before-v7-.*\.sqlite$/);
+    assert.ok(names[0].startsWith(`show-v6-before-v${SHOW_SCHEMA_VERSION}-`));
     const snapshot = new DatabaseSync(join(backups, names[0]), { readOnly: true });
     try {
       assert.equal(inspectShowSnapshot(snapshot).revision, 42);
@@ -81,11 +82,40 @@ test('an unversioned legacy show can be backed up before the baseline migration'
     finally { store.close(); }
     const directoryPath = join(directory, 'show-upgrade-backups');
     const [name] = readdirSync(directoryPath);
-    assert.match(name, /^show-v0-before-v7-/);
+    assert.ok(name.startsWith(`show-v0-before-v${SHOW_SCHEMA_VERSION}-`));
     const snapshot = new DatabaseSync(join(directoryPath, name), { readOnly: true });
     try {
       assert.equal(inspectShowSnapshot(snapshot).revision, 0);
       assert.equal(Object.values(snapshot.prepare('PRAGMA user_version').get()!)[0], 0);
     } finally { snapshot.close(); }
   } finally { rmSync(directory, { force: true, recursive: true }); }
+});
+
+test('schema 7 upgrades with a checked rollback copy while schema 8 preserves a held singer on disk', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-show-hold-upgrade-'));
+  const filename = join(directory, 'show.sqlite');
+  const original = createInitialState('show', 'host');
+  original.singers = [{ id: 'singer', name: 'Singer', unavailableUntilMs: 120000 }];
+  let store: Store<ShowState> | undefined;
+  try {
+    store = new Store<ShowState>(filename);
+    store.save(original);
+    store.close(); store = undefined;
+    const earlier = new DatabaseSync(filename);
+    try { earlier.exec('PRAGMA user_version = 7;'); } finally { earlier.close(); }
+    store = await Store.openForHost(filename);
+    assert.deepEqual(store.load(), original);
+    const [name] = readdirSync(join(directory, 'show-upgrade-backups'));
+    assert.ok(name.startsWith('show-v7-before-v8-'));
+    const previous = new DatabaseSync(join(directory, 'show-upgrade-backups', name), { readOnly: true });
+    try {
+      assert.equal(previous.prepare('PRAGMA user_version').get()?.user_version, 7);
+      assert.equal(inspectShowSnapshot(previous).singers, 1);
+      assert.deepEqual(JSON.parse(String(previous.prepare('SELECT value FROM show_state WHERE id=1').get()?.value)), original);
+    } finally { previous.close(); }
+    store.save({ ...original, singers: [{ ...original.singers[0], unavailableUntilMs: SINGER_ON_HOLD }] });
+    store.close(); store = undefined;
+    store = await Store.openForHost(filename);
+    assert.equal(store.load()?.singers[0].unavailableUntilMs, SINGER_ON_HOLD);
+  } finally { store?.close(); rmSync(directory, { force: true, recursive: true }); }
 });

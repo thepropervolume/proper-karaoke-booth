@@ -164,7 +164,8 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [x] Edit a queued track/singer with the same request identity, next-free-round reassignment and preserved manual slot; active playback stays protected.
 - [ ] Add actor/reason audit history for queue edits.
 - [x] Add timed singer absence and return (1–60 minutes), one future request while away, authenticated self-service and tested return fairness.
-- [ ] Add indefinite singer hold and skip-turn controls.
+- [x] Add a host-only singer hold until manual return. Desktop tests verified restart persistence, duet eligibility and continued rotation, including the schema 7→8 backup.
+- [ ] Add a separate skip-turn action and confirm its fairness rules.
 - [x] Show current singer, upcoming singers and the ordered queue.
 - [x] Show approximate host-queue waits using current remaining playback, configured gaps and four minutes per preceding ready song; withhold uncertain estimates and explain assumptions.
 - [ ] Verify estimates under real show conditions and refine them with trustworthy durations when available.

@@ -8,7 +8,9 @@ import { seedSongHistory } from './song-history';
 // Version 6 adds Party Tyme source identities to saved show JSON. Older binaries
 // must not reinterpret private provider media as ordinary imported files.
 // Version 7 preserves queued song identities for cross-show scoring.
-export const SHOW_SCHEMA_VERSION = 7;
+// Version 8 reserves an availability value for host-controlled singer holds.
+// An older host would let the singer clear the hold as if it were timed.
+export const SHOW_SCHEMA_VERSION = 8;
 const required: Record<string, readonly string[]> = {
   show_state: ['id', 'value'], media: ['id', 'path', 'fingerprint'], checkpoint: ['id', 'generation', 'position'],
   missing_song_requests: ['id', 'singer', 'title', 'artist', 'created_at'], missing_song_request_reviews: ['request_id', 'status', 'updated_at'], playlists: ['id', 'name', 'singer_id'],

@@ -3,7 +3,7 @@ import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Initializes a disposable show, closes it, then seeds synthetic history before reopening.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -38,6 +38,7 @@ try {
   await hostWindow(app);
   await app.close(); app = undefined;
   const db = new DatabaseSync(join(profile, 'show.sqlite'));
+  let beforeUpgrade;
   try {
     const state = JSON.parse(db.prepare('SELECT value FROM show_state WHERE id = 1').get().value);
     state.versions = [{ id: 'v1', title: 'First song', artist: 'One', rating: 'clean' }, { id: 'v2', title: 'Replacement song', artist: 'Two', rating: 'clean' }];
@@ -45,58 +46,66 @@ try {
     state.requests = state.singers.map((singer, index) => ({ id: singer.id + '1', singerId: singer.id, versionId: 'v1', status: 'accepted', round: 1, order: index + 1 }));
     state.nextOrder = 4;
     db.prepare('UPDATE show_state SET value = ? WHERE id = 1').run(JSON.stringify(state));
+    beforeUpgrade = structuredClone(state);
+    db.exec('PRAGMA user_version=7;');
   } finally { db.close(); }
   app = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   let host = await hostWindow(app);
   await host.getByRole('button', { name: 'Singers', exact: true }).click();
-  const row = host.locator('.track-row').filter({ has: host.getByText('Alex', { exact: true }) });
-  await row.getByRole('spinbutton', { name: 'Alex unavailable minutes' }).fill('1');
-  host.once('dialog', dialog => dialog.accept());
-  await row.getByRole('button', { name: 'Mark unavailable', exact: true }).click();
-  await row.getByText('Unavailable · back in 1 min', { exact: true }).waitFor();
+  let row = host.locator('.track-row').filter({ has: host.getByText('Alex', { exact: true }) });
+  const rollbackDirectory = join(profile, 'show-upgrade-backups');
+  const [rollbackName] = await readdir(rollbackDirectory);
+  assert.match(rollbackName, /^show-v7-before-v8-/);
+  const rollback = new DatabaseSync(join(rollbackDirectory, rollbackName), { readOnly: true });
+  try {
+    assert.equal(rollback.prepare('PRAGMA user_version').get().user_version, 7);
+    assert.deepEqual(JSON.parse(rollback.prepare('SELECT value FROM show_state WHERE id=1').get().value), beforeUpgrade);
+  } finally { rollback.close(); }
+  await row.getByRole('button', { name: 'Actions for Alex' }).click();
+  await row.getByRole('menuitem', { name: 'Hold until returned', exact: true }).click();
+  await row.getByText('On hold', { exact: true }).waitFor();
   await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'b1');
-  await row.getByRole('button', { name: 'Return now', exact: true }).click();
-  await waitForHostCondition(host, async () => (await window.tpv.getState()).singers.find(s => s.id === 'a').unavailableUntilMs === 0);
-  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'b1');
-  await host.getByText('Queue options', { exact: true }).click();
-  await host.getByRole('button', { name: 'Release Prepared Song', exact: true }).click();
-  assert.equal((await host.evaluate(() => window.tpv.command({ type: 'stage' }))).ok, true);
-  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'a1');
-  host.once('dialog', dialog => dialog.dismiss());
-  await row.getByRole('button', { name: 'Mark unavailable', exact: true }).click();
-  assert.equal((await host.evaluate(() => window.tpv.getState())).stagedRequestId, 'a1');
-  host.once('dialog', dialog => dialog.accept());
-  await row.getByRole('button', { name: 'Mark unavailable', exact: true }).click();
-  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === null);
   let state = await host.evaluate(() => window.tpv.getState());
-  const deadline = state.singers.find(s => s.id === 'a').unavailableUntilMs;
-  assert.ok(deadline > Date.now());
+  assert.equal(state.singers.find(s => s.id === 'a').unavailableUntilMs, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(state.requests.find(request => request.id === 'a1'), beforeUpgrade.requests.find(request => request.id === 'a1'));
   await app.close(); app = undefined;
   app = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   host = await hostWindow(app);
-  await host.waitForFunction(() => !!window.tpv);
+  await host.getByRole('button', { name: 'Singers', exact: true }).click();
+  row = host.locator('.track-row').filter({ has: host.getByText('Alex', { exact: true }) });
+  await row.getByText('On hold', { exact: true }).waitFor();
+  await row.getByRole('button', { name: 'Actions for Alex' }).click();
+  assert.equal(await row.getByRole('spinbutton').count(), 0);
+  await row.getByRole('menuitem', { name: 'Return now', exact: true }).click();
+  await row.getByText('Available', { exact: true }).waitFor();
   state = await host.evaluate(() => window.tpv.getState());
-  assert.equal(state.singers.find(s => s.id === 'a').unavailableUntilMs, deadline);
+  assert.equal(state.singers.find(s => s.id === 'a').unavailableUntilMs, 0);
+  assert.equal(state.stagedRequestId, 'b1', 'return preserves the next prepared turn');
+  assert.equal(state.playback, null);
   await app.close(); app = undefined;
-  // Seed an imminent deadline only after closing the isolated authority.
+  // Exercise the real scheduler with one finite deadline and two holds.
   const expiryDb = new DatabaseSync(join(profile, 'show.sqlite'));
   try {
     state = JSON.parse(expiryDb.prepare('SELECT value FROM show_state WHERE id=1').get().value);
     for (const request of state.requests) if (request.status === 'staged') request.status = 'accepted';
     state.stagedRequestId = null;
-    for (const singer of state.singers) singer.unavailableUntilMs = Date.now() + 3000;
+    for (const singer of state.singers) singer.unavailableUntilMs = singer.id === 'b' ? Date.now() + 5000 : Number.MAX_SAFE_INTEGER;
     expiryDb.prepare('UPDATE show_state SET value = ? WHERE id=1').run(JSON.stringify(state));
   } finally { expiryDb.close(); }
   app = await electron.launch({ executablePath, args, cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   host = await hostWindow(app);
-  await host.locator('[data-queue-list]').getByText('Unavailable · back in 1 min', { exact: true }).first().waitFor();
-  await host.waitForFunction(() => Array.from(document.querySelectorAll('[data-queue-list] strong')).map(e => e.textContent).join(',') === 'Alex,Ben,Casey');
-  await waitForHostCondition(host, async () => (await window.tpv.getState()).stagedRequestId === 'a1');
-  assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
-  console.log('Singer absence, early return, staged confirmation, restart and timed queue reintegration passed.');
+  const rotation = host.getByRole('listbox', { name: 'Singer Rotation' });
+  await rotation.getByText('Unavailable · back in 1 min', { exact: true }).waitFor();
+  await rotation.getByText('Next in queue', { exact: true }).waitFor();
+  assert.equal(await rotation.getByText('Singer on hold', { exact: true }).count(), 2);
+  state = await host.evaluate(() => window.tpv.getState());
+  assert.equal(state.stagedRequestId, 'b1');
+  assert.equal(state.playback, null);
+  assert.equal(state.singers.find(s => s.id === 'a').unavailableUntilMs, Number.MAX_SAFE_INTEGER);
+  console.log('Singer hold and return UI, schema 7 rollback copy, durable hold across restart, and automatic timed reintegration passed.');
 } finally {
   if (app) await app.close();
   if (temp.startsWith(tempRoot + sep) && (await realpath(temp)) === temp) await rm(temp, { recursive: true, force: true });

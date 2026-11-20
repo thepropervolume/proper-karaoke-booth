@@ -4,6 +4,7 @@ import { futureRequestLimitMessage } from './future-request-limit';
 import { compileSongBlacklist, type SongBlacklistMatcher } from './song-blacklist';
 import { applyPointsEvent, newPointsLedger, type PointsLedger, type PointsEvent } from './points';
 import { sameSong } from './song-identity';
+import { SINGER_ON_HOLD } from './singer-availability';
 
 /** Pure show rules. Callers authenticate actors and must persist the returned state,
  * including receipt-only updates, before acknowledging a command. */
@@ -25,6 +26,7 @@ export type Command =
   | { type: 'addSinger'; singer: Singer }
   | { type: 'removeSinger'; singerId: string }
   | { type: 'setSingerAvailability'; singerId: string; minutes: number; releaseStaged?: boolean }
+  | { type: 'holdSinger'; singerId: string }
   | { type: 'request'; requestId: string; singerId: string | null; coSingerId?: string | null; versionId: string }
   | { type: 'accept'; requestId: string }
   | { type: 'removeRequest'; requestId: string }
@@ -95,14 +97,19 @@ export function remainingPauseSeconds(state: ShowState, nowMs: number): number {
 
 export function singerAvailable(state: ShowState, singerId: string | null, nowMs: number): boolean {
   if (singerId === null) return true;
-  return (state.singers.find(singer => singer.id === singerId)?.unavailableUntilMs ?? 0) <= nowMs;
+  const deadline = state.singers.find(singer => singer.id === singerId)?.unavailableUntilMs ?? 0;
+  return deadline !== SINGER_ON_HOLD && deadline <= nowMs;
 }
 
 function singerRequestLimit(state: ShowState, singerId: string | null, configured: number | undefined, nowMs: number): string | null {
   if (singerId === null) return null;
   if (!singerAvailable(state, singerId, nowMs)) {
     const message = futureRequestLimitMessage(state.requests, singerId, 1);
-    if (message) return 'An unavailable singer may have at most one upcoming request. Existing requests are retained; return or remove requests before adding another.';
+    if (message) {
+      if (state.singers.some(singer => singer.id === singerId && singer.unavailableUntilMs === SINGER_ON_HOLD))
+        return 'A held singer may have at most one upcoming request. The host can return the singer, or an existing request can be removed.';
+      return 'An unavailable singer may have at most one upcoming request. Existing requests are retained; return or remove requests before adding another.';
+    }
   }
   return futureRequestLimitMessage(state.requests, singerId, configured);
 }
@@ -114,7 +121,10 @@ export function orderedFuture(state: ShowState, mode: Settings['rotationMode'], 
   // repeatedly filtering it during sorting grows quadratic with show history.
   const positions = new Map<string, number>();
   const deadlines = new Map(state.singers.map(s => [s.id, s.unavailableUntilMs ?? 0]));
-  const available = (id: string | null | undefined) => id == null || (deadlines.get(id) ?? 0) <= nowMs;
+  const available = (id: string | null | undefined) => {
+    const at = id == null ? 0 : deadlines.get(id) ?? 0;
+    return id == null || (at !== SINGER_ON_HOLD && at <= nowMs);
+  };
   const requestAvailable = (request: SongRequest) => available(request.singerId) && available(request.coSingerId);
   const position = (request: SongRequest) => request.singerId === null ? request.order ?? Infinity : positions.get(request.singerId) ?? Infinity;
   const deadline = (id: string | null | undefined) => id == null ? 0 : deadlines.get(id) ?? 0;
@@ -209,7 +219,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     }
     case 'addSinger':
-      if (!cmd.singer || !nonempty(cmd.singer.id) || !nonempty(cmd.singer.name) || cmd.singer.archived !== undefined || (cmd.singer.unavailableUntilMs !== undefined && (!Number.isSafeInteger(cmd.singer.unavailableUntilMs) || cmd.singer.unavailableUntilMs < 0 || cmd.singer.unavailableUntilMs > nowMs + 3600000))) reject('INVALID', 'Invalid singer');
+      if (!cmd.singer || !nonempty(cmd.singer.id) || !nonempty(cmd.singer.name) || cmd.singer.archived !== undefined || (cmd.singer.unavailableUntilMs !== undefined && (!Number.isSafeInteger(cmd.singer.unavailableUntilMs) || cmd.singer.unavailableUntilMs < 0 || cmd.singer.unavailableUntilMs >= SINGER_ON_HOLD || cmd.singer.unavailableUntilMs > nowMs + 3600000))) reject('INVALID', 'Invalid singer');
       else if (state.singers.some(s => s.id === cmd.singer.id)) reject('DUPLICATE', 'Singer already exists');
       else state.singers.push({ ...cmd.singer });
       break;
@@ -222,15 +232,22 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else { singer.archived = true; delete singer.unavailableUntilMs; }
       break;
     }
-    case 'setSingerAvailability': {
+    case 'holdSinger': case 'setSingerAvailability': {
+      const hold = cmd.type === 'holdSinger';
+      const minutes = hold ? 0 : cmd.minutes;
+      const returnAt = nowMs + minutes * 60000;
       const singer = state.singers.find(s => s.id === cmd.singerId && !s.archived);
       const staged = state.requests.find(r => r.id === state.stagedRequestId && (r.singerId === cmd.singerId || r.coSingerId === cmd.singerId));
       const playing = state.requests.find(r => r.id === state.playback?.requestId && (r.singerId === cmd.singerId || r.coSingerId === cmd.singerId));
-      if (!singer || !Number.isInteger(cmd.minutes) || cmd.minutes < 0 || cmd.minutes > 60 || !Number.isSafeInteger(nowMs) || nowMs < 0 || !Number.isSafeInteger(nowMs + cmd.minutes * 60000) || (cmd.releaseStaged !== undefined && typeof cmd.releaseStaged !== 'boolean')) reject('INVALID', 'Choose a whole number of minutes from 0 to 60');
-      else if (cmd.minutes > 0 && playing && envelope.actor.role !== 'host') reject('LOCKED', 'Ask the host while your performance is active');
+      if (!singer) reject('INVALID', 'Singer is not in this show');
+      else if (!hold && (!Number.isInteger(minutes) || minutes < 0 || minutes > 60 || !Number.isSafeInteger(nowMs) || nowMs < 0 || !Number.isSafeInteger(returnAt) || returnAt >= SINGER_ON_HOLD || (cmd.releaseStaged !== undefined && typeof cmd.releaseStaged !== 'boolean')))
+        reject('INVALID', 'Choose a whole number of minutes from 0 to 60');
+      else if (!hold && singer.unavailableUntilMs === SINGER_ON_HOLD && (envelope.actor.role !== 'host' || minutes !== 0))
+        reject('LOCKED', envelope.actor.role === 'host' ? 'Return the singer before setting a timed absence.' : 'Ask the host to return you to the rotation.');
+      else if (minutes > 0 && playing && envelope.actor.role !== 'host') reject('LOCKED', 'Ask the host while your performance is active');
       else {
-        singer.unavailableUntilMs = cmd.minutes === 0 ? 0 : nowMs + cmd.minutes * 60000;
-        if (cmd.minutes > 0 && staged) { staged.status = 'accepted'; state.stagedRequestId = null; }
+        singer.unavailableUntilMs = hold ? SINGER_ON_HOLD : minutes === 0 ? 0 : returnAt;
+        if ((hold || minutes > 0) && staged) { staged.status = 'accepted'; state.stagedRequestId = null; }
       }
       break;
     }
@@ -367,14 +384,18 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else {
         // Preparing a later song does not consume or advance the active round.
         // An explicit promotion (or FIFO mode) can start a later round before
-        // earlier eligible turns. Keep the current round open until those turns run.
-        const earlierWaiting = state.requests.some(r => r.status === 'accepted' && r.round !== null &&
+        // earlier eligible turns. A singer on an open-ended hold retains their
+        // original slot without keeping a round open indefinitely.
+        const heldSingers = new Set(state.singers.filter(singer => singer.unavailableUntilMs === SINGER_ON_HOLD).map(singer => singer.id));
+        const waitingForRound = (r: SongRequest) => r.status === 'accepted' &&
+          !heldSingers.has(r.singerId ?? '') && !heldSingers.has(r.coSingerId ?? '');
+        const earlierWaiting = state.requests.some(r => waitingForRound(r) && r.round !== null &&
           r.round < staged.round! && versionAllowed(r.versionId));
         if (staged.round! > state.currentRound && !earlierWaiting) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
         staged.status = 'playing'; state.stagedRequestId = null;
         state.playback = { requestId: staged.id, generationId: cmd.generationId, status: 'playing' };
         state.usedGenerationIds.push(cmd.generationId);
-        if (staged.round === state.currentRound && !state.requests.some(r => r.status === 'accepted' && r.round === state.currentRound && versionAllowed(r.versionId))) state.finalTurnBegun = true;
+        if (staged.round === state.currentRound && !state.requests.some(r => waitingForRound(r) && r.round === state.currentRound && versionAllowed(r.versionId))) state.finalTurnBegun = true;
       }
       break;
     }

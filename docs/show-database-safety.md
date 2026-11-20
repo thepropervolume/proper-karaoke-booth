@@ -1,6 +1,6 @@
 # Show database migrations and snapshot foundation
 
-The current show database uses SQLite `user_version` **7**. Schema 5 added nullable singer IDs, schema 6 added Party Tyme recording identities, and schema 7 retained queued song identities for scoring across shows. Recognizable older shows and standalone backups are checked against their recorded schema before migration. Older snapshots retain their original schema for use with a compatible app version.
+The current show database uses SQLite `user_version` **8**. Schema 5 added nullable singer IDs. Schema 6 added Party Tyme recording identities, schema 7 retained queued song identities for points, and schema 8 marks the introduction of host-only holds. Booth checks older shows and standalone backups against their original schema before migration. Keep the checked pre-upgrade snapshot for rollback with a compatible app.
 
 Starting with app version 0.10.4, the host saves a verified standalone copy of an existing show before changing its database schema. Look in `show-upgrade-backups` inside the app data folder. The filename identifies the source and target schemas. A SQLite writer reservation keeps show data stable while the copy includes any committed WAL pages. A backup failure stops startup before migration. Fresh and already current databases skip the upgrade backup. Failed migrations roll back. Preserve the pre-upgrade copy if you need to use the show with an older app.
 

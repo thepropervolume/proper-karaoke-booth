@@ -1,5 +1,7 @@
 # Singer Guide for Development Version 0.10.6
 
+If the host puts you on hold, your queued songs stay in rotation and you become eligible again when the host selects **Return now**. Ask the host when you are ready to return. A timed break still ends automatically.
+
 ## Applause, Points and Photos
 
 When your host enables applause, tap **Applause** to play a clap sound. You begin with three credits and regain one whenever you complete a song, up to five. You cannot applaud yourself. Your available credits and, when enabled, points appear in your room. A failed sound does not use a credit. The six recorded claps play in order and vary in length; up to three can overlap.

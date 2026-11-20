@@ -3,6 +3,7 @@ import { SingerClient, takeInvitation, type GuestView } from './client';
 import { httpsGuestTransport } from './transport';
 import './singer-page.css';
 import { prepareGuestPhoto } from './photo';
+import { SINGER_ON_HOLD } from '../domain/singer-availability';
 
 /** Embeddable page; a secure server and asset bundle are still required to use it. */
 export function SingerPage({ client }: { client: SingerClient }) {
@@ -21,6 +22,8 @@ export function SingerPage({ client }: { client: SingerClient }) {
     return () => window.clearInterval(timer);
   }, [client, view.joined]);
   const songs = view.songs;
+  const held = view.snapshot?.unavailableUntilMs === SINGER_ON_HOLD;
+  const availableIn = Math.ceil(((view.snapshot?.unavailableUntilMs ?? 0) - (view.snapshot?.serverNowMs ?? Date.now())) / 60000);
   return <main className="singer-page">
     <header><h1>The Proper Volume Karaoke</h1><p>Find a song and join the rotation.</p></header>
     {view.message && <p role="status" className="singer-message">{view.message}</p>}
@@ -59,10 +62,12 @@ export function SingerPage({ client }: { client: SingerClient }) {
             onClick={() => void client.applaud(setView)}>👏 Applaud</button>
         </section>}
         <section><h2>Your availability</h2>
-          <p>{(view.snapshot.unavailableUntilMs ?? 0) > (view.snapshot.serverNowMs ?? Date.now()) ? `Unavailable · return in about ${Math.ceil(((view.snapshot.unavailableUntilMs ?? 0) - (view.snapshot.serverNowMs ?? Date.now())) / 60000)} min at last refresh.` : 'Available for your turn.'} You can keep one upcoming request while unavailable; existing requests stay saved. Your turn rejoins automatically when the time expires, and the host starts playback.</p>
-          <label>Minutes away<input type="number" min="1" max="60" step="1" value={awayMinutes} onChange={event => setAwayMinutes(Number(event.target.value))} /></label>
-          <button disabled={view.busy || view.uncertain || !Number.isInteger(awayMinutes) || awayMinutes < 1 || awayMinutes > 60} onClick={() => void client.setAvailability(awayMinutes, setView)}>Mark me unavailable</button>{' '}
-          <button disabled={view.busy || view.uncertain} onClick={() => void client.setAvailability(0, setView)}>I'm back</button>
+          {held ? <p>On hold. Ask the host to return you to the rotation. Your existing requests stay saved.</p> : <>
+            <p>{availableIn > 0 ? `Unavailable · return in about ${availableIn} min at last refresh.` : 'Available for your turn.'} You can keep one upcoming request while unavailable. A timed absence ends automatically.</p>
+            <label>Minutes away<input type="number" min="1" max="60" step="1" value={awayMinutes} onChange={event => setAwayMinutes(Number(event.target.value))} /></label>
+            <button disabled={view.busy || view.uncertain || !Number.isInteger(awayMinutes) || awayMinutes < 1 || awayMinutes > 60} onClick={() => void client.setAvailability(awayMinutes, setView)}>Mark me unavailable</button>{' '}
+            <button disabled={view.busy || view.uncertain} onClick={() => void client.setAvailability(0, setView)}>I'm back</button>
+          </>}
         </section>
         <section><h2>Your requests</h2>{view.snapshot.requests.length ? <ul>{view.snapshot.requests.map(request => {
           const song = view.songs.find(item => item.id === request.versionId);
