@@ -12,7 +12,7 @@ const run=(file,args,options={})=>spawnSync(file,args,{...options,windowsHide:tr
 test('a synthetic upload key signs every bundle payload and tampering or the wrong key is rejected', {skip:!home}, async()=>{
   const dir=await mkdtemp(join(tmpdir(),'tpv-play-test-'));
   try {
-    const payload=join(dir,'payload'), keystore=join(dir,'synthetic-only.p12');
+    const payload=join(dir,'payload'), keystore=join(dir,'synthetic key with spaces.p12');
     await mkdir(join(payload,'base','manifest'),{recursive:true});
     await writeFile(join(payload,'BundleConfig.pb'),'synthetic bundle config');
     await writeFile(join(payload,'base','manifest','AndroidManifest.xml'),'synthetic manifest');
@@ -45,7 +45,7 @@ test('a synthetic upload key signs every bundle payload and tampering or the wro
     }
     // Exercise the full orchestrator in a disposable clean Git repo with stub build steps;
     // the signing and entry verifier still use the real JDK and a real bundle.
-    const checkout=join(dir,'checkout'); await mkdir(join(checkout,'scripts'),{recursive:true});
+    const checkout=join(dir,'checkout with spaces'); await mkdir(join(checkout,'scripts'),{recursive:true});
     await mkdir(join(checkout,'mobile','android','app'),{recursive:true});
     await mkdir(join(checkout,'mobile','node_modules','@capacitor','cli','bin'),{recursive:true});
     await copyFile(resolve('scripts/build-play-aab.mjs'),join(checkout,'scripts','build-play-aab.mjs'));
