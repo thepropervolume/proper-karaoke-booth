@@ -68,7 +68,7 @@ Host-only commands validate the current authorized performance and channel ID. S
 
 The 0.5.0 workspace incorporates the owner-approved interface refresh from `opencode-audit`: compact transport, clearer library and queue headings, sidebar icons/counts, persistent error notices, dismissible timed informational notices, and a sticky Preferences header/footer. The integration preserves the newer macOS packaging and configuration fixes. Preview, resizable panels, global artist/song exclusions, filtered YouTube discovery and LAN singer-screen sharing are implemented in source with the specific verification recorded above; a visual refresh alone does not establish packaged or physical-show behavior.
 
-**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is in the File menu. File → Import provides video-file, custom-directory and CDG/ZIP actions alongside the library icons. View offers Appearance, Choose Accent Color and Layout menus. Sources groups native KaraFun, Karaoke Nerds, YouTube and other service setup. KaraFun playback is experimental; other subscriptions remain pending. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile web app provides Full Host playback/queue and Piggyback requests using the same singer protocol. The mobile directory packages that shared interface for Android/iOS; it replaces the disconnected synthetic Expo preview. Native signing, distribution and physical-device acceptance remain separate gates.
+**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace; an always-visible playback area; a singer rotation or FIFO request queue; search; settings; and a separate singer display. Back up show is in the File menu. File → Import provides video-file, custom-directory and CDG/LRC/ZIP actions alongside the library icons. View offers Appearance, Choose Accent Color and Layout menus. Sources groups native KaraFun, Karaoke Nerds, YouTube and other service setup. KaraFun playback is experimental; other subscriptions remain pending. The singer browser is an opt-in local-network page with its own limited projection and guest actions. The mobile web app provides Full Host playback/queue and Piggyback requests using the same singer protocol. The mobile directory packages that shared interface for Android/iOS; it replaces the disconnected synthetic Expo preview. Native signing, distribution and physical-device acceptance remain separate gates.
 
 **Planned:** distinct KJ remote, delegated staff queue workspace, expanded singer web and native clients, and account/billing screens. A KJ remote emphasizes transport, while queue staff moderate and organize future turns without playback or output controls. The singer experience provides discovery, own requests and a safe public view of the show. A singer display is presentation-only and never exposes host controls, private notes, file paths or account information. Native clients are not assumed to inherit browser security properties; their authentication, certificate handling, secure storage, background behavior and reconnection require separate testing.
 
@@ -110,7 +110,7 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Confirmed requirement, not implemented:** each metadata edit lets the host choose whether to also write supported embedded file tags. The default is local-only. Import, rescan and ordinary edits never silently change media or filenames. If an explicitly requested write is unsupported or fails, preserve the local edit and clearly report the file outcome. A safe implementation needs source-change checks, format support, backup/recovery, updating the whole-file fingerprint and tests for interruption, permissions and conflicting tags. See the metadata write-back design in the repository.
 
-**Available through conversion:** Import CD+G / ZIP accepts a same-name MP3/CDG pair or a ZIP with exactly one pair. FFmpeg on PATH converts it to a managed H.264/AAC MP4 before library insertion; originals remain unchanged. The job has progress and cancellation, fixed-name extraction, expanded-size/CRC checks, path/symlink checks and explicit ambiguity errors. It is not native CDG playback: lyrics and the chosen background are composited at import. From 0.3.1, the default is the owner-selected `TPV-Karaoke-Backdrop-Video (Version 3).mp4`, bundled as a smaller, silent, full-duration 1080p playback copy. The animation loops behind the original CDG lyric colors; only the paired MP3 supplies audio. Preferences → Singer Display → Lyric Backdrop offers TPV Animated Backdrop (Version 3), Solid CDG Background, or a custom local MP4. The choice is captured for each new import; existing converted songs retain their picture and must be reimported to change it. Missing/unreadable selected backdrops stop import with a recovery message. Regular video songs retain their own picture. Converted videos use normal playback and require separate media backup. **Planned LRC support:** use this same backdrop selection by default when timed-lyric playback is implemented; LRC import, synchronization and rendering are not available yet. FFmpeg packaging, real-producer synchronization and other Player 2 formats still need evaluation. An extension alone does not prove a codec is playable; publish an evidenced codec matrix per supported platform.
+**Available through conversion:** Import CD+G / LRC / ZIP accepts a same-name MP3/CDG pair or a ZIP with exactly one pair. FFmpeg on PATH converts it to a managed H.264/AAC MP4 before library insertion; originals remain unchanged. The job has progress and cancellation, fixed-name extraction, expanded-size/CRC checks, path/symlink checks and explicit ambiguity errors. It is not native CDG playback: lyrics and the chosen background are composited at import. From 0.3.1, the default is the owner-selected `TPV-Karaoke-Backdrop-Video (Version 3).mp4`, bundled as a smaller, silent, full-duration 1080p playback copy. The animation loops behind the original CDG lyric colors; only the paired MP3 supplies audio. Preferences → Singer Display → Lyric Backdrop offers TPV Animated Backdrop (Version 3), Solid Background, or a custom local MP4. The choice is captured for each new import; existing converted songs retain their picture and must be reimported to change it. Missing/unreadable selected backdrops stop import with a recovery message. Regular video songs retain their own picture. Converted videos use normal playback and require separate media backup. FFmpeg packaging, real-producer synchronization and other Player 2 formats still need evaluation. An extension alone does not prove a codec is playable; publish an evidenced codec matrix per supported platform.
 
 **Available in 0.10.3:** Singer-room search asks the authenticated host authority to search its complete saved, policy- and source-filtered library before paging. Search remains active through refreshes, and outdated responses are ignored. The public relay supports this search when the host is also updated. In the host workspace, singer actions and availability controls live in the singer context menu. Confirmed removal archives the singer and revokes their room access while preserving history, playlists and points. Active or queued lead or duet participation blocks removal. Singer playlists are browsable in a visible list searchable by playlist or singer name, with an expandable creation form.
 
@@ -170,7 +170,7 @@ The singer video is bounded to the full window viewport (maximum 100vh/100vw) wi
 
 **Planned:** physical recovery verification, key/tempo with per-song/per-singer defaults, mixing for other compatible sources, separate filler volume, fade-out/richer intermission scheduling and richer output presets. Existing fade-in is implemented; older proposed 1.5-second in/1.0-second out values are historical candidates, not current defaults. Never overlap audible karaoke streams or start filler merely because a performance is paused. Source MP4/CDG text is not restyled by native KaraFun colors.
 
-**LRC foundation only:** timed-lyric parsing and VTT conversion are integrated. Full LRC import/playback, shared backdrop rendering and its timing/seek/resume verification remain unfinished. Do not present the parser as a playable source.
+**LRC in 0.10.6:** File → Import → Import CD+G / LRC / ZIP pairs a UTF-8 LRC file with a same-name MP3, WAV, FLAC, M4A, AAC, Ogg, or Opus file. FFmpeg with libass and FFprobe render timed lines over the selected Lyric Backdrop, including the bundled TPV animation by default. The lyrics and audio share the converted MP4 clock for playback, seeking and resuming. Originals stay intact. LRC support renders whole lines as part of the picture. LRC word highlighting, separate captions and LRC ZIPs remain open.
 
 ## 7. Access, identities and privacy
 
@@ -901,7 +901,7 @@ The owner selected **Microphone Play** on 13 November: a vintage microphone insi
   "id": "D11",
   "title": "Lyric backdrop preferences",
   "status": "Current",
-  "description": "Choose the default background for new CDG conversions and future LRC playback.",
+  "description": "Choose the background for new CDG and LRC conversions.",
   "layout": "settings",
   "navigation": [
     "Appearance",
@@ -913,11 +913,11 @@ The owner selected **Microphone Play** on 13 November: a vintage microphone insi
   "heading": "Singer Display",
   "rows": [
     "Lyric Backdrop | TPV Animated Backdrop (Version 3)",
-    "Other choices | Solid CDG Background / Custom Video",
+    "Other choices | Solid Background / Custom Video",
     "Custom video | Choose a local MP4",
     "Animation audio | Silent; paired MP3 only",
-    "Applies to | New CDG imports after saving",
-    "LRC lyrics | Parser foundation; playback pending"
+    "Applies to | New CDG and LRC imports",
+    "LRC lyrics | Timed lines with paired audio"
   ],
   "side_heading": "Related Settings",
   "side_rows": [
@@ -928,7 +928,7 @@ The owner selected **Microphone Play** on 13 November: a vintage microphone insi
     "Cancel",
     "Save preferences"
   ],
-  "detail": "Bundled animation loops behind original CDG lyrics; reimport existing conversions to change backdrop. Ordinary video stays unchanged. Singer Display also offers booth name, live logo preview/10–85vw sizing and timed top/bottom banner."
+  "detail": "Bundled animation loops behind CDG graphics and timed LRC lines. Reimport a pair to change its backdrop. Ordinary video stays unchanged. Singer Display also offers booth name, live logo preview/10–85vw sizing and timed top/bottom banner."
 }
 ```
 

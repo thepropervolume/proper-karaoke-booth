@@ -21,7 +21,7 @@ npm run build
 npm start
 ```
 
-Run checks with `npm test`. YouTube downloads require yt-dlp; CD+G conversion also requires FFmpeg. Neither tool is bundled.
+Run checks with `npm test`. YouTube downloads require yt-dlp; CD+G and LRC conversion require FFmpeg. Neither tool is bundled.
 
 ## Documentation
 

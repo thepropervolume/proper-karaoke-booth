@@ -27,7 +27,7 @@ test('unavailable or empty backdrop has a recovery message instead of silently c
   const directory = await mkdtemp(join(tmpdir(), 'tpv-backdrop-'));
   try {
     const video = join(directory, 'loop.mp4');
-    await assert.rejects(validateLyricBackdropFile(video), /Preferences.*Solid CDG Background/);
+    await assert.rejects(validateLyricBackdropFile(video), /Preferences.*Solid Background/);
     await mkdir(video);
     await assert.rejects(validateLyricBackdropFile(video), /cannot be read/);
     await rm(video, { recursive: true });

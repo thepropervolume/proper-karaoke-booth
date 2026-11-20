@@ -22,6 +22,6 @@ export async function validateLyricBackdropFile(path: string): Promise<void> {
       if (!info.isFile() || info.size === 0) throw new Error('Not a nonempty regular file.');
     } finally { await file.close(); }
   } catch {
-    throw new Error('The lyric backdrop video cannot be read. Choose another MP4 in Preferences → Singer Display, restore the bundled backdrop, or select Solid CDG Background.');
+    throw new Error('The lyric backdrop video cannot be read. Choose another MP4 in Preferences → Singer Display, restore the bundled backdrop, or select Solid Background.');
   }
 }

@@ -90,7 +90,7 @@ Current content restrictions and song/artist blacklists apply before search/hand
 
 The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains native KaraFun sign-in/preparation, Karaoke Nerds discovery, the Custom YouTube Video Importer and Third-Party Services catalog search/configuration. Other paid-provider playback still needs access and implementation.
 
-Use **File → Import** for **Import Video File**, **Import Custom Directory**, or **Import CD+G / ZIP**. The same three import icons are next to the Song Library heading. CDG conversion progress and cancellation stay visible while a job runs. **Back up show…** is in File; database backups do not include song media or preferences.
+Use **File → Import** for **Import Video File**, **Import Custom Directory**, or **Import CD+G / LRC / ZIP**. The same three import icons are next to the Song Library heading. CDG and LRC conversion progress and cancellation stay visible while a job runs. **Back up show…** is in File; database backups do not include song media or preferences.
 
 **View → Appearance** opens appearance settings or selects System, Night or Day. **View → Choose Accent Color** selects Blue, Pink or Purple. **View → Layout** selects Standard, Wider Singer Rotation or Wide Song Library. The palette icon opens the Appearance preferences section. These choices do not interrupt a performance.
 

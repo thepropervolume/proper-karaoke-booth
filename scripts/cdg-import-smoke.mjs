@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 const repo = await realpath(resolve('.')), root = await realpath(tmpdir());
 if (process.argv.length > 3) throw new Error('Usage: node scripts/cdg-import-smoke.mjs [packaged-executable]');
 const packagedExecutable = process.argv[2] ? await realpath(resolve(process.argv[2])) : undefined;
@@ -32,7 +33,7 @@ try {
       assert.equal(identity.packaged, true);
       assert.equal(identity.version, JSON.parse(await readFile(join(repo, 'package.json'), 'utf8')).version);
     }
-    const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv); return host;
+    const host = await waitForHostWindow(app); await host.waitForFunction(() => !!window.tpv); return host;
   };
   const openBackdropPreferences = async host => {
     await host.getByRole('button', { name: 'Preferences', exact: true }).click();
@@ -60,7 +61,7 @@ try {
   assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.lyricBackdrop, 'none');
   await (await openBackdropPreferences(host)).selectOption('default'); await savePreferences(host);
   await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, source);
-  await host.getByRole('button', { name: 'Import CD+G / ZIP…' }).click();
+  await host.getByRole('button', { name: 'Import CD+G / LRC / ZIP…' }).click();
   const deadline = Date.now() + 60000;
   while (true) {
     const progress = await host.evaluate(() => window.tpv.cdg.status());

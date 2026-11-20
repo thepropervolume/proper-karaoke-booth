@@ -50,6 +50,7 @@ import { mediaRange } from './media-range';
 import { ImportJob } from './import-job';
 import { CdgImport } from './cdg-import';
 import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
+import { LYRIC_FILE_EXTENSIONS } from './lrc-import';
 import { ShowBackup } from './show-backup';
 import { HistoryExport } from './history-export';
 import { DisplayFullscreen } from './display-fullscreen';
@@ -1235,7 +1236,7 @@ else {
   };
   importJob = new ImportJob(commitImported, progress => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:import-progress', progress); });
   cdgImport = new CdgImport(join(app.getPath('userData'), 'cdg-library'), (path, fingerprint, metadataPath) =>
-    commitImported(path, fingerprint, metadataPath.replace(/\.(mp3|cdg)$/i, '.mp4'), cdgImportParsing ?? settings).outcome);
+    commitImported(path, fingerprint, metadataPath.slice(0, -extname(metadataPath).length) + '.mp4', cdgImportParsing ?? settings).outcome);
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); installShowState(committed); syncQueuedDownloads(); broadcast(); };
@@ -1276,10 +1277,10 @@ else {
   ipcMain.handle('host:cdg-cancel', (event, id: unknown) => { guardHost(event.sender.id); return typeof id === 'string' && !!cdgImport?.cancel(id); });
   ipcMain.handle('host:cdg-import', async event => {
     guardHost(event.sender.id);
-    if (!host || shuttingDown || cdgPickerOpen || cdgImport?.active()) throw new Error('Finish the current CD+G import first.');
+    if (!host || shuttingDown || cdgPickerOpen || cdgImport?.active()) throw new Error('Finish the current karaoke pair import first.');
     cdgPickerOpen = true;
     try {
-      const picked = await dialog.showOpenDialog(host, { title: 'Import CD+G karaoke pair or ZIP', properties: ['openFile'], filters: [{ name: 'MP3 + CDG karaoke', extensions: ['zip', 'cdg', 'mp3'] }] });
+      const picked = await dialog.showOpenDialog(host, { title: 'Import CD+G, LRC or ZIP', properties: ['openFile'], filters: [{ name: 'Karaoke lyrics, audio and ZIP', extensions: LYRIC_FILE_EXTENSIONS }] });
       if (picked.canceled || !picked.filePaths[0] || shuttingDown) return null;
       const importSettings = structuredClone(settings);
       const backdrop = lyricBackdropPath(importSettings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath });

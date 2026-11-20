@@ -1,6 +1,7 @@
 import type { MenuItemConstructorOptions } from 'electron';
 import type { AppAction } from '../domain/app-action';
 import type { Settings } from '../domain/settings';
+import { KARAOKE_PAIR_IMPORT_LABEL } from '../domain/shortcuts';
 
 export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentColor' | 'layout'>,
   dispatch: (action: AppAction) => void, platform = process.platform,
@@ -14,7 +15,7 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
     { label: 'Import', enabled: !context.fileBlocked, submenu: [
       { label: 'Import Video File…', click: () => dispatch('importVideo') },
       { label: 'Import Custom Directory…', click: () => dispatch('importDirectory') },
-      { label: 'Import CD+G / ZIP…', click: () => dispatch('importCdg') },
+      { label: `${KARAOKE_PAIR_IMPORT_LABEL}…`, click: () => dispatch('importCdg') },
     ] },
     { label: 'Back up show…', enabled: !context.fileBlocked, click: () => dispatch('backupShow') },
     { type: 'separator' }, preferences,

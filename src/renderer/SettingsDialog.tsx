@@ -175,13 +175,13 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <label>Singer Screen Port<input aria-label="Singer Screen Port" type="number" min="1024" max="65535" step="1" required value={draft.singerScreenPort} onChange={event => setDraft({ ...draft, singerScreenPort: event.target.valueAsNumber })} /></label>
             <SettingsHelp label="Singer screen sharing help" text="Shares a read-only visual screen; sound stays on this host. Save, then open Remote Sessions for connection addresses. Local sharing may require private-network firewall access." />
             <label>Lyric Backdrop<select aria-label="Lyric Backdrop" value={draft.lyricBackdrop} onChange={event => setDraft({ ...draft, lyricBackdrop: event.target.value as Settings['lyricBackdrop'] })}>
-              <option value="default">TPV Animated Backdrop (Version 3)</option><option value="none">Solid CDG Background</option><option value="custom">Custom Video</option>
+              <option value="default">TPV Animated Backdrop (Version 3)</option><option value="none">Solid Background</option><option value="custom">Custom Video</option>
             </select></label>
             {draft.lyricBackdrop === 'custom' && <>
               <label>Custom Backdrop MP4<input type="text" value={draft.lyricBackdropFile} onChange={event => setDraft({ ...draft, lyricBackdropFile: event.target.value })} placeholder="Choose an MP4 video" /></label>
               <button type="button" onClick={() => { void window.tpv.chooseLyricBackdrop().then(file => { if (file) setDraft(current => ({ ...current, lyricBackdrop: 'custom', lyricBackdropFile: file })); }).catch(reason => setError(String(reason))); }}>Choose Backdrop Video…</button>
             </>}
-            <SettingsHelp label="Lyric backdrop help" text="Loops silently behind new CD+G imports. Save before importing; reimport existing CD+G songs to update their backdrop. LRC support is planned. Videos keep their own picture." />
+            <SettingsHelp label="Lyric backdrop help" text="Loops silently behind new CD+G and LRC imports. Save before importing. Reimport an existing pair to update its backdrop." />
             <label className="settings-check"><input type="checkbox" checked={draft.showNextSingers} onChange={event => setDraft({ ...draft, showNextSingers: event.target.checked })} /> Show the next singers</label>
             <label className="settings-check"><input type="checkbox" checked={draft.singerDisplayFullscreen} onChange={event => setDraft({ ...draft, singerDisplayFullscreen: event.target.checked })} /> Open singer display fullscreen</label>
             <SingerBrandingSettings value={draft} onChange={setDraft} />

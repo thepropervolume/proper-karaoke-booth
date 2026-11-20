@@ -1,9 +1,11 @@
 /** One registry feeds help, the editor, menus and keyboard dispatch. */
+export const KARAOKE_PAIR_IMPORT_LABEL = 'Import CD+G / LRC / ZIP';
 export const SHORTCUT_ACTIONS = [
   { id: 'search', label: 'Search Song Library', group: 'Application', scope: 'application' },
   { id: 'preferences', label: 'Open Preferences', group: 'Application', scope: 'application' },
   { id: 'keybindings', label: 'Open Keyboard Shortcuts', group: 'Application', scope: 'application' },
   { id: 'backupShow', label: 'Back Up Show', group: 'Application', scope: 'application' },
+  { id: 'restoreShow', label: 'Restore Show Backup', group: 'Application', scope: 'application' },
   { id: 'playPause', label: 'Play/Pause', group: 'Playback', scope: 'application' },
   { id: 'previous', label: 'Restart Current Song', group: 'Playback', scope: 'application' },
   { id: 'stop', label: 'Stop', group: 'Playback', scope: 'application' },
@@ -15,7 +17,7 @@ export const SHORTCUT_ACTIONS = [
   { id: 'toggleFullscreen', label: 'Toggle Fullscreen', group: 'Singer Display', scope: 'player' },
   { id: 'importVideo', label: 'Import Video File', group: 'Library', scope: 'application' },
   { id: 'importDirectory', label: 'Import Custom Directory', group: 'Library', scope: 'application' },
-  { id: 'importCdg', label: 'Import CD+G / ZIP', group: 'Library', scope: 'application' },
+  { id: 'importCdg', label: KARAOKE_PAIR_IMPORT_LABEL, group: 'Library', scope: 'application' },
   { id: 'appearance', label: 'Open Appearance Preferences', group: 'Appearance', scope: 'application' },
   { id: 'accentColor', label: 'Choose Accent Color', group: 'Appearance', scope: 'application' },
   { id: 'cycleAppearance', label: 'Cycle Appearance', group: 'Appearance', scope: 'application' },
@@ -37,7 +39,7 @@ export const DEFAULT_SHORTCUTS: Shortcuts = {
   toggleFullscreen: ['KeyF', 'Shift+KeyF'],
   previous: [], stop: [], skip: [], seekBackward: [], seekForward: [], singerDisplay: [],
   removeRequest: ['Delete'],
-  importVideo: [], importDirectory: [], importCdg: [], backupShow: [],
+  importVideo: [], importDirectory: [], importCdg: [], backupShow: [], restoreShow: [],
   appearance: [], accentColor: [], cycleAppearance: [], cycleAccent: [],
   layoutStandard: [], layoutRotation: [], layoutLibrary: [],
 };

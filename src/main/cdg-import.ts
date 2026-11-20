@@ -3,11 +3,12 @@ import { createWriteStream } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, rename, rm, open, realpath } from 'node:fs/promises';
 import { basename, dirname, extname, join, sep } from 'node:path';
 import { crc32 } from 'node:zlib';
-import { spawn } from 'node:child_process';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import * as yauzl from 'yauzl';
 import { hashImportFile } from './import-hash';
+import { runFfmpegConversion } from './ffmpeg-conversion';
+import { convertLrc, LRC_BYTE_LIMIT, resolveLrcPair, useLrcPair } from './lrc-import';
 
 export type CdgProgress = { id: string; phase: 'preparing' | 'converting' | 'importing' | 'completed' | 'cancelled' | 'failed'; name: string; seconds: number; message: string };
 const AUDIO_LIMIT = 256 * 1024 * 1024, CDG_LIMIT = 32 * 1024 * 1024;
@@ -172,32 +173,14 @@ export async function convertCdg(audio: string, graphics: string, output: string
       '[backdrop][lyrics]overlay=x=(W-w)/2:y=(H-h)/2:format=auto,format=yuv420p[video]',
       '-map', '[video]', '-map', '1:a:0',
     ];
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('ffmpeg', [...inputs, ...(backdropPath ? composite : plain),
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', output], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-      let spawnError = false, timedOut = false, buffer = '';
-      const abort = () => { child.kill('SIGKILL'); };
-      const timer = setTimeout(() => { timedOut = true; abort(); }, 30 * 60 * 1000);
-      signal.addEventListener('abort', abort, { once: true });
-      if (signal.aborted) abort();
-      child.stdout.on('data', chunk => {
-        buffer = (buffer + String(chunk)).slice(-4096);
-        let end: number;
-        while ((end = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-          if (line.startsWith('out_time_us=')) { const seconds = Number(line.slice(12)) / 1e6; if (Number.isFinite(seconds) && seconds >= 0) progress(seconds); }
-        }
-      });
-      child.stderr.resume();
-      child.on('error', () => { spawnError = true; });
-      child.on('close', code => {
-        clearTimeout(timer); signal.removeEventListener('abort', abort);
-        if (signal.aborted) reject(new Error('Import cancelled.'));
-        else if (spawnError) reject(new Error('FFmpeg was not found. Install an FFmpeg build with CD Graphics, H.264 and AAC support and add it to PATH.'));
-        else if (timedOut) reject(new Error('Conversion exceeded 30 minutes.'));
-        else if (code !== 0) reject(new Error(backdropPath ? 'FFmpeg could not render this CDG pair with the selected backdrop. Check the pair and backdrop video, or disable the backdrop in Preferences and retry.' : 'FFmpeg could not decode this pair. Check that the audio and CDG are valid and matching.'));
-        else resolve();
-      });
+    await runFfmpegConversion([
+      ...inputs, ...(backdropPath ? composite : plain),
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart',
+    ], output, signal, progress, {
+      installMessage: 'FFmpeg was not found. Install an FFmpeg build with CD Graphics, H.264 and AAC support and add it to PATH.',
+      decodeMessage: backdropPath
+        ? 'FFmpeg could not render this CDG pair with the selected backdrop. Check the pair and backdrop video, or disable the backdrop in Preferences and retry.'
+        : 'FFmpeg could not decode this pair. Check that the audio and CDG are valid and matching.',
     });
   } finally {
     if (maskIdentity) {
@@ -215,7 +198,7 @@ export class CdgImport {
   snapshot(): CdgProgress | null { return this.progress && { ...this.progress }; }
   active(): boolean { return !!this.controller; }
   start(selected: string, backdropPath?: string): CdgProgress {
-    if (this.controller) throw new Error('A CD+G import is already in progress.');
+    if (this.controller) throw new Error('A karaoke pair import is already in progress.');
     this.controller = new AbortController();
     this.progress = { id: randomUUID(), phase: 'preparing', name: basename(selected), seconds: 0, message: '' };
     this.completion = this.run(selected, this.controller, backdropPath);
@@ -225,6 +208,7 @@ export class CdgImport {
   async shutdown(): Promise<void> { this.controller?.abort(); await this.completion; }
   private async run(selected: string, controller: AbortController, backdropPath?: string): Promise<void> {
     const progress = this.progress!; let directory: string | null = null, retain = false;
+    let stages: string[] = [];
     let directoryIdentity: { dev: number; ino: number } | null = null;
     let canonicalRoot = '';
     try {
@@ -232,20 +216,33 @@ export class CdgImport {
       canonicalRoot = await realpath(this.root);
       directory = await mkdtemp(join(this.root, 'track-'));
       const created = await lstat(directory); directoryIdentity = { dev: created.dev, ino: created.ino };
-      let audio: string, graphics: string, metadataPath = selected;
-      if (extname(selected).toLowerCase() === '.zip') {
+      let audio: string, lyrics: string, metadataPath = selected;
+      const isLrc = await useLrcPair(selected);
+      if (isLrc) {
+        const pair = await resolveLrcPair(selected);
+        audio = join(directory, `audio${extname(pair.audio).toLowerCase()}`); lyrics = join(directory, 'lyrics.lrc');
+        stages = [basename(audio), 'lyrics.lrc', 'lyrics.vtt'];
+        await copyAsset(pair.audio, audio, AUDIO_LIMIT, controller.signal);
+        await copyAsset(pair.lyrics, lyrics, LRC_BYTE_LIMIT, controller.signal);
+      } else if (extname(selected).toLowerCase() === '.zip') {
         const pair = await extractCdgZip(selected, directory, controller.signal);
-        ({ audio, graphics } = pair); metadataPath = join(dirname(selected), pair.metadataName);
+        ({ audio, graphics: lyrics } = pair); metadataPath = join(dirname(selected), pair.metadataName);
+        stages = ['audio.mp3', 'lyrics.cdg'];
       } else {
         const pair = await resolveCdgPair(selected); checkAbort(controller.signal);
-        audio = join(directory, 'audio.mp3'); graphics = join(directory, 'lyrics.cdg');
-        await copyAsset(pair.audio, audio, AUDIO_LIMIT, controller.signal); checkAbort(controller.signal); await copyAsset(pair.graphics, graphics, CDG_LIMIT, controller.signal);
+        audio = join(directory, 'audio.mp3'); lyrics = join(directory, 'lyrics.cdg');
+        stages = ['audio.mp3', 'lyrics.cdg'];
+        await copyAsset(pair.audio, audio, AUDIO_LIMIT, controller.signal);
+        await copyAsset(pair.graphics, lyrics, CDG_LIMIT, controller.signal);
       }
-      const info = await lstat(graphics);
-      if (!info.size || info.size % 24 !== 0) throw new Error('CDG data must contain complete 24-byte packets.');
+      if (!isLrc) {
+        const info = await lstat(lyrics);
+        if (!info.size || info.size % 24 !== 0) throw new Error('CDG data must contain complete 24-byte packets.');
+      }
       checkAbort(controller.signal); progress.phase = 'converting';
       const temporary = join(directory, 'converting.mp4');
-      await convertCdg(audio, graphics, temporary, controller.signal, seconds => { progress.seconds = seconds; }, backdropPath);
+      const convert = isLrc ? convertLrc : convertCdg;
+      await convert(audio, lyrics, temporary, controller.signal, seconds => { progress.seconds = seconds; }, backdropPath);
       checkAbort(controller.signal); progress.phase = 'importing';
       const path = join(directory, 'track.mp4'); await rename(temporary, path);
       const fingerprint = await hashImportFile(path, controller.signal); checkAbort(controller.signal);
@@ -257,7 +254,7 @@ export class CdgImport {
       progress.phase = 'completed'; progress.message = outcome === 'duplicate' ? 'Already in the library.' : 'Imported into Song Library. Sources were left unchanged.';
     } catch (error) {
       progress.phase = controller.signal.aborted ? 'cancelled' : 'failed';
-      progress.message = controller.signal.aborted ? 'Import cancelled.' : error instanceof Error ? error.message : 'CD+G import failed.';
+      progress.message = controller.signal.aborted ? 'Import cancelled.' : error instanceof Error ? error.message : 'Karaoke pair import failed.';
     } finally {
       // This directory is created exclusively by this job; archive paths are never used for cleanup.
       if (directory) {
@@ -267,7 +264,7 @@ export class CdgImport {
           if (!directoryIdentity || !target.startsWith(canonicalRoot + sep) || dirname(target) !== canonicalRoot ||
               !identity.isDirectory() || identity.isSymbolicLink() || identity.dev !== directoryIdentity.dev || identity.ino !== directoryIdentity.ino) throw new Error('Unsafe cleanup path.');
           if (!retain) await rm(directory, { recursive: true, force: true });
-          else await Promise.all(['audio.mp3', 'lyrics.cdg'].map(name => rm(join(directory!, name), { force: true })));
+          else await Promise.all(stages.map(name => rm(join(target, name), { force: true })));
         } catch { progress.message += ' Temporary files could not be removed.'; }
       }
       this.controller = null;

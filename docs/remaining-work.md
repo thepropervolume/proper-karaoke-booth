@@ -253,7 +253,7 @@ The import’s original transient metadata cause is not proven. Remote accounts,
 ## 0.3.1 default lyric backdrop
 
 - [x] Bundle the owner-selected TPV Version 3 animation as a silent full-duration default for new CDG imports, with custom/solid choices in Singer Display preferences. Existing converted songs require reimporting.
-- [ ] Implement timed LRC import and playback using the same default backdrop preference; verify lyric timing, seek, pause/resume and accessibility.
+- [x] Import timed LRC with same-name audio and shared backdrop. Muted Windows Electron verified lyric timing, seek, persisted pause and explicit resume.
 - [ ] Verify real-producer CDG lyric/background composition and synchronization on physical show hardware.
 
 ## 0.4.0 Requested Workspace Improvements
@@ -363,7 +363,7 @@ Windows/Linux latest delivered packages and the installed PC remain 0.4.3; this 
 - [ ] Verify loading the compiled bridge and authenticated search/handoff on the owner's actual KHost machine; their successful separate KHost subscription test does not establish this integration.
 - [x] Implement experimental [native KaraFun](karafun-native-integration.md) login, validated session/search, authorized bounded KIT/Ogg/timing playback and ordinary TPV queue/transport; the optional KHost bridge is separate. Remaining physical/provider-term work is listed above.
 - [ ] Obtain approved paid-provider playback access, pricing and subscription-linking terms; consumer subscriptions alone do not confirm this integration.
-- [ ] Connect full LRC import/playback, seek/resume and the chosen lyric backdrop.
+- [ ] Verify LRC on physical show equipment and add screen-reader-accessible captions and enhanced word timing.
 - [ ] Add a Google Drive application source, with identity, indexing, download and cache rules; local synced-folder import is a different path.
 - [x] Integrate the reviewed `opencode-audit` UI and join its snapshot ancestry while preserving newer fixes; all remote and local branches are merged. Fourteen patch-equivalent internal cherry-pick commits were joined at `bd1d011` with no file changes.
 - [x] Record the current 0.5.0 complete core-suite result: 861 passes, eight platform/environment skips, zero failures (869 total), plus passing type checking.

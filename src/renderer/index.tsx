@@ -18,7 +18,7 @@ import { compileSongBlacklist, normalizeBlacklistIdentity } from '../domain/song
 import { DEFAULT_HOST_PANEL_SIZES, fittedHostPanels, HOST_PANEL_LIMITS, type HostPanelSizes } from '../domain/host-layout';
 import type { LocalControlUiStatus } from './LocalControlSettings';
 import { SongRatingButton, SongRatingDialog } from './SongRating';
-import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
+import { DEFAULT_SHORTCUTS, KARAOKE_PAIR_IMPORT_LABEL, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
 import type { AppAction, SettingsSection } from '../domain/app-action';
 import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
 import type { CollectionsAction, CollectionsSnapshot } from '../domain/collections';
@@ -693,7 +693,7 @@ function App() {
               <option value="all">All songs</option><option value="review">Needs metadata review</option><option value="missing-artist">Missing artist</option><option value="clean">Clean</option><option value="explicit">Explicit</option><option value="unrated">Unrated</option><option value="uncertain">Uncertain rating</option>
             </select></label>
           </div>
-            <div className="page-heading__actions"><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint('Import CD+G / ZIP', 'importCdg')}><button className="icon-button" aria-label="Import CD+G / ZIP…" disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div>
+            <div className="page-heading__actions"><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint(KARAOKE_PAIR_IMPORT_LABEL, 'importCdg')}><button className="icon-button" aria-label={`${KARAOKE_PAIR_IMPORT_LABEL}…`} disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div>
           </div>
           <div className="library-meta">
             <span role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</span>
