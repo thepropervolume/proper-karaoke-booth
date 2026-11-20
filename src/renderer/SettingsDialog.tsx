@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { APPEARANCE_FONTS, isAppearanceFont } from '../domain/appearance-font';
 import type { Settings } from '../domain/settings';
 import { AudioOutputPicker } from './AudioOutputPicker';
 import { BumperControls } from './BumperPanel';
@@ -37,6 +38,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
   const [saving, setSaving] = useState(false);
   useEffect(() => { baseline.current!.appearance = value.appearance; setDraft(current => ({ ...current, appearance: value.appearance })); }, [value.appearance]);
   useEffect(() => { baseline.current!.accentColor = value.accentColor; setDraft(current => ({ ...current, accentColor: value.accentColor })); }, [value.accentColor]);
+  useEffect(() => { baseline.current!.fontFamily = value.fontFamily; setDraft(current => ({ ...current, fontFamily: value.fontFamily })); }, [value.fontFamily]);
   useEffect(() => { baseline.current!.layout = value.layout; setDraft(current => ({ ...current, layout: value.layout })); }, [value.layout]);
   useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
   useEffect(() => {
@@ -83,6 +85,15 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <label>Accent Color<select aria-label="Accent Color" value={draft.accentColor} onChange={event => setDraft({ ...draft, accentColor: event.target.value as Settings['accentColor'] })}>
               <option value="blue">Blue</option><option value="pink">Pink</option><option value="purple">Purple</option>
             </select></label>
+            <div className="settings-inline-help">
+              <label>Font<select value={draft.fontFamily} onChange={event => {
+                const fontFamily = event.currentTarget.value;
+                if (isAppearanceFont(fontFamily)) setDraft(current => ({ ...current, fontFamily }));
+              }}>
+                {APPEARANCE_FONTS.map(font => <option key={font.id} value={font.id}>{font.label}</option>)}
+              </select></label>
+              <SettingsHelp label="Font help" text="Applies to the host workspace, singer-screen text and live lyrics. Lyrics already drawn into a video keep their original style." />
+            </div>
             <label>Workspace layout<select aria-label="Workspace layout" value={draft.layout} onChange={event => {
               const layout = event.target.value as Settings['layout'];
               setDraft({ ...draft, layout, hostPanelSizes: layout === 'rotation' ? { ...draft.hostPanelSizes, queue: Math.max(360, Math.min(1000, Math.round(window.innerWidth * .4))) } : layout === 'standard' ? { ...draft.hostPanelSizes, queue: DEFAULT_HOST_PANEL_SIZES.queue } : draft.hostPanelSizes });

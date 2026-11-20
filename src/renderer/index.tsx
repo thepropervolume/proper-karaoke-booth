@@ -9,6 +9,7 @@ import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, singerAvailable, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
 import { SINGER_ON_HOLD, timedSingerReturnAt } from '../domain/singer-availability';
 import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/settings';
+import { appearanceFontStack } from '../domain/appearance-font';
 import type { LibraryFilter, LibrarySort } from '../domain/library-view';
 import type { MediaReviewResult } from '../domain/media-review';
 import type { PlaylistApplyResult, PlaylistDestination, PlaylistExportResult, PlaylistPreviewResult } from '../domain/playlist-transfer';
@@ -372,6 +373,9 @@ function App() {
   }, [settings.appearance]);
 
   useEffect(() => { document.documentElement.dataset.accent = settings.accentColor; }, [settings.accentColor]);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--booth-font-family', appearanceFontStack(settings.fontFamily) ?? '');
+  }, [settings.fontFamily]);
 
   const cycleAccent = async () => {
     if (accentSaveInFlight.current || !settingsPath) return;

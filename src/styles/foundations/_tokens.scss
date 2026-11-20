@@ -1,5 +1,5 @@
 :root {
-  font-family: 'Nunito Sans', 'Avenir Next', Avenir, 'Novecento Sans', sans-serif;
+  font-family: var(--booth-font-family, 'Nunito Sans', 'Avenir Next', Avenir, 'Novecento Sans', sans-serif);
   font-synthesis: none;
   color-scheme: dark;
   --bg: #090e18;

@@ -109,10 +109,37 @@ require(process.env.TPV_FOCUS_ENTRY);`);
   const rating = rows.first().getByRole('button', { name: /^Rate Keyboard Queue/ });
   await rating.focus(); await host.keyboard.press('ArrowDown');
   assert.equal(await rating.evaluate(button => document.activeElement === button), true, 'Queue navigation leaves the rating control focused.');
+
+  await host.evaluate(() => window.tpv.openDisplay());
+  await waitForHostCondition(app, ({ BrowserWindow }) => BrowserWindow.getAllWindows().some(window => window.webContents.getURL().endsWith('/display/index.html')));
+  const display = app.windows().find(page => page.url().endsWith('/display/index.html'));
+  assert.ok(display, 'The singer display reused by the host preview is available.');
+  await display.locator('#idle-booth-name').waitFor();
+  const fontTargets = [host.locator('.global-search input'), display.locator('#idle-booth-name')];
+  const fonts = () => Promise.all(fontTargets.map(target => target.evaluate(element => getComputedStyle(element).fontFamily)));
+  const originalFonts = await fonts();
+  const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true });
+  const chooseFont = async (value, submit) => {
+    await host.getByRole('button', { name: 'Preferences', exact: true }).click();
+    await preferences.getByRole('combobox', { name: 'Font', exact: true }).selectOption(value);
+    await preferences.getByRole('button', { name: submit ? 'Save preferences' : 'Cancel', exact: true }).click();
+    await preferences.waitFor({ state: 'hidden' });
+  };
+  await chooseFont('serif', true);
+  await display.waitForFunction(() => getComputedStyle(document.querySelector('#idle-booth-name')).fontFamily.includes('Georgia'));
+  const serifFonts = await fonts();
+  assert.ok(serifFonts.every(value => value.includes('Georgia')));
+  assert.equal(JSON.parse(await readFile(join(profile, 'settings.json'), 'utf8')).fontFamily, 'serif');
+  await chooseFont('monospace', false);
+  assert.deepEqual(await fonts(), serifFonts, 'Cancelling Preferences must leave the applied font in place.');
+  await chooseFont('default', true);
+  await display.waitForFunction(() => document.documentElement.style.getPropertyValue('--booth-font-family') === '');
+  assert.deepEqual(await fonts(), originalFonts, 'Booth Default restores the original font for each window.');
+
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
   assert.equal(await app.evaluate(() => globalThis.__focusQaNetwork), 0); assert.deepEqual(pageErrors, []);
-  await writeFile(join(screenshots, 'focus-verification.json'), JSON.stringify({ version: metadata.version, passed: true, observations }, null, 2) + '\n');
-  console.log(`PASS: unclipped search focus across Day/Night × Blue/Pink/Purple, keyboard queue traversal, and focused rating control isolation. Evidence: ${screenshots}`);
+  await writeFile(join(screenshots, 'focus-verification.json'), JSON.stringify({ version: metadata.version, passed: true, observations, appearanceFonts: { originalFonts, serifFonts } }, null, 2) + '\n');
+  console.log(`PASS: search and queue focus, rating control isolation, and live persisted font changes in both windows. Evidence: ${screenshots}`);
 } catch (error) {
   if (host) { await host.screenshot({ path: join(screenshots, 'failure.png') }).catch(() => {}); console.error(JSON.stringify(await inspectForFailure(host))); }
   throw error;

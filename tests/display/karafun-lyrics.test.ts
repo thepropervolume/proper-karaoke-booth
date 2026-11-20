@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { appearanceFontStack } from '../../src/domain/appearance-font';
 import type { KaraFunTiming } from '../../src/domain/karafun-kit-timing';
 import { karaFunLyricFrame, paintKaraFunLyrics } from '../../src/display/karafun-lyrics';
 
@@ -55,6 +56,14 @@ test('canvas draws literal provider text and clips progressive highlight at the 
   paintKaraFunLyrics(element, text, 2, { pixelRatio: 1 });
   assert.equal(context.draws.at(-1)?.text, '<script> & "');
   assert.equal(context.stack.length, 0);
+});
+
+test('native lyrics use the selected font and restore their established default', () => {
+  const { context, element } = canvas();
+  paintKaraFunLyrics(element, timing(), 2, { pixelRatio: 1, fontFamily: appearanceFontStack('serif') });
+  assert.equal(context.font, '700 32px Georgia, "Times New Roman", serif');
+  paintKaraFunLyrics(element, timing(), 2, { pixelRatio: 1, fontFamily: appearanceFontStack('default') });
+  assert.equal(context.font, '700 32px Arial, sans-serif');
 });
 
 test('reverse seek removes later highlights and RTL clips from the right edge', () => {

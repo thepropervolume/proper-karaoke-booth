@@ -110,6 +110,8 @@ Under **Singer Display**, set a booth name, choose a PNG/JPEG logo and adjust it
 
 ## Preferences and Keyboard Shortcuts
 
+Choose **Preferences → Appearance → Font** to change the typeface used in the host workspace, singer-screen overlays, and native KaraFun lyrics. Options include Booth Default, System Sans, Serif, and Monospace. The singer preview and shared screens mirror the singer display. Imported videos and converted CD+G or LRC lyrics retain their rendered style.
+
 Preferences is wider, with larger collapsible section headings. The default shortcuts are:
 
 | Action | Default bindings |

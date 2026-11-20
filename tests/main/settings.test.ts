@@ -41,6 +41,22 @@ test('accent color defaults for older settings, cycles and persists, and rejects
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('font preference preserves the default for older settings, persists each choice and rejects arbitrary CSS', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-appearance-font-'));
+  const path = join(directory, 'settings.json');
+  try {
+    writeFileSync(path, JSON.stringify({ settingsVersion: 2 }));
+    assert.equal(readSettings(path).fontFamily, 'default');
+    for (const fontFamily of ['system-sans', 'serif', 'monospace', 'default'] as const) {
+      writeSettings(path, { ...readSettings(path), fontFamily });
+      assert.equal(readSettings(path).fontFamily, fontFamily);
+    }
+    const before = readFileSync(path, 'utf8');
+    assert.throws(() => writeSettings(path, { ...readSettings(path), fontFamily: 'url(https://example.test/font)' }), /invalid font/i);
+    assert.equal(readFileSync(path, 'utf8'), before);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('automatic bumper migrates old defaults and a subsequent deliberate opt-out persists', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-bumper-settings-'));
   try {

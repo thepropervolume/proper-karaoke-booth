@@ -9,11 +9,12 @@ import { paintKaraFunLyrics } from './karafun-lyrics';
 import type { KaraFunTiming } from '../domain/karafun-kit-timing';
 import type { KaraFunStemVolumes } from '../domain/karafun-mix';
 import { createSingerDisplayBranding, type SingerDisplayBranding } from './branding';
+import { appearanceFontStack, type AppearanceFont } from '../domain/appearance-font';
 type PlaybackCommon = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: KaraFunTiming; durationSeconds: number; stems: KaraFunStemSource[]; stemVolumes: KaraFunStemVolumes }; backdropSrc: string | null };
 type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
 const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
-type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number };
+type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number; fontFamily?: AppearanceFont };
 declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; applauseResult?(value: unknown): void; onApplause?(callback: (request: ApplauseRequest) => void): () => void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 let failedVideo: HTMLVideoElement | null = null;
@@ -33,6 +34,7 @@ let outputRecoveryGeneration: string | null = null;
 let outputRevision = 0;
 let rerouteRequested = false;
 let shortcuts = DEFAULT_SHORTCUTS;
+let fontFamily: string | undefined;
 let lastTimelineReport = 0;
 let lastNativeCheckpoint = 0;
 let nativeAnimation: number | null = null;
@@ -59,7 +61,7 @@ function stopNativeVisuals(): void {
 }
 function animateNativeLyrics(): void {
   if (!isNative(current) || !lyrics) { nativeAnimation = null; return; }
-  paintKaraFunLyrics(lyrics, current.karaFun.timing, nativePlayer.snapshot()?.position ?? current.position);
+  paintKaraFunLyrics(lyrics, current.karaFun.timing, nativePlayer.snapshot()?.position ?? current.position, { fontFamily });
   nativeAnimation = window.requestAnimationFrame(animateNativeLyrics);
 }
 function nativeVisuals(state: NativePlayback): void {
@@ -174,7 +176,7 @@ navigator.mediaDevices?.addEventListener('devicechange', () => {
 window.addEventListener('keydown', event => {
   if (event.repeat || event.defaultPrevented || event.isComposing || (event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable]:not([contenteditable=\"false\"])')) return;
   const input = { code: event.code, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey };
-  const action = SHORTCUT_ACTIONS.find(action => action.scope !== 'queue' && matchesShortcut(shortcuts, action.id, input))?.id;
+  const action = SHORTCUT_ACTIONS.find(action => (action.scope === 'application' || action.scope === 'player') && matchesShortcut(shortcuts, action.id, input))?.id;
   if (action) { event.preventDefault(); window.tpvDisplay.shortcut(action); }
 });
 
@@ -228,6 +230,8 @@ window.tpvDisplay.subscribe(async (view) => {
   bumperPlayer.setVolume(view.bumperVolume);
   applausePlayer?.setVolume(view.bumperVolume);
   shortcuts = view.shortcuts;
+  fontFamily = appearanceFontStack(view.fontFamily);
+  document.documentElement.style.setProperty('--booth-font-family', fontFamily ?? '');
   const state = view.playback;
   document.body.classList.toggle('idle', !state);
   document.body.classList.toggle('native-karafun', isNative(state));

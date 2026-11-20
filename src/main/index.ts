@@ -579,7 +579,7 @@ function publishDisplay(): void {
       backdropSrc: backdrop ? `tpv-media://lyric-backdrop/${encodeURIComponent(playback.generationId)}` : null } : {}),
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
     position: store.position(playback.generationId), title: version.title, singer: singerNames([request.singerId, request.coSingerId]), volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
-  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume,
+  display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume, fontFamily: settings.fontFamily,
     branding: { boothName: settings.boothName, displayLogoSize: settings.displayLogoSize, bannerEnabled: settings.bannerEnabled,
       bannerText: settings.bannerText, bannerPosition: settings.bannerPosition, bannerExpiresAt: settings.bannerExpiresAt, bannerOnLaunch: settings.bannerOnLaunch } });
 }

@@ -46,7 +46,7 @@ During an active room, your host can share a private internet singer-screen link
 
 On Windows, screen sharing listens on verified Private interfaces, with loopback fallback when classification is unavailable or Public. Network rechecks may stop sharing; ask for a current address. This read-only screen and authenticated singer-request rooms are separate services.
 
-The host may show a booth name, adjustable logo, upcoming singers and a scrolling top/bottom announcement. A banner can expire and normally resets on next launch. Video fits the viewport; native KaraFun's primary completed-lyric color is pink. CDG retains its original lyric colors over the selected animated backdrop. Full LRC playback remains planned.
+The host may show a booth name, adjustable logo, upcoming singers and a scrolling top/bottom announcement. A banner can expire and normally resets on next launch. Video fits the viewport. The host’s font choice applies to the screen’s overlays and live-rendered lyrics, including KaraFun. Imported and converted videos retain the lyric style rendered into them. Native KaraFun's primary completed-lyric color is pink.
 
 ## Missing Songs, Availability and Ratings
 
