@@ -33,3 +33,7 @@ Run checks with `npm test`. Install yt-dlp for YouTube downloads, FFmpeg for CD+
 - [Architecture](docs/architecture.md) · [Remaining work](docs/remaining-work.md)
 - [Automatic releases](docs/releasing.md)
 - [Product specification](docs/product-specification.md) — the maintained source for generated planning documents.
+
+## License
+
+The Proper Volume’s original Booth software is licensed under [MPL 2.0](LICENSE). See [licensing scope](LICENSING.md) and the separate [branding terms](TRADEMARKS.md).
