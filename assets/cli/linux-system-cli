@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /opt/proper-karaoke-booth/tpv-karaoke-booth "$@"

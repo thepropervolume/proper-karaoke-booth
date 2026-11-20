@@ -1,5 +1,5 @@
 // Build from source into an isolated stage. Never cleans the running app's dist.
-import { cp, mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm, chmod } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, writeFile, readFile, realpath, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import { build as bundle } from 'esbuild';
 import electronBuilder from 'electron-builder';
 import configuration from '../electron-builder.config.mjs';
 import { productionDependencyNotices } from './production-notices.mjs';
+import { installerNames } from './release-artifacts.mjs';
 
 const repo = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const requireFromRepo = createRequire(join(repo, 'package.json'));
@@ -21,8 +22,50 @@ if (process.argv.length !== 3 || !['win', 'linux', 'mac'].includes(platform)) {
   throw new Error('Usage: node scripts/package-app.mjs win|linux|mac');
 }
 if (platform === 'mac' && process.platform !== 'darwin') throw new Error('Build macOS packages on a Mac.');
+if (platform === 'win' && process.platform !== 'win32') throw new Error('Build the Windows CLI and packages on Windows.');
 const temporaryRoot = await realpath(tmpdir());
 const stage = await mkdtemp(join(temporaryRoot, 'tpv-package-'));
+const cliName = 'tpv-karaoke-booth';
+
+function buildWindowsCli(output, source) {
+  const compiler = join(process.env.SystemRoot ?? 'C:\\Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe');
+  execFileSync(compiler, ['/nologo', '/target:exe', '/platform:anycpu', '/optimize+', `/out:${output}`, source],
+    { stdio: 'inherit', windowsHide: true, timeout: 30_000 });
+}
+
+async function buildMacInstaller(app, architecture, version) {
+  const root = join(stage, `pkg-${architecture}`);
+  const appPath = `Applications/${basename(app)}`;
+  const cliPath = join(root, 'usr/local/bin', cliName);
+  await mkdir(join(root, 'Applications'), { recursive: true });
+  await mkdir(dirname(cliPath), { recursive: true });
+  // ditto preserves the built bundle's relative framework links and code seal.
+  execFileSync('/usr/bin/ditto', ['--rsrc', app, join(root, appPath)], { stdio: 'inherit', timeout: 120_000 });
+  await cp(join(stage, 'assets/cli/mac-system-cli'), cliPath);
+  await chmod(cliPath, 0o755);
+  const components = join(stage, `pkg-components-${architecture}.plist`);
+  await writeFile(components, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array><dict>
+  <key>RootRelativeBundlePath</key><string>${appPath}</string>
+  <key>BundleIsRelocatable</key><false/>
+  <key>BundleIsVersionChecked</key><true/>
+  <key>BundleHasStrictIdentifier</key><true/>
+  <key>BundleOverwriteAction</key><string>upgrade</string>
+</dict></array>
+</plist>
+`);
+  const output = join(repo, 'release', `Proper-Karaoke-Booth-${version}-mac-${architecture}.pkg`);
+  const scripts = join(stage, 'mac-installer-scripts');
+  await mkdir(scripts, { recursive: true });
+  await cp(join(stage, 'assets/cli/mac-pkg-preinstall'), join(scripts, 'preinstall'));
+  await chmod(join(scripts, 'preinstall'), 0o755);
+  execFileSync('/usr/bin/pkgbuild', ['--root', root, '--component-plist', components, '--scripts', scripts, '--install-location', '/',
+    '--identifier', configuration.appId, '--version', version, output], { stdio: 'inherit', timeout: 180_000 });
+  return output;
+}
+
 try {
   const metadata = JSON.parse(await readFile(join(repo, 'package.json'), 'utf8'));
   const sourceCommit = git('rev-parse', 'HEAD');
@@ -34,8 +77,13 @@ try {
   await cp(join(repo, 'assets/branding'), join(stage, 'assets/branding'), { recursive: true, errorOnExist: true, force: false });
   await cp(join(repo, 'assets/cli'), join(stage, 'assets/cli'), { recursive: true, errorOnExist: true, force: false });
   const unixCli = join(stage, 'assets/cli/tpv-karaoke');
-  await writeFile(unixCli, (await readFile(unixCli, 'utf8')).replace(/\r\n/g, '\n'));
-  if (platform !== 'win') await chmod(unixCli, 0o755);
+  const linuxSystemCli = join(stage, 'assets/cli/linux-system-cli');
+  for (const launcher of [unixCli, linuxSystemCli, join(stage, 'assets/cli/mac-system-cli'), join(stage, 'assets/cli/mac-pkg-preinstall')]) {
+    await writeFile(launcher, (await readFile(launcher, 'utf8')).replace(/\r\n/g, '\n'));
+    if (platform !== 'win') await chmod(launcher, 0o755);
+  }
+  const winCli = join(stage, 'assets/cli', cliName + '.exe');
+  if (platform === 'win') buildWindowsCli(winCli, join(stage, 'assets/cli/windows-launcher.cs'));
   await viteBuild({ root: repo, build: { outDir: join(stage, 'dist/ui'), emptyOutDir: true } });
   await Promise.all(['main', 'preload'].map(entry => bundle({
     entryPoints: [join(repo, `src/${entry}/index.ts`)], outfile: join(stage, `dist/${entry}/index.cjs`),
@@ -64,6 +112,7 @@ try {
     ...(platform === 'linux' ? { productName: configuration.executableName } : {}),
     linux: { ...configuration.linux, icon: join(stage, configuration.linux.icon), desktop: { entry: { Name: configuration.productName } } },
     mac: { ...configuration.mac, icon: join(stage, configuration.mac.icon) },
+    ...(platform === 'linux' ? { deb: { ...configuration.deb, fpm: [`${linuxSystemCli}=/usr/bin/${cliName}`] } } : {}),
     nsis: { ...configuration.nsis, installerIcon: join(stage, configuration.nsis.installerIcon),
       uninstallerIcon: join(stage, configuration.nsis.uninstallerIcon),
       installerHeader: join(stage, configuration.nsis.installerHeader),
@@ -71,14 +120,15 @@ try {
       uninstallerSidebar: join(stage, configuration.nsis.uninstallerSidebar),
       include: join(stage, configuration.nsis.include) },
     extraResources: [...configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
-      ...(platform === 'mac' ? [{ from: unixCli, to: 'control/tpv-karaoke' }] : [])],
-    extraFiles: platform === 'mac' ? [] : configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
+      ...(platform === 'mac' ? ['tpv-karaoke', cliName].map(name => ({ from: unixCli, to: `control/${name}` })) : [])],
+    extraFiles: platform === 'mac' ? [] : [...configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
+      ...(platform === 'win' ? [{ from: winCli, to: cliName + '.exe' }] : [{ from: unixCli, to: cliName }])],
     // A multi-architecture build must download each matching Electron runtime.
     // Reusing the host runtime would silently mislabel (for example) an arm64 Mac.
     ...(target.nodeName === process.platform && architectures.length === 1 && Arch[architectures[0]] === process.arch
       ? { electronDist: dirname(requireFromRepo('electron')) } : {}),
   };
-  const artifacts = await build({ projectDir: repo, targets: target.createTarget(undefined, ...architectures), config, publish: 'never' });
+  const artifacts = [...await build({ projectDir: repo, targets: target.createTarget(undefined, ...architectures), config, publish: 'never' })];
   // Apple silicon requires valid integrity signatures even for development builds.
   // Check the real bundles before calling them ad-hoc signed in the receipt.
   if (platform === 'mac') {
@@ -89,6 +139,8 @@ try {
       if (signature.status !== 0 || !/^Signature=adhoc$/m.test(signature.stderr) || !/^TeamIdentifier=not set$/m.test(signature.stderr)) {
         throw new Error(`Expected ad-hoc development signature for ${Arch[architecture]}.`);
       }
+      if (installerNames(metadata.version, 'mac').includes(`Proper-Karaoke-Booth-${metadata.version}-mac-${Arch[architecture]}.pkg`))
+        artifacts.push(await buildMacInstaller(appDirectory, Arch[architecture], metadata.version));
     }
   }
   const checksums = [];

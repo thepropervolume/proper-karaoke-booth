@@ -12,7 +12,7 @@ function sizeLabel(bytes) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function byPlatform(version) {
+function byPlatform(version, records) {
   const prefix = `Proper-Karaoke-Booth-${version}`;
   return [
     { name: 'Windows', note: '64-bit Intel or AMD', files: [
@@ -20,11 +20,13 @@ function byPlatform(version) {
       [`${prefix}-win-x64.zip`, 'Windows portable archive', 'ZIP'],
     ] },
     { name: 'macOS', note: 'Apple silicon and Intel', files: [
+      [`${prefix}-mac-arm64.pkg`, 'Apple silicon installer', 'PKG'],
       [`${prefix}-mac-arm64.dmg`, 'Apple silicon disk image', 'DMG'],
       [`${prefix}-mac-arm64.zip`, 'Apple silicon archive', 'ZIP'],
+      [`${prefix}-mac-x64.pkg`, 'Intel installer', 'PKG'],
       [`${prefix}-mac-x64.dmg`, 'Intel disk image', 'DMG'],
       [`${prefix}-mac-x64.zip`, 'Intel archive', 'ZIP'],
-    ] },
+    ].filter(([file]) => !file.endsWith('.pkg') || records.has(file)) },
     { name: 'Linux', note: '64-bit Intel or AMD', files: [
       [`${prefix}-linux-x86_64.AppImage`, 'Linux portable app', 'AppImage'],
       [`${prefix}-linux-amd64.deb`, 'Debian / Ubuntu package', 'DEB'],
@@ -120,7 +122,7 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
   const root = versionPage ? './' : `./v${version}/`;
   const assetUrl = file => versionPage ? `./${file}` : `./latest/${file.replace(`-${version}-`, '-')}`;
   const image = (await readFile(iconPath)).toString('base64');
-  const platforms = byPlatform(version);
+  const platforms = byPlatform(version, assets);
   const documents = [
     [PLANNING_NAMES[0], 'Product specification', 'Word'],
     [PLANNING_NAMES[1], 'Interface mockups', 'PDF'],

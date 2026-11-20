@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -97,12 +97,13 @@ const inspect = async (app, architecture) => {
       await matchSource(join(resources, resource.to, filename), join(repo, resource.from, filename), `${resource.to}/${filename}`);
     }
   }
-  const wrapper = join(resources, 'control', 'tpv-karaoke');
+  const wrapper = join(resources, 'control', 'tpv-karaoke-booth');
   const wrapperText = await readFile(wrapper, 'utf8');
   assert.equal(wrapperText, (await readFile(join(repo, 'assets/cli/tpv-karaoke'), 'utf8')).replace(/\r\n/g, '\n'));
   assert.ok(!wrapperText.includes('\r'));
   assert.ok((await stat(wrapper)).mode & 0o111, 'CLI wrapper must be executable.');
   payload.wrapper = await hash(wrapper);
+  assert.equal(await hash(join(resources, 'control', 'tpv-karaoke')), payload.wrapper, 'Legacy in-bundle launcher no longer matches.');
   return { executable, wrapper, payload, signature: signature(app) };
 };
 
@@ -110,6 +111,7 @@ try {
   for (const architecture of ['x64', 'arm64']) {
     const zipName = `${prefix}-${architecture}.zip`;
     const dmgName = `${prefix}-${architecture}.dmg`;
+    const pkgName = `${prefix}-${architecture}.pkg`;
     assert.ok(artifacts.has(zipName), `Missing ZIP: ${zipName}`);
     assert.ok(artifacts.has(dmgName), `Missing DMG: ${dmgName}`);
     const zip = join(release, zipName), dmg = join(release, dmgName);
@@ -131,6 +133,30 @@ try {
     const result = { architecture, zip: zipName, dmg: dmgName, signature: zipInspection.signature,
       payloadSha256: zipInspection.payload, diskImageVerified: true, matchingDmgAndZip: true,
       nativeLaunch: false, cliWithoutNode: false };
+    if (artifacts.has(pkgName)) {
+      const expanded = join(temporary, `pkg-${architecture}`);
+      command('/usr/sbin/pkgutil', ['--expand-full', join(release, pkgName), expanded], { timeout: 180_000 });
+      const payload = join(expanded, 'Payload');
+      const installedApp = await onlyApp(join(payload, 'Applications'));
+      const pkgInspection = await inspect(installedApp, architecture);
+      assert.deepEqual(pkgInspection.payload, zipInspection.payload, 'PKG and ZIP app payloads must match.');
+      const launcher = join(payload, 'usr/local/bin/tpv-karaoke-booth');
+      const mode = await lstat(launcher);
+      assert.ok(mode.isFile() && (mode.mode & 0o111), 'PKG must own an executable CLI on system PATH.');
+      const systemLauncher = (await readFile(join(repo, 'assets/cli/mac-system-cli'), 'utf8')).replace(/\r\n/g, '\n');
+      assert.equal(await readFile(launcher, 'utf8'), systemLauncher);
+      const preinstall = join(expanded, 'Scripts/preinstall');
+      const isoVolume = join(temporary, `installation volume ${architecture}`);
+      const isoLauncher = join(isoVolume, 'usr/local/bin/tpv-karaoke-booth');
+      await mkdir(dirname(isoLauncher), { recursive: true });
+      const checkInstall = () => spawnSync('/bin/sh', [preinstall, '', '/', isoVolume], { encoding: 'utf8', timeout: 5000 });
+      assert.equal(checkInstall().status, 0, 'A new installation must pass the package preflight.');
+      await writeFile(isoLauncher, 'A different CLI\n');
+      assert.equal(checkInstall().status, 1, 'The package must preserve an unrelated CLI.');
+      await writeFile(isoLauncher, systemLauncher);
+      assert.equal(checkInstall().status, 0, 'A previous Booth PKG launcher must remain upgradeable.');
+      result.pkgPayloadVerified = true;
+    }
     if (architecture === process.arch) {
       const toolDirectory = join(temporary, 'cli-tools'); await mkdir(toolDirectory);
       await symlink('/usr/bin/dirname', join(toolDirectory, 'dirname'));
@@ -146,7 +172,7 @@ try {
       result.nativeLaunch = true;
     }
     packages.push(result);
-    console.log(`Verified ${architecture} DMG/ZIP${result.nativeLaunch ? ', native UI/restart/branding and CLI' : ' (static validation only; architecture differs from runner)'}.`);
+    console.log(`Verified ${architecture} DMG/ZIP${result.pkgPayloadVerified ? '/PKG' : ''}${result.nativeLaunch ? ', native UI/restart/branding and CLI' : ' (static validation only; architecture differs from runner)'}.`);
   }
   assert.ok(packages.some(result => result.nativeLaunch && result.cliWithoutNode), 'A native architecture must pass actual launch and CLI checks.');
   const verification = { version: metadata.version, platform: 'mac', createdAt: new Date().toISOString(),

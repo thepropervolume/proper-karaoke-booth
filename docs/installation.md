@@ -4,6 +4,20 @@ Download installers and checksums from the [Karaoke Booth downloads page](https:
 
 The Android debug APK is for development testing, and the unsigned Android App Bundle is not directly installable. The unsigned iOS Simulator ZIP is for the simulator only; it is not an iPhone installer. Native device testing, production signing and store distribution remain open.
 
+## Install the CLI
+
+Starting with 0.10.9, open a new terminal after installing Booth and run `tpv-karaoke-booth --help`.
+
+| Desktop package | Where setup installs the command |
+| --- | --- |
+| Windows setup EXE | `tpv-karaoke-booth.exe` in the application directory. Setup registers that directory in user PATH for an individual install or system PATH for an all-users install. Uninstall removes the entry if setup added it. |
+| Debian or Ubuntu DEB | `/usr/bin/tpv-karaoke-booth`, owned by the package and removed when the package is removed. |
+| macOS Apple silicon or Intel PKG | `/usr/local/bin/tpv-karaoke-booth`. The installer places the matching app in **Applications** and preserves an unrelated command already at the destination by stopping the install. The development PKG is unsigned and unnotarized. |
+
+With the Windows ZIP or a macOS DMG/ZIP, open **Preferences → Local API and CLI → Install CLI to PATH** after placing the application where you want it. On macOS that option works for your account. AppImage users can install the Debian package on supported distributions for a system PATH command.
+
+The Windows legacy `tpv-karaoke.cmd` remains bundled. On Linux and macOS, rerunning **Install CLI to PATH** also updates a legacy user launcher created by Booth. The macOS PKG installs its launcher separately from the app bundle. If you uninstall that installation by dragging the app to Trash, also remove the PKG-owned `/usr/local/bin/tpv-karaoke-booth` to retire the CLI. [CLI guide](local-control-api.md)
+
 ## Upgrading to 0.10.8
 
 Back up your show before upgrading. The built-in backup covers the show database. Back up media and preferences separately. A show last opened before 0.10.7 upgrades to schema 8 and gets a checked pre-upgrade database copy for rollback. [Show database safety](show-database-safety.md)

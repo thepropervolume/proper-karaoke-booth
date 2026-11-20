@@ -10,6 +10,7 @@ const START = '# >>> The Proper Volume Karaoke CLI >>>';
 const END = '# <<< The Proper Volume Karaoke CLI <<<';
 const BLOCK = `${START}\ncase ":$PATH:" in\n  *":$HOME/.local/bin:"*) ;;\n  *) PATH="$HOME/.local/bin\${PATH:+:$PATH}"; export PATH ;;\nesac\n${END}\n`;
 const MARKER = '# Managed by The Proper Volume Karaoke Booth CLI installer';
+const COMMAND = 'tpv-karaoke-booth';
 const MAX_PROFILE = 2 * 1024 * 1024;
 
 export type CliInstallResult = { ok: boolean; command?: string; message: string; files?: string[] };
@@ -29,7 +30,8 @@ async function verify(options: CliInstallOptions): Promise<Verified> {
     throw new Error('Automatic CLI installation is not available for AppImage yet. Use the CLI included with a Debian installation.');
   const appDirectory = dirname(options.executable);
   const entry = join(options.resources, 'control', 'cli.cjs');
-  const target = options.platform === 'darwin' ? join(options.resources, 'control', 'tpv-karaoke') : join(appDirectory, options.platform === 'win32' ? 'tpv-karaoke.cmd' : 'tpv-karaoke');
+  const target = options.platform === 'darwin' ? join(options.resources, 'control', COMMAND)
+    : join(appDirectory, options.platform === 'win32' ? `${COMMAND}.exe` : COMMAND);
   for (const path of [options.executable, entry, target]) {
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw new Error('The bundled CLI is missing or is not a regular file.');
@@ -75,7 +77,7 @@ export async function installPosixCli(home: string, shell: string, target: strin
   if (process.platform !== 'win32' && home.includes(':')) throw new Error('Your home directory cannot be safely added to PATH because it contains a colon.');
   const local = join(home, '.local'), bin = join(local, 'bin');
   await checkedDirectory(home, false); await checkedDirectory(local, true); await checkedDirectory(bin, true);
-  const launcher = join(bin, 'tpv-karaoke'), oldLauncher = await inspectFile(launcher);
+  const launcher = join(bin, COMMAND), oldLauncher = await inspectFile(launcher);
   if (oldLauncher && !oldLauncher.bytes.toString('utf8').startsWith(`#!/bin/sh\n${MARKER}\n`))
     throw new Error(`A different command already exists at ${launcher}. Rename it before installing.`);
   const program = Buffer.from(`#!/bin/sh\n${MARKER}\nexec ${shellQuote(target)} "$@"\n`);
@@ -92,6 +94,14 @@ export async function installPosixCli(home: string, shell: string, target: strin
     profiles.push(login);
   } else if (supported) profiles.push(join(home, '.zshrc'), join(home, '.zprofile'));
   const edits: { path: string; previous: ExistingFile; content: Buffer; mode: number }[] = [];
+  if (!oldLauncher?.bytes.equals(program) || (oldLauncher.mode & 0o100) === 0)
+    edits.push({ path: launcher, previous: oldLauncher, content: program, mode: oldLauncher ? oldLauncher.mode | 0o100 : 0o700 });
+  // Existing installations can keep using the old command. Leave unrelated
+  // aliases alone, and do not create an extra command on a fresh installation.
+  const legacy = join(bin, 'tpv-karaoke'), oldLegacy = await inspectFile(legacy).catch(() => null);
+  if (oldLegacy?.bytes.toString('utf8').startsWith(`#!/bin/sh\n${MARKER}\n`)
+      && (!oldLegacy.bytes.equals(program) || (oldLegacy.mode & 0o100) === 0))
+    edits.push({ path: legacy, previous: oldLegacy, content: program, mode: oldLegacy.mode | 0o100 });
   for (const profile of profiles) {
     const oldProfile = await inspectFile(profile);
     const original = oldProfile?.bytes.toString('utf8') ?? '';
@@ -105,10 +115,6 @@ export async function installPosixCli(home: string, shell: string, target: strin
   }
   const written: { path: string; previous: ExistingFile; content: Buffer }[] = [];
   try {
-    if (!oldLauncher?.bytes.equals(program) || (oldLauncher.mode & 0o100) === 0) {
-      await atomicWrite(launcher, program, oldLauncher, oldLauncher ? oldLauncher.mode | 0o100 : 0o700);
-      written.push({ path: launcher, previous: oldLauncher, content: program });
-    }
     for (const edit of edits) { await atomicWrite(edit.path, edit.content, edit.previous, edit.mode); written.push(edit); }
   } catch (error) {
     for (const item of written.reverse()) {
@@ -120,59 +126,22 @@ export async function installPosixCli(home: string, shell: string, target: strin
     }
     throw error;
   }
-  const files = [launcher, ...edits.map(edit => edit.path)];
+  const files = [launcher, ...edits.filter(edit => edit.path !== launcher).map(edit => edit.path)];
   if (!supported && !pathValue.split(':').includes(bin)) return { ok: true, command: launcher, files,
     message: `CLI installed. Add ${bin} to your shell PATH, then open a new terminal. Remove ${launcher} to uninstall it.` };
-  return { ok: true, command: 'tpv-karaoke', files,
-    message: `CLI installed. Open a new terminal and run tpv-karaoke --help. To uninstall, remove ${launcher}${profiles.length ? ` and the managed TPV blocks in ${profiles.join(' and ')}` : ''}.` };
+  return { ok: true, command: COMMAND, files,
+    message: `CLI installed. Open a new terminal and run ${COMMAND} --help. To uninstall, remove ${launcher}${profiles.length ? ` and the managed TPV blocks in ${profiles.join(' and ')}` : ''}.` };
 }
 
-// Windows values are passed through the environment; neither the installation
-// path nor the user's existing PATH is interpolated into a shell command.
-const WINDOWS_PATH_SCRIPT = String.raw`
-$ErrorActionPreference = 'Stop'
-$target = $env:TPV_CLI_INSTALL_DIRECTORY
-if (!$target -or $target -match '[;\x00-\x1f\x7f%"\r\n]') { throw 'Invalid installation directory.' }
-$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
-if (!$key) { throw 'User environment is unavailable.' }
-try {
-  $value = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-  $kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
-  if (($kind -ne [Microsoft.Win32.RegistryValueKind]::String -and $kind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) -or $value -isnot [string]) { throw 'Unsupported user PATH format.' }
-  $found = $false
-  foreach ($item in $value.Split(';')) {
-    $expanded = [Environment]::ExpandEnvironmentVariables($item.Trim().Trim('"')).TrimEnd('\')
-    if ([String]::Equals($expanded, $target.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) { $found = $true }
-  }
-  if (!$found) {
-    $updated = if ($value) { $value.TrimEnd(';') + ';' + $target } else { $target }
-    if ($updated.Length -gt 32000) { throw 'The user PATH is too long.' }
-    $key.SetValue('Path', $updated, $kind)
-    # Let Explorer and other applications refresh their user environment. A
-    # notification failure does not undo an already-persisted registry update.
-    try {
-      Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TpvEnvironmentBroadcast { [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, UIntPtr w, string l, uint flags, uint timeout, out UIntPtr result); }'
-      $ignored = [UIntPtr]::Zero
-      [void][TpvEnvironmentBroadcast]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero, 'Environment', 2, 1000, [ref]$ignored)
-    } catch { }
-  }
-  Write-Output $(if ($found) { 'already-present' } else { 'added' })
-} finally { $key.Close() }
-`;
-
+// Windows setup and explicit PATH repair use the same native registration.
 type PathExecutor = (file: string, args: string[], options: { timeout: number; maxBuffer: number; windowsHide: boolean; env: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
 export async function installWindowsCliPath(appDirectory: string, environment: NodeJS.ProcessEnv, execute: PathExecutor = runFile): Promise<CliInstallResult> {
-    if (!validPath(appDirectory) || /[;\x00-\x1f\x7f%"]/.test(appDirectory)) throw new Error('The application directory cannot safely be added to PATH.');
-    const systemRoot = environment.SystemRoot;
-    if (!systemRoot || !validPath(systemRoot)) throw new Error('Windows system directory is unavailable.');
-    const powershell = join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const { stdout } = await execute(powershell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(WINDOWS_PATH_SCRIPT, 'utf16le').toString('base64')], {
-      timeout: 15000, maxBuffer: 65536, windowsHide: true,
-      env: { ...process.env, ...environment, TPV_CLI_INSTALL_DIRECTORY: appDirectory },
-    });
-    if (!/^(added|already-present)\s*$/.test(stdout)) throw new Error('The user PATH could not be verified.');
-    const change = stdout.trim() === 'added' ? `To undo, remove ${appDirectory} from your user PATH in Windows Environment Variables.` : 'Your user PATH already contained the application directory, so no PATH change was needed.';
-    return { ok: true, command: 'tpv-karaoke', files: [], message: `CLI installed. Open a new terminal (or sign out and back in if needed) and run tpv-karaoke --help. ${change}` };
+  if (!validPath(appDirectory) || /[;\x00-\x1f\x7f%"]/.test(appDirectory)) throw new Error('The application directory cannot safely be added to PATH.');
+  await execute(join(appDirectory, `${COMMAND}.exe`), ['--register-windows-path'], {
+    timeout: 15000, maxBuffer: 65536, windowsHide: true, env: { ...process.env, ...environment },
+  });
+  return { ok: true, command: COMMAND, files: [],
+    message: `CLI registered in your user PATH. Open a new terminal and run ${COMMAND} --help.` };
 }
 
 export async function installControlCli(options: CliInstallOptions): Promise<CliInstallResult> {

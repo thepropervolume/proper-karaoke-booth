@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmod, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { sha256, stagePlatform, verifyPlatform } from './release-artifacts.mjs';
@@ -61,10 +61,23 @@ export async function verifyPackagedPlatform(repo, platform, version, commit) {
     assert.ok(extract('THIRD-PARTY-LICENSES.txt').length > 0, 'Missing runtime notices.');
     const names = ['resources/app.asar', 'resources/control/cli.cjs', 'resources/backdrops/tpv-karaoke-v3.mp4',
       ...(await readdir(join(unpacked, 'resources/branding'))).map(name => `resources/branding/${name}`),
-      platform === 'win' ? 'proper-karaoke-booth.exe' : 'proper-karaoke-booth', platform === 'win' ? 'tpv-karaoke.cmd' : 'tpv-karaoke'];
+      ...(platform === 'win' ? ['proper-karaoke-booth.exe', 'tpv-karaoke.cmd', 'tpv-karaoke-booth.exe']
+        : ['proper-karaoke-booth', 'tpv-karaoke', 'tpv-karaoke-booth'])];
     const hashes = await Promise.all(names.map(async name => [name, await sha256(join(unpacked, name))]));
     let executable = join(unpacked, platform === 'win' ? 'proper-karaoke-booth.exe' : 'proper-karaoke-booth');
-    if (platform === 'win') await zipPayload(join(release, `Proper-Karaoke-Booth-${version}-win-x64.zip`), hashes, require);
+    if (platform === 'win') {
+      await zipPayload(join(release, `Proper-Karaoke-Booth-${version}-win-x64.zip`), hashes, require);
+      const cliHelp = run(join(unpacked, 'tpv-karaoke-booth.exe'), ['--help'], { encoding: 'utf8', stdio: 'pipe' });
+      assert.match(cliHelp, /Usage: tpv-karaoke-booth /);
+      const malformed = spawnSync(join(unpacked, 'tpv-karaoke-booth.exe'), ['queue', 'command', '-'],
+        { input: '{malformed', encoding: 'utf8', timeout: 30_000, windowsHide: true });
+      assert.equal(malformed.status, 2);
+      assert.equal(malformed.stdout, '');
+      assert.equal(JSON.parse(malformed.stderr).error.code, 'invalid-request');
+      const powershell = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+      run(powershell, ['-NoProfile', '-NonInteractive', '-File', join(repo, 'scripts/windows-cli-path-smoke.ps1'),
+        join(unpacked, 'tpv-karaoke-booth.exe')]);
+    }
     else {
       const check = join(release, 'ci-package-check'); await mkdir(check, { recursive: true });
       const deb = join(release, `Proper-Karaoke-Booth-${version}-linux-amd64.deb`);
@@ -79,10 +92,15 @@ export async function verifyPackagedPlatform(repo, platform, version, commit) {
       const launcher = await readFile(join(debRoot, 'usr/share/applications/proper-karaoke-booth.desktop'), 'utf8');
       assert.match(launcher, /^Name=The Proper Volume Karaoke Booth$/m);
       assert.match(launcher, /^Exec="?\/opt\/proper-karaoke-booth\/proper-karaoke-booth(?:"|\s|$)/m);
+      const pathCli = join(debRoot, 'usr/bin/tpv-karaoke-booth'), pathCliMode = await lstat(pathCli);
+      assert.ok(pathCliMode.isFile() && (pathCliMode.mode & 0o111), 'The Debian package must own an executable CLI on system PATH.');
+      assert.equal(await readFile(pathCli, 'utf8'), (await readFile(join(repo, 'assets/cli/linux-system-cli'), 'utf8')).replace(/\r\n/g, '\n'));
       run(join(release, `Proper-Karaoke-Booth-${version}-linux-x86_64.AppImage`), ['--appimage-extract'], { cwd: check, stdio: 'ignore' });
       for (const root of [debRoot, join(check, 'squashfs-root')]) {
         const found = await packageRoots(root); assert.equal(found.length, 1, 'Expected one packaged app per Linux format.');
         for (const [name, hash] of hashes) assert.equal(await sha256(join(found[0], name)), hash, `Linux payload differs: ${name}`);
+        const cliHelp = run(join(found[0], 'tpv-karaoke-booth'), ['--help'], { encoding: 'utf8', stdio: 'pipe' });
+        assert.match(cliHelp, /Usage: tpv-karaoke-booth /);
       }
       // CI's headless Linux environment cannot exercise a real desktop sandbox.
       // Only this disposable test launcher gets these flags; packages keep theirs.

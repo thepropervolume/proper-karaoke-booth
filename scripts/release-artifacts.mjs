@@ -26,7 +26,11 @@ export function installerNames(version, platform) {
   const prefix = `Proper-Karaoke-Booth-${version}`;
   if (platform === 'win') return [`${prefix}-win-x64.zip`, `${prefix}-windows-x64-setup.exe`, `${prefix}-windows-x64-setup.exe.blockmap`];
   if (platform === 'linux') return [`${prefix}-linux-amd64.deb`, `${prefix}-linux-x86_64.AppImage`];
-  return ['arm64', 'x64'].flatMap(arch => ['.dmg', '.dmg.blockmap', '.zip', '.zip.blockmap'].map(ext => `${prefix}-mac-${arch}${ext}`));
+  const [major, minor, patch] = version.split('.').map(BigInt);
+  const extensions = ['.dmg', '.dmg.blockmap', '.zip', '.zip.blockmap'];
+  // PKG installers start with 0.10.9. Older public manifests stay valid.
+  if (major > 0n || minor > 10n || minor === 10n && patch >= 9n) extensions.push('.pkg');
+  return ['arm64', 'x64'].flatMap(arch => extensions.map(ext => `${prefix}-mac-${arch}${ext}`));
 }
 export function platformNames(version, platform) {
   const prefix = `Proper-Karaoke-Booth-${releaseVersion(version)}-${platform}`;
@@ -84,6 +88,8 @@ export async function verifyPlatform(directory, version, platform, commit) {
     assert.equal(native.buildReceiptSha256, ci.buildReceiptSha256);
     exactNames(native.packages.map(item => item.architecture), ['arm64', 'x64']);
     assert.ok(native.packages.every(item => item.diskImageVerified && item.matchingDmgAndZip));
+    if (installerNames(version, 'mac').some(file => file.endsWith('.pkg')))
+      assert.ok(native.packages.every(item => item.pkgPayloadVerified), 'Both macOS PKG payloads must pass verification.');
     assert.ok(native.packages.some(item => item.architecture === 'arm64' && item.nativeLaunch && item.cliWithoutNode));
   }
   return receipt;

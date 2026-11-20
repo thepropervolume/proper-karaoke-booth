@@ -46,6 +46,10 @@ test('the package contract includes every current installer architecture and sid
   assert.equal(installerNames(version, 'mac').length, 8);
   assert.ok(installerNames(version, 'mac').includes('Proper-Karaoke-Booth-0.8.0-mac-arm64.dmg'));
   assert.ok(installerNames(version, 'mac').includes('Proper-Karaoke-Booth-0.8.0-mac-x64.zip'));
+  assert.ok(!installerNames('0.10.8', 'mac').some(name => name.endsWith('.pkg')));
+  assert.deepEqual(installerNames('0.10.9', 'mac').filter(name => name.endsWith('.pkg')),
+    ['Proper-Karaoke-Booth-0.10.9-mac-arm64.pkg', 'Proper-Karaoke-Booth-0.10.9-mac-x64.pkg']);
+  assert.equal(releaseAssetNames('0.10.9').length, 36);
   assert.deepEqual(mobileInstallerNames(version, 'android'), ['Proper-Karaoke-Booth-0.8.0-android-debug.apk', 'Proper-Karaoke-Booth-0.8.0-android-unsigned.aab']);
   assert.deepEqual(mobileInstallerNames(version, 'ios'), ['Proper-Karaoke-Booth-0.8.0-ios-simulator.zip']);
   assert.equal(releaseAssetNames(version).length, 34);

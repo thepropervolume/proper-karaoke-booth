@@ -45,6 +45,8 @@ jobs:
           $installDir = Join-Path $env:RUNNER_TEMP 'tpv-install-qa-app'
           $exe = Join-Path $installDir 'proper-karaoke-booth.exe'
           if (Test-Path -LiteralPath $installDir) { throw 'The QA installation path is already in use.' }
+          $expectCli = [version]$candidate -ge [version]'0.10.9'
+          $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 
           function Invoke-SilentProcess($path, $arguments) {
             $process = Start-Process -FilePath $path -ArgumentList $arguments -WindowStyle Hidden -PassThru
@@ -70,9 +72,25 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+          if ($expectCli) {
+            $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+            if (@($userPath.Split(';') | Where-Object { $_ -ieq $installDir }).Count -ne 1) { throw 'Setup did not register user PATH exactly once.' }
+            $previousProcessPath = $env:Path
+            try {
+              $env:Path = "$previousProcessPath;$userPath"
+              $launcher = Get-Command tpv-karaoke-booth -CommandType Application
+              if ($launcher.Source -ine (Join-Path $installDir 'tpv-karaoke-booth.exe')) { throw 'PATH did not resolve the installed CLI.' }
+              $help = & $launcher.Source --help
+              if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch 'Usage: tpv-karaoke-booth') { throw 'Installed CLI help failed.' }
+            } finally { $env:Path = $previousProcessPath }
+          }
+
           $uninstaller = @(Get-ChildItem -LiteralPath $installDir -File -Filter 'Uninstall*.exe')
           if ($uninstaller.Count -ne 1) { throw 'Expected a single registered uninstaller executable.' }
           Invoke-SilentProcess $uninstaller[0].FullName '/S'
           for ($attempt = 0; $attempt -lt 15 -and (Test-Path -LiteralPath $exe); $attempt++) { Start-Sleep -Seconds 1 }
           if (Test-Path -LiteralPath $exe) { throw 'The installed executable remains after uninstall.' }
           if (!(Test-Path -LiteralPath (Join-Path $env:RUNNER_TEMP 'tpv-install-qa-profile/show.sqlite'))) { throw 'The isolated show disappeared after uninstall.' }
+          if ($expectCli -and [Environment]::GetEnvironmentVariable('Path', 'User') -cne $originalUserPath) {
+            throw 'Uninstall failed to restore the original user PATH.'
+          }
