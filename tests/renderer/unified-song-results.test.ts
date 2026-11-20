@@ -72,6 +72,7 @@ test('provider colors retain explicit identities and distinguish imported files 
   const rows = unifiedSongResults([{ id: 'file', title: 'A', artist: 'B', rating: 'clean' }, { id: 'yt', title: 'Y', artist: 'Z', rating: 'unrated', source: { provider: 'youtube', videoId: 'Abcdefghijk' } }, { id: 'kn', title: 'K', artist: 'N', rating: 'unrated', source: { provider: 'youtube', videoId: 'Abcdefghijl', brandSlug: 'TheProperVolume' } }], new Set(['file', 'yt', 'kn']), { karaFunConnected: false, sort: 'import-oldest' });
   assert.deepEqual(rows.map(row => RESULT_PROVIDER_COLORS[row.resultProvider]), ['#601CE9', '#007bff', '#ff0033']);
   assert.equal(RESULT_PROVIDER_COLORS.karafun, '#d5167a');
+  assert.equal(RESULT_PROVIDER_COLORS.partytyme, '#FACC15');
 });
 test('cached generic YouTube rows also defer to other sources without deleting saved recordings', () => {
   const library = [{ id: 'cached', artist: 'Oasis', title: 'Wonderwall', rating: 'clean' as const, source: { provider: 'youtube' as const, videoId: 'SavedVideo1' } },

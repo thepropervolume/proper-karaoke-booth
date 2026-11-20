@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('tpv', {
   refreshMenu: () => ipcRenderer.invoke('host:refresh-menu'),
   updateMenuContext: (value: { busy: boolean; modal: boolean }) => ipcRenderer.invoke('host:menu-context', value),
   getLocalControlStatus: () => ipcRenderer.invoke('host:control-status'),
+  installControlCli: () => ipcRenderer.invoke('host:install-control-cli'),
   showControlCli: () => ipcRenderer.invoke('host:show-control-cli'),
   onAppAction: (callback: (action: unknown) => void) => {
     const listener = (_event: unknown, action: unknown) => callback(action);
@@ -85,6 +86,7 @@ contextBridge.exposeInMainWorld('tpv', {
     return () => ipcRenderer.removeListener('host:timeline', listener);
   },
   getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
+  previewFilenameMetadata: () => ipcRenderer.invoke('host:preview-filename-metadata'),
   backupShow: () => ipcRenderer.invoke('host:backup-show'),
   retryBackupCleanup: () => ipcRenderer.invoke('host:backup-cleanup'),
   getCollections: () => ipcRenderer.invoke('host:get-collections'),
@@ -149,6 +151,9 @@ contextBridge.exposeInMainWorld('tpv', {
     revokeGuest: (singerId: string) => ipcRenderer.invoke('host:remote-revoke-guest', singerId)
   },
   internetSessions: {
+    startScreen: () => ipcRenderer.invoke('host:internet-screen-start'),
+    stopScreen: () => ipcRenderer.invoke('host:internet-screen-stop'),
+    copyScreenLink: () => ipcRenderer.invoke('host:internet-screen-copy'),
     status:()=>ipcRenderer.invoke('host:internet-status'),
     start:(input:unknown)=>ipcRenderer.invoke('host:internet-start',input),
     stop:()=>ipcRenderer.invoke('host:internet-stop'),

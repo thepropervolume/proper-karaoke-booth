@@ -4,7 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ProviderCatalogSearchResult } from '../../src/domain/provider-catalog';
 import { ProviderCatalogSearch, type ProviderCatalogSearchState } from '../../src/renderer/provider-catalog-search';
-import { ProviderCatalogResults } from '../../src/renderer/ProviderCatalogPanel';
+import { ProviderCatalogResults, ProviderConnectionBadge } from '../../src/renderer/ProviderCatalogPanel';
 
 function clock() {
   let id = 0; const tasks = new Map<number, () => void>();
@@ -66,4 +66,11 @@ test('an unavailable provider never renders songs carried by a failed result', (
     state: { query: 'song', phase: 'complete', results, failed: false }, openSong: async () => {},
   }));
   assert.match(markup, /Catalog access was rejected/); assert.doesNotMatch(markup, /Must not appear|View on KaraFun/);
+});
+
+test('connected account badges are visible and accessible only for active connections', () => {
+  const connected = renderToStaticMarkup(React.createElement(ProviderConnectionBadge, { provider: 'Party Tyme', connected: true }));
+  assert.match(connected, /Party Tyme account connected/);
+  assert.match(connected, /✓/);
+  assert.equal(renderToStaticMarkup(React.createElement(ProviderConnectionBadge, { provider: 'Party Tyme', connected: false })), '');
 });

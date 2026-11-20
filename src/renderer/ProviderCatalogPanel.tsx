@@ -3,6 +3,7 @@ import type { ProviderCatalogId, ProviderCatalogSong, ProviderCatalogStatus } fr
 import type { ProviderCatalogSearchState } from './provider-catalog-search';
 import { useProviderCatalogSearch } from './use-provider-catalog-search';
 import type { ProviderCatalogSearchResult } from '../domain/provider-catalog';
+import type { SourceVisibility } from '../domain/settings';
 
 export type ProviderCatalogBridge = {
   getProviderCatalogStatus(): Promise<ProviderCatalogStatus[]>;
@@ -48,8 +49,14 @@ export function ProviderCatalogResults({ state, openSong }: {
   </section>;
 }
 
-export function ProviderCatalogPanel({ bridge, enabled, scope, onConfigurationChanged }: {
-  bridge: ProviderCatalogBridge; enabled: boolean; scope: string; onConfigurationChanged(): void;
+/** Public search and a syntactically valid developer profile do not establish an account session. */
+export function ProviderConnectionBadge({ provider, connected }: { provider: string; connected: boolean }) {
+  if (!connected) return null;
+  return <span className="badge" role="status" aria-label={`${provider} account connected`}><span aria-hidden="true">✓ </span>Connected</span>;
+}
+
+export function ProviderCatalogPanel({ bridge, enabled, scope, onConfigurationChanged, karaFunConnected = false, partyTymeConnected = false, partyTymePremium = false, sourceVisibility }: {
+  bridge: ProviderCatalogBridge; enabled: boolean; scope: string; onConfigurationChanged(): void; karaFunConnected?: boolean; partyTymeConnected?: boolean; partyTymePremium?: boolean; sourceVisibility?: SourceVisibility;
 }) {
   const [statuses, setStatuses] = useState<ProviderCatalogStatus[] | null>(null);
   const [failure, setFailure] = useState('');
@@ -83,11 +90,14 @@ export function ProviderCatalogPanel({ bridge, enabled, scope, onConfigurationCh
     <p>Additional catalog discovery. Connect playable accounts in the sections above.</p>
     {!enabled && <p role="status">Service catalog search is turned off. Enable it under Preferences → Karaoke Services.</p>}
     {!statuses && !failure && <p role="status">Loading service connections…</p>}
-    <div className="provider-catalog-cards">{statuses?.slice(0, 4).map(status => <article className="provider-catalog-card" key={status.provider}>
-      <h3>{status.provider==='partytyme'?'Party Tyme Pro Catalog':status.label}</h3><span className="badge">{status.searchAvailable ? 'Catalog Search' : status.configured ? 'Search Unavailable' : 'Not Configured'}</span>
-      <p>{status.message}</p><p className="muted">Playback pending</p>
+    <div className="provider-catalog-cards">{statuses?.slice(0, 4).map(status => {
+      const connected = status.provider === 'karafun' ? karaFunConnected : status.provider === 'partytyme' ? partyTymeConnected : false;
+      const name = status.provider === 'partytyme' ? 'Party Tyme' : status.label;
+      return <article className="provider-catalog-card" key={status.provider}>
+      <h3>{name} <ProviderConnectionBadge provider={name} connected={connected} /></h3><span className="badge">{sourceVisibility?.[status.provider] === false || !enabled ? 'Search Off' : status.searchAvailable ? 'Catalog Search' : status.configured ? 'Search Unavailable' : 'Not Configured'}</span>
+      <p>{connected ? (status.provider === 'partytyme' ? `${partyTymePremium ? 'Premium account connected.' : 'Account connected; Premium required for playback.'} The separate Pro catalog is search only.` : 'Account connected. Search and playback use your KaraFun account.') : status.message}</p><p className="muted">{connected ? 'Connected account' : 'Playback pending'}</p>
       {(status.provider === 'stingray' || status.provider === 'sunfly') ? <><button type="button" disabled={choosing !== null} onClick={() => void choose(status.provider)}>{choosing === status.provider ? 'Choosing…' : 'Choose Developer Profile…'}</button>{status.catalogMode === 'developer' && <button type="button" disabled={choosing !== null} onClick={() => void clear(status.provider)}>{status.provider === 'sunfly' ? 'Use Public Store Search' : 'Remove Profile Selection'}</button>}</> : <p className="muted">Public catalog metadata · No account needed for search</p>}
-    </article>)}</div>
+    </article>; })}</div>
     {failure && <p role="alert">{failure}</p>}
     <form className="library-toolbar" onSubmit={event => { event.preventDefault(); if (query.trim().length >= 2) { setSearch(query); setRevision(value => value + 1); } }}>
       <label>Artist or song title<input type="search" aria-label="Search service catalogs" value={query} maxLength={200} onChange={event => { setQuery(event.target.value); if (event.target.value.trim() !== search.trim()) setSearch(''); }} /></label>

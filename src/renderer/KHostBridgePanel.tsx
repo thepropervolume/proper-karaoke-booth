@@ -25,7 +25,7 @@ const outcome = (value: KHostBridgeHandoff) => value.status === 'handed-off'
       : 'KHost accepted this handoff. It may still be downloading or waiting for input there.'
   : messages[value.status];
 
-export function KHostBridgePanel({ bridge, scope }: { bridge: KHostBridgeApi; scope: string }) {
+export function KHostBridgePanel({ bridge, scope, enabled = true }: { bridge: KHostBridgeApi; scope: string; enabled?: boolean }) {
   const [statusState, setStatus] = useState<KHostBridgeUiStatus | null>(null);
   const [statusScope, setStatusScope] = useState('');
   const [query, setQuery] = useState('');
@@ -49,6 +49,16 @@ export function KHostBridgePanel({ bridge, scope }: { bridge: KHostBridgeApi; sc
       .catch(() => { if (valid(generation)) setFailure('Companion status could not be read. Try Refresh Connection.'); });
     return () => { ++epoch.current; ++searchSequence.current; void bridge.cancelSearch().catch(() => {}); };
   }, [bridge, scope]);
+
+  useEffect(() => {
+    if (!enabled) {
+      // Hide stale discoveries without dropping the handoff outcome: a request
+      // already sent to KHost may still need the host's attention.
+      ++searchSequence.current;
+      setSearch(null);
+      void bridge.cancelSearch().catch(() => {});
+    }
+  }, [bridge, enabled]);
 
   const observe = async (active: KHostPendingHandoff, generation: number) => {
     let result: KHostBridgeHandoff;
@@ -89,7 +99,7 @@ export function KHostBridgePanel({ bridge, scope }: { bridge: KHostBridgeApi; sc
     finally { if (valid(generation)) setWorking(null); }
   };
   const runSearch = async () => {
-    if (working || unresolved(job)) return;
+    if (!enabled || working || unresolved(job)) return;
     const generation = epoch.current, sequence = ++searchSequence.current;
     setWorking('search'); setSearch(null); setSearchScope(scope); setFailure('');
     try {
@@ -99,7 +109,7 @@ export function KHostBridgePanel({ bridge, scope }: { bridge: KHostBridgeApi; sc
     finally { if (valid(generation)) setWorking(null); }
   };
   const send = async (song: KHostBridgeSong) => {
-    if (working || unresolved(job)) return;
+    if (!enabled || working || unresolved(job)) return;
     const generation = epoch.current, requestId = crypto.randomUUID();
     const active: KHostPendingHandoff = { requestId, title: song.title, artist: song.artist, uncertain: true, sending: true,
       result: { status: 'unavailable', requestId, mayHaveBeenAccepted: true } };
@@ -145,14 +155,15 @@ export function KHostBridgePanel({ bridge, scope }: { bridge: KHostBridgeApi; sc
       ? status.connection.providerAvailable ? 'Connected to KHost · KaraFun provider available · Playback stays in KHost.' : messages['provider-unavailable']
       : messages[status.connection.status]}</p>}
     <p className="muted">These companion results use a separate external queue. TPV’s own song library, queue and singer display use their existing playback sources.</p>
-    <form className="library-toolbar" onSubmit={event => { event.preventDefault(); void runSearch(); }}>
+    {!enabled && <p role="status">KHost search is off. Enable KaraFun under Show in Search to use it.</p>}
+    {enabled && <form className="library-toolbar" onSubmit={event => { event.preventDefault(); void runSearch(); }}>
       <label>Search KaraFun Through KHost<input type="search" value={query} maxLength={200} onChange={event => {
         setQuery(event.target.value); setSearch(null); ++searchSequence.current; void bridge.cancelSearch().catch(() => {});
       }} /></label>
       <button type="submit" disabled={!ready || working !== null || unresolved(job) || query.trim().length < 2}>Search KHost</button>
-    </form>
+    </form>}
     {working === 'search' && <p role="status">Searching KaraFun through KHost…</p>}
-    {search && (search.status !== 'ready' ? <p role="status">{messages[search.status]}</p> : <>
+    {enabled && search && (search.status !== 'ready' ? <p role="status">{messages[search.status]}</p> : <>
       <p className="muted">{search.songs.length} unblocked matches · External KHost queue</p>
       <div role="list" aria-label="KHost KaraFun songs">{search.songs.map(song => <div key={song.resultId} className="track-row provider-catalog-song" role="listitem">
         <div><strong>{song.title}</strong><small>{song.artist || 'Unknown artist'} · KaraFun via KHost</small></div>

@@ -67,12 +67,13 @@ try {
   await writeFile(bootstrap, `const {app,dialog,session,shell}=require('electron');const fs=require('node:fs');
 app.setPath('userData',process.env.TPV_SEARCH_QA_PROFILE);app.setAppPath(process.env.TPV_SEARCH_QA_REPO);app.getVersion=()=>${JSON.stringify(metadata.version)};
 if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_SEARCH_QA_PROFILE))throw Error('Unsafe rehearsal profile');
-globalThis.searchWorkspaceQa={unexpectedFetches:0,downloads:0,youtubeQueries:[],ratingKeys:[],nextOpenFile:null,dialogs:[]};
+globalThis.searchWorkspaceQa={unexpectedFetches:0,downloads:0,youtubeQueries:[],ratingKeys:[],ratingVotes:[],failNextVote:true,nextOpenFile:null,dialogs:[]};
 dialog.showOpenDialog=async()=>{const file=searchWorkspaceQa.nextOpenFile;searchWorkspaceQa.nextOpenFile=null;return file?{canceled:false,filePaths:[file]}:{canceled:true,filePaths:[]};};
 dialog.showMessageBox=async(_parent,value)=>{searchWorkspaceQa.dialogs.push(value?.message||'');return{response:0};};
 shell.openExternal=async()=>{throw Error('External browsers are disabled in this rehearsal');};
 globalThis.fetch=async(input,options)=>{const url=new URL(String(input));const xml=body=>new Response('<response status="ok">'+body+'</response>',{headers:{'Content-Type':'application/xml'}});
 if(url.origin==='https://ratings.example.test'&&url.pathname==='/v1/ratings/lookup'){const keys=JSON.parse(options.body).recordingKeys;searchWorkspaceQa.ratingKeys.push(...keys);return new Response(JSON.stringify({items:keys.map(recordingKey=>({recordingKey,average:null,count:0,ownVote:null}))}),{headers:{'content-type':'application/json'}});}
+if(url.origin==='https://ratings.example.test'&&url.pathname==='/v1/ratings/vote'){const {recordingKey,value}=JSON.parse(options.body);searchWorkspaceQa.ratingVotes.push({recordingKey,value});if(searchWorkspaceQa.failNextVote){searchWorkspaceQa.failNextVote=false;return new Response('',{status:503});}return new Response(JSON.stringify({recordingKey,average:value,count:1,ownVote:value}),{headers:{'content-type':'application/json'}});}
 if(url.origin==='https://catalog.example.test'&&url.pathname==='/v1/catalog/tracks')return new Response(JSON.stringify({items:${JSON.stringify(community)},nextCursor:null,metadata:{revision:'1',lastSuccess:null,lastAttempt:null}}),{headers:{'content-type':'application/json'}});
 if(url.hostname==='api.karafun.com')switch(url.pathname){case'/session/info':return xml('<session/>');case'/search/top':return xml('<list><song id="6229"/></list>');case'/song/info':return xml('<song id="6229"><title>KaraFun Search Song</title><artist>Synthetic Artist</artist><len>180</len><explicit>0</explicit></song>');case'/song/request':searchWorkspaceQa.downloads++;throw Error('No media downloads are allowed in this rehearsal');}
 searchWorkspaceQa.unexpectedFetches++;throw Error('Unexpected network request blocked');};
@@ -98,6 +99,25 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   for (const section of ['Sources', 'Singers', 'Playlists']) {
     await host.getByRole('button', { name: section, exact: true }).click();
     assert.equal(await search.isVisible(), true, `Global search must stay visible in ${section}.`);
+    if (section === 'Playlists') {
+      const layout = await host.locator('.collections-nav').evaluate(nav => {
+        const buttons = [...nav.querySelectorAll('button')].map(button => ({ rect: button.getBoundingClientRect().toJSON(), radius: getComputedStyle(button).borderRadius }));
+        return { gap: parseFloat(getComputedStyle(nav).columnGap), buttons };
+      });
+      assert.ok(layout.gap >= 8, 'Collection navigation needs visible space between buttons.');
+      assert.ok(layout.buttons.every(button => button.rect.height >= 42 && parseFloat(button.radius) <= 4), 'Collection buttons remain accessible and use compact corners.');
+      assert.equal(await host.getByRole('searchbox', { name: 'Find a playlist', exact: true }).isVisible(), true, 'Playlists provide a visible search field.');
+      const picker = await host.locator('.playlist-browser__list').evaluate(list => {
+        const probe = list.cloneNode(false);
+        probe.style.width = '260px';
+        for (let i = 0; i < 2; i++) { const button = document.createElement('button'); button.className = 'playlist-browser__item'; button.textContent = `Playlist ${i}`; probe.append(button); }
+        list.after(probe);
+        const parent = probe.getBoundingClientRect(), boxes = [...probe.children].map(child => child.getBoundingClientRect());
+        const result = { gap: parseFloat(getComputedStyle(probe).gap), fits: boxes.every(box => box.right <= parent.right + 1 && box.height >= 42) };
+        probe.remove(); return result;
+      });
+      assert.ok(picker.gap >= 8 && picker.fits, 'Playlist buttons need spaced, accessible targets even in a narrow picker.');
+    }
     await host.keyboard.press('Control+f');
     assert.equal(await search.evaluate(node => document.activeElement === node), true);
     assert.equal(await host.getByRole('button', { name: 'Library', exact: true }).getAttribute('aria-current'), 'page');
@@ -122,12 +142,20 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await songs.getByText('Community Search Song 01', { exact: true }).waitFor();
   await songs.getByText('Saved Metadata Override', { exact: true }).waitFor();
   assert.equal(await songs.getByText('Community Search Song 00', { exact: true }).count(), 0, 'Stored host metadata must win over exact catalog duplicates.');
-  const colors = { local: 'rgb(96, 28, 233)', karafun: 'rgb(213, 22, 122)', karaokenerds: 'rgb(0, 123, 255)', youtube: 'rgb(255, 0, 51)' };
+  const colors = { local: 'rgb(96, 28, 233)', karafun: 'rgb(213, 22, 122)', karaokenerds: 'rgb(0, 123, 255)', youtube: 'rgb(255, 0, 51)', partytyme: 'rgb(250, 204, 21)' };
   for (const [provider, color] of Object.entries(colors)) {
     const row = songs.locator(`[data-provider="${provider}"]`).first(); await row.waitFor();
     const actual = await row.evaluate(node => ({ color: getComputedStyle(node).borderLeftColor, width: parseFloat(getComputedStyle(node).borderLeftWidth) }));
     assert.equal(actual.color, color); assert.ok(actual.width >= 2 && actual.width <= 3, `${provider} border: ${JSON.stringify(actual)}`);
   }
+  const partyRow = songs.locator('[data-provider="partytyme"]').first();
+  const compact = await songs.locator('[data-provider="local"]').first().evaluate(node => {
+    const style = getComputedStyle(node);
+    return { height: node.getBoundingClientRect().height, radius: style.borderRadius };
+  });
+  assert.ok(compact.height >= 48 && compact.height <= 62 && parseFloat(compact.radius) === 0, `Song results must be compact, accessible flat rows: ${JSON.stringify(compact)}`);
+  const dayKeyline = await partyRow.evaluate(node => { const line = getComputedStyle(node, '::before'); return { content: line.content, color: line.backgroundColor, width: line.width }; });
+  assert.equal(dayKeyline.content, '""'); assert.equal(dayKeyline.color, 'rgb(107, 82, 0)'); assert.equal(dayKeyline.width, '1px', 'Day theme keeps a contrasting edge next to the yellow stripe.');
   for (const provider of ['local', 'karafun', 'karaokenerds', 'youtube', 'partytyme', 'sunfly', 'stingray']) {
     const row = songs.locator(`[data-provider="${provider}"]`).first(); await row.scrollIntoViewIfNeeded(); await row.click({ button: 'right' });
     const menu = host.getByRole('menu').filter({ has: host.getByRole('menuitem', { name: 'Add to Queue', exact: true }) });
@@ -149,10 +177,16 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await host.keyboard.press('Control+f');
   await karaFunRow.getByRole('button', { name: /^Rate KaraFun Search Song\./ }).click();
   const rating = host.getByRole('dialog', { name: 'Rate This Recording', exact: true }); await rating.waitFor();
-  assert.equal(await rating.getByRole('radio', { name: '7 hearts out of 10', exact: true }).isEnabled(), true);
+  assert.equal(await rating.getByRole('radio', { name: '7 stars out of 10', exact: true }).isEnabled(), true);
   assert.equal((await app.evaluate(() => searchWorkspaceQa.ratingKeys)).includes('karafun:catalog:6229'), true,
     'A search-only KaraFun recording must use its exact global identity without an imported fingerprint.');
-  await rating.getByRole('button', { name: 'Close', exact: true }).click(); await rating.waitFor({ state: 'hidden' });
+  await rating.getByRole('radio', { name: '7 stars out of 10', exact: true }).click();
+  await rating.getByRole('alert').waitFor();
+  assert.equal(await rating.isVisible(), true, 'A failed vote keeps the dialog open for review.');
+  await rating.getByRole('radio', { name: '8 stars out of 10', exact: true }).click();
+  await rating.waitFor({ state: 'hidden' });
+  assert.deepEqual(await app.evaluate(() => searchWorkspaceQa.ratingVotes), [
+    { recordingKey: 'karafun:catalog:6229', value: 7 }, { recordingKey: 'karafun:catalog:6229', value: 8 }]);
   await host.locator('.library-results').evaluate(node => { node.scrollTop = 0; });
   const geometry = await host.evaluate(() => {
     const results = document.querySelector('.library-results').getBoundingClientRect(), workspace = document.querySelector('.main-panel').getBoundingClientRect();
@@ -211,6 +245,8 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   assert.equal(brandingState.bannerVisible, true); assert.ok(parseFloat(brandingState.logoWidth) > 500, 'A 75vw logo must exceed the old 500px cap on this display.');
   await host.evaluate(() => window.tpv.saveSettings({ appearance: 'night' }));
   await host.waitForFunction(() => document.documentElement.dataset.theme === 'night');
+  const nightKeyline = await partyRow.evaluate(node => getComputedStyle(node, '::before').content);
+  assert.equal(nightKeyline, 'none', 'Night theme retains the unoutlined yellow stripe.');
   await host.mouse.move(5, 5);
   await host.screenshot({ path: join(screenshots, 'search-workspace-night.png') });
   const state = await host.evaluate(() => window.tpv.getState()); assert.equal(state.requests.length, 0); assert.equal(state.playback, null);

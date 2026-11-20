@@ -12,6 +12,7 @@ import { BlacklistSettings } from './BlacklistSettings';
 import { YouTubeSearchSettings } from './YouTubeSearchSettings';
 import { SingerBrandingSettings } from './SingerBrandingSettings';
 import { Tooltip } from './Tooltip';
+import { MetadataPreview } from './MetadataPreview';
 import { DEFAULT_HOST_PANEL_SIZES } from '../domain/host-layout';
 import type { Shortcuts } from '../domain/shortcuts';
 import type { SettingsSection } from '../domain/app-action';
@@ -107,6 +108,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <label>When no template matches<select value={draft.metadataFormat} onChange={event => setDraft({ ...draft, metadataFormat: event.target.value as Settings['metadataFormat'] })}>
               <option value="artist-title">Artist - Title</option><option value="title-artist">Title - Artist</option><option value="filename">Full filename as title</option>
             </select></label>
+            <MetadataPreview />
           </div>
         </details>
         <details className="settings-group">

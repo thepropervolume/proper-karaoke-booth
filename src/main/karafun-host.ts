@@ -36,6 +36,8 @@ export class KaraFunHost {
     while (this.progress.size > 100) this.progress.delete(this.progress.keys().next().value!);
     this.ports.changed();
   }
+  // Invalidate discovery without cancelling a queued or playing performance.
+  invalidateSearch(): void { this.receipts = null; this.searchAbort?.abort(); }
   accountChanged(): void {
     this.receipts = null; this.searchAbort?.abort();
     for (const operation of this.operations) operation.abort();

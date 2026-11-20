@@ -40,6 +40,12 @@ export class PartyTymeHost {
     status(): KaraFunPreparation[] {
         return [...this.progress.values()];
     }
+    /** Hiding a source invalidates search receipts without cancelling queued downloads. */
+    invalidateSearch(): void {
+        this.receipt = null;
+        this.searchAbort?.abort();
+        this.searchAbort = null;
+    }
     needsShutdownWait(): boolean {
         return this.operations.size > 0 || !!this.queue.snapshot().activeVersionId;
     }

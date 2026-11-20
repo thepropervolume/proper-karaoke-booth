@@ -21,6 +21,9 @@ test('Sunfly defaults to public store metadata and explicit developer profiles n
   assert.equal(privateValues.find(s => s.provider === 'sunfly')?.searchAvailable, false);
   assert.equal(privateValues.find(s => s.provider === 'sunfly')?.catalogMode, 'developer');
   assert.ok(calls.includes('sunfly:/explicit/private/key'));
+  state.sourceVisibility.sunfly = false;
+  const disabled = (await service.status()).find(item => item.provider === 'sunfly');
+  assert.equal(disabled?.searchAvailable, false); assert.equal(disabled?.catalogMode, 'developer');
 });
 test('strict show policies and disabled discovery stop provider calls at the service boundary', async () => {
   const state = scope(); let calls = 0;
@@ -62,4 +65,32 @@ test('only current observed allowlisted pages can open; never renderer URLs or t
   state.providerCatalogProfiles.sunfly = '/new/profile'; assert.equal(service.url('partytyme', '1'), null);
   await service.search('song');
   state.policy.ageRestricted = true; assert.equal(service.url('partytyme', '1'), null);
+});
+
+
+test('individual disabled sources skip network discovery and fence pending replies and links', async () => {
+  const state = { ...scope(), karaFunConnected: true }, calls: string[] = [];
+  const service = new ProviderCatalogService(() => state, { search: async provider => { calls.push(provider); return result(provider, provider === 'partytyme' ? 'https://www.partytyme.com/Party_Tyme_Pro_update.htm' : null); } });
+  state.sourceVisibility.partytyme = false; state.sourceVisibility.sunfly = false;
+  const results = await service.search('song');
+  assert.deepEqual(calls.sort(), ['karafun', 'stingray']);
+  assert.equal(results.find(row => row.provider === 'partytyme')?.songs.length, 0);
+  assert.equal(results.find(row => row.provider === 'sunfly')?.songs.length, 0);
+  const disabledStatus = (await service.status()).find(row => row.provider === 'partytyme');
+  assert.equal(disabledStatus?.searchAvailable, false); assert.equal(disabledStatus?.configured, true);
+  state.sourceVisibility.partytyme = true;
+  await service.search('song'); assert.ok(service.url('partytyme', '1'));
+  state.sourceVisibility.partytyme = false; assert.equal(service.url('partytyme', '1'), null);
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const delayed = new ProviderCatalogService(() => state, { search: async provider => { await gate; return result(provider); } });
+  const pending = delayed.search('song'); state.sourceVisibility.stingray = false; release();
+  assert.ok((await pending).every(row => row.songs.length === 0));
+});
+
+
+test('disabling a developer source preserves its configured status', async () => {
+  const state=scope(); state.providerCatalogProfiles.sunfly='/private/profile'; state.sourceVisibility.sunfly=false;
+  const service=new ProviderCatalogService(()=>state,{status:async provider=>({provider,label:PROVIDER_CATALOG_LABELS[provider],configured:true,searchAvailable:true,playbackAvailable:false,message:'Configured'})});
+  const result=(await service.status()).find(row=>row.provider==='sunfly');
+  assert.equal(result?.configured,true); assert.equal(result?.searchAvailable,false); assert.match(result?.message ?? '',/disabled/i);
 });

@@ -5,6 +5,7 @@ import type { YouTubeSearchResult } from '../domain/youtube-search';
 import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogSong } from '../domain/provider-catalog';
 import type { LibrarySort } from '../domain/library-view';
 import { normalizeBlacklistIdentity } from '../domain/song-blacklist';
+import { sourceForVersion } from '../domain/source-visibility';
 
 export type SongResultProvider = 'local' | 'youtube' | 'karaokenerds' | ProviderCatalogId;
 export type SongResult = LibrarySearchVersion & {
@@ -18,7 +19,7 @@ export const RESULT_PROVIDER_LABELS: Record<SongResultProvider, string> = {
   local: 'Imported', youtube: 'YouTube', karaokenerds: 'Karaoke Nerds', karafun: 'KaraFun', partytyme: 'Party Tyme', sunfly: 'Sunfly', stingray: 'Stingray',
 };
 export const RESULT_PROVIDER_COLORS: Record<SongResultProvider, string> = {
-  local: '#601CE9', youtube: '#ff0033', karaokenerds: '#007bff', karafun: '#d5167a', partytyme: '#bb7b16', sunfly: '#d18300', stingray: '#278b91',
+  local: '#601CE9', youtube: '#ff0033', karaokenerds: '#007bff', karafun: '#d5167a', partytyme: '#FACC15', sunfly: '#d18300', stingray: '#278b91',
 };
 // Artist/title are editable and different recordings can share them. Deduplicate
 // only exact provider identities so a host edit wins without merging versions.
@@ -35,11 +36,14 @@ function songKey(artist: string | null | undefined, title: string): string | nul
 export function unifiedSongResults(library: readonly LibrarySearchVersion[], savedIds: ReadonlySet<string>, input: {
   karaFun?: KaraFunSearchReply | null; youtube?: YouTubeSearchResult | null;
   partyTyme?: PartyTymeSearchReply | null; partyTymeConnected?: boolean;
+  sourceVisibility?: Partial<Record<SongResultProvider, boolean>>;
   catalogs?: readonly ProviderCatalogSearchResult[] | null; karaFunConnected: boolean; sort: LibrarySort;
 }): SongResult[] {
   const rows: SongResult[] = [], seen = new Set<string>();
-  const append = (row: SongResult) => { const key = row.catalogOnly ? row.catalogOnly.provider === 'karafun' ? `karafun:catalog:${row.catalogOnly.id}` : `catalog:${row.catalogOnly.provider}:${row.catalogOnly.id}` : identity(row); if (!seen.has(key)) { seen.add(key); rows.push(row); } };
-  for (const row of library) if ((row.source?.provider !== 'karafun' || input.karaFunConnected) && (row.source?.provider !== 'partytyme' || input.partyTymeConnected)) append({ ...row, persisted: savedIds.has(row.id), resultProvider: row.source?.provider === 'karafun' ? 'karafun' : row.source?.provider === 'partytyme' ? 'partytyme' : row.catalogTrack || row.source?.provider === 'youtube' && row.source.brandSlug ? 'karaokenerds' : row.source?.provider === 'youtube' ? 'youtube' : 'local' });
+  // Apply visibility before YouTube duplicate suppression: a hidden source
+  // must not hide an otherwise eligible YouTube recording of the same song.
+  const append = (row: SongResult) => { if (input.sourceVisibility?.[row.resultProvider] === false) return; const key = row.catalogOnly ? row.catalogOnly.provider === 'karafun' ? `karafun:catalog:${row.catalogOnly.id}` : `catalog:${row.catalogOnly.provider}:${row.catalogOnly.id}` : identity(row); if (!seen.has(key)) { seen.add(key); rows.push(row); } };
+  for (const row of library) if ((row.source?.provider !== 'karafun' || input.karaFunConnected) && (row.source?.provider !== 'partytyme' || input.partyTymeConnected)) append({ ...row, persisted: savedIds.has(row.id), resultProvider: sourceForVersion(row) });
   if (input.partyTymeConnected && input.partyTyme?.status === 'ok' && input.partyTyme.searchId) for (const song of input.partyTyme.songs) append({
     id: `partytyme-search:consumer:${song.videoId}`, title: song.title, artist: song.artist, rating: 'unrated',
     source: { provider: 'partytyme', catalog: 'consumer', videoId: song.videoId }, resultProvider: 'partytyme', persisted: false,

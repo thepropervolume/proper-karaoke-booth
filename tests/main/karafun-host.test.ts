@@ -256,3 +256,16 @@ test('an evicted queued KIT hydrates from verified current-account disk after fr
   assert.equal(f.authorizations(), 4, 'RAM eviction never bypasses current authorization');
   assert.equal(f.media.get(versionIds[0])?.path, prepared.path); assert.equal(f.state().playback, null);
 });
+
+
+test('invalidating source discovery clears old receipts without cancelling queued media', async t => {
+  const f = fixture(); t.after(() => f.host.shutdown());
+  const preparation = deferred(); f.setGate(async () => preparation.promise);
+  const queued = await f.request(); assert.ok(queued.versionId); await until(() => f.calls.length === 1);
+  const found = await f.host.search('Synthetic'); assert.ok(found.searchId);
+  f.host.invalidateSearch();
+  assert.equal(f.calls[0].signal.aborted, false, 'a source toggle must not cancel queued preparation');
+  assert.equal(f.host.request({searchId: found.searchId, songId: song.songId, catalog: song.catalog, singerId: 's', requestId: 'stale'}).ok, false);
+  preparation.resolve(); await until(() => f.media.has(queued.versionId!));
+  assert.equal(f.state().requests.length, 1);
+});

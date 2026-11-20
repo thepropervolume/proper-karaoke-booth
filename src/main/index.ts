@@ -1,21 +1,25 @@
 import { MobileRoomBeacon } from './mobile-room-beacon';
 // Application composition root: the host owns durable state; renderers ask for
 // actions and report playback facts. Provider credentials and media paths stay here.
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { unlink, readFile, lstat, open } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
+import { userInfo } from 'node:os';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Actor, type Command, type Outcome, type ShowState } from '../domain';
 import type { HistoryEntry } from '../domain/collections';
 import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
+import { previewMetadata } from './metadata-preview';
 import { Store, type StoredMedia } from './store';
 import { readSettings, writeSettings } from './settings';
 import { nextAccentColor, type Settings } from '../domain/settings';
 import { SettingsUpdateQueue } from './settings-update-queue';
+import { installControlCli } from './cli-installer';
 import { applySettingsPatch } from './settings-patch';
+import { saveWithDiscoveryRevision } from './source-settings';
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts, writeShortcuts } from './shortcuts';
 import type { AppAction } from '../domain/app-action';
@@ -131,8 +135,10 @@ function ratingsConnection(): SongRatingsConnection {
 }
 let state: ShowState;
 let settings: Settings;
-const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist, karaFunConnected: karaFunAccount?.status().state === 'connected' }));
-const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, policy: state.policy }));
+const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, sourceVisibility: settings.sourceVisibility, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist, karaFunConnected: karaFunAccount?.status().state === 'connected' }));
+const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }));
+// In-flight discovery replies must not reappear after a source is toggled.
+let sourceVisibilityRevision = 0;
 const khostBridge = new KHostBridgeConnection(() => ({ ...settings, policy: state.policy }));
 let choosingKHostProfile = false;
 const singerFrames = new SingerScreenFrameHub();
@@ -145,7 +151,7 @@ function previewFrame(): SingerPreviewFrame {
 }
 singerFrames.subscribe(() => { if (host && !host.isDestroyed()) host.webContents.send('host:singer-preview', previewFrame()); });
 const singerCapture = new SingerScreenCapture(singerFrames, {
-  hasDemand: () => !shuttingDown && (!!settings && settings.hostPreviewPosition !== 'hidden' && !!host && !host.isDestroyed() && host.isVisible() || singerScreenServer.status().viewers > 0),
+  hasDemand: () => !shuttingDown && (!!settings && settings.hostPreviewPosition !== 'hidden' && !!host && !host.isDestroyed() && host.isVisible() || singerScreenServer.status().viewers > 0 || !!internetQueue?.screenSharing),
   capture: async () => {
     const window = display;
     if (!window || window.isDestroyed() || !displayReady) return null;
@@ -510,10 +516,10 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host'): ReturnTyp
   return result.outcome;
 }
 
-function commitCatalogRequest(input: unknown) {
+function commitCatalogRequest(input: unknown, discoveryOrigin: 'karaokenerds' | 'youtube' = 'karaokenerds') {
     if(shuttingDown)return {ok:false,error:'The application is closing.'};
     const planned=catalogRequest(state,input,settings,{versionId:randomUUID(),commandId:randomUUID()},Date.now(),
-      { songSeenBefore: version => store.songSeenBefore(version) });
+      { songSeenBefore: version => store.songSeenBefore(version) }, discoveryOrigin);
     if(!planned.result.ok)return planned.result;
     store.save(planned.state);state=planned.state;
     let notice:string|undefined;
@@ -865,6 +871,8 @@ function validateCommand(value: unknown): Command | null {
         ? { type: 'editVersion', id: value.id, title: value.title, artist: value.artist, ...(value.isDuet !== undefined ? { isDuet: value.isDuet as boolean } : {}) } : null;
     case 'addSinger':
       return isRecord(value.singer) && shortString(value.singer.id) && shortString(value.singer.name) ? { type: 'addSinger', singer: { id: value.singer.id, name: value.singer.name } } : null;
+    case 'removeSinger':
+      return shortString(value.singerId) ? { type: 'removeSinger', singerId: value.singerId } : null;
     case 'request':
       return shortString(value.requestId) && (value.singerId === null || shortString(value.singerId)) && shortString(value.versionId) &&
         (value.coSingerId === undefined || value.coSingerId === null || shortString(value.coSingerId))
@@ -1223,6 +1231,8 @@ else {
       requestPhoto);
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
       publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
+      screenFrame: () => { const frame = singerFrames.current; if (!frame) return null; const image = nativeImage.createFromBuffer(frame.jpeg); if (image.isEmpty()) return null;
+        const width = Math.min(960, frame.width); return image.resize({ width, quality: 'good' }).toJPEG(55); },
       fetch:(url,init)=>fetch(url,{...init,headers:{...Object.fromEntries(new Headers(init?.headers)),'X-TPV-Room-Discovery':settings.mobileRoomDiscovery?'yes':'no'}})});
     const provider = createLanHostProvider({ store, settings: () => settings, staticHandler,
       installCommitted, coordinator: remoteAuthority,
@@ -1269,6 +1279,10 @@ else {
   ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
   ipcMain.handle('host:backup-cleanup', event => { guardHost(event.sender.id); return showBackup.retryCleanup(); });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
+  ipcMain.handle('host:preview-filename-metadata', event => {
+    guardHost(event.sender.id);
+    return previewMetadata(state.versions, id => store.media(id), settings.metadataTemplates, settings.metadataFormat);
+  });
   singerCapture.start();
   await reconcileSingerScreen();
   ipcMain.handle('host:singer-preview', event => { guardHost(event.sender.id); return previewFrame(); });
@@ -1289,8 +1303,8 @@ else {
     }catch(error){throw new Error(error instanceof Error&&error.name==='PartyTymeError'?error.message:'The private Party Tyme credentials file could not be opened.');}finally{partyTymePickerOpen=false;}
   });
   ipcMain.handle('host:partytyme-disconnect',event=>{guardHost(event.sender.id);return partyTymeAccount.disconnect();});
-  ipcMain.handle('host:partytyme-search',(event,query:unknown)=>{guardHost(event.sender.id);return partyTymeHost.search(query);});
-  ipcMain.handle('host:partytyme-request',(event,input:unknown)=>{guardHost(event.sender.id);return partyTymeHost.request(input);});
+  ipcMain.handle('host:partytyme-search',async(event,query:unknown)=>{guardHost(event.sender.id); const revision=sourceVisibilityRevision; if(!settings.sourceVisibility.partytyme)return {status:'ok',songs:[]}; const result=await partyTymeHost.search(query); return revision===sourceVisibilityRevision && settings.sourceVisibility.partytyme ? result : {status:'ok',songs:[]};});
+  ipcMain.handle('host:partytyme-request',(event,input:unknown)=>{guardHost(event.sender.id);if(!settings.sourceVisibility.partytyme)return {ok:false,error:'Party Tyme search is disabled in Sources.'};return partyTymeHost.request(input);});
   ipcMain.handle('host:partytyme-preparations',event=>{guardHost(event.sender.id);return partyTymeHost.status();});
   ipcMain.handle('host:partytyme-retry',(event,id:unknown)=>{guardHost(event.sender.id);if(typeof id!=='string'||id.length>500)throw new Error('Choose a recording.');partyTymeHost.retry(id);});
   ipcMain.handle('host:karafun-mix-status', event => { guardHost(event.sender.id); return karaFunMixer.status(); });
@@ -1300,8 +1314,8 @@ else {
   });
   ipcMain.handle('host:karafun-connect', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.connect(host ?? undefined); });
   ipcMain.handle('host:karafun-disconnect', event => { guardHost(event.sender.id); return karaFunAccount.disconnect(); });
-  ipcMain.handle('host:karafun-search', (event, query: unknown) => { guardHost(event.sender.id); return karaFunHost.search(query); });
-  ipcMain.handle('host:karafun-request', (event, input: unknown) => { guardHost(event.sender.id); return karaFunHost.request(input); });
+  ipcMain.handle('host:karafun-search', async (event, query: unknown) => { guardHost(event.sender.id); const revision=sourceVisibilityRevision; if(!settings.sourceVisibility.karafun)return {status:'ok',songs:[]}; const result=await karaFunHost.search(query); return revision===sourceVisibilityRevision && settings.sourceVisibility.karafun ? result : {status:'ok',songs:[]}; });
+  ipcMain.handle('host:karafun-request', (event, input: unknown) => { guardHost(event.sender.id); if(!settings.sourceVisibility.karafun)return {ok:false,error:'KaraFun search is disabled in Sources.'}; return karaFunHost.request(input); });
   ipcMain.handle('host:karafun-preparations', event => { guardHost(event.sender.id); return karaFunHost.status(); });
   ipcMain.handle('host:karafun-retry', (event, id: unknown) => { guardHost(event.sender.id); if (typeof id !== 'string' || id.length > 500) throw new Error('Choose a recording.'); karaFunHost.retry(id); });
   ipcMain.handle('host:youtube-search', (event, query: unknown) => { guardHost(event.sender.id); if (shuttingDown) return { status: 'unavailable', songs: [] }; return youtubeSearch.search(query); });
@@ -1317,9 +1331,10 @@ else {
   ipcMain.handle('host:youtube-search-request', (event, input: unknown) => {
     guardHost(event.sender.id);
     if (!isRecord(input)) return { ok: false, error: 'Choose a current YouTube search result.' };
+    if (!settings.sourceVisibility.youtube) return { ok: false, error: 'YouTube search is disabled in Sources.' };
     const song = youtubeSearch.lookup(input.searchId, input.videoId);
     if (!song) return { ok: false, error: 'The YouTube result or channel rules changed. Search again before queueing.' };
-    return commitCatalogRequest({ singerId: input.singerId, requestId: input.requestId, track: { youtubeId: song.videoId, title: song.title, artist: song.artist || '' } });
+    return commitCatalogRequest({ singerId: input.singerId, requestId: input.requestId, track: { youtubeId: song.videoId, title: song.title, artist: song.artist || '' } }, 'youtube');
   });
   ipcMain.handle('host:get-state', event => { guardHost(event.sender.id); refreshAvailabilityDeadline(); return state; });
   ipcMain.handle('host:youtube-download-status', event => { guardHost(event.sender.id); return downloadStatus(); });
@@ -1415,6 +1430,18 @@ else {
     if (!isRecord(value) || typeof value.busy !== 'boolean' || typeof value.modal !== 'boolean') throw new Error('Invalid menu context.');
     workspaceMenuContext = { fileBlocked: value.busy || value.modal, viewBlocked: value.busy }; refreshApplicationMenu();
   });
+  let cliInstallInProgress = false;
+  ipcMain.handle('host:install-control-cli', async event => {
+    guardHost(event.sender.id);
+    if (shuttingDown || cliInstallInProgress) throw new Error('CLI installation is unavailable right now.');
+    cliInstallInProgress = true;
+    try {
+      let shellName = process.env.SHELL ?? '';
+      if (!shellName && process.platform !== 'win32') { try { shellName = userInfo().shell ?? ''; } catch { /* Show manual PATH instructions. */ } }
+      return await installControlCli({ platform: process.platform, packaged: app.isPackaged, executable: app.getPath('exe'),
+        resources: process.resourcesPath, home: app.getPath('home'), shell: shellName, appImage: process.env.APPIMAGE });
+    } finally { cliInstallInProgress = false; }
+  });
   ipcMain.handle('host:control-status', event => { guardHost(event.sender.id); return localControlStatus(); });
   ipcMain.handle('host:show-control-cli', event => {
     guardHost(event.sender.id);
@@ -1455,9 +1482,9 @@ else {
   });
   ipcMain.handle('host:app-version', event => { guardHost(event.sender.id); return app.getVersion(); });
   ipcMain.handle('host:khost-status', event => { guardHost(event.sender.id); return khostBridge.status(); });
-  ipcMain.handle('host:khost-search', (event, query: unknown) => { guardHost(event.sender.id); return shuttingDown ? { status: 'unavailable' } : khostBridge.search(query); });
+  ipcMain.handle('host:khost-search', (event, query: unknown) => { guardHost(event.sender.id); return shuttingDown || !settings.sourceVisibility.karafun ? { status: 'unavailable' } : khostBridge.search(query); });
   ipcMain.handle('host:khost-search-cancel', event => { guardHost(event.sender.id); khostBridge.cancelSearch(); });
-  ipcMain.handle('host:khost-handoff', (event, value: unknown) => { guardHost(event.sender.id); return shuttingDown ? { status: 'unavailable' } : khostBridge.handoff(value); });
+  ipcMain.handle('host:khost-handoff', (event, value: unknown) => { guardHost(event.sender.id); return shuttingDown || !settings.sourceVisibility.karafun ? { status: 'unavailable' } : khostBridge.handoff(value); });
   ipcMain.handle('host:khost-handoff-status', (event, value: unknown) => { guardHost(event.sender.id); return khostBridge.handoffStatus(value); });
   ipcMain.handle('host:khost-handoff-acknowledge', async (event, value: unknown) => {
     guardHost(event.sender.id);
@@ -1570,25 +1597,29 @@ else {
   });
   ipcMain.handle('host:karaokenerds-search', async (event, query: unknown): Promise<LocalCatalogResult> => {
     guardHost(event.sender.id);
+    const revision = sourceVisibilityRevision;
+    if (!settings.sourceVisibility.karaokenerds) return { status: 'ready', tracks: [], limited: false, lastSuccess: null };
     const config = catalogConfigFile();
     if (settings.sharedCatalogEnabled && settings.sharedCatalogConfigFile && !existsSync(config)) return {status:'configuration-error',tracks:[],limited:false,lastSuccess:null};
     if (settings.sharedCatalogEnabled && existsSync(config) && sharedCatalog) {
       const result = await sharedCatalog.search(config, query);
-      if (shuttingDown || !settings.sharedCatalogEnabled || config !== catalogConfigFile()) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
+      if (shuttingDown || revision !== sourceVisibilityRevision || !settings.sourceVisibility.karaokenerds || !settings.sharedCatalogEnabled || config !== catalogConfigFile()) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
       return filteredCatalogResult(result);
     }
     if (settings.sharedCatalogEnabled && sharedCatalog && !settings.sharedCatalogConfigFile) {
       const result = await sharedCatalog.publicSearch(query);
-      if (shuttingDown || !settings.sharedCatalogEnabled || settings.sharedCatalogConfigFile || existsSync(catalogConfigFile())) return { status: 'unavailable', tracks: [], limited: false, lastSuccess: null };
+      if (shuttingDown || revision !== sourceVisibilityRevision || !settings.sourceVisibility.karaokenerds || !settings.sharedCatalogEnabled || settings.sharedCatalogConfigFile || existsSync(catalogConfigFile())) return { status: 'unavailable', tracks: [], limited: false, lastSuccess: null };
       return filteredCatalogResult(result);
     }
     if (!communityBrowser) throw new Error('Catalog unavailable.');
     const local = communityBrowser.search(query); return filteredCatalogResult(local);
   });
-  ipcMain.handle('host:request-catalog-track', (event, input: unknown) => { guardHost(event.sender.id); return commitCatalogRequest(input); });
+  ipcMain.handle('host:request-catalog-track', (event, input: unknown) => { guardHost(event.sender.id); if (!settings.sourceVisibility.karaokenerds) return { ok: false, error: 'Karaoke Nerds search is disabled in Sources.' }; return commitCatalogRequest(input); });
   ipcMain.handle('host:add-youtube', async (event, input: unknown) => {
     guardHost(event.sender.id);
     if (shuttingDown || !isRecord(input) || !shortString(input.title) || typeof input.artist !== 'string' || input.artist.length > 500) return { ok: false, error: 'Enter a song title and optional artist.' };
+    if (input.discoveryOrigin !== undefined && input.discoveryOrigin !== 'karaokenerds') return { ok: false, error: 'Invalid discovery source.' };
+    if (input.discoveryOrigin === 'karaokenerds' && !settings.sourceVisibility.karaokenerds) return { ok: false, error: 'Karaoke Nerds search is disabled in Sources.' };
     if (compileSongBlacklist(settings).isBlocked({ title: input.title, artist: input.artist })) return { ok: false, error: 'This song or artist is blacklisted in Preferences.' };
     const videoId = youtubeIdentity(input.url);
     if (!videoId) return { ok: false, error: 'Enter a valid YouTube video link or ID.' };
@@ -1596,7 +1627,7 @@ else {
     const brandSlug = typeof input.brandSlug === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(input.brandSlug) ? input.brandSlug : undefined;
     if (existing) return isVersionAllowed(state, existing.id, settings) ? {ok:true,versionId:existing.id,notice:'Already in your library. Video downloads when queued.'} : {ok:false,error:'This recording is unavailable under the current show policy.'};
     const id = randomUUID();
-    const result = perform({ type: 'addVersion', version: { id, title: input.title.trim(), artist: input.artist.trim(), rating: 'unrated', source: { provider: 'youtube', videoId, ...(brandSlug ? {brandSlug} : {}) } } });
+    const result = perform({ type: 'addVersion', version: { id, title: input.title.trim(), artist: input.artist.trim(), rating: 'unrated', source: { provider: 'youtube', videoId, ...(brandSlug ? {brandSlug} : {}) }, ...(input.discoveryOrigin === 'karaokenerds' ? { discoveryOrigin: 'karaokenerds' as const } : {}) } });
     if (!result.ok) return { ok: false, error: result.message };
     return {ok:true,versionId:id,notice:'Added to your library. Video downloads when queued, or choose Download Video to save it now.'};
   });
@@ -1612,6 +1643,9 @@ else {
   ipcMain.handle('host:internet-status', event => {guardHost(event.sender.id);return internetQueue?.status() ?? {available:false,state:'failed',suggestedSlug:'proper-volume',slug:null,joinUrl:null,guests:[],message:'Internet sessions are unavailable. Reopen the app after checking its installation.'};});
   ipcMain.handle('host:internet-start', async(event,input:unknown)=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.start(input);});
   ipcMain.handle('host:internet-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stop();});
+  ipcMain.handle('host:internet-screen-start', async event=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.startScreen();});
+  ipcMain.handle('host:internet-screen-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stopScreen();});
+  ipcMain.handle('host:internet-screen-copy', event=>{guardHost(event.sender.id);if(!internetQueue)throw new Error('Internet sessions are unavailable.');internetQueue.copyScreenLink();});
   ipcMain.handle('host:internet-copy', event=>{guardHost(event.sender.id);internetQueue?.copyLink();});
   ipcMain.handle('host:internet-revoke', (event,id:unknown)=>{guardHost(event.sender.id);if(typeof id!=='string'||id.length>500)throw new Error('Choose a singer.');internetQueue?.revokeGuest(id);});
   ipcMain.handle('host:remote-choose-certificate', event => { guardHost(event.sender.id); return remoteHost.select('certificate'); });
@@ -1638,7 +1672,14 @@ else {
         const ratingProfileChanged = settings.ratingProfileConfigFile !== proposed.ratingProfileConfigFile;
         const khostSettingsChanged = (['khostBridgeConfigFile', 'songBlacklist', 'artistBlacklist'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
-        settings = writeSettings(settingsPath, proposed);
+        const sourceVisibilityChanged = JSON.stringify(settings.sourceVisibility) !== JSON.stringify(proposed.sourceVisibility);
+        settings = sourceVisibilityChanged
+          ? saveWithDiscoveryRevision(state, next => store.save(next), next => { state = next; },
+            () => writeSettings(settingsPath, proposed), () => broadcast())
+          : writeSettings(settingsPath, proposed);
+        if (sourceVisibilityChanged) {
+          sourceVisibilityRevision++; youtubeSearch.cancel(); karaFunHost.invalidateSearch(); partyTymeHost.invalidateSearch(); khostBridge.cancelSearch();
+        }
         if (khostSettingsChanged) khostBridge.invalidate();
         if (ratingProfileChanged) { activeRatings = null; activeRatingPath = ''; }
         if(disablingAutomaticBumper && bumper?.getState().status !== 'stopped') await bumper?.stop();

@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import type { LocalCatalogResult } from '../main/karaokenerds-local-browser';
 
 export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: {
-  addVideo: (input: {url:string;title:string;artist:string;brandSlug?:string}) => Promise<{ok:boolean;error?:string;versionId?:string;notice?:string}>; onAdded: (id:string, notice?:string) => void;
+  addVideo: (input: {url:string;title:string;artist:string;brandSlug?:string;discoveryOrigin?:'karaokenerds'}) => Promise<{ok:boolean;error?:string;versionId?:string;notice?:string}>; onAdded: (id:string, notice?:string) => void;
   search: (query: string) => Promise<LocalCatalogResult>; openVideo: (id: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [importError, setImportError] = useState('');
-  const add = async (input: {url:string;title:string;artist:string;brandSlug?:string}, manual = false) => {
+  const add = async (input: {url:string;title:string;artist:string;brandSlug?:string;discoveryOrigin?:'karaokenerds'}, manual = false) => {
     if (busy) return; const reportError = manual ? setImportError : setError; setBusy(true); reportError('');
     try { const result = await addVideo(input); if (!result.ok || !result.versionId) reportError(result.error || 'Could not add the YouTube song.'); else onAdded(result.versionId, result.notice); }
     catch { reportError('Could not add the YouTube song.'); } finally { setBusy(false); }
@@ -46,7 +46,7 @@ export function CommunityCatalogPanel({ search, openVideo, addVideo, onAdded }: 
       <p role="status">{result.tracks.length ? `${result.tracks.length} results${result.limited ? ' shown; refine your search for more' : ''}.` : 'No songs match this search.'} {result.lastSuccess === null ? '' : `Snapshot updated ${new Date(result.lastSuccess).toLocaleDateString()}.`}</p>
       <div className="song-list">{result.tracks.map((track, index) => <div className="track-row" key={`${track.id}-${index}`}>
         <div><strong>{track.title}</strong><small>{track.artist} · {track.brand ?? 'Brand not identified'}</small><small>{track.youtubeId ? `YouTube ID: ${track.youtubeId}` : 'No supported YouTube link'}</small></div>
-        {track.youtubeId && <button type="button" disabled={busy} onClick={() => void add({url:track.youtubeId!,title:track.title,artist:track.artist,...(track.brandSlug ? {brandSlug:track.brandSlug} : {})})}>Add to Library</button>}
+        {track.youtubeId && <button type="button" disabled={busy} onClick={() => void add({url:track.youtubeId!,title:track.title,artist:track.artist,discoveryOrigin:'karaokenerds',...(track.brandSlug ? {brandSlug:track.brandSlug} : {})})}>Add to Library</button>}
         {track.youtubeId && <button type="button" onClick={() => { setError(''); void openVideo(track.youtubeId!).then(value => { if (!value.ok) setError(value.error || 'Could not open the YouTube player.'); }).catch(() => setError('Could not open the YouTube player.')); }}>Preview YouTube</button>}
       </div>)}</div>
     </>}

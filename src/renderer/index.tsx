@@ -58,6 +58,7 @@ import { KHostBridgePanel } from './KHostBridgePanel';
 import { KaraFunPanel, useKaraFunAccount } from './KaraFunPanel';
 import type { KaraFunBridge } from '../domain/karafun';
 import { PartyTymePanel, usePartyTymeAccount } from './PartyTymePanel';
+import { SourceToggles } from './SourceToggles';
 import type { PartyTymeBridge } from '../domain/partytyme';
 
 import type { KHostBridgeApi } from '../domain/khost-bridge';
@@ -101,6 +102,7 @@ declare global {
       onTimeline: (callback: (value: PlaybackTimelineState) => void) => () => void;
       seek: (input: PlaybackSeek) => Promise<PlaybackSeekResult>;
       getLibraryFilenames: () => Promise<Record<string, string>>;
+      previewFilenameMetadata: () => Promise<import('../main/metadata-preview').MetadataProposal[]>;
       backupShow: () => Promise<BackupResult>;
       retryBackupCleanup: () => Promise<BackupResult>;
       getCollections: () => Promise<CollectionsSnapshot>;
@@ -127,12 +129,13 @@ declare global {
       chooseRatingProfile: () => Promise<string | null>;
       ratingProfileStatus: (file?: string) => Promise<SongRatingsLookup>;
       requestCatalogTrack: (input: { track: CatalogRequestTrack; singerId: string | null; requestId: string }) => Promise<Result & { versionId?: string; notice?: string }>;
-      addYouTube: (input: {url:string;title:string;artist:string;brandSlug?:string}) => Promise<Result & {versionId?:string;notice?:string}>;
+      addYouTube: (input: {url:string;title:string;artist:string;brandSlug?:string;discoveryOrigin?:'karaokenerds'}) => Promise<Result & {versionId?:string;notice?:string}>;
       openCommunityVideo: (id: string) => Promise<Result>;
       getShortcuts: () => Promise<{ shortcuts: Shortcuts; path: string; error: string }>;
       saveShortcuts: (value: Shortcuts) => Promise<Shortcuts>;
       editShortcutsFile: () => Promise<void>;
       playPause: () => Promise<Result>;
+      installControlCli: () => Promise<{ ok: boolean; command?: string; message: string; files?: string[] }>;
       applause?: { trigger: () => Promise<Result> };
       restartTrack: () => Promise<Result>;
       saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
@@ -305,6 +308,7 @@ function App() {
     return () => { alive = false; unsubscribe(); };
   }, []);
 
+
   useEffect(() => {
     let alive = true;
     void window.tpv.getCollections().then(value => { if (alive) setCollections(value); })
@@ -383,18 +387,18 @@ function App() {
   const blacklist = useMemo(() => compileSongBlacklist(settings), [settings.songBlacklist, settings.artistBlacklist]);
   const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
   const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
-  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library', JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist]), window.tpv.searchCommunityCatalog);
-  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, karaFunAccount.state, karaFunAccount.revision, partyTymeAccount.state, partyTymeAccount.revision]);
+  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library' && settings.sourceVisibility.karaokenerds, JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility]), window.tpv.searchCommunityCatalog);
+  const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility, karaFunAccount.state, karaFunAccount.revision, partyTymeAccount.state, partyTymeAccount.revision]);
   const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
   const libraryRows = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
     catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version)) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result, blacklist]);
-  const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, screen === 'library' && libraryFilter === 'all', providerCatalogScope);
-  const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, screen === 'library' && libraryFilter === 'all', providerCatalogScope);
-  const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
+  const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, settings.sourceVisibility.karafun && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
+  const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, settings.sourceVisibility.partytyme && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
+  const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.sourceVisibility.youtube && settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
     JSON.stringify([providerCatalogScope, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]));
   const filtered = useMemo(() => unifiedSongResults(libraryRows, new Set(state?.versions.map(row => row.id)), {
-    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort,
-  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist]);
+    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort, sourceVisibility: settings.sourceVisibility,
+  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist, settings.sourceVisibility]);
 
   const pending = state?.requests.filter(r => r.status === 'pending') ?? [];
   const future = state ? orderedFuture(state, settings.rotationMode, clockMs) : [];
@@ -688,6 +692,10 @@ function App() {
             {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || partyTymeSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
             {catalogSearch.result && catalogSearch.result.status !== 'ready' && <Tooltip text="Karaoke Nerds is unavailable. Check Sources or retry when connected."><span tabIndex={0}>Karaoke Nerds unavailable ⓘ</span></Tooltip>}
             {karaFunSearch.result && karaFunSearch.result.status !== 'ok' && <Tooltip text={karaFunSearch.result.message || 'Check your account in Sources.'}><span tabIndex={0}>KaraFun unavailable ⓘ</span></Tooltip>}
+            {settings.sourceVisibility.partytyme && partyTymeAccount.state === 'expired' && <Tooltip text="The Party Tyme session expired. Reconnect it in Sources."><span tabIndex={0}>Party Tyme sign-in expired ⓘ</span></Tooltip>}
+            {partyTymeSearch.result && partyTymeSearch.result.status !== 'ok' && <Tooltip text={partyTymeSearch.result.message || 'Check your Party Tyme account in Sources and try again.'}><span tabIndex={0}>Party Tyme unavailable ⓘ</span></Tooltip>}
+            {partyTymeSearch.result?.status === 'ok' && (state.policy.ageRestricted || state.policy.includeVersionIds !== null) && <Tooltip text="The show's age or approved-song policy limits Party Tyme discovery."><span tabIndex={0}>Party Tyme limited by show policy ⓘ</span></Tooltip>}
+            {partyTymeSearch.result?.status === 'ok' && partyTymeSearch.result.searchId && !partyTymeSearch.result.songs.length && !state.policy.ageRestricted && state.policy.includeVersionIds === null && <Tooltip text="Party Tyme returned no matches for this search. Its catalog and availability can differ from other sources."><span tabIndex={0}>No Party Tyme matches ⓘ</span></Tooltip>}
             {youtubeSearch.result && !['ok', 'disabled', 'cancelled'].includes(youtubeSearch.result.status) && <Tooltip text={youtubeSearch.result.message}><span tabIndex={0}>YouTube unavailable ⓘ</span></Tooltip>}
             {providerSearch.failed && <Tooltip text="Some service catalogs could not be reached. Try again or check Sources."><span tabIndex={0}>Some sources unavailable ⓘ</span></Tooltip>}
           </div>
@@ -708,7 +716,7 @@ function App() {
             </form>
           </details>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={settings.sourceVisibility} onSave={async value => setSettings(await window.tpv.saveSettings({ sourceVisibility: value }))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} enabled={settings.sourceVisibility.karafun} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -724,8 +732,8 @@ function App() {
         </>}
         {screen === 'singers' && <>
           <h2>Singers</h2><form className="inline-form" onSubmit={addSinger}><label>Singer name<input autoComplete="off" value={singerName} onChange={e => setSingerName(e.target.value)} placeholder="Enter a name" maxLength={100} /></label><button className="primary" disabled={busy || !singerName.trim()} type="submit">Add singer</button></form>
-          <h3>In This Show</h3><p className="muted">Unavailable singers can have one upcoming request. Existing requests are kept. They rejoin after their return time without interrupting a staged or playing song.</p>{state.singers.map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} />)}
-          {!state.singers.length && <p className="empty">No singers yet.</p>}
+          <h3>In This Show</h3><p className="muted">Unavailable singers can have one upcoming request. Existing requests are kept. They rejoin after their return time without interrupting a staged or playing song.</p>{state.singers.filter(s => !s.archived).map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} removeBlocked={state.requests.some(r => ['pending', 'accepted', 'staged', 'playing'].includes(r.status) && (r.singerId === s.id || r.coSingerId === s.id))} onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
+          {!state.singers.some(s => !s.archived) && <p className="empty">No singers yet.</p>}
         </>}
         {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
       </>}
@@ -794,7 +802,7 @@ function App() {
       <button role="menuitem" disabled={queueMenu.request.singerId === null} onClick={() => { setScreen('singers'); setQueueMenu(null); }}>Singer availability…</button>
       <button role="menuitem" disabled={busy} onClick={() => { void command({ type: 'removeRequest', requestId: queueMenu.request.id }); setQueueMenu(null); }}>Remove request</button>
     </div>}
-    {editingRequest && state && <QueueEditDialog request={editingRequest} singers={state.singers} versions={versions} onClose={() => setEditingRequest(null)} onSave={async (singerId, versionId, coSingerId) => {
+    {editingRequest && state && <QueueEditDialog request={editingRequest} singers={state.singers.filter(s => !s.archived)} versions={versions} onClose={() => setEditingRequest(null)} onSave={async (singerId, versionId, coSingerId) => {
       const result = await window.tpv.command({ type: 'editRequest', requestId: editingRequest.id, singerId, versionId, coSingerId });
       if (!result.ok) throw new Error(result.error || 'The request could not be updated.');
       setNotice('Queued request updated.', 'success');
@@ -828,7 +836,7 @@ function App() {
       <button role="menuitem" disabled={!contextMenu.version.persisted || !!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files…</button>
       <button role="menuitem" onClick={() => { setContextMenu(null); openPreferences('blacklist'); }}>Manage Blacklist…</button>
     </div>}
-    {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated, coSingerId) => {
+    {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers.filter(s => !s.archived)} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated, coSingerId) => {
       let queueNotice = '';
       await requestWithSinger(choice, {
         createSingerId: () => crypto.randomUUID(),
@@ -849,7 +857,7 @@ function App() {
       });
       setNotice(queueNotice || (settings.autoApprove ? 'Song added to the queue.' : 'Request submitted for review.'), 'success');
     }} />}
-    {playlistVersion && state && <AddToPlaylistDialog song={playlistVersion} singers={state.singers} playlists={collections.playlists} onClose={() => setPlaylistVersion(null)} onSave={async playlistId => { if (!await mutateCollections({ type: 'add', playlistId, versionId: playlistVersion.id })) throw new Error('Could not add the song.'); }} />}
+    {playlistVersion && state && <AddToPlaylistDialog song={playlistVersion} singers={state.singers.filter(s => !s.archived)} playlists={collections.playlists} onClose={() => setPlaylistVersion(null)} onSave={async playlistId => { if (!await mutateCollections({ type: 'add', playlistId, versionId: playlistVersion.id })) throw new Error('Could not add the song.'); }} />}
   </div>;
 }
 
