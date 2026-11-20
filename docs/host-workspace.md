@@ -1,12 +1,14 @@
 # Host Workspace
 
+Use **File** to import videos, folders, and paired lyric files or to back up and restore your show. Open **Edit → Preferences** for settings. **View** changes the appearance, accent color, font, and layout. **Playback** exposes transport controls, including restart and 10-second seek actions. Use **Window** to control full screen separately for the host and singer display. **Help → Documentation** opens the [offline guides](help.md).
+
 ## Applause and Singer Points
 
 Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles the six supplied clap recordings, playing each for its full duration, with at most three at once; the host has unlimited applause. Recordings range from approximately 4 to 11.2 seconds, so the longest takes more than eight seconds to finish. Check the chosen output and levels on your actual sound system before a show.
 
 Singers start with three applause credits, gain one for a completed song and can hold at most five. The Singers workspace shows their points and credits. Assigned singers earn points from song requests, duet participation and applause; room singers can also earn points for missing-song suggestions and sending a photo to the singer screen. The full rules and eligibility are in the product specification. Mark duets in the song's metadata so the correct duet bonus can be awarded.
 
-Room singers can send one JPEG or PNG photo at a time to the singer display; it appears briefly and is not saved in the show database. There is no approval step. A mobile Full Host must keep its host page visible and exit fullscreen to accept a photo. End-to-end use, photo visibility, and audio routing should be rehearsed before relying on these experimental features during a show.
+Room singers can send one JPEG or PNG photo at a time. A mobile Full Host reviews the image before it appears on the singer screen. Photos stay in memory. See the [mobile guide](mobile-app.md) for approval and discard controls.
 
 ## Choose Search Sources
 
@@ -16,9 +18,9 @@ New unbranded Karaoke Nerds entries retain their catalog origin. Older saved You
 
 ## Install the Command-Line Tool
 
-In a supported packaged installation, open **Preferences → Local API and CLI → Install CLI to PATH**, then open a new terminal and run `tpv-karaoke --help`. The app checks its bundled CLI first. On Windows it updates only your user PATH, without administrator access; you may need to sign out and back in. On Linux and macOS it creates a managed `~/.local/bin/tpv-karaoke` launcher and updates your Bash or Zsh startup files with managed PATH blocks. For other shells or a custom Zsh `ZDOTDIR`, follow the manual PATH instructions displayed by the app. Automatic AppImage installation is not supported. The dialog explains how to remove the changes.
+The Windows setup, Debian package, and macOS PKG provide `tpv-karaoke-booth` on PATH. Open a new terminal and run `tpv-karaoke-booth --help`. With a portable Windows ZIP or a Mac app installed from the DMG, use **Preferences → Local API and CLI → Install CLI to PATH** to set up the command for your account. See the [installation guide](installation.md).
 
-The CLI installer does not enable the Local API. Enable that separate preference when you want to use supported control commands. `--help` works without it; full playback and queue CLI controls remain planned.
+Enable the Local API separately when you want to use authenticated control commands. `--help` works without a running host. See [Local API and CLI](local-control-api.md) for available commands.
 
 ## Downloading Songs and Song Gaps
 
@@ -26,11 +28,11 @@ Queued YouTube, KaraFun and Party Tyme songs that are still being prepared are s
 
 Set **Preferences → Queue Management → Automatically play next song** and **Preferences → Audio Controls → Pause Interval** to control the transition and gap. The interval ranges from 0 to 300 seconds. Starting a show still requires the host to press Play.
 
-## Workspace in 0.7.1
+## Search the Library
 
 The search-results area is the main workspace, with larger readable song rows and brief status text. A global search field above Workspace in the sidebar remains available from Library, Playlists, Sources and host-only areas. Ctrl/Cmd+F or the assigned search shortcut returns to Library and focuses it. The search box has one visible outer focus ring; the input does not draw a second inner glow. Details belong in immediate (?) tooltips rather than long repeated instructions. Informational notices clear after eight seconds; errors remain until dismissed.
 
-This guide describes 0.7.1 source behavior. Earlier Windows/Linux/macOS packages were verified separately; see [installation](installation.md) for actual artifacts and platform limits. A new source feature is not evidence of a rebuilt or installed package. Physical show hardware, real-user Linux installation and remaining Mac installation/runtime checks stay open.
+See [installation](installation.md) for available packages and [release acceptance](release-acceptance.md) for platform and hardware checks.
 
 ## Optional Singer Assignment
 
@@ -90,7 +92,7 @@ Current content restrictions and song/artist blacklists apply before search/hand
 
 The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains native KaraFun sign-in/preparation, Karaoke Nerds discovery, the Custom YouTube Video Importer and Third-Party Services catalog search/configuration. Other paid-provider playback still needs access and implementation.
 
-Use **File → Import** for **Import Video File**, **Import Custom Directory**, or **Import CD+G / LRC / ZIP**. The same three import icons are next to the Song Library heading. CDG and LRC conversion progress and cancellation stay visible while a job runs. **Back up show…** is in File; database backups do not include song media or preferences.
+The **File** menu includes **Import Video**, **Import Folder**, and **Import CD+G / LRC / ZIP**. The same actions are available next to the Song Library heading. CDG and LRC conversion progress and cancellation stay visible while a job runs. **Back up show…** saves the show database. Back up song media and preferences separately.
 
 To restore a show, stop playback, finish any active import or relink, and choose **File → Restore Show Backup…**. Review the backup counts before confirming. Booth saves the current show under `show-restore-backups` in app data, ends remote sessions, and restarts silently. A restored performance stays paused until you press Play.
 

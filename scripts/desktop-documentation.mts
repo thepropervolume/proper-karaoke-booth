@@ -4,7 +4,7 @@ import { Marked } from 'marked';
 import type { Plugin } from 'vite';
 
 const guides = [
-  ['help', 'Overview'], ['host-workspace', 'Host Workspace'], ['queue-management', 'Queue Management'],
+  ['help', 'Overview'], ['installation', 'Installation Guide'], ['host-workspace', 'Host Workspace'], ['queue-management', 'Queue Management'],
   ['playback-controls', 'Playback Controls'], ['keyboard-shortcuts', 'Keyboard Shortcuts'],
   ['import-jobs', 'Import Jobs'], ['cdg-import', 'CD+G and LRC Imports'],
   ['metadata-templates', 'Filename Metadata Templates'], ['show-database-safety', 'Show Backups'],

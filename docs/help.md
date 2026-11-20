@@ -2,6 +2,8 @@
 
 Use these guides to set up Booth, run a show and help singers join. The desktop help includes these guides for offline use.
 
+Start with the [Installation Guide](installation.md) for supported packages and CLI setup.
+
 ## Run a Show
 
 - [Host Workspace](host-workspace.md) covers setup, the library, playlists, preferences, and the singer display.
