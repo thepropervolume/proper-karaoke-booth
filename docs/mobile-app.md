@@ -12,6 +12,8 @@ The 0.10.6 mobile web build passed a public Chromium rehearsal with independent 
 
 **Queue** provides move-up/down and removal controls. Mobile hearts save favorites. Favorites and completed-song history stay on this device. **Room** changes the booth name, automatic advancement and gap, and exports show/history metadata. Imported files require a separate backup.
 
+With a keyboard or assistive technology, queue edits announce the new position or remaining count. Focus stays with the moved song or goes to the nearest remaining song after removal. When the last song is removed, the **Singer Queue** heading receives focus.
+
 **Storage** shows how much space imported video copies use on this device. Search by song, artist, or filename and remove unused copies after confirmation. The app protects copies used by the queue or player and keeps the song’s details, favorites, and history. Choose **Relink** to restore playback or let guests request that song again. The original file remains available wherever you saved it.
 
 When a singer sends a photo, the mobile host sees a review notice. Tap **Review Photo**, then **Show Photo** or **Discard**. One photo can wait for up to 45 seconds. An approved photo earns points after it appears. Closing the room or leaving the active host view clears the photo.
