@@ -186,7 +186,9 @@ def archive_release(public, version, scratch):
     archive_root = public / 'archive'
     if archive_root.is_symlink() or (archive_root.exists() and not archive_root.is_dir()):
         raise ValueError('The release archive is invalid.')
-    archive_root.mkdir(mode=0o755, exist_ok=True)
+    archive_root.mkdir(mode=0o700, exist_ok=True)
+    # The publisher's private umask also applies to mkdir inside the public tree.
+    archive_root.chmod(0o755)
     target = archive_root / f'v{version}'
     extensions = {'.md', '.markdown', '.rst', '.txt', '.json', '.html', '.htm', '.yaml', '.yml'}
     if target.exists() or target.is_symlink():
@@ -202,9 +204,10 @@ def archive_release(public, version, scratch):
             archived_file = target / ('original-download-page.html.txt' if file.name == 'index.html' else file.name)
             if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_TEXT_ASSET or archived_file.is_symlink() or not archived_file.is_file() or archived_file.read_bytes() != file.read_bytes():
                 raise ValueError('An existing release archive does not preserve all current metadata.')
+        target.chmod(0o755)
         return
     candidate = scratch / f'archive-v{version}'
-    candidate.mkdir(mode=0o755)
+    candidate.mkdir(mode=0o700)
     for file in source.iterdir():
         if file.suffix.lower() not in extensions:
             continue
@@ -215,6 +218,7 @@ def archive_release(public, version, scratch):
         shutil.copyfile(file, candidate / name, follow_symlinks=False)
         (candidate / name).chmod(0o644)
     write_archive_page(candidate, version, manifest)
+    candidate.chmod(0o755)
     candidate.rename(target)
 
 

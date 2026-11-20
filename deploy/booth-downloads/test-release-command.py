@@ -140,9 +140,9 @@ class ReleaseCommandTests(unittest.TestCase):
         self.assertIn('href="./latest/Proper-Karaoke-Booth-windows-x64-setup.exe"', latest_page)
         self.assertEqual({file.name: digest(file.read_bytes()) for file in archived.iterdir()}, archived_files)
 
-    def test_sixth_release_archives_metadata_and_notes_and_keeps_latest_aliases(self):
-        for number in range(6):
-            version, commit, run = f'0.9.{number}', chr(97 + number) * 40, 200 + number
+    def test_pruning_archives_public_metadata_and_notes_and_keeps_latest_aliases(self):
+        for number in range(7):
+            version, commit, run = f'0.9.{number}', f'{number + 1:040x}', 200 + number
             for scope in ('win', 'linux', 'mac', 'android', 'ios', 'planning'):
                 self.command(f'upload {version} {commit} {run} 1 {scope}', archive(self.fixture(scope, version, commit)))
             self.command(f'publish {version} {commit} {run} 1 {SPEC}')
@@ -158,9 +158,15 @@ class ReleaseCommandTests(unittest.TestCase):
                 saved = self.public / 'archive/v0.9.0'
                 (saved / 'GITHUB_RELEASE_NOTES.md').write_text('Exact GitHub notes', encoding='utf8')
                 publisher.write_archive_page(saved, version, publisher.manifest_for(saved, version))
+                # Simulate a retained archive previously created with the private umask.
+                saved.chmod(0o700)
+                saved.parent.chmod(0o700)
         self.assertFalse((self.public / 'v0.9.0').exists())
-        self.assertEqual(sorted(path.name for path in self.public.glob('v*') if path.is_dir()), [f'v0.9.{n}' for n in range(1, 6)])
+        self.assertEqual(sorted(path.name for path in self.public.glob('v*') if path.is_dir()), [f'v0.9.{n}' for n in range(2, 7)])
         saved = self.public / 'archive/v0.9.0'
+        self.assertEqual(saved.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(saved.parent.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((saved.parent / 'v0.9.1').stat().st_mode & 0o777, 0o755)
         self.assertEqual((saved / 'release-notes.md').read_text(encoding='utf8'), 'Notes <safe> & preserved')
         self.assertEqual((saved / 'GITHUB_RELEASE_NOTES.md').read_text(encoding='utf8'), 'Exact GitHub notes')
         archived_page = (saved / 'index.html').read_text(encoding='utf8')
@@ -172,9 +178,9 @@ class ReleaseCommandTests(unittest.TestCase):
         self.assertIn('./archive/v0.9.0/', page)
         self.assertNotIn('href="./v0.9.0/"', page)
         alias = (self.public / '.latest.map').read_text(encoding='ascii')
-        self.assertIn('Proper-Karaoke-Booth-windows-x64-setup.exe /v0.9.5/Proper-Karaoke-Booth-0.9.5-windows-x64-setup.exe', alias)
-        self.assertIn('Proper-Karaoke-Booth-android-debug.apk /v0.9.5/Proper-Karaoke-Booth-0.9.5-android-debug.apk', alias)
-        self.assertIn('release-manifest.json /v0.9.5/release-manifest.json', alias)
+        self.assertIn('Proper-Karaoke-Booth-windows-x64-setup.exe /v0.9.6/Proper-Karaoke-Booth-0.9.6-windows-x64-setup.exe', alias)
+        self.assertIn('Proper-Karaoke-Booth-android-debug.apk /v0.9.6/Proper-Karaoke-Booth-0.9.6-android-debug.apk', alias)
+        self.assertIn('release-manifest.json /v0.9.6/release-manifest.json', alias)
 
     def test_invalid_existing_release_metadata_prevents_pruning(self):
         for number in range(5):

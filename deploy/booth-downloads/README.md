@@ -41,4 +41,6 @@ Each transfer is a flat USTAR archive for one platform or the planning documents
 
 A failed upload leaves no completed batch for that platform. Attempts expire after 24 hours and are cleared by the next release command. Staging is limited to 8 GiB and preserves 5 GiB of free filesystem space. Publication keeps the five newest verified download sets. Before older installers are pruned, their release history and available notes and metadata are retained for browsing at `/archive/vVERSION/`, without links to removed installers. Pruning and index/redirect updates must run under the same publication lock; do not follow symlinks or delete outside the release root.
 
+The private publisher umask also applies to newly created archive directories. The publish step explicitly sets the public archive root and validated version directories to mode `0755`. During a release check, verify anonymous GET for an older archive and confirm that its retired installer returns HTTP 404.
+
 On Linux, run `python3 deploy/booth-downloads/test-release-command.py -v` with Node on `PATH` to exercise a complete scratch publication. The tests also cover mixed attempts, conflicting commits and rejected commands and archive paths.
