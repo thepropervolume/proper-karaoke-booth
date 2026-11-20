@@ -11,8 +11,8 @@ export type Role = 'host' | 'staff' | 'singer' | 'engine';
 export type Actor = { role: Role; id: string };
 export type Rating = 'clean' | 'explicit' | 'unrated' | 'uncertain';
 export type Version = { id: string; title: string; artist: string; rating: Rating;
-  source?: StreamingSource; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string; isDuet?: boolean };
-export type Singer = { id: string; name: string; unavailableUntilMs?: number };
+  source?: StreamingSource; discoveryOrigin?: 'karaokenerds'; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string; isDuet?: boolean };
+export type Singer = { id: string; name: string; unavailableUntilMs?: number; archived?: boolean };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
 export type RequestStatus = 'pending' | 'accepted' | 'staged' | 'playing' | 'completed' | 'skipped' | 'removed' | 'rejected' | 'withdrawn';
 // null means a song has no assigned person. Do not create a shared "anonymous"
@@ -23,6 +23,7 @@ export type Command =
   | { type: 'addVersion'; version: Version }
   | { type: 'editVersion'; id: string; title: string; artist: string; isDuet?: boolean }
   | { type: 'addSinger'; singer: Singer }
+  | { type: 'removeSinger'; singerId: string }
   | { type: 'setSingerAvailability'; singerId: string; minutes: number; releaseStaged?: boolean }
   | { type: 'request'; requestId: string; singerId: string | null; coSingerId?: string | null; versionId: string }
   | { type: 'accept'; requestId: string }
@@ -194,7 +195,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating) ||
           (v.source !== undefined && !validStreamingSource(v.source)) || (v.djCode !== undefined && typeof v.djCode !== 'string') || (v.trackNumber !== undefined && typeof v.trackNumber !== 'string') ||
           (v.metadataAmbiguous !== undefined && typeof v.metadataAmbiguous !== 'boolean') || (v.metadataTemplate !== undefined && typeof v.metadataTemplate !== 'string') ||
-          (v.isDuet !== undefined && typeof v.isDuet !== 'boolean')) reject('INVALID', 'Invalid version');
+          (v.isDuet !== undefined && typeof v.isDuet !== 'boolean') || (v.discoveryOrigin !== undefined && (v.discoveryOrigin !== 'karaokenerds' || v.source?.provider !== 'youtube'))) reject('INVALID', 'Invalid version');
       else if (state.versions.some(x => x.id === v.id)) reject('DUPLICATE', 'Version already exists');
       else state.versions.push({ ...v });
       break;
@@ -206,12 +207,21 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     }
     case 'addSinger':
-      if (!cmd.singer || !nonempty(cmd.singer.id) || !nonempty(cmd.singer.name) || (cmd.singer.unavailableUntilMs !== undefined && (!Number.isSafeInteger(cmd.singer.unavailableUntilMs) || cmd.singer.unavailableUntilMs < 0 || cmd.singer.unavailableUntilMs > nowMs + 3600000))) reject('INVALID', 'Invalid singer');
+      if (!cmd.singer || !nonempty(cmd.singer.id) || !nonempty(cmd.singer.name) || cmd.singer.archived !== undefined || (cmd.singer.unavailableUntilMs !== undefined && (!Number.isSafeInteger(cmd.singer.unavailableUntilMs) || cmd.singer.unavailableUntilMs < 0 || cmd.singer.unavailableUntilMs > nowMs + 3600000))) reject('INVALID', 'Invalid singer');
       else if (state.singers.some(s => s.id === cmd.singer.id)) reject('DUPLICATE', 'Singer already exists');
       else state.singers.push({ ...cmd.singer });
       break;
+    case 'removeSinger': {
+      const singer = state.singers.find(s => s.id === cmd.singerId && !s.archived);
+      if (!singer) reject('INVALID', 'Singer is not in this show');
+      else if (state.requests.some(request => ['pending', 'accepted', 'staged', 'playing'].includes(request.status) &&
+        (request.singerId === singer.id || request.coSingerId === singer.id)))
+        reject('LOCKED', 'Remove or reassign this singer’s active and queued songs first');
+      else { singer.archived = true; delete singer.unavailableUntilMs; }
+      break;
+    }
     case 'setSingerAvailability': {
-      const singer = state.singers.find(s => s.id === cmd.singerId);
+      const singer = state.singers.find(s => s.id === cmd.singerId && !s.archived);
       const staged = state.requests.find(r => r.id === state.stagedRequestId && r.singerId === cmd.singerId);
       const playing = state.requests.find(r => r.id === state.playback?.requestId && r.singerId === cmd.singerId);
       if (!singer || !Number.isInteger(cmd.minutes) || cmd.minutes < 0 || cmd.minutes > 60 || !Number.isSafeInteger(nowMs) || nowMs < 0 || !Number.isSafeInteger(nowMs + cmd.minutes * 60000) || (cmd.releaseStaged !== undefined && typeof cmd.releaseStaged !== 'boolean')) reject('INVALID', 'Choose a whole number of minutes from 0 to 60');
@@ -225,10 +235,10 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     }
     case 'request': {
       const limitMessage = singerRequestLimit(state, cmd.singerId, settings.maxFutureRequestsPerSinger, nowMs);
-      if (!nonempty(cmd.requestId) || cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Invalid request or singer');
+      if (!nonempty(cmd.requestId) || cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId && !s.archived)) reject('INVALID', 'Invalid request or singer');
       else if (state.requests.some(r => r.id === cmd.requestId)) reject('DUPLICATE', 'Request already exists');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
-      else if (cmd.coSingerId != null && (cmd.singerId === null || cmd.singerId === cmd.coSingerId || !state.singers.some(s => s.id === cmd.coSingerId) || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Choose another singer and mark this song as a duet');
+      else if (cmd.coSingerId != null && (cmd.singerId === null || cmd.singerId === cmd.coSingerId || !state.singers.some(s => s.id === cmd.coSingerId && !s.archived) || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Choose another singer and mark this song as a duet');
       else if (limitMessage) reject('LIMIT', limitMessage);
       else {
         const request: SongRequest = { id: cmd.requestId, singerId: cmd.singerId, ...(cmd.coSingerId ? { coSingerId: cmd.coSingerId } : {}), versionId: cmd.versionId, status: 'pending', round: null, order: null };
@@ -299,9 +309,9 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
     case 'editRequest': {
       const request = state.requests.find(r => r.id === cmd.requestId);
       if (!request || !['pending', 'accepted', 'staged'].includes(request.status)) reject('LOCKED', 'Stop the active performance before editing');
-      else if (cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId)) reject('INVALID', 'Choose a singer in this show or leave it unassigned');
+      else if (cmd.singerId !== null && !state.singers.some(s => s.id === cmd.singerId && !s.archived)) reject('INVALID', 'Choose a singer in this show or leave it unassigned');
       else if (!versionAllowed(cmd.versionId)) reject('NOT_AVAILABLE', 'Version is not available');
-      else if (cmd.coSingerId !== undefined && cmd.coSingerId !== null && (cmd.singerId === null || cmd.singerId === cmd.coSingerId || !state.singers.some(s => s.id === cmd.coSingerId) || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Choose another singer and mark this song as a duet');
+      else if (cmd.coSingerId !== undefined && cmd.coSingerId !== null && (cmd.singerId === null || cmd.singerId === cmd.coSingerId || !state.singers.some(s => s.id === cmd.coSingerId && !s.archived) || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Choose another singer and mark this song as a duet');
       else if (cmd.coSingerId === undefined && request.coSingerId && (cmd.singerId === null || cmd.singerId === request.coSingerId || !state.versions.find(v => v.id === cmd.versionId)?.isDuet)) reject('INVALID', 'Remove or change the duet singer first');
       else {
         const changingSinger = request.singerId !== cmd.singerId;
@@ -362,10 +372,10 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       break;
     case 'applause':
       if (settings.applauseEnabled === false) reject('DISABLED', 'Applause is turned off');
-      else if (envelope.actor.role === 'singer' && !state.singers.some(s => s.id === envelope.actor.id)) reject('FORBIDDEN', 'Singer is unavailable');
+      else if (envelope.actor.role === 'singer' && !state.singers.some(s => s.id === envelope.actor.id && !s.archived)) reject('FORBIDDEN', 'Singer is unavailable');
       break;
     case 'photo':
-      if (!state.singers.some(s => s.id === envelope.actor.id)) reject('FORBIDDEN', 'Singer is unavailable');
+      if (!state.singers.some(s => s.id === envelope.actor.id && !s.archived)) reject('FORBIDDEN', 'Singer is unavailable');
       else if (typeof cmd.photoHash !== 'string' || !/^[a-f0-9]{64}$/.test(cmd.photoHash)) reject('INVALID', 'Invalid photo identity');
       break;
     case 'resume':
@@ -417,7 +427,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
         if (points.showId !== state.showId) throw new Error('Points belong to another show.');
         const record = (event: PointsEvent) => { points = applyPointsEvent(points, event, options).ledger; };
         // Freeze registered show participants at the moment playback starts.
-        const participants = () => state.singers.map(singer => singer.id);
+        const participants = () => state.singers.filter(singer => !singer.archived).map(singer => singer.id);
         const start = (generationId: string, request: SongRequest | undefined) => {
           const performers = [request?.singerId, request?.coSingerId].filter((id): id is string => typeof id === 'string');
           record({ type: 'start', eventId: `start:${generationId}`, generationId, performers, participants: participants() });
