@@ -97,3 +97,16 @@ test('FIFO follows request time when older pending requests are approved later',
   send({ type: 'stage' });
   assert.equal(state.stagedRequestId, 'first');
 });
+
+
+test('source visibility defaults on for old files and validates each persisted switch', () => {
+  const defaults = parseSettings({}).sourceVisibility;
+  assert.deepEqual(defaults, { local: true, karaokenerds: true, youtube: true, karafun: true, partytyme: true, sunfly: true, stingray: true });
+  for (const key of Object.keys(defaults) as (keyof typeof defaults)[]) {
+    const changed = { ...defaults, [key]: false };
+    assert.equal(parseSettings({ sourceVisibility: changed }).sourceVisibility[key], false);
+  }
+  assert.throws(() => parseSettings({ sourceVisibility: { ...defaults, local: 'false' } }), /source visibility/i);
+  assert.throws(() => parseSettings({ sourceVisibility: { ...defaults, unknown: true } }), /source visibility/i);
+  assert.throws(() => parseSettings({ sourceVisibility: { local: false } }), /source visibility/i);
+});

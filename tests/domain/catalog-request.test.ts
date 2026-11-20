@@ -38,3 +38,13 @@ test('catalog requests can be unassigned atomically and retry the same identity 
  assert.equal(repeat.result.ok,true);assert.equal(repeat.state.requests.length,1);
  assert.equal(catalogRequest(result.state,{...value,singerId:'different'},DEFAULT_SETTINGS,ids,2).result.ok,false);
 });
+
+
+test('new unbranded Karaoke Nerds recordings preserve discovery origin without rewriting existing YouTube versions',()=>{
+ const known=catalogRequest(setup(),input,DEFAULT_SETTINGS,ids,1);
+ assert.equal(known.state.versions[0].discoveryOrigin,'karaokenerds');
+ const fromYoutube=catalogRequest(setup(),input,DEFAULT_SETTINGS,ids,1,undefined,'youtube');
+ assert.equal(fromYoutube.state.versions[0].discoveryOrigin,undefined);
+ const reused=catalogRequest(fromYoutube.state,{...input,requestId:'request2'},DEFAULT_SETTINGS,{versionId:'another',commandId:'second'},2);
+ assert.equal(reused.state.versions[0].discoveryOrigin,undefined);
+});
