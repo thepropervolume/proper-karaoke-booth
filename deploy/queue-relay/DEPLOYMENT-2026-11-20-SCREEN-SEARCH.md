@@ -19,3 +19,9 @@ The current relay bundle SHA-256 is `20789f86fb982ac2d07b3fa768fb59dce3111705270
 Updated the relay, singer page, and mobile web app from `64a2395470f72fbe5cf3dd23627e56e16a836336` after confirming zero active rooms. The live mobile asset matched the candidate build. Separate Chromium host and guest profiles verified video storage, queue protection, removal through reload and relink, and the new photo review. The guest could request a song while a photo waited. Approval displayed it and awarded 24 points. Both disposable rooms were closed and verified offline, and the final guest lost access on room closure.
 
 The relay bundle SHA-256 is `7290530b7457c1e18af8297cf58294bc362f8e260d69acf1323d8f9e9d6b53ed`. The rollback copy is `/var/backups/tpv-queue-relay/code/queue-0106.Hw4AZlr4`. Real-phone and native external display tests remain open.
+
+## 0.10.7 follow-up
+
+Updated the relay, singer page, and mobile web app from `b002f4470cb7ffde1b53f090fc7b0f2b34a17201` after checking for active rooms. HTTPS reported 0.10.7 and the current mobile entry matched the tested build. The updated guest page recognizes desktop singer holds. Release tests cover hold behavior through the relay protocol, and an isolated Windows rehearsal verified the host flow after a schema 7→8 upgrade.
+
+The relay bundle SHA-256 is `1b4e079610958e0bd1616efef1c2548e7af20321569ecfbff31c0f0566d9eb0e`. The rollback copy is `/var/backups/tpv-queue-relay/code/queue-0107.lmMpclWL`.

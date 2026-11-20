@@ -32,6 +32,8 @@ Archived versions are listed on the download page and their records are kept und
 
 The server verifies filenames, platform receipts, commit identity, required architectures and SHA-256 hashes before publication. Automated packaged launch and archive checks do not replace install/upgrade testing, physical audio and display checks, provider acceptance or signed-store review. Run `npm run test:release` for package rules and `python3 deploy/booth-downloads/test-release-command.py -v` on Linux for the server publisher tests.
 
+Run **Rehearse Windows installation and upgrade** after publication to install two exact, checksummed releases on a disposable GitHub-hosted Windows machine. Select a retained baseline and the candidate. It checks show and preference preservation, no autoplay, a checked pre-upgrade snapshot if the SQLite schema changed, and uninstall that leaves the disposable show data intact. Record the separate physical and signing checks in the [release acceptance checklist](release-acceptance.md).
+
 ## Historical GitHub release
 
 The [v0.8.0 GitHub release](https://github.com/thepropervolume/proper-karaoke-booth/releases/tag/v0.8.0) was published on 15 November 2026. New release downloads are hosted on Linode. Past failed mobile artifact uploads to GitHub reflected the old separate workflow and do not establish that a later hosted release is available.
