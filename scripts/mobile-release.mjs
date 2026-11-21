@@ -1,4 +1,4 @@
-/** Stage only the reviewed native development builds for the release publisher. */
+/** Validate mobile releases and stage reviewed development builds for publication. */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { constants } from 'node:fs';
@@ -26,11 +26,28 @@ assert.deepEqual([...androidConfig.matchAll(/\bversionName\s+"([^"]+)"/g)].map(m
 assert.deepEqual([...iosConfig.matchAll(/\bMARKETING_VERSION\s*=\s*([^;]+);/g)].map(match => match[1].trim()), [version, version], 'iOS package version does not match.');
 
 const checkpoint = join(repo, 'release', 'mobile-build-source.json');
-if (operation === 'check-source') {
+if (operation === 'check-source' || operation === 'check-store-pair') {
   assert.equal(platform, undefined);
   assert.equal(git('status', '--porcelain', '--untracked-files=normal'), '', 'Build from a clean checkout.');
-  await mkdir(dirname(checkpoint), { recursive: true });
-  await writeFile(checkpoint, JSON.stringify({ version, commit }) + '\n', { flag: 'wx' });
+  if (operation === 'check-store-pair') {
+    const appId = 'com.thepropervolume.karaoke';
+    const capacitorConfig = await readFile(join(repo, 'mobile/capacitor.config.ts'), 'utf8');
+    const capacitorIds = [...capacitorConfig.matchAll(/\bappId\s*:\s*['"]([^'"]+)['"]/g)].map(match => match[1]);
+    const androidIds = [...androidConfig.matchAll(/\bapplicationId\s+"([^"]+)"/g)].map(match => match[1]);
+    const iosIds = [...iosConfig.matchAll(/\bPRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);/g)].map(match => match[1].trim());
+    assert.deepEqual(capacitorIds, [appId], 'Capacitor app ID does not match the store identity.');
+    assert.deepEqual(androidIds, [appId], 'Android application ID does not match the store identity.');
+    assert.deepEqual(iosIds, [appId, appId], 'iOS bundle ID does not match the store identity.');
+    const androidCodes = [...androidConfig.matchAll(/\bversionCode\s+(\d+)\s*$/gm)].map(match => match[1]);
+    const iosBuilds = [...iosConfig.matchAll(/\bCURRENT_PROJECT_VERSION\s*=\s*([^;]+);/g)].map(match => match[1].trim());
+    assert.ok(androidCodes.length === 1 && /^[1-9]\d*$/.test(androidCodes[0]), 'Android needs a positive version code.');
+    assert.ok(iosBuilds.length === 2 && /^[1-9]\d*$/.test(iosBuilds[0]) && iosBuilds[0] === iosBuilds[1], 'Both iOS configurations need the same positive build number.');
+    console.log('Mobile store candidate ' + version + ' from commit ' + commit + '.');
+    console.log('Store identity ' + appId + ' with iOS build ' + iosBuilds[0] + ' and Android version code ' + androidCodes[0] + '.');
+  } else {
+    await mkdir(dirname(checkpoint), { recursive: true });
+    await writeFile(checkpoint, JSON.stringify({ version, commit }) + '\n', { flag: 'wx' });
+  }
 } else {
   assert.equal(operation, 'stage');
   assert.ok(platform === 'android' || platform === 'ios');

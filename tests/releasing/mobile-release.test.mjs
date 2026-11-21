@@ -7,7 +7,9 @@ import { test } from 'node:test';
 import { verifyMobilePlatform } from '../../scripts/release-artifacts.mjs';
 import { releaseNotesForCommit } from '../../scripts/github-release.mjs';
 
-async function fixture() {
+const appId = 'com.thepropervolume.karaoke';
+
+async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds = [14, 14] } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'tpv-mobile-release-'));
   await mkdir(join(dir, 'scripts')); await mkdir(join(dir, 'mobile')); await mkdir(join(dir, 'src'));
   await cp(resolve('scripts/mobile-release.mjs'), join(dir, 'scripts/mobile-release.mjs'));
@@ -17,10 +19,12 @@ async function fixture() {
   await writeFile(join(dir, 'package-lock.json'), '{"version":"0.10.1","packages":{"":{"version":"0.10.1"}}}\n');
   await writeFile(join(dir, 'mobile/package.json'), '{"version":"0.10.1"}\n');
   await writeFile(join(dir, 'mobile/package-lock.json'), '{"version":"0.10.1","packages":{"":{"version":"0.10.1"}}}\n');
+  await writeFile(join(dir, 'mobile/capacitor.config.ts'), "const config = { appId: '" + appId + "' };\n");
   await mkdir(join(dir, 'mobile/android/app'), { recursive: true });
-  await writeFile(join(dir, 'mobile/android/app/build.gradle'), 'versionName "0.10.1"\n');
+  await writeFile(join(dir, 'mobile/android/app/build.gradle'), 'applicationId "' + androidId + '"\nversionCode 1001\nversionName "' + androidVersion + '"\n');
   await mkdir(join(dir, 'mobile/ios/App/App.xcodeproj'), { recursive: true });
-  await writeFile(join(dir, 'mobile/ios/App/App.xcodeproj/project.pbxproj'), 'MARKETING_VERSION = 0.10.1;\nMARKETING_VERSION = 0.10.1;\n');
+  const iosConfig = iosBuilds.map(build => 'MARKETING_VERSION = 0.10.1;\nPRODUCT_BUNDLE_IDENTIFIER = ' + appId + ';\nCURRENT_PROJECT_VERSION = ' + build + ';\n');
+  await writeFile(join(dir, 'mobile/ios/App/App.xcodeproj/project.pbxproj'), iosConfig.join(''));
   await writeFile(join(dir, 'src/example.txt'), 'reviewed code');
   execFileSync('git', ['init', '-q', dir]);
   execFileSync('git', ['-C', dir, 'add', '.']);
@@ -29,6 +33,33 @@ async function fixture() {
   const run = (...args) => spawnSync(process.execPath, [join(dir, 'scripts/mobile-release.mjs'), ...args], { cwd: dir, env: { ...process.env, GITHUB_SHA: commit }, encoding: 'utf8' });
   return { dir, commit, run };
 }
+
+test('store preflight checks one version and commit with separate platform build counters', async () => {
+  const { dir, commit, run } = await fixture();
+  try {
+    const result = run('check-store-pair');
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes('Mobile store candidate 0.10.1 from commit ' + commit));
+    assert.match(result.stdout, /iOS build 14 and Android version code 1001/);
+    await assert.rejects(readFile(join(dir, 'release', 'mobile-build-source.json')), { code: 'ENOENT' });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('store preflight rejects platform version, package identity, and iOS build-setting drift', async () => {
+  const cases = [
+    [{ androidVersion: '0.10.2' }, /Android package version does not match/],
+    [{ androidId: 'com.example.wrong' }, /Android application ID does not match/],
+    [{ iosBuilds: [14, 15] }, /Both iOS configurations need the same positive build number/],
+  ];
+  for (const [options, message] of cases) {
+    const { dir, run } = await fixture(options);
+    try {
+      const result = run('check-store-pair');
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, message);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }
+});
 
 test('mobile release staging copies just the expected builds and binds hashes to the source commit', async () => {
   const { dir, commit, run } = await fixture();
