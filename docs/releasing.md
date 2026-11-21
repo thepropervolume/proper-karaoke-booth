@@ -36,6 +36,33 @@ The server verifies filenames, platform receipts, commit identity, required arch
 
 Run **Rehearse Windows installation and upgrade** after publication to install two exact, checksummed releases on a disposable GitHub-hosted Windows machine. Select a retained baseline and the candidate. It checks show and preference preservation, no autoplay, a checked pre-upgrade snapshot if the SQLite schema changed, and uninstall that leaves the disposable show data intact. Record the separate physical and signing checks in the [release acceptance checklist](release-acceptance.md).
 
+## Coordinate iOS and Android store releases
+
+Booth ships one Capacitor mobile app from the shared `src/mobile` interface.
+Cut each iOS and Android store candidate from the same Git commit with the same
+public version. Record the native build numbers separately. App Store Connect
+uses the iOS build number and Play uses Android's `versionCode`. Each follows
+its own store history.
+
+1. Run the [paired mobile store checks](../.github/workflows/mobile-store-check.yml)
+   on the candidate. They verify both native builds from one commit using an
+   unsigned iPhoneOS app and a disposable Android signing key. Save the run
+   with the release evidence.
+2. Start the first beta with [internal TestFlight](store-ios.md) under SIMPLE
+   DIGITAL, LLC. Prepare the same candidate for [Google Play testing](store-android.md)
+   when Play Console is verified. Use closed Play testing before the first
+   coordinated production launch so Managed Publishing can be available, per
+   [Google's launch guidance](https://support.google.com/googleplay/android-developer/answer/9859654).
+3. Test the TestFlight and Play builds on real devices, reconcile the privacy
+   and review materials, and submit both platform builds for review. Select
+   [manual release on Apple](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option)
+   and [Managed Publishing on Google Play](https://support.google.com/googleplay/android-developer/answer/9859654)
+   where available. Hold the public launch until both builds clear review.
+4. Release both approved builds in the same planned window and check both
+   storefronts before announcing availability. Allow time for propagation.
+   Apple says a manually released version can take up to 24 hours to appear.
+   [Apple release timing](https://developer.apple.com/help/app-store-connect/manage-your-apps-availability/select-an-app-store-version-release-option).
+
 ## Historical GitHub release
 
 The [v0.8.0 GitHub release](https://github.com/thepropervolume/proper-karaoke-booth/releases/tag/v0.8.0) was published on 15 November 2026. New release downloads are hosted on Linode. Past failed mobile artifact uploads to GitHub reflected the old separate workflow and do not establish that a later hosted release is available.

@@ -1,10 +1,10 @@
-# Prepare an iOS device build
+# Prepare Booth for TestFlight and the App Store
 
-The current release workflow builds an **unsigned iOS Simulator app**, not an
-iPhone-installable IPA or an App Store submission. This runbook describes a
-manual, opt-in device archive using an existing Apple Developer account and
-owner-provisioned signing assets. It has not been executed on a Mac or verified
-on an iPhone. It does not upload or submit an app.
+The owner enrolled **SIMPLE DIGITAL, LLC** in the Apple Developer Program.
+Start with an internal TestFlight build. The public development downloads
+currently offer an unsigned iOS Simulator app. An iPhone build requires Apple
+signing and an app record in App Store Connect. Coordinate public iOS and Android
+delivery through the [mobile store release process](releasing.md#coordinate-ios-and-android-store-releases).
 
 For an additional unsigned compiler check, manually run the **Verify unsigned
 iOS device build** GitHub workflow. It builds an `iphoneos` Release app and
@@ -14,16 +14,19 @@ ephemeral output cannot be installed on an iPhone or submitted to Apple.
 
 ## Before building
 
-1. Confirm the Apple Developer Program team and the seller name. Apple uses
-   the individual’s legal name or the enrolled organization’s legal entity
-   name. An enrolled organization may be able to choose an eligible separate
-   developer display name. Membership is currently USD 99 per year in the US.
-   [Apple enrollment](https://developer.apple.com/help/account/membership/program-enrollment/),
-   [developer name](https://developer.apple.com/help/app-store-connect/create-an-app-record/set-your-developer-name/).
-2. Confirm the intended App Store bundle ID and register its explicit App ID in
-   that team. The project currently uses `com.thepropervolume.karaoke`. Apple
-   says the bundle ID cannot be changed after the first build is uploaded.
-   [Apple distribution preparation](https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution).
+1. Sign in to [Apple Developer](https://developer.apple.com/account/) and
+   select **SIMPLE DIGITAL, LLC**. In **Membership details**, find the
+   10-character [Team ID](https://developer.apple.com/help/glossary/team-id/).
+   Use that organization for app registration and signing.
+2. In **Certificates, Identifiers & Profiles → Identifiers**, check for
+   `com.thepropervolume.karaoke`. If absent, [register an explicit App ID](https://developer.apple.com/help/account/identifiers/register-an-app-id/)
+   with that bundle ID and description **TPV Karaoke Booth**. Use the same ID
+   in [App Store Connect → Apps → New App](https://appstoreconnect.apple.com/apps).
+   Select **iOS**, propose **TPV Karaoke Booth** as the name if available,
+   **English (U.S.)** as the primary language, and `tpv-karaoke-booth-ios` as
+   the internal SKU. App Store Connect requires the Account Holder to accept
+   the current Business agreement before a record can be created.
+   [Apple app record guide](https://developer.apple.com/help/app-store-connect/create-an-app-record/add-a-new-app/).
 3. Use a trusted Mac with a currently accepted Xcode and iOS SDK. Apple requires
    Xcode 26 or later and the iOS 26 SDK or later for uploads as of April 2026.
    Use the latest stable supported Xcode; deployment target and build SDK are
@@ -61,14 +64,18 @@ configuration. The Organizer archive should contain an `iphoneos` device app;
 inspect the signing, entitlements, bundle ID and versions before distribution.
 Save the archive in an owner-controlled location, outside public downloads.
 
-For device smoke testing, use a properly provisioned development build on a
-registered iPhone/iPad or a TestFlight build once authorized and uploaded.
-An App Store Connect distribution IPA is not equivalent to a directly
-installable development IPA. If an IPA is needed for later App Store Connect
-upload, choose the Organizer's **App Store Connect → Export** option using the
-authorized distribution profile; verify the resulting signed bundle and keep it
-private. Do not use **Upload**, submit for review, change production release
-automation or publish artifacts until the account and release are ready.
+For the first beta, use Xcode Organizer → **Distribute App → App Store Connect**
+and validate the signed archive before uploading to the app's TestFlight tab.
+Use standard App Store Connect distribution if the build may later advance to
+external testing or App Review. An upload marked TestFlight Internal Only is
+restricted to internal testers. Once processing and any export-compliance
+questions are complete, add the build to an internal TestFlight group.
+[Apple upload guide](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/) ·
+[internal TestFlight groups](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/).
+
+A development build can also run on a registered iPhone or iPad for device
+verification. Keep signed archives and signing material in the owner's
+trusted environment.
 
 ## Review and device checks before submission
 

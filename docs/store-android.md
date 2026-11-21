@@ -1,5 +1,11 @@
 # Android Google Play release preparation
 
+Use the same release commit and public version as iOS. Android keeps its own
+increasing `versionCode` and upload signing key. See the
+[paired store release process](releasing.md#coordinate-ios-and-android-store-releases)
+for coordinating Play testing and public release with TestFlight and the App
+Store.
+
 This is an opt-in build and signing workflow. It does not create a Play Console account, upload anything, publish an app, or change the existing debug APK / unsigned AAB release workflow. A signed AAB is an upload artifact, not an installable APK; Google Play produces signed APKs for a selected test or release track.
 
 Run the manual **Verify Android Play bundle build** GitHub workflow to exercise the Android SDK build and signing with a disposable key. The workflow requires no store credentials and keeps the test bundle on its temporary runner.
