@@ -173,10 +173,13 @@ p { margin: .5rem 0 0; }
   min-height: 2.75rem;
   padding-block: .45rem;
   overflow-wrap: anywhere;
+  text-decoration: none;
 }
 
-.files a strong { min-width: 0; font-weight: 800; }
+.files a strong { min-width: 0; font-weight: 800; text-decoration: underline; }
+.files a:hover strong { text-decoration-thickness: .12em; }
 .metadata { flex-shrink: 0; font-size: .875rem; white-space: nowrap; }
+.notice + .grid { margin-block-start: .75rem; }
 .documents, .verification, .notice, .history, .release-notes, .platform-fallback { margin-block-start: 1rem; }
 
 summary { min-height: 1.6rem; cursor: pointer; font-weight: 800; }
