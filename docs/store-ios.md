@@ -77,6 +77,27 @@ A development build can also run on a registered iPhone or iPad for device
 verification. Keep signed archives and signing material in the owner's
 trusted environment.
 
+## Build with Xcode Cloud
+
+Apple Developer Program membership includes 25 Xcode Cloud compute hours per
+month. Use a compatible Mac for the first workflow setup. Later workflow
+management is available in App Store Connect from a browser.
+[Apple setup and pricing](https://developer.apple.com/xcode-cloud/get-started/) ·
+[First workflow](https://developer.apple.com/documentation/xcode/configuring-your-first-xcode-cloud-workflow).
+
+1. Open `mobile/ios/App/App.xcodeproj` in Xcode, select the shared **App** scheme
+   and the SIMPLE DIGITAL, LLC team, then start Xcode Cloud setup. Connect the
+   Booth GitHub repository and select the existing App Store Connect record.
+2. Configure an iOS **Archive** action on the shared **App** scheme using an
+   accepted Xcode and iOS SDK. Limit the workflow to reviewed release candidates.
+   Choose a TestFlight distribution option for the beta and retain manual
+   control of the public release.
+3. Xcode Cloud automatically runs the project's
+   [post-clone script](../mobile/ios/App/ci_scripts/ci_post_clone.sh) to install
+   the pinned JavaScript dependencies, build the same interface Android uses,
+   and sync the web bundle into iOS. Record the commit and the resulting
+   TestFlight build number against the paired Android candidate.
+
 ## Review and device checks before submission
 
 - Exercise local video import/playback, resume without autoplay, rotation,
