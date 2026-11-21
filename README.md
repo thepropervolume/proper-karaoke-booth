@@ -2,7 +2,7 @@
 
 A desktop app for hosting karaoke: find songs, manage singer rotation, accept requests and play karaoke on a separate singer display.
 
-- One search for local files, Karaoke Nerds, YouTube and connected service catalogs.
+- One search for local files, Karaoke Nerds, YouTube and connected service catalogs — including seamless integration with KaraFun and Party Tyme Karaoke subscriptions.
 - Queue management, optional singer assignments, playlists and song ratings.
 - A host preview, customizable singer screen and bumper music between songs.
 - Phone requests through remote sessions and optional local-network singer screens.
