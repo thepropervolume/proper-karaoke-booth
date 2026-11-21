@@ -32,9 +32,15 @@ The application suite passed 1,243 tests with eight skips. All 29 release tests 
 
 GitHub blocked the release workflow before planning, citing an account payment or spending-limit issue. The public download page still serves 0.10.8. The publisher accepts both new PKGs when the complete 0.10.9 build is available. Native macOS build and installation remain open. [0.10.9 build status](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44786846939)
 
-## 0.10.10 Windows delivery
+## 0.10.10 delivery
 
-The local Windows x64 Setup and ZIP were built from `d63a3721ac0b2d71d337572cfeec12acfd04257e`. A Windows NSIS rehearsal used the installer’s directory macros with disposable registry keys and verified the fresh default `C:\Program Files\The Proper Volume Karaoke Booth`, preservation of a legacy registered folder, and custom folder handling. Packaged launch, restart, and isolated CLI PATH registration passed. The full installation rehearsal needs an elevated disposable Windows runner. GitHub blocked the release job before planning, citing an account payment or spending-limit issue. [0.10.10 build status](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44817365444)
+The local Windows x64 Setup and ZIP were built from `d63a3721ac0b2d71d337572cfeec12acfd04257e`. A Windows NSIS rehearsal used the installer’s directory macros with disposable registry keys and verified the fresh default `C:\Program Files\The Proper Volume Karaoke Booth`, preservation of a legacy registered folder, and custom folder handling. Packaged launch, restart, and isolated CLI PATH registration passed. GitHub blocked the initial release job before planning, citing an account payment or spending-limit issue. [Initial build attempt](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44817365444)
+
+A later run built, verified, and published all 34 files from `6c2ac54204196bd1aa663b3317591db1e3df6239`, including releases for Windows, Linux, macOS, Android, and iOS Simulator. The latest links were checked for Windows Setup, the Debian package, and both macOS PKGs. [Build and publication](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44879436740) · [0.10.10 downloads](https://release.thepropervolume.com/booth/v0.10.10/)
+
+The hosted Windows rehearsal upgraded a disposable per-user installation from 0.10.8 to 0.10.10, kept its show and preferences, resolved `tpv-karaoke-booth` from user PATH, and confirmed that uninstallation restored the original PATH. A fresh all-users installation used the branded Program Files folder, registered exactly one machine PATH entry, and ran CLI help. Its uninstaller also restored the original PATH. [Windows install, upgrade, and removal rehearsal](https://github.com/thepropervolume/proper-karaoke-booth/actions/runs/44880011338)
+
+The Linux release verifier checked the executable `/usr/bin/tpv-karaoke-booth` in the Debian payload and exercised the bundled CLI. macOS verification checked the `/usr/local/bin/tpv-karaoke-booth` payload and installer preflight in both PKGs. Only Apple silicon ran the app and packaged CLI. The macOS PKGs still need Finder and Gatekeeper installation checks.
 
 ## Official release gates
 
