@@ -47,11 +47,11 @@ class ReleaseCommandTests(unittest.TestCase):
         self.incoming = self.root / 'incoming'
         self.public = self.root / 'public'
         self.code = self.root / 'code'
-        for directory in ('incoming', 'public', 'code/scripts', 'code/assets/branding/web'):
+        for directory in ('incoming', 'public', 'code/scripts'):
             (self.root / directory).mkdir(parents=True)
         for file in ('release-command.py', 'publish-release.mjs'):
             shutil.copyfile(DEPLOY / file, self.code / file)
-        for file in ('scripts/release-artifacts.mjs', 'scripts/render-downloads.mjs', 'assets/branding/web/icon-180.png'):
+        for file in ('scripts/release-artifacts.mjs', 'scripts/render-downloads.mjs'):
             shutil.copyfile(REPO / file, self.code / file)
 
     def command(self, args, data=b'', success=True):
@@ -115,6 +115,11 @@ class ReleaseCommandTests(unittest.TestCase):
         records = json.loads((version_path / 'release-manifest.json').read_bytes())['artifacts']
         self.assertEqual(len(records), 32)
         self.assertIn(f'./v{VERSION}/'.encode(), public_index.read_bytes())
+        for page in (public_index, version_path / 'index.html'):
+            document = page.read_text(encoding='utf-8')
+            self.assertIn('href="/assets/releases.css"', document)
+            self.assertIn('src="/assets/karaoke-booth.png"', document)
+            self.assertIn('href="/">All downloads</a>', document)
         self.assertTrue(version_path.stat().st_mode & 0o001)
         for item in records:
             self.assertEqual(digest((version_path / item['file']).read_bytes()), item['sha256'])
@@ -170,6 +175,8 @@ class ReleaseCommandTests(unittest.TestCase):
         self.assertEqual((saved / 'release-notes.md').read_text(encoding='utf8'), 'Notes <safe> & preserved')
         self.assertEqual((saved / 'GITHUB_RELEASE_NOTES.md').read_text(encoding='utf8'), 'Exact GitHub notes')
         archived_page = (saved / 'index.html').read_text(encoding='utf8')
+        self.assertIn('href="/assets/releases.css"', archived_page)
+        self.assertIn('src="/assets/karaoke-booth.png"', archived_page)
         self.assertIn('Notes &lt;safe&gt; &amp; preserved', archived_page)
         self.assertIn('Exact GitHub notes', archived_page)
         self.assertNotIn('.exe"', archived_page)

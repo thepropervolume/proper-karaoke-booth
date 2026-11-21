@@ -157,7 +157,7 @@ def write_latest_map(directory, version, output):
     output.chmod(0o644)
 
 
-def write_archive_page(directory, version, manifest):
+def archive_page(directory, version, manifest):
     """Display preserved release notes as text, never as executable markup."""
     notes = []
     for file in sorted(directory.iterdir()):
@@ -165,15 +165,57 @@ def write_archive_page(directory, version, manifest):
             if file.is_symlink() or not file.is_file() or file.stat().st_size > MAX_TEXT_ASSET:
                 raise ValueError('Invalid archived release notes.')
             notes.append((file.name, file.read_text(encoding='utf-8')))
-    body = ''.join(f'<h2>{html.escape(name)}</h2><pre>{html.escape(content)}</pre>' for name, content in notes)
-    commit = manifest['sourceCommit']
+    body = ''.join(
+        f'<section class="card release-notes"><h2>{html.escape(name)}</h2>'
+        f'<pre>{html.escape(content)}</pre></section>'
+        for name, content in notes
+    )
+    commit = html.escape(manifest['sourceCommit'], quote=True)
+    version = html.escape(version)
+    return f'''<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Karaoke Booth {version} archive · The Proper Volume</title>
+  <link rel="icon" href="/assets/karaoke-booth.png">
+  <link rel="stylesheet" href="/assets/releases.css">
+</head>
+<body>
+  <a class="skip-link" href="#release-notes">Skip to release notes</a>
+  <header class="site-header"><div class="shell topbar">
+    <a class="brand" href="https://thepropervolume.com/">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="/assets/tpv-wordmark-night.svg">
+        <img src="/assets/tpv-wordmark-day.svg" width="144" height="48" alt="The Proper Volume">
+      </picture>
+    </a>
+    <a href="/">All downloads</a>
+  </div></header>
+  <main class="shell" id="release-notes">
+    <section class="hero release-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Archived release {version}</p>
+        <h1>Karaoke Booth release notes</h1>
+        <p class="lede">Installer downloads are available for the five latest versions.</p>
+      </div>
+      <img class="product-icon" src="/assets/karaoke-booth.png" width="96" height="96" alt="">
+    </section>
+    {body}
+    <footer class="release-footer">
+      <a href="release-manifest.json">Release manifest</a>
+      <a href="../../">Latest Booth downloads</a>
+      <a href="https://github.com/thepropervolume/proper-karaoke-booth/commit/{commit}">Source commit <code>{commit[:7]}</code></a>
+    </footer>
+  </main>
+</body>
+</html>
+'''
+
+
+def write_archive_page(directory, version, manifest):
     page = directory / 'index.html'
-    page.write_text(
-        '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
-        f'<title>Karaoke Booth {version} archive</title><h1>Karaoke Booth {version} archive</h1>'
-        '<p>Installers are retained for the five most recent versions. The latest downloads page shows available versions; release metadata and original notes are preserved here.</p>'
-        f'<p>Source commit: <a href="https://github.com/thepropervolume/proper-karaoke-booth/commit/{commit}">{commit[:7]}</a></p>'
-        f'{body}<p><a href="release-manifest.json">Release manifest</a> · <a href="../../">Latest downloads</a></p></html>', encoding='utf-8')
+    page.write_text(archive_page(directory, version, manifest), encoding='utf-8')
     page.chmod(0o644)
 
 

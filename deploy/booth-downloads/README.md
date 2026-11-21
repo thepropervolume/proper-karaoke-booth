@@ -22,7 +22,6 @@ Copy the two publisher scripts and the page generator with their required layout
   scripts/
     release-artifacts.mjs
     render-downloads.mjs
-  assets/branding/web/icon-180.png
 ```
 
 Add a dedicated CI deploy key to the publishing account's `authorized_keys` with a forced command and SSH restrictions. The default Node path on Linode III is `/opt/tpv-song-ratings/node`. To use another runtime, append `--node /absolute/path/to/node` to the forced command.
@@ -31,7 +30,7 @@ Add a dedicated CI deploy key to the publishing account's `authorized_keys` with
 restrict,command="/usr/bin/python3 /opt/tpv-booth-releases/release-command.py" ssh-ed25519 <CI public key>
 ```
 
-The Cloudflare DNS-only CNAME `release.thepropervolume.com` resolves to `apps.thepropervolume.com`. Install [the Apache virtual host](apache.conf) on Linode III with the existing `tpv-booth-releases` certificate. Install [the download hub](release-index.html) as `/srv/tpv-downloads/public/index.html`. The vhost mounts the existing Booth release directory at `/booth/` and the Studio release directory at `/studio/`.
+The Cloudflare DNS-only CNAME `release.thepropervolume.com` resolves to `apps.thepropervolume.com`. Install [the Apache virtual host](apache.conf) on Linode III with the existing `tpv-booth-releases` certificate. Install [the download hub](release-index.html) as `/srv/tpv-downloads/public/index.html`. Copy [the site assets](assets/) to /srv/tpv-downloads/public/assets/ alongside it. The vhost mounts the existing Booth release directory at `/booth/` and the Studio release directory at `/studio/`.
 
 The download pages and stable aliases are publicly readable. Each publisher maintains its own hidden `.latest.map`. Booth versionless `/booth/latest/` aliases redirect to `/booth/vVERSION/`. Legacy `/latest/`, `/vVERSION/`, and `/archive/` links keep working. The alternate `/boothl/` path redirects to the canonical Booth path. Test Apache configuration before reload, then verify anonymous GET and HEAD for both products and the legacy routes.
 

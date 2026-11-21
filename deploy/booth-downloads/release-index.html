@@ -1,18 +1,44 @@
 <!doctype html>
 <html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Proper Volume · Downloads</title>
-<style>
-  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-  body { max-width: 44rem; padding: 2rem 1.25rem; margin: 8vh auto; }
-  main { display: grid; gap: 1rem; }
-  a { display: block; padding: 1rem; border: 1px solid currentColor; border-radius: .5rem; }
-  p { margin: .35rem 0 0; }
-</style>
-<h1>The Proper Volume Downloads</h1>
-<main>
-  <section><a href="/booth/"><strong>Karaoke Booth</strong><p>Run a karaoke show and manage singer requests.</p></a></section>
-  <section><a href="/studio/"><strong>Karaoke Studio</strong><p>Author karaoke tracks, edit lyric timing, and export videos and kits.</p></a></section>
-</main>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Karaoke downloads · The Proper Volume</title>
+  <meta name="description" content="Download The Proper Volume Karaoke Booth and Karaoke Studio.">
+  <link rel="stylesheet" href="/assets/releases.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell topbar">
+      <a class="brand" href="https://thepropervolume.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="/assets/tpv-wordmark-night.svg">
+          <img src="/assets/tpv-wordmark-day.svg" width="144" height="48" alt="The Proper Volume">
+        </picture>
+      </a>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <h1>Karaoke downloads</h1>
+        <p class="lede">Get the apps for hosting karaoke shows and making karaoke tracks.</p>
+      </div>
+    </section>
+    <div class="grid product-grid">
+      <section class="card product-card">
+        <img class="product-icon" src="/assets/karaoke-booth.png" width="96" height="96" alt="">
+        <h2>Karaoke Booth</h2>
+        <p class="muted">Host shows, manage the singer rotation, and play songs from your library.</p>
+        <a class="primary" href="/booth/">Download Booth <span aria-hidden="true">→</span></a>
+      </section>
+      <section class="card product-card">
+        <img class="product-icon" src="/assets/karaoke-studio.png" width="96" height="96" alt="">
+        <h2>Karaoke Studio</h2>
+        <p class="muted">Author karaoke tracks, sync lyrics, and export videos and kits.</p>
+        <a class="primary" href="/studio/">Download Studio <span aria-hidden="true">→</span></a>
+      </section>
+    </div>
+  </main>
+</body>
 </html>

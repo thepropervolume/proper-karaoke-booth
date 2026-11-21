@@ -19,7 +19,7 @@ The hosted set contains Windows x64 setup and portable ZIP; Linux x64 AppImage a
 
 Starting with 0.10.9, the macOS build adds an unsigned PKG for each supported architecture. The verifier expands each PKG and checks the app bundle, CLI launcher, and installer preflight before staging it. The publisher requires both PKGs for 0.10.9 and later and accepts the earlier file list for older release manifests.
 
-Each retained release has an immutable page under `/vVERSION/`. The `/latest/` aliases redirect to the latest verified files and are suitable for sharing stable download links. Only the five newest release download sets are retained on Linode. When a release ages out, its installers are removed, but the release history and available notes and metadata remain accessible. A version-specific installer URL for a pruned release no longer downloads a file.
+Each retained release has a permanent page under `/vVERSION/`. Its packages, checksums, and manifest are immutable. The `/latest/` aliases redirect to the latest verified files and are suitable for sharing stable download links. Only the five newest release download sets are retained on Linode. When a release ages out, its installers are removed, but the release history and available notes and metadata remain accessible. A version-specific installer URL for a pruned release no longer downloads a file.
 
 Stable links remove the version component from a verified artifact name. They issue a temporary HTTP redirect to its current `/vVERSION/` file. Examples:
 
