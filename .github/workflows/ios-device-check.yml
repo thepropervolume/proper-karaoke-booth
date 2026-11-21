@@ -24,21 +24,13 @@ jobs:
         with:
           node-version: '24.15.0'
           package-manager-cache: false
-      - name: Install dependencies and build the mobile interface
-        run: |
-          npm ci --no-audit --no-fund
-          npm ci --prefix mobile --no-audit --no-fund
-          npm run typecheck
-          npm --prefix mobile run typecheck
-          npm run build:mobile
-      - name: Copy web assets into the native iOS project
-        working-directory: mobile
-        run: npx cap sync ios
+      - name: Prepare Xcode Cloud web and native dependencies
+        run: mobile/ios/App/ci_scripts/ci_post_clone.sh
       - name: Build an unsigned device app
         run: |
           xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/tpv-ios-device" \
+            -derivedDataPath "$RUNNER_TEMP/tpv-ios-device" -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
       - name: Verify device architecture, metadata and bundled interface
         env:

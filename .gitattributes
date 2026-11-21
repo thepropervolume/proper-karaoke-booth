@@ -3,3 +3,4 @@ assets/branding/**/*.svg text eol=lf
 assets/branding/*.svg text eol=lf
 assets/branding/manifest.json text eol=lf
 assets/branding/installer.nsh text eol=lf
+mobile/ios/App/ci_scripts/*.sh text eol=lf
