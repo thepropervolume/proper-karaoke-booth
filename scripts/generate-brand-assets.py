@@ -148,7 +148,12 @@ def generate(output_root: Path) -> dict:
 
     installer_bitmap(brand / "installer-header.bmp", (SOURCE / "logo-light.svg").read_bytes(), 150, 57, 6)
     installer_bitmap(brand / "installer-sidebar.bmp", (SOURCE / "wordmark-light.svg").read_bytes(), 164, 314, 10)
-    write(brand / "installer.nsh", b"!macro customWelcomePage\n  !insertmacro MUI_PAGE_WELCOME\n!macroend\n")
+    # Keep the maintained installer hooks when generating fresh artwork.
+    installer_script = REPO / "assets" / "branding" / "installer.nsh"
+    if output_root == REPO:
+        written.add(installer_script)
+    else:
+        write(brand / "installer.nsh", installer_script.read_bytes())
 
     # Native/PWA slots are derived from the same approved mark, including opaque
     # store art, adaptive density exports and branded launch screens.
