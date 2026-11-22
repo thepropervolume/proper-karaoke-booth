@@ -1,40 +1,29 @@
-# TPV Karaoke on Mobile
+# TPV Karaoke Mobile Singer Guide
 
-Open [the mobile web app](https://queue.thepropervolume.com/app/) on a phone or tablet. Use the browser menu's **Add to Home Screen** option to install it. This is an experimental development app; keep a backup of important show data.
+The 0.10.12 mobile workspace opens to **Library**. Browse and save songs on your own, then join a desktop host’s room when you are ready to request a song. The same workspace is built for the [mobile web app](https://queue.thepropervolume.com/app/), iOS, and Android. Full Host is paused while the mobile singer experience takes priority.
 
-## Full Host Mode
+## Browse and Save Songs
 
-Choose **Full Host Mode** for four workspace destinations at the bottom of the screen.
+1. Open **Library** and enter at least two characters of an artist or title. Karaoke Nerds is selected by default. Tap **More Karaoke Nerds Results** to see the next page of matches from the shared catalog snapshot.
+2. Turn catalogs on or off under **Profile → Browse Sources**. Karaoke Nerds, KaraFun’s public song list, and the Party Tyme Pro public songbook support browsing without an account. Party Tyme Pro’s listings may differ from what a host can queue using Party Tyme Consumer.
+3. Tap **Save to Playlist** beside a recording. Pick a playlist or name a new one and choose **Save Song**. In **Playlists**, expand a list to see your recordings, rename it, or remove songs. Browse Mode is for discovery and playlists. Playback is on the host.
 
-- **Library** opens first. Search by artist or title, then tap the add button beside a result, optionally enter a singer, and choose **Add Song**. **Add a Video** is just under search and accepts a YouTube link or a local video file. Source labels and colored edges distinguish Karaoke Nerds, YouTube and device copies. The large video preview appears when a track is loaded.
-- **Queue** shows the Singer Rotation and a waiting-song count. Use its row controls to move or remove a waiting request.
-- **Collections** switches between favorites and show history.
-- **Room** opens the invite link, singer list and playback settings. Choose **Device Storage** here to manage imported copies.
+Joining a room sets the next Browse Mode defaults to the available public counterparts of the host’s reported sources. You can change those defaults after leaving. Catalog search requires an internet connection. Saved playlists and profile fields are available without a room.
 
-Search uses the shared Karaoke Nerds snapshot. Online recordings use YouTube's embedded player, with playback subject to each recording's availability. Local MP4, WebM, MOV and M4V playback depends on the device's codecs.
+## Set Up Your Profile
 
-Press **Play** to start the queue. The bottom player stays reachable while you switch destinations. It provides pause, restart, skip, fullscreen and a seekable timeline for a loaded song. Find the volume slider in **Room → Playback**. Built-in video controls stay synchronized. In **Room → Playback**, enable automatic advancement and set the gap between songs from 0 to 3,600 seconds. Turning off automatic advancement during the gap keeps the next song waiting for Play. Playback pauses in the background and after reopening the app; mobile platforms may require a tap inside the video to allow audio. Keep the host app in the foreground during a show. In the 0.10.4 source, the current request’s playback position is checkpointed at most once per second and on pause, seek, mode switch and background events. Returning to Full Host or reopening restores the last saved position paused; press Play to resume. A sudden termination can lose the most recent pending save. YouTube/Karaoke Nerds playback starts at whole-second and provider keyframe precision, so it may resume approximately. A desktop Chrome rehearsal verified paused local-video recovery after mode switching and reload. Physical Android/iOS and actual YouTube/provider behavior remain unverified.
+Open **Profile**, enter a display name and, optionally, an email, and choose **Save Profile**. Your display name can fill the join form. The email and playlists stay on this device, in the app or browser profile where you saved them. Clearing that app’s or site’s data removes them. A room still uses temporary guest access, and the host receives the name you submit when joining.
 
-The 0.10.6 mobile web build passed a public Chromium rehearsal with independent host and guest profiles. An earlier browser rehearsal checked the two-second gap and disabling automatic advancement during that gap using a synthetic video. Physical-phone and audible-output checks remain open.
+## Join a Host
 
-Tap a heart to save a favorite. Favorites and completed-song history stay on this device. **Room** also changes the booth name, automatic advancement and gap, and exports show/history metadata. Imported files require a separate backup.
+- **Nearby room.** Open **Room**, choose a suggestion, check that it belongs to your host, and tap **Join Room**. Native Android and iOS builds use DNS-SD when local-network access is available. A shared internet connection can also suggest rooms. A suggestion requires your confirmation, and results can include a room at a different venue on the same public connection.
+- **Internet room.** In **Room**, paste the invitation link or enter the room code at the end of the host’s `queue.thepropervolume.com` address. Add your display name and tap **Join Room**. The app remembers the last room code for reuse. Restarting the app requires you to join again.
+- **LAN-only room.** Connect to the host’s Wi-Fi, paste the trusted local HTTPS invitation, and choose **Open Local Invitation**. The invitation opens in the browser. Its certificate needs to be trusted by your device. If discovery is unavailable, ask the host for the exact invitation or room code.
 
-With a keyboard or assistive technology, queue edits announce the new position or remaining count. Focus stays with the moved song or goes to the nearest remaining song after removal. When the last song is removed, the **Singer Queue** heading receives focus.
+## Request a Song in a Room
 
-**Room → Device Storage** shows how much space imported video copies use on this device. Search by song, artist, or filename and remove unused copies after confirmation. The app protects copies used by the queue or player and keeps the song’s details, favorites, and history. Choose **Relink** to restore playback or let guests request that song again. The original file remains available wherever you saved it.
+Search by artist or title in **Library**. Results come from the host’s library and currently enabled, supported providers. The host’s song rules still apply. Choose **Queue** on the exact version you want. The host controls approval, playback and rotation. From a saved playlist, **Find in Room** searches by title so you can choose an available recording before queueing.
 
-When a singer sends a photo, the mobile host sees a review notice. Tap **Review Photo**, then **Show Photo** or **Discard**. One photo can wait for up to 45 seconds. An approved photo earns points after it appears. Closing the room or leaving the active host view clears the photo.
+Open **Room** to check your requests, withdraw eligible requests, or use the attendance, missing-song, applause, and photo actions the host makes available. Use **Reconnect** when the room is still open after an interruption. **Leave Room** returns you to catalog browsing and keeps your playlists. If the host closes the room, the app returns to browsing and asks for a live invitation when you want to queue again.
 
-To invite singers, choose **Room**, keep or edit its address and tap **Open Room**. Share the singer link; anyone with the active link can join. Temporary phone-host capabilities stay in memory and expire within 12 hours. Closing a room revokes its guests. Interrupted openings offer **Retry Open** or **Close Pending Room**; unresolved closure must be retried before opening another room. A closed/crashed host becomes unavailable to guests rather than replaying commands later. Reloading a phone host requires a new room; an old address may remain reserved until expiry.
-
-## Piggyback Mode
-
-Choose a detected room's **Join Room** button, or enter the host's room name/link. Enter your singer name, browse the host's published songs, and request one. You can withdraw your own waiting request, mark yourself unavailable for 1–60 minutes, or ask the host for an unavailable song. The host owns playback, approval and rotation. A phone host permits three upcoming requests per singer, or one while away; desktop hosts apply their own configured limits.
-
-Native Android/iOS builds use local DNS-SD discovery when permitted. The web app suggests live rooms sharing your public internet connection; that is a hint, so confirm the room with your host. Guest Wi-Fi isolation, VPNs, denied network permissions and different internet routes can prevent discovery. Manual HTTPS room links work independently of discovery. **Preferences → Remote Queueing → Suggest my active internet room to nearby mobile singers** controls desktop advertising. Ending the room removes its suggestion; visibility may take a heartbeat to refresh.
-
-## Data and Current Limits
-
-Show metadata, favorites, history, unavailable-song requests and user-selected videos use this device's IndexedDB. No provider or room credentials are saved there. Only one tab can write the saved host show; another tab can still join a room. A damaged/unknown saved show is copied to a recovery record before a new one is created, and the latest recovery can be exported from Room. Clearing browser/app data removes these local files and records.
-
-The offline cache contains the app interface only. Previously imported local videos can play offline; online search, room access and YouTube streams require a connection. Mobile KaraFun sign-in/playback, other paid providers, licensed offline downloads, key/tempo, per-stem vocal controls, account sync, remote voting and dedicated AirPlay/Chromecast controls remain planned. No quizzes are included. See [research](mobile-research.md), [native development](../mobile/README.md) and [QA findings](qa/mobile-090-summary.md) for evidence and limits.
+Browse sources may have different coverage from subscribed desktop providers. The mobile workspace uses the host’s access for joined searches. Physical iPhone and Android checks, venue network rehearsal, and signed store releases are tracked in [mobile requirements and status](mobile-requirements.md).

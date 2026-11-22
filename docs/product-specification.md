@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 22 November 2026. **Application milestone:** 0.10.11 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 22 November 2026. **Application milestone:** 0.10.12 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -12,9 +12,9 @@ This specification describes both the current rehearsal build and the product we
 
 The Proper Volume Karaoke is intended to be a dependable, local-first karaoke hosting product for Windows, macOS and Linux. A desktop host controls a show, its music library, the singer rotation and a separate singer display. The intended ecosystem also includes a singer experience, a dedicated KJ remote and a staff queue workspace, with appropriate boundaries between them. A **party** and a **show** mean the same live session. Hosts or venues are expected to pay; singer participation is free. Subscription prices, plans, billing cadence, trials, limits and launch dates are undecided.
 
-The host device, desktop or phone in Full Host mode, is the single authority for its own show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. Companion interfaces must never become a second playback or queue authority. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
+The desktop host is the single authority for its show state, queue rules and playback. Local hosting must remain usable without an internet connection. A singer or remote client requests a change; the host validates it, persists it, and returns an acknowledged result. The current mobile workspace is a singer companion. Standalone phone hosting is paused. The microphone and live vocal processing remain external to the current product; microphone effects and recording are later possibilities, not current features.
 
-**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started YouTube preview, unified host-only service catalog metadata search, native KaraFun account/queue/playback, and the initial authenticated local API/CLI for reads and settings navigation. **Experimental mobile:** the shared web interface provides Full Host and Piggyback modes with local show persistence and generation-scoped singer requests; Android/iOS wrappers and discovery require platform/device acceptance. **Planned:** complete mobile paid-provider playback, the full native companion feature set, complete general local API, complete access-control model, additional paid-provider playback and paid subscriptions. The app is not yet validated as a live-show replacement.
+**Available:** an Electron desktop rehearsal application with local MP4 import, singer and request management, a separate output window, persisted show state, basic collections, configurable preferences, and an experimental local singer browser. **Experimental:** local-network guest access, output selection, bumper playback, unified local/Karaoke Nerds library search, hosted internet singer sessions, queue-integrated YouTube downloads and local playback, a separate manually started YouTube preview, unified host-only service catalog metadata search, native KaraFun account/queue/playback, and the initial authenticated local API/CLI for reads and settings navigation. **Experimental mobile:** the shared iOS, Android and web workspace browses public catalogs, saves on-device profiles and playlists, and joins desktop rooms to submit singer requests. Discovery and mobile builds still need physical-device acceptance. **Planned:** the full native companion feature set, complete general local API, complete access-control model, additional paid-provider playback on the desktop and paid subscriptions. Live-show replacement is still an acceptance goal.
 
 ### Development versions and installers
 
@@ -42,7 +42,7 @@ Approved requests auto-stage. Play begins the show; automatic advancement defaul
 
 Desktop queue rows for YouTube, KaraFun and Party Tyme songs being prepared appear muted with their preparation status. If a song is still unready when its turn arrives, the next ready request plays while the waiting request retains its place for reconsideration after that performance. This repeats one song at a time. If no other request is ready, the show waits; a successful preparation can resume an already-armed automatic show. Failed preparation remains visible and can be retried from the queue menu. Pending approvals, singer availability and show policy remain in force.
 
-Desktop Preferences provides automatic playback under Queue Management and the 0–300 second Pause Interval under Audio Controls. Mobile Full Host provides automatic playback and a 0–3,600 second gap under Room → Playback. Switching mobile automatic playback off during a gap leaves the next request waiting for manual Play.
+Desktop Preferences provides automatic playback under Queue Management and the 0–300 second Pause Interval under Audio Controls.
 
 One persistent hidden singer renderer supplies the actual preview and audio. Close hides that window; capture stays hidden and never duplicates a player. Booth name, immediate logo-picker preview, logo size 10–85vw and top/bottom scrolling banners with optional expiry/persistence customize the display. Unless persistence is selected, banner display resets on next launch while saved text remains.
 
@@ -68,7 +68,7 @@ Host-only commands validate the current authorized performance and channel ID. S
 
 The 0.5.0 workspace incorporates the owner-approved interface refresh from `opencode-audit`: compact transport, clearer library and queue headings, sidebar icons/counts, persistent error notices, dismissible timed informational notices, and a sticky Preferences header/footer. The integration preserves the newer macOS packaging and configuration fixes. Preview, resizable panels, global artist/song exclusions, filtered YouTube discovery and LAN singer-screen sharing are implemented in source with the specific verification recorded above; a visual refresh alone does not establish packaged or physical-show behavior.
 
-**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace. It has persistent playback controls, a singer rotation or FIFO request queue, search, settings and a separate singer display. Sources groups KaraFun, Karaoke Nerds, YouTube and other service setup. KaraFun and Party Tyme consumer playback are experimental. The singer browser is an opt-in local-network page with its own limited view and guest actions. The mobile web app provides Full Host playback and Piggyback requests using the singer protocol. The Android and iOS wrappers package the shared interface. Native signing, distribution and physical-device acceptance remain separate gates.
+**Available:** the host workspace has Library, Playlists and Sources, with Requests, Singers and Remote Sessions grouped at the bottom as Host Workspace. It has persistent playback controls, a singer rotation or FIFO request queue, search, settings and a separate singer display. Sources groups KaraFun, Karaoke Nerds, YouTube and other service setup. KaraFun and Party Tyme consumer playback are experimental. The singer browser is an opt-in local-network page with its own limited view and guest actions. The mobile app provides Library, Room, Playlists and Profile for singers, with the same interface in the Android and iOS wrappers and on the web. Native signing, distribution and physical-device acceptance remain separate gates.
 
 **Native menus in 0.10.9.** File includes Import Video, Import Folder, CD+G/LRC/ZIP import, backup and restore. Edit includes Find Song and Preferences. View offers Appearance, Choose Accent Color, Font and Layout. Playback uses the existing transport and seek controls. Window has independent host and singer display fullscreen actions. F11 controls the host by default, and F or Shift+F controls the active singer window. Help opens the offline documentation or Keyboard Shortcuts. The documentation browser links only to guides bundled from the repository’s Markdown.
 
@@ -136,8 +136,6 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 The host queue shows approximate waits only during valid, actively playing, automatically advancing playback. Each estimate adds the current recording's remaining time, the configured between-song gap and four minutes plus a gap for each preceding ready queued song; values round up to a minute. Estimates stop at an unready singer or song and remain unavailable for later rows, paused/stopped playback, disabled automatic advance, or invalid/stale/seeking timing. They assume playable local files and uninterrupted playback; real durations and interruptions can change them. Actual show-hardware validation remains open.
 
-Mobile Full Host checkpoints the current request's position at most once per second and at pause, seek, mode change and background events. After reopening or returning to host mode, playback remains paused until the host presses Play. Local videos and saved YouTube/Karaoke Nerds recordings resume from the last successfully saved checkpoint; an abrupt termination can lose a pending write, and YouTube starts at whole-second/keyframe precision. Physical Android/iOS and provider behavior remain to be checked.
-
 ## 5. Requests, rotation and singer fairness
 
 ### Applause, show points and shared photos
@@ -148,11 +146,7 @@ Points are show-scoped. For each performance, the first three applauses give eac
 
 Queueing an assigned song earns 12 points, plus 6 if nobody else completed that song during this show and 18 if host history shows it has never been queued or sung; unknown history does not earn the 18-point bonus. A duet earns each assigned performer 14 more points. The host can mark a song as a duet in metadata. A singer's accepted missing-song suggestion earns 10 points, and a photo accepted for display earns 24. No points are awarded when points are disabled. Assigned singers, track identity and stored history determine the applicable bonuses; an unassigned request does not have a singer to score until assigned.
 
-The mobile Full Host does not yet have a verified complete cross-show song history. It conservatively withholds the 18-point all-time novelty bonus when that history is unknown; this is separate from the 6-point current-show bonus.
-
-Authenticated room singers can select a JPEG or PNG and send it to the singer display. The browser reduces it to a bounded JPEG, and the screen displays one transient photo at a time for about ten seconds. The host does not have to approve each image. The photo itself is not retained in the show database; the score is recorded only after display acknowledgement. An occupied or unavailable display rejects the submission. LAN, relay, mobile-host presentation, audio routing and real-device behavior remain subject to end-to-end and deployment verification.
-
-Mobile Full Host rejects photo submissions while its host page is hidden or fullscreen; the host must return to the visible, non-fullscreen host screen before another attempt.
+Authenticated room singers can select a JPEG or PNG and send it to the desktop singer display. The browser reduces it to a bounded JPEG, and the screen displays one transient photo at a time for about ten seconds. The score is recorded only after display acknowledgement. The show database stores the score without the photo. An occupied or unavailable display rejects the submission. LAN, relay, audio routing and real-device behavior remain subject to end-to-end and deployment verification.
 
 **Available:** a host can leave the singer empty, add or select a singer, submit a song and remove eligible requests. Host/staff queue commands may use null; only host may assign or clear an eligible request. Null requests create no Singer and do not acquire remote ownership. New requests are automatically approved by default; switching to host moderation affects new requests and does not silently approve existing pending ones. In Requests the host can accept or reject pending requests and view recent terminal request history. The separate missing-song form saves singer, title and optional artist to a local review table; the host may mark it Pending, Reviewing, Fulfilled or Declined. Saving a missing-song request does not add a recording or create a rotation turn.
 
@@ -198,17 +192,15 @@ The singer video is bounded to the full window viewport (maximum 100vh/100vw) wi
 
 ## 8. Local and internet singer access
 
-**Mobile workspace in 0.10.11 source:** The installable web app at `https://queue.thepropervolume.com/app/` uses Ionic React controls in its React and Capacitor shell. In Full Host, Library brings search, desktop-style title/artist/source rows and video import to the foreground. Bottom destinations are Library, Queue, Collections (Favorites and History) and Room (sharing, playback settings and Device Storage). The compact Now Playing dock keeps transport visible and the player stays mounted across destinations. The idle video is hidden by default. Piggyback joins a desktop or phone host using the same SingerClient admission and recovery as the web portal. Mobile paid-provider sign-in, key/tempo, vocal stems and casting remain planned. See [mobile requirements and acceptance](mobile-requirements.md).
+**Mobile singer workspace in 0.10.12 source.** The web app and Capacitor builds use Ionic React controls and bottom destinations for Library, Room, Playlists and Profile. Library opens in Browse Mode. Karaoke Nerds is enabled by default and offers pages of matches from the shared catalog snapshot. The public KaraFun CSV and Party Tyme Pro songbook are optional sources. Browse Sources lets a singer choose public catalogs without provider credentials. A joined room supplies the defaults for the next Browse Mode session wherever a public equivalent exists. Local imported media and authenticated subscription catalogs remain available through the host. Party Tyme Pro and the host’s Party Tyme Consumer subscription have separate catalog identities. Browse Mode provides song information and playlist actions. Playback remains at the host.
 
-Android/iOS wrappers use native DNS-SD to find public room beacons and ask whether to join. Browsers use short-lived same-egress suggestions; shared public internet access is explicitly described as a hint, not proof of a shared LAN. Manual HTTPS room names/links remain available. A host may disable discovery, and discovery never authenticates or joins automatically. Desktop UDP advertising uses verified private interfaces, bounded announcements and trust rechecks; failure preserves manual joining and never changes firewall policy.
+Android/iOS wrappers use native DNS-SD to find advertised relay rooms when permissions allow. Short-lived same-egress suggestions are available on the web and as a native fallback. A public egress address may cover multiple venues, so joining requires a singer’s confirmation. A singer can enter the relay room code or link and reuse the last room code. A trusted LAN-only invitation opens in the device browser while on the host’s network. A host may disable discovery. Desktop announcements use verified private interfaces, bounded broadcasts and trust rechecks. Manual links work independently of discovery.
 
-Mobile shows, files, favorites, history and unavailable-song requests use local IndexedDB. A writer lock prevents concurrent host tabs; data is loaded after lock acquisition. Restored playback is paused. Unknown/corrupt shows are preserved under a recovery key before replacement. Guest mutations are persisted before success replies. Room capabilities and receipts live in memory, are scoped to a generation and reset on closure. Mobile owner capabilities are independent of configured desktop owners, expire within 12 hours, and have separately bounded reservation capacity in the existing MySQL relay. No new shared SQLite database is introduced. Interrupted opens reuse their owner/open IDs; terminal and expired replies have explicit recovery. Foreground operation, network permissions, streaming on real phones, store signing and long-show reliability require separate acceptance. See `docs/mobile-app.md`, `docs/mobile-research.md` and `docs/qa/mobile-090-summary.md`.
+**Joined search and requests.** The host searches its visible library and currently enabled, supported online sources, including KaraFun and Party Tyme when their host connections are ready. The host applies its room publication policy, source visibility and blacklists. Online results carry short-lived selection receipts scoped to the admitted singer. The host verifies the source, provider access, receipt and policy again when the singer queues a result. Stable recording IDs support local playlists. They are separate from room request receipts. Results and guest responses exclude provider credentials, media URLs and private paths.
 
-**Mobile storage:** Full Host → Room → Device Storage shows the total size and number of this device’s imported video copies. Hosts can search by title, artist, or filename and remove an unused copy after confirmation. Queued and playing copies are protected. Removing a copy preserves the song and its history or favorites. Use Relink to restore playback and guest request availability.
+**Singer data and playlists.** The display name can fill the join form. An optional profile email and named playlists stay on the device in IndexedDB. Playlist entries retain exact public recording IDs when available and scoped identities for other catalog or host results. The saved selection stays independent of room credentials and the rotation. Find in Room runs a title search in the active room so a singer can select the right available version. The host receives the name entered at room admission. The app remembers public browse preferences and the last room code, with guest credentials and receipts limited to the current session.
 
-**Mobile photo review in 0.10.6:** A validated guest photo can wait in a one-item host inbox for up to 45 seconds. The guest gets a delivery receipt while the host reviews it. The image appears only after the host chooses Show Photo. A visible photo can earn its normal 24 points once. Decline, expiry and room/view changes discard undisplayed images. Image data stays in memory.
-
-**Mobile queue keyboard focus in 0.10.8.** Reordering and removal announce the result in a polite status region. Keyboard and assistive technology focus follows the moved song or goes to the nearest surviving song. An empty queue moves focus to its heading.
+Standalone mobile hosting is paused. The earlier Full Host code and locally stored shows, imports, checkpoints, history, recovery and photo review are retained for possible future work. The singer workspace uses a separate store and leaves that data untouched. See [singer guide](mobile-app.md) and [requirements and acceptance](mobile-requirements.md) for the current flow and open device, venue and store checks. Prior Full Host rehearsals remain in [QA reports](qa/mobile-090-summary.md).
 
 **Experimental local browser:** a host explicitly opens a local room from Preferences, selects a private IPv4 interface, hostname, certificate and private key, and creates a time-limited shareable invitation. The hostname must resolve to the chosen host interface and the certificate must be trusted by Node and the singer's device. A singer joins by name, browses policy-filtered loaded pages, submits or withdraws eligible requests, sees their own statuses and can ask for a missing song. Search currently covers loaded catalog pages; the guest can load more. A link grants admission to anyone who has it until expiry or revocation. Closing the room revokes access; revoking invitations alone does not revoke already admitted guests. Access credentials live in page memory; closing or reloading the page requires a fresh invitation. This is not yet verified on physical venue phones and networks.
 
@@ -216,9 +208,9 @@ Mobile shows, files, favorites, history and unavailable-song requests use local 
 
 **Experimental internet sessions:** the host opens Remote Sessions, keeps or edits a suggested custom URL slug, presses Start Session and copies the public singer link at `https://queue.thepropervolume.com/<slug>`. Guests on Wi-Fi or mobile internet open the link, enter a name and use the host library. Anyone with the active link can join; this is temporary public admission, not a verified account identity. Scoped host credentials stay in a separate private file and never appear in the link or renderer. Outbound authenticated long-polling relays only allowlisted singer operations to the desktop authority; no arbitrary URL proxy or inbound desktop listener is exposed. A temporary network interruption retains the same room and guest receipt scope. Explicit End, replacement, expiry, denial or a host-process restart fences the old generation. The singer can check an uncertain outcome and explicitly retry its original ID/payload; it is never silently replayed. End/revoke and internet failure preserve the local show and separately scoped LAN access. Production relay leases use a dedicated MySQL schema; SQLite is only an isolated relay test adapter. Live packaged Windows-to-browser HTTPS verification passed for custom URLs, join/request/withdraw/availability/missing-song operations, generation fencing and shutdown. A deliberately lost request reply recovered its original receipt without a duplicate; true awaited state checks observed reconnection after a brief poll failure, preserving the same guest access. Physical phones, venue networking, load and prolonged outages remain separate verification work. The legacy Quick Tunnel prototype remains disconnected scaffolding.
 
-**Planned phone and companion features:** optional profiles and singer history/favorites, per-version key/tempo memory, pre-arrival lists and check-in, approximate wait estimates, opted-in up-next notifications with an in-app fallback, and accepted/declined duet or group invitations. Alerts derive from acknowledged show state, deduplicate and become stale when a turn changes; a notification never advances the rotation or proves attendance. Staff/KJ pairing and authorization are separate from singer admission.
+**Planned phone and companion features:** optional account sync, singer history/favorites, per-version key/tempo memory, pre-arrival check-in, approximate wait estimates, opted-in up-next notifications with an in-app fallback, and accepted/declined duet or group invitations. Alerts derive from acknowledged show state, deduplicate and become stale when a turn changes. Staff/KJ pairing and authorization are separate from singer admission.
 
-A planned saved list outside a show is personal preparation, not a reserved turn. If a host opens requests early, show received, approved, checked-in and eligible as distinct states; revalidate the exact version, policy, access and key support when submitting. Approval and check-in rules remain host-configurable product decisions. A proposed heartbeat every two seconds and disabled controls after five seconds without a host update require actual network measurement before adoption. On reconnection a fresh snapshot precedes new actions; the relay must not queue stale actions for surprising later execution.
+A saved playlist prepares a set before joining. If a host opens requests early, show received, approved, checked-in and eligible as distinct states. Revalidate the exact version, policy, access and key support when submitting. Approval and check-in rules remain host-configurable product decisions. A proposed heartbeat every two seconds and disabled controls after five seconds without a host update require actual network measurement before adoption. On reconnection a fresh snapshot precedes new actions. The relay expires stale actions.
 
 **Available, updated in 0.7.0 — LAN visual screens:** a separate opt-in read-only listener defaults to port 4051 and binds concrete trusted private interfaces plus loopback. Windows requires actual Private classification; Public/unknown stays loopback-only. A 30-second trust recheck and 5-second classification bound remove untrusted listeners without changing firewall policy. Remote Sessions shows its private-network numeric addresses; Singer Display preferences configure enabled state and port. Up to 64 browser streams mirror the authoritative singer window using bounded multipart JPEG frames; sound remains on the host. It is a viewing surface, not queue admission, a host API or an internet relay. Request links remain separate. Anyone able to reach the private LAN listener can view the screen while enabled.
 
@@ -346,7 +338,7 @@ The current implementation, tests and host/singer help should be reviewed whenev
 
 ## 15. Interface mockup specification
 
-This section is the editable source for the generated Night and Day mockup deck. Each `mockup` block describes a screen; the generator draws both themes from the same content. These are design representations, not screenshots. A **Current** badge denotes a screen in the desktop or local singer application; **Partial** includes current behavior plus clearly identified future ideas; **Planned** is not shipped. Mobile Full Host and Piggyback modes share the web interface with Android/iOS wrappers; native builds and real-device acceptance are recorded separately. The experimental internet relay is deployed and public browser rehearsals passed; physical-phone, venue-network and long-show checks remain. The examples below are fictional and do not imply licensed catalog access.
+This section is the editable source for the generated Night and Day mockup deck. Each `mockup` block describes a screen in both themes. A **Current** badge denotes an implemented screen. **Partial** includes current behavior and acceptance work or clearly identified future ideas. **Planned** is a design goal. Mobile singer screens share the web interface and Android/iOS wrappers. Native builds, physical-phone, venue-network and long-show acceptance are tracked separately. The examples use fictional room and singer data.
 
 Maintain the accepted desktop structure: a host workspace and persistent player, a clear singer rotation, uncomplicated singer display, and paired Night and Day designs. Source video/CDG colors stay unchanged; native primary completed lyrics use KaraFun pink. Tooltips appear immediately and include assigned shortcuts when available. Host-only and singer-facing data remain separate.
 
@@ -1200,73 +1192,73 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
 ```mockup
 {
   "id": "M01",
-  "title": "Mobile Library and Queue",
+  "title": "Mobile Catalog and Playlists",
   "status": "Partial",
-  "description": "The library and singer queue are direct destinations. The host can play or pause from the compact dock.",
+  "description": "Browse public catalogs before joining a room. Save recordings to playlists for your next show.",
   "layout": "phones",
   "phone_titles": [
     "Song Library",
-    "Singer Queue"
+    "My Playlists"
   ],
   "phone_subtitles": [
-    "Full Host • Friday Night",
-    "Full Host • 2 waiting"
+    "Browse Mode • Search and save",
+    "Saved on this device"
   ],
   "phone_rows": [
     [
       "Search Songs | Artist or song title",
       "Popular | Nada Surf • Karaoke Nerds",
-      "Goodbye | Local video • On this device",
-      "Add a Video | Import or add a YouTube link",
-      "Now Playing | Open player or pause",
-      "Library · Queue · Collections · Room"
+      "Save to Playlist | Choose or create a list",
+      "More Karaoke Nerds Results | Next page",
+      "Browse Sources | Set in Profile",
+      "Library · Room · Playlists · Profile"
     ],
     [
-      "Next Up | Casey • Popular",
-      "After That | Jordan • Goodbye",
-      "Move or Remove | Waiting songs",
-      "Current Singer | Robin",
-      "Now Playing | Open player or pause",
-      "Library · Queue · Collections · Room"
+      "New Playlist | Create a named list",
+      "Friday Picks | 2 saved recordings",
+      "Popular | Nada Surf • Karaoke Nerds",
+      "Find in Room | Available after joining",
+      "Rename or Remove | Manage saved songs",
+      "Library · Room · Playlists · Profile"
     ]
   ],
-  "detail": "0.10.11 source design. The transport and navigation remain accessible across the host workspace. Physical phone, accessibility and signed store acceptance remain open."
+  "detail": "0.10.12 source design. Public Karaoke Nerds, KaraFun, and Party Tyme Pro are browse sources. Queue actions use the connected desktop host. Physical-phone and signed store acceptance remain open."
 }
 ```
 
 ```mockup
 {
   "id": "M02",
-  "title": "Mobile Room and Singer Requests",
+  "title": "Mobile Room and Profile",
   "status": "Partial",
-  "description": "A singer requests a song on a phone or desktop host. Discovery suggests a room and never joins automatically.",
+  "description": "Join a nearby or internet room to send requests to its host. Set a display name and browse preferences in Profile.",
   "layout": "phones",
   "phone_titles": [
-    "Piggyback Mode",
-    "Your Karaoke Room"
+    "Karaoke Room",
+    "Profile & Settings"
   ],
   "phone_subtitles": [
-    "Request songs on the host",
-    "Full Host room settings"
+    "Join and request songs",
+    "Singer identity and catalogs"
   ],
   "phone_rows": [
     [
-      "Room Found | Friday Night",
-      "Join Room | Singer chooses",
-      "Your Name | Casey",
-      "Song Library | Host published songs",
-      "Request | Check accepted status",
-      "Applause / Photo | Credits and points"
+      "Room Code or Link | friday-night",
+      "Nearby Rooms | Friday Night",
+      "Display Name | Casey",
+      "Join Room | Confirm connection",
+      "Requests | Check, withdraw, or reconnect",
+      "Library · Room · Playlists · Profile"
     ],
     [
-      "Booth Name | Friday Night",
-      "Open Room | Share singer link",
-      "Playback | Set the inter-song gap",
-      "Device Storage | Manage video copies",
-      "Review Photo | Show or discard",
-      "Library · Queue · Collections · Room"
+      "Display Name | Casey",
+      "Email | Optional and saved on device",
+      "Save Profile | Use name when joining",
+      "Browse Sources | Karaoke Nerds, KaraFun",
+      "Party Tyme Pro | Public songbook",
+      "Library · Room · Playlists · Profile"
     ]
   ],
-  "detail": "Web suggestions can cover different venues. Native discovery uses room beacons and manual HTTPS links remain available. A mobile host reviews guest photos before display. Room closure revokes guest access."
+  "detail": "Native discovery and same-egress suggestions find relay rooms. A trusted LAN-only link opens in the browser. Live Library results follow the desktop host’s enabled sources and song rules."
 }
 ```
