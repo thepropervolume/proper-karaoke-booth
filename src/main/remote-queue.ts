@@ -4,16 +4,22 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { applyCommand, isVersionAllowed, visibleVersions, type Outcome, type ShowState } from '../domain';
 import { normalizeMissingRequest } from '../domain/missing-request';
-import type { Settings } from '../domain/settings';
+import type { Settings, SourceId } from '../domain/settings';
 import { compileSongBlacklist } from '../domain/song-blacklist';
 import { applyPointsEvent, newPointsLedger } from '../domain/points';
 import { recordQueuedSongs, songSeenBefore } from './song-history';
 import { validPhotoDataUrl } from '../domain/photo';
-import { sourceIsVisible } from '../domain/source-visibility';
+import { sourceForVersion, sourceIsVisible } from '../domain/source-visibility';
+import { recordingKeyFor } from '../domain/song-rating';
+import { songSearchIdentity } from '../domain/song-identity';
+import { guestCatalogSong, RemoteCatalog } from './remote-catalog';
+import type { Song } from '../remote/client';
 
 type Guest = { id: string; singerId: string; showId: string };
 type Receipt = { fingerprint: string; outcome: string };
 type RequestInput = { commandId: string; showId: string; hostEpoch: string; expectedRevision: number; versionId: string };
+export type RemoteQueueSettings = Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> &
+  Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled' | 'sourceVisibility'>>;
 export type RemoteApplause = (singerId: string, eventId: string, showId: string, hostEpoch: string, expectedRevision: number,
   stillAuthorized: () => boolean) => Promise<Outcome>;
 export type RemotePhoto = (singerId: string, eventId: string, showId: string, hostEpoch: string, expectedRevision: number,
@@ -38,11 +44,11 @@ export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
   private authorityFault = false;
-  constructor(private readonly db: DatabaseSync, private readonly settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled' | 'sourceVisibility'>>,
+  constructor(private readonly db: DatabaseSync, private readonly settings: () => RemoteQueueSettings,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
     private readonly onUncertainCommit: () => void = () => {},
-    private readonly onApplause?: RemoteApplause, private readonly onPhoto?: RemotePhoto) {
+    private readonly onApplause?: RemoteApplause, private readonly onPhoto?: RemotePhoto, private readonly remoteCatalog?: RemoteCatalog) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_invitation_scopes (token_hash TEXT PRIMARY KEY, scope_id TEXT NOT NULL);
@@ -207,7 +213,7 @@ export class RemoteQueue {
   snapshot(token: unknown, scope = '') {
     const guest = this.authenticate(token, scope), state = this.state();
     const catalog = this.catalog(token, 0, 50, '', scope);
-    const visible = new Set(visibleVersions(state, this.settings()).map(version => version.id));
+    const visible = new Map(visibleVersions(state, this.settings()).map(version => [version.id, version]));
     const singerName = state.singers.find(singer => singer.id === guest.singerId)?.name ?? '';
     // Preserve active requests even when they are older than recent completed or
     // removed requests. The bound also applies to malformed/legacy state with
@@ -228,24 +234,70 @@ export class RemoteQueue {
     return { showId: state.showId, hostEpoch: state.hostEpoch, revision: state.revision, singerId: guest.singerId, singerName,
       unavailableUntilMs: state.singers.find(s => s.id === guest.singerId)?.unavailableUntilMs ?? 0, serverNowMs: this.now(),
       catalog: catalog.items, catalogNextOffset: catalog.nextOffset,
-      requests: selected.map(({ request }) => ({ id: request.id, versionId: request.versionId, status: request.status })),
+      ...(this.remoteCatalog ? { sources: this.remoteCatalog.sources() } : {}),
+      requests: selected.map(({ request }) => {
+        const version = visible.get(request.versionId);
+        const metadata = this.remoteCatalog && version && !!version.title.trim() && version.title.length <= 500 && version.artist.length <= 500 &&
+          !/[\x00-\x1f\x7f\ufffd]/u.test(version.title + version.artist);
+        return { id: request.id, versionId: request.versionId, status: request.status,
+          ...(metadata ? { title: version.title, artist: version.artist } : {}) };
+      }),
       requestsTruncated: visibleCount > selected.length,
       ...(this.onPhoto ? { photoEnabled: true } : {}),
       ...(this.onApplause ? { applauseEnabled: preferences.applauseEnabled !== false, applauseCredits: account?.credits ?? 3,
         ...(preferences.pointsEnabled !== false ? { points: account?.points ?? 0 } : {}) } : {}) };
   }
+  private catalogVersions(state: ShowState, query: string, settings: RemoteQueueSettings, sources?: Set<SourceId>) {
+    return visibleVersions(state, settings).filter(version => sourceIsVisible(version, settings.sourceVisibility) &&
+      (!sources || sources.has(sourceForVersion(version))) && matchesCatalogQuery(version, query));
+  }
+  private catalogSong(version: ShowState['versions'][number]): Song {
+    return this.remoteCatalog ? guestCatalogSong(version) : { id: version.id, title: version.title, artist: version.artist };
+  }
   catalog(token: unknown, offset = 0, limit = 50, query = '', scope = '') {
     this.authenticate(token, scope);
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !validCatalogQuery(query)) throw denied();
-    const state = this.state(), settings = this.settings(), versions = visibleVersions(state, settings).filter(version => sourceIsVisible(version, settings.sourceVisibility) && matchesCatalogQuery(version, query));
-    const items = versions.slice(offset, offset + limit).map(v => ({ id: v.id, title: v.title, artist: v.artist }));
+    const state = this.state(), settings = this.settings(), sources = this.remoteCatalog ? new Set(this.remoteCatalog.sources()) : undefined;
+    const versions = this.catalogVersions(state, query, settings, sources);
+    const items = versions.slice(offset, offset + limit).map(version => this.catalogSong(version));
     return { revision: state.revision, items, nextOffset: offset + limit < versions.length ? offset + limit : null };
+  }
+  async searchCatalog(token: unknown, offset = 0, limit = 50, query = '', scope = '') {
+    if (!this.remoteCatalog || query.trim().length < 2) return this.catalog(token, offset, limit, query, scope);
+    this.authenticate(token, scope);
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !validCatalogQuery(query)) throw denied();
+    const candidates = await this.remoteCatalog.search(query, this.state());
+    const guest = this.authenticate(token, scope), state = this.state(), settings = this.settings();
+    const local = this.catalogVersions(state, query, settings, new Set(this.remoteCatalog.sources()));
+    const seen = new Set(local.map(version => recordingKeyFor(version.source)));
+    const visible = this.remoteCatalog.visible(state, candidates, settings)
+      .filter(candidate => {
+        const key = recordingKeyFor(candidate.track.source);
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+    const saved = local.map(version => ({ source: sourceForVersion(version), version, track: version }));
+    const discovered = visible.map(candidate => ({ source: candidate.source, track: candidate.track, candidate }));
+    const otherVersions = new Set([...saved, ...discovered].filter(row => row.source !== 'youtube')
+      .map(({ track }) => songSearchIdentity(track.artist, track.title)).filter(key => key !== null));
+    const savedYouTube = saved.filter(({ source, track }) => source === 'youtube' && !otherVersions.has(songSearchIdentity(track.artist, track.title) ?? ''));
+    const existingYouTube = new Set(savedYouTube.map(({ track }) => songSearchIdentity(track.artist, track.title)).filter(key => key !== null));
+    const externalYouTube = discovered.filter(({ source, track }) => {
+      if (source !== 'youtube') return false;
+      const identity = songSearchIdentity(track.artist, track.title);
+      const reverse = track.reverseTitleGuess ? songSearchIdentity(track.title, track.artist) : null;
+      return ![identity, reverse].some(key => key !== null && (otherVersions.has(key) || existingYouTube.has(key)));
+    });
+    const results = [...saved.filter(row => row.source !== 'youtube'), ...discovered.filter(row => row.source !== 'youtube'), ...savedYouTube, ...externalYouTube];
+    const items = results.slice(offset, offset + limit).map(row => 'version' in row ? this.catalogSong(row.version) : this.remoteCatalog!.issue(guest.id, row.candidate));
+    return { revision: state.revision, items, nextOffset: offset + limit < results.length ? offset + limit : null };
   }
   catalogItem(token: unknown, versionId: string, scope = '') {
     const state = this.state(); this.authenticate(token, scope);
     const settings = this.settings(), version = state.versions.find(v => v.id === versionId);
-    if (!version || !isVersionAllowed(state, versionId, settings) || !sourceIsVisible(version, settings.sourceVisibility)) return null;
-    return { id: version.id, title: version.title, artist: version.artist };
+    if (!version || !isVersionAllowed(state, versionId, settings) || !sourceIsVisible(version, settings.sourceVisibility) ||
+      this.remoteCatalog && !this.remoteCatalog.sources().includes(sourceForVersion(version))) return null;
+    return this.catalogSong(version);
   }
   /** Original outcome lookup is independent of host epoch but still requires the same guest. */
   outcome(token: unknown, commandId: unknown, scope = ''): Outcome | null {
@@ -414,15 +466,32 @@ export class RemoteQueue {
       const prior = this.db.prepare('SELECT fingerprint, outcome FROM remote_receipts WHERE guest_id = ? AND command_id = ?').get(guest.id, request.commandId) as Receipt | undefined;
       if (prior) return prior.fingerprint === fingerprint ? JSON.parse(prior.outcome) as Outcome : { ok: false as const, code: 'COMMAND_ID_REUSED', message: 'Command ID was reused with different content', revision: this.state().revision };
       const state = this.state(), preferences = this.settings(), version = state.versions.find(item => item.id === request.versionId);
-      if (version && request.showId === state.showId && request.hostEpoch === state.hostEpoch && request.expectedRevision === state.revision && !sourceIsVisible(version, preferences.sourceVisibility)) {
-        const refused: Outcome = { ok: false, code: 'NOT_AVAILABLE', message: 'This source is disabled by the host.', revision: state.revision };
+      const reject = (refused: Outcome) => {
         this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, request.commandId, fingerprint, JSON.stringify(refused));
         return refused;
+      };
+      const sameState = request.showId === state.showId && request.hostEpoch === state.hostEpoch && request.expectedRevision === state.revision;
+      if (version && sameState && (!sourceIsVisible(version, preferences.sourceVisibility) ||
+        this.remoteCatalog && !this.remoteCatalog.sources().includes(sourceForVersion(version)))) {
+        return reject({ ok: false, code: 'NOT_AVAILABLE', message: 'This source is unavailable in the host’s room.', revision: state.revision });
       }
-      const applied = applyCommand(state, { commandId: `remote-${guest.id}-${request.commandId}`, showId: request.showId, hostEpoch: request.hostEpoch,
-        expectedRevision: request.expectedRevision, actor: { role: 'singer', id: guest.singerId },
-        command: { type: 'request', requestId: `remote-${guest.id}-${request.commandId}`, singerId: guest.singerId, versionId: request.versionId } }, preferences, this.now(),
+      const online = !version && sameState ? this.remoteCatalog?.resolve(request.versionId, guest.id, state, preferences) : null;
+      const commandId = `remote-${guest.id}-${request.commandId}`;
+      let staged = state;
+      if (online && !online.existing) {
+        // The authenticated search supplied this version. Persist it only if
+        // the same singer request also passes the queue and show policy.
+        const addition = applyCommand(state, { commandId: `remote-catalog-${guest.id}-${request.commandId}`, showId: state.showId, hostEpoch: state.hostEpoch,
+          expectedRevision: state.revision, actor: { role: 'host', id: 'remote-catalog' },
+          command: { type: 'addVersion', version: online.version } }, preferences, this.now());
+        if (!addition.outcome.ok) return reject(addition.outcome);
+        staged = addition.state;
+      }
+      const applied = applyCommand(staged, { commandId, showId: request.showId, hostEpoch: request.hostEpoch,
+        expectedRevision: online ? staged.revision : request.expectedRevision, actor: { role: 'singer', id: guest.singerId },
+        command: { type: 'request', requestId: commandId, singerId: guest.singerId, versionId: online?.version.id ?? request.versionId } }, preferences, this.now(),
         { songSeenBefore: version => songSeenBefore(this.db, version) });
+      if (staged !== state && !applied.outcome.ok) return reject({ ...applied.outcome, revision: state.revision });
       recordQueuedSongs(this.db, state, applied.state);
       this.save(applied.state);
       this.db.prepare('INSERT INTO remote_receipts (guest_id, command_id, fingerprint, outcome) VALUES (?, ?, ?, ?)').run(guest.id, request.commandId, fingerprint, JSON.stringify(applied.outcome));

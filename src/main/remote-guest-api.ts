@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { JoinRevisionConflict, type RemoteQueue } from './remote-queue';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 
-export type GuestAuthority = Pick<RemoteQueue, 'admissionInfo' | 'join' | 'resume' | 'snapshot' | 'catalog' | 'outcome' | 'submit' | 'submitMissing' | 'withdraw'> & Partial<Pick<RemoteQueue, 'setAvailability' | 'applaud' | 'submitPhoto'>>;
+export type GuestAuthority = Pick<RemoteQueue, 'admissionInfo' | 'join' | 'resume' | 'snapshot' | 'catalog' | 'outcome' | 'submit' | 'submitMissing' | 'withdraw'> & Partial<Pick<RemoteQueue, 'setAvailability' | 'applaud' | 'submitPhoto' | 'searchCatalog'>>;
 const MAX_BODY = 8192, MAX_RESPONSE = 2 * 1024 * 1024;
 function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
 function exact(value: Record<string, unknown>, fields: string[]): boolean { return Object.keys(value).every(key => fields.includes(key)) && fields.every(key => key in value); }
@@ -70,7 +70,9 @@ export function createGuestApiHandler(authority: GuestAuthority) {
           result = authority.snapshot(bearer); break;
         case '/api/v1/catalog':
           if (!(exact(payload, ['offset', 'limit']) || exact(payload, ['offset', 'limit', 'query'])) || (payload.query !== undefined && typeof payload.query !== 'string') || !bearer || typeof payload.offset !== 'number' || typeof payload.limit !== 'number') throw new Error();
-          result = authority.catalog(bearer, payload.offset, payload.limit, payload.query as string | undefined); break;
+          result = authority.searchCatalog && payload.query
+            ? await authority.searchCatalog(bearer, payload.offset, payload.limit, payload.query as string)
+            : authority.catalog(bearer, payload.offset, payload.limit, payload.query as string | undefined); break;
         case '/api/v1/outcome':
           if (!exact(payload, ['commandId']) || !bearer) throw new Error();
           result = authority.outcome(bearer, payload.commandId); break;

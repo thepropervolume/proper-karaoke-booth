@@ -1,4 +1,5 @@
 import { JoinRevisionConflict, type GuestTransport } from './client';
+import { GUEST_CATALOG_HEADER, GUEST_CATALOG_WITH_SOURCES } from '../domain/guest-sources';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { INTERNET_QUEUE_ORIGIN, validateSessionSlug } from './internet-session-control';
 import { parseGuestAdmission, parseGuestCatalog, parseGuestJoin, parseGuestOutcome, parseGuestOutcomeLookup, parseGuestSnapshot } from './guest-response';
@@ -44,7 +45,7 @@ export async function lookupInternetSingerRoom(slug: string, fetcher: Fetcher = 
 }
 
 /** This adapter is permanently scoped to one room and generation, never to a reusable slug. */
-export function internetGuestTransport(room: InternetSingerRoom, options: { fetch?: Fetcher; onEnded?: () => void } = {}): GuestTransport {
+export function internetGuestTransport(room: InternetSingerRoom, options: { fetch?: Fetcher; onEnded?: () => void; catalogSources?: boolean } = {}): GuestTransport {
   if (!UUID.test(room.roomId) || !UUID.test(room.generation) || validateSessionSlug(room.slug)) throw new Error('Invalid session.');
   const base = `${INTERNET_QUEUE_ORIGIN}/v1/relay/rooms/${room.roomId}/${room.generation}/guest/`;
   let ended = false;
@@ -55,6 +56,7 @@ export function internetGuestTransport(room: InternetSingerRoom, options: { fetc
     return await bounded(async signal => {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
       if (session) headers.Authorization = `Bearer ${session}`;
+      if (options.catalogSources !== false && (operation === 'snapshot' || operation === 'catalog')) headers[GUEST_CATALOG_HEADER] = GUEST_CATALOG_WITH_SOURCES;
       const response = await (options.fetch ?? fetch)(base + operation, { method: 'POST', headers, body, credentials: 'omit', mode: 'same-origin',
         cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer', signal });
       if (response.status === 410) {

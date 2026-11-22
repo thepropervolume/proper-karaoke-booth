@@ -35,6 +35,8 @@ test('singer relay adapter uses fixed room generation and never sends host or in
   assert.deepEqual(JSON.parse(sent[0].options?.body as string), {});
   assert.deepEqual(JSON.parse(sent[1].options?.body as string), { joinId: 'join-id', resumeSecret: 'resume-secret', name: 'Sam', expectedRevision: 4 });
   assert.equal((sent[2].options?.headers as Record<string, string>).Authorization, `Bearer ${'A'.repeat(43)}`);
+  assert.equal(new Headers(sent[0].options?.headers).get('x-tpv-guest-catalog'), null);
+  assert.equal(new Headers(sent[2].options?.headers).get('x-tpv-guest-catalog'), 'sources');
 });
 
 test('stale generation permanently stops the adapter rather than looking up a reused slug', async () => {

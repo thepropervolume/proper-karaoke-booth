@@ -1,6 +1,8 @@
 # Experimental local-network singer requests
 
-Remote queueing is off at startup and after restart. The host can explicitly open one experimental local-network room in **Preferences → Remote Queueing**. Internet access is not available; it requires a separate relay. The local workflow has automated loopback coverage but has not been verified with actual venue networks or physical phones and is not yet live-show-ready.
+Remote queueing is off at startup and after restart. The host can explicitly open an experimental local-network room in **Preferences → Remote Queueing**. To give singers a room code that works on Wi-Fi or mobile data, open an internet room in **Remote Sessions** instead. The local workflow has automated loopback coverage. Venue networks and physical phones remain to be tested.
+
+Both room types use the desktop host’s enabled sources in **Sources**. With a connected KaraFun or Party Tyme account, singers can find those recordings and request them from the room. The desktop keeps the provider session and prepares playback through its normal queue. Turning a source off or disconnecting it blocks new requests for those results. Singers using the mobile app can save results to device playlists. Their separate public catalog choices apply between rooms. See [mobile singer guide](mobile-app.md).
 
 ## Open a room
 

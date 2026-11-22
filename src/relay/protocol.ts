@@ -1,5 +1,7 @@
 /** Bounded relay DTOs. No host control, file path, or provider credential belongs on this wire. */
+import { isGuestRecordingId, isGuestSource, isGuestSourceList } from '../domain/guest-sources';
 import { MAX_PHOTO_BODY_BYTES, MAX_PHOTO_DATA_URL, validPhotoDataUrl } from '../domain/photo';
+import type { Song } from '../remote/client';
 export const RELAY_OPERATIONS = ['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request', 'applause', 'photo'] as const;
 export type RelayOperation = typeof RELAY_OPERATIONS[number];
 export const RESERVED_SLUGS = ['api', 'v1', 'assets', 'singer', 'healthz', 'admin', 'host', 'login', 'logout', 'account', 'settings', 'status', 'help', 'support', 'robots', 'favicon', 'app', 'mobile'] as const;
@@ -123,13 +125,17 @@ export function parseGuestRequest(op: unknown, input: unknown, session?: unknown
   } catch { return null; }
 }
 
-type Song = { id: string; title: string; artist: string };
-function songs(input: unknown): Song[] | null {
+function songs(input: unknown, includeSources: boolean): Song[] | null {
   if (!Array.isArray(input) || input.length > 100) return null;
   const output: Song[] = [], ids = new Set<string>();
   for (const song of input) {
     if (!record(song) || !domainId(song.id) || ids.has(song.id) || !text(song.title, 500) || !text(song.artist, 500, true)) return null;
-    ids.add(song.id); output.push({ id: song.id, title: song.title, artist: song.artist });
+    const source = song.source, recordingId = song.recordingId;
+    if (source !== undefined && !isGuestSource(source) || recordingId !== undefined && !isGuestRecordingId(recordingId, source)) return null;
+    ids.add(song.id);
+    output.push({ id: song.id, title: song.title, artist: song.artist,
+      ...(includeSources && source !== undefined ? { source } : {}),
+      ...(includeSources && recordingId !== undefined ? { recordingId } : {}) });
   }
   return output;
 }
@@ -141,7 +147,7 @@ function outcome(input: unknown): Record<string, unknown> | null {
 }
 
 /** Strip all unapproved fields. Exceptions are generic and never forward raw Error messages. */
-export function projectGuestResponse(op: unknown, status: unknown, input: unknown): GuestResponse | null {
+export function projectGuestResponse(op: unknown, status: unknown, input: unknown, includeSources = true): GuestResponse | null {
   try {
     if (!operation(op) || !boundedJson(input, MAX_GUEST_RESPONSE_BYTES)) return null;
     if (status === 400) return { status: 400, body: { error: 'Request could not be completed.' } };
@@ -160,12 +166,12 @@ export function projectGuestResponse(op: unknown, status: unknown, input: unknow
         if (!isRelaySecret(input.session) || !domainId(input.singerId)) return null;
         body = { session: input.session, singerId: input.singerId }; break;
       case 'catalog': {
-        const items = songs(input.items);
+        const items = songs(input.items, includeSources);
         if (!items || !integer(input.revision) || !(input.nextOffset === null || integer(input.nextOffset))) return null;
         body = { revision: input.revision, items, nextOffset: input.nextOffset }; break;
       }
       case 'snapshot': {
-        const catalog = songs(input.catalog);
+        const catalog = songs(input.catalog, includeSources);
         if (!catalog || !domainId(input.showId) || !domainId(input.hostEpoch) || !integer(input.revision) || !domainId(input.singerId) ||
             !text(input.singerName, 100, true) || !(input.catalogNextOffset === null || integer(input.catalogNextOffset)) ||
             !Array.isArray(input.requests) || input.requests.length > 50 ||
@@ -173,13 +179,17 @@ export function projectGuestResponse(op: unknown, status: unknown, input: unknow
             (input.requestsTruncated !== undefined && typeof input.requestsTruncated !== 'boolean') ||
             (input.applauseEnabled !== undefined && typeof input.applauseEnabled !== 'boolean') ||
             (input.photoEnabled !== undefined && typeof input.photoEnabled !== 'boolean') ||
+            (input.sources !== undefined && !isGuestSourceList(input.sources)) ||
             (input.applauseCredits !== undefined && (!integer(input.applauseCredits) || input.applauseCredits > 5)) ||
             (input.points !== undefined && !integer(input.points))) return null;
         const requests: Record<string, unknown>[] = [], ids = new Set<string>();
         for (const request of input.requests) {
           if (!record(request) || !requestId(request.id) || ids.has(request.id) || !domainId(request.versionId) ||
               typeof request.status !== 'string' || !(REQUEST_STATUSES as readonly string[]).includes(request.status)) return null;
-          ids.add(request.id); requests.push({ id: request.id, versionId: request.versionId, status: request.status });
+          const metadata = request.title !== undefined || request.artist !== undefined;
+          if (metadata && (!text(request.title, 500) || !text(request.artist, 500, true))) return null;
+          ids.add(request.id); requests.push({ id: request.id, versionId: request.versionId, status: request.status,
+            ...(includeSources && metadata ? { title: request.title, artist: request.artist } : {}) });
         }
         body = { showId: input.showId, hostEpoch: input.hostEpoch, revision: input.revision, singerId: input.singerId, singerName: input.singerName,
           catalog, catalogNextOffset: input.catalogNextOffset, requests,
@@ -188,6 +198,7 @@ export function projectGuestResponse(op: unknown, status: unknown, input: unknow
           ...(input.requestsTruncated === undefined ? {} : { requestsTruncated: input.requestsTruncated }),
           ...(input.applauseEnabled === undefined ? {} : { applauseEnabled: input.applauseEnabled }),
           ...(input.photoEnabled === undefined ? {} : { photoEnabled: input.photoEnabled }),
+          ...(includeSources && input.sources !== undefined ? { sources: input.sources } : {}),
           ...(input.applauseCredits === undefined ? {} : { applauseCredits: input.applauseCredits }),
           ...(input.points === undefined ? {} : { points: input.points }) }; break;
       }

@@ -78,8 +78,20 @@ export function dispatchInternetGuestCall(authority: GuestAuthority, call: Inter
   }
 }
 
-/** Applause waits for the host audio authority; other existing operations stay synchronous. */
+/** Catalog lookup, applause and photos can wait for an external authority. */
 export async function dispatchInternetGuestCallAsync(authority: GuestAuthority, call: InternetGuestCall, invitation: () => string): Promise<InternetGuestReply> {
+  if (call.operation === 'catalog' && authority.searchCatalog && record(call.payload) && call.payload.query) {
+    const denied: InternetGuestReply = { requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } };
+    const payload = call.payload;
+    try {
+      if (typeof call.requestId !== 'string' || !UUID.test(call.requestId) ||
+        Object.keys(call).some(key => !['requestId', 'operation', 'payload', 'session'].includes(key)) ||
+        !exact(payload, ['offset', 'limit', 'query']) || typeof payload.query !== 'string' || bytes(payload) > MAX_PAYLOAD ||
+        typeof payload.offset !== 'number' || typeof payload.limit !== 'number' || typeof call.session !== 'string' || !SECRET.test(call.session)) return denied;
+      const body = await authority.searchCatalog(call.session, payload.offset, payload.limit, payload.query);
+      return bytes(body) > MAX_REPLY - 1024 ? denied : { requestId: call.requestId, status: 200, body };
+    } catch { return denied; }
+  }
   if (call.operation !== 'applause' && call.operation !== 'photo') return dispatchInternetGuestCall(authority, call, invitation);
   const denied = (): InternetGuestReply => ({ requestId: call.requestId, status: 400, body: { error: 'Request could not be completed.' } });
   try {
@@ -336,13 +348,18 @@ export class InternetQueueClient {
         const current = this.currentRoom;
         const value = await post(this.options.fetch ?? fetch, this.config, 'poll', { roomId: current.roomId, generation: current.generation }, controller.signal, 25000);
         if (!this.live(controller, epoch)) return;
-        const batch = calls(value, current), responses: InternetGuestReply[] = [];
+        const batch = calls(value, current), pending: Promise<InternetGuestReply>[] = [];
         if (this.state === 'reconnecting') { this.state = 'online'; this.message = 'Session online. Singers can reconnect and check their saved requests.'; this.changed(); }
         for (const call of batch) {
           if (!this.live(controller, epoch) || !this.scope || this.state !== 'online') return;
-          responses.push(await dispatchInternetGuestCallAsync(this.scope.authority, call, () => this.privateInvitation()));
+          const response = dispatchInternetGuestCallAsync(this.scope.authority, call, () => this.privateInvitation());
+          // Independent catalog lookups should share the same relay deadline,
+          // without making an applause or queue command wait for each provider.
+          pending.push(call.operation === 'catalog' ? response : Promise.resolve(await response));
           if (!this.live(controller, epoch)) return;
         }
+        const responses = await Promise.all(pending);
+        if (!this.live(controller, epoch)) return;
         if (responses.length) {
           const chunks: InternetGuestReply[][] = []; let chunk: InternetGuestReply[] = [];
           for (const response of responses) {

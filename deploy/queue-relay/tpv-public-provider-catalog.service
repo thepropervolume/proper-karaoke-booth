@@ -1,0 +1,40 @@
+[Unit]
+Description=TPV public provider metadata catalog
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=tpv-provider-catalog
+Group=tpv-provider-catalog
+UMask=0077
+WorkingDirectory=/opt/tpv-queue-relay
+Environment=NODE_ENV=production
+ExecStart=/opt/tpv-queue-relay/node /opt/tpv-queue-relay/public-provider-catalog.cjs
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=35s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LimitNOFILE=192
+TasksMax=32
+MemoryMax=448M
+
+[Install]
+WantedBy=multi-user.target

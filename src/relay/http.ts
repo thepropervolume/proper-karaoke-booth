@@ -6,7 +6,8 @@ import { performance } from 'node:perf_hooks';
 import type { SingerStaticHandler } from '../main/remote-static';
 import { RelayBroker } from './broker';
 import { RelayError } from './store';
-import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGuestRequest, parseHostOpen, parseRoomIdentity } from './protocol';
+import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGuestRequest, parseHostOpen, parseRoomIdentity, projectGuestResponse } from './protocol';
+import { GUEST_CATALOG_HEADER, GUEST_CATALOG_WITH_SOURCES } from '../domain/guest-sources';
 import { MobileHostAccess, NearbyRooms } from './mobile-access';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { searchMobileCatalog } from './mobile-catalog';
@@ -188,8 +189,13 @@ export function createQueueRelayHandler(options: Options) {
           if (Object.keys(input).length) throw new HttpError(400, 'INVALID_REQUEST');
           respond(response, 200, mobile.issue()); return;
         }
-        if (Object.keys(input).join(',') !== 'query' || !('query' in input) || typeof input.query !== 'string' || input.query.trim().length < 2 || input.query.length > 200 || /[\x00-\x1f\x7f]/.test(input.query)) throw new HttpError(400, 'INVALID_QUERY');
-        respond(response, 200, await (options.mobileCatalog ?? searchMobileCatalog)(input.query.trim(), controller.signal)); return;
+        if (Object.keys(input).some(key => key !== 'query' && key !== 'source' && key !== 'cursor') || !('query' in input) ||
+          typeof input.query !== 'string' || input.query.trim().length < 2 || input.query.length > 200 || /[\x00-\x1f\x7f]/.test(input.query)) throw new HttpError(400, 'INVALID_QUERY');
+        const source = 'source' in input ? input.source : 'karaokenerds';
+        const cursor = 'cursor' in input ? input.cursor : null;
+        if (!(source === 'karaokenerds' || source === 'karafun' || source === 'partytyme') ||
+          (cursor !== null && (source !== 'karaokenerds' || typeof cursor !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(cursor)))) throw new HttpError(400, 'INVALID_QUERY');
+        respond(response, 200, await (options.mobileCatalog ?? searchMobileCatalog)(input.query.trim(), controller.signal, undefined, { source, cursor })); return;
       }
       const host = HOST_ROUTE.exec(path);
       if (host) {
@@ -253,6 +259,14 @@ export function createQueueRelayHandler(options: Options) {
       if (!parsed) throw new HttpError(400, 'INVALID_GUEST_REQUEST');
       if (controller.signal.aborted) return;
       const result = await options.broker.invoke({ roomId: guest[1], generation: guest[2] }, parsed, controller.signal);
+      // Earlier native apps strictly validate the original catalog shape.
+      // Only a client that advertises support receives the additive source fields.
+      if (result.status === 200 && (parsed.operation === 'snapshot' || parsed.operation === 'catalog') &&
+          request.headers[GUEST_CATALOG_HEADER] !== GUEST_CATALOG_WITH_SOURCES) {
+        const legacy = projectGuestResponse(parsed.operation, result.status, result.body, false);
+        if (!legacy) throw new HttpError(503, 'UNAVAILABLE');
+        respond(response, legacy.status, legacy.body); return;
+      }
       respond(response, result.status, result.body);
     } catch (error) {
       const status = error instanceof HttpError || error instanceof RelayError ? error.status : 503;

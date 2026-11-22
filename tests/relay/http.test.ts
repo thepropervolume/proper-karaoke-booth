@@ -114,6 +114,18 @@ test('authenticated host long-poll routes only bounded guest operations and stri
   const result = await guest; assert.equal(result.status, 200);
   const body = await result.json(); assert.deepEqual(Object.keys(body).sort(), ['hostEpoch','revision','showId']);
   assert.deepEqual(await (await call('/v1/relay/host/reply', reply, { token })).json(), { ok: true });
+  for (const advertiseSources of [false, true]) {
+    const nextPoll = call('/v1/relay/host/poll', identity, { token });
+    const guestCatalog = call(guestPath.replace(/admission$/, 'catalog'), { offset: 0, limit: 50, query: 'Nada Surf' },
+      { origin, token: 's'.repeat(43), headers: advertiseSources ? { 'x-tpv-guest-catalog': 'sources' } : {} });
+    const catalogBatch = await (await nextPoll).json();
+    const baseSong = { id: 'version-0001', title: 'Popular', artist: 'Nada Surf' };
+    const enrichedSong = { ...baseSong, source: 'karaokenerds', recordingId: 'youtube:Video123456' };
+    const catalogReply = { ...identity, responses: [{ requestId: catalogBatch.requests[0].requestId, status: 200,
+      body: { revision: 1, items: [{ ...enrichedSong, ownerToken: 'private' }], nextOffset: null } }] };
+    assert.deepEqual(await (await call('/v1/relay/host/reply', catalogReply, { token })).json(), { ok: true });
+    assert.deepEqual(await (await guestCatalog).json(), { revision: 1, items: [advertiseSources ? enrichedSong : baseSong], nextOffset: null });
+  }
   assert.equal((await call('/v1/relay/host/close', identity, { token })).status, 200);
   assert.equal((await call(guestPath, {}, { origin })).status, 410);
 }));

@@ -45,6 +45,7 @@ import { serveBumper } from './bumper-media';
 import { HostRemoteLifecycle } from './remote-host-lifecycle';
 import { createLanHostProvider } from './remote-provider';
 import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
+import { RemoteCatalog, type RemoteCatalogProviders, type RemoteCatalogTrack } from './remote-catalog';
 import { InternetQueueClient } from './internet-queue-client';
 import { createSingerStaticHandler } from './remote-static';
 import { fingerprintMedia, mediaIdentityMatches, verifyAndRelinkMedia, type MediaIdentity } from './media-verification';
@@ -136,6 +137,27 @@ function filteredCatalogResult(result: LocalCatalogResult): LocalCatalogResult {
   return { ...result, tracks: result.tracks.filter(track => !blacklist.isBlocked(track)) };
 }
 function catalogConfigFile(): string { return settings.sharedCatalogConfigFile || join(app.getPath('userData'), 'catalog-connection.json'); }
+async function searchKaraokeNerds(query: unknown): Promise<LocalCatalogResult> {
+  const revision = sourceVisibilityRevision;
+  const unavailable = { status: 'unavailable', tracks: [], limited: false, lastSuccess: null } as const;
+  if (!settings.sourceVisibility.karaokenerds) return { status: 'ready', tracks: [], limited: false, lastSuccess: null };
+  const config = catalogConfigFile();
+  if (settings.sharedCatalogEnabled && settings.sharedCatalogConfigFile && !existsSync(config))
+    return { status: 'configuration-error', tracks: [], limited: false, lastSuccess: null };
+  if (settings.sharedCatalogEnabled && existsSync(config) && sharedCatalog) {
+    const result = await sharedCatalog.search(config, query);
+    if (shuttingDown || revision !== sourceVisibilityRevision || !settings.sharedCatalogEnabled || config !== catalogConfigFile()) return { ...unavailable, tracks: [] };
+    return filteredCatalogResult(result);
+  }
+  if (settings.sharedCatalogEnabled && sharedCatalog && !settings.sharedCatalogConfigFile) {
+    const result = await sharedCatalog.publicSearch(query);
+    if (shuttingDown || revision !== sourceVisibilityRevision || !settings.sharedCatalogEnabled ||
+        settings.sharedCatalogConfigFile || existsSync(catalogConfigFile())) return { ...unavailable, tracks: [] };
+    return filteredCatalogResult(result);
+  }
+  if (!communityBrowser) throw new Error('Catalog unavailable.');
+  return filteredCatalogResult(communityBrowser.search(query));
+}
 function ratingConfigFile(): string { return settings.ratingProfileConfigFile || join(app.getPath('userData'), 'rating-connection.json'); }
 let activeRatingPath = '';
 let activeRatings: SongRatingsConnection | null = null;
@@ -157,6 +179,49 @@ const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabl
 const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }));
 // In-flight discovery replies must not reappear after a source is toggled.
 let sourceVisibilityRevision = 0;
+const guestProviderCatalog: RemoteCatalogProviders = {
+  sources: () => {
+    const { sourceVisibility } = settings;
+    const party = partyTymeAccount.status();
+    return [
+      ...(sourceVisibility.local ? ['local' as const] : []),
+      ...(sourceVisibility.karaokenerds ? ['karaokenerds' as const] : []),
+      ...(sourceVisibility.karafun && karaFunAccount.status().state === 'connected' ? ['karafun' as const] : []),
+      ...(sourceVisibility.partytyme && party.state === 'connected' && party.premium ? ['partytyme' as const] : []),
+      ...(sourceVisibility.youtube ? ['youtube' as const] : []),
+    ];
+  },
+  generation: source => JSON.stringify([sourceVisibilityRevision,
+    source === 'karafun' ? karaFunAccount.revision() :
+      source === 'partytyme' ? partyTymeAccount.revision() :
+        source === 'karaokenerds' ? [settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile] :
+          [settings.youtubeSearchEnabled, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]]),
+  async search(source, query, signal): Promise<RemoteCatalogTrack[]> {
+    signal.throwIfAborted();
+    if (source === 'karafun') {
+      const rows = await karaFunAccount.search(query, signal);
+      return rows.map(song => ({ title: song.title, artist: song.artist, rating: song.explicit === false ? 'clean' : song.explicit === true ? 'explicit' : 'unrated',
+        source: { provider: 'karafun', catalog: song.catalog, songId: song.songId } }));
+    }
+    if (source === 'partytyme') {
+      const rows = await partyTymeAccount.search(query, signal);
+      return rows.map(song => ({ title: song.title, artist: song.artist, rating: 'unrated',
+        source: { provider: 'partytyme', catalog: 'consumer', videoId: song.videoId } }));
+    }
+    if (source === 'karaokenerds') {
+      const result = await searchKaraokeNerds(query);
+      return result.tracks.flatMap(track => track.youtubeId ? [{ title: track.title, artist: track.artist, rating: 'unrated', discoveryOrigin: 'karaokenerds',
+        source: { provider: 'youtube', videoId: track.youtubeId,
+          ...(track.brandSlug && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(track.brandSlug) ? { brandSlug: track.brandSlug } : {}) } }] : []);
+    }
+    // Give guest lookups an independent receipt/cancellation lifetime. They
+    // cannot cancel the desktop host’s search or replace its selection.
+    const search = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }));
+    const result = await search.search(query, { signal });
+    return result.songs.map(song => ({ title: song.title, artist: song.artist ?? '', rating: 'unrated', reverseTitleGuess: song.metadataSource === 'video-title',
+      source: { provider: 'youtube', videoId: song.videoId } }));
+  },
+};
 const khostBridge = new KHostBridgeConnection(() => ({ ...settings, policy: state.policy }));
 let choosingKHostProfile = false;
 const singerFrames = new SingerScreenFrameHub();
@@ -1368,7 +1433,7 @@ else {
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); installShowState(committed); syncQueuedDownloads(); broadcast(); };
     remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted,
       (singerId, commandId, showId, hostEpoch, revision, authorized) => requestApplause({ role: 'singer', id: singerId }, commandId, showId, hostEpoch, revision, authorized),
-      requestPhoto);
+      requestPhoto, new RemoteCatalog(guestProviderCatalog, Date.now));
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
       publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
       screenFrame: () => { const frame = singerFrames.current; if (!frame) return null; const image = nativeImage.createFromBuffer(frame.jpeg); if (image.isEmpty()) return null;
@@ -1790,22 +1855,7 @@ else {
   });
   ipcMain.handle('host:karaokenerds-search', async (event, query: unknown): Promise<LocalCatalogResult> => {
     guardHost(event.sender.id);
-    const revision = sourceVisibilityRevision;
-    if (!settings.sourceVisibility.karaokenerds) return { status: 'ready', tracks: [], limited: false, lastSuccess: null };
-    const config = catalogConfigFile();
-    if (settings.sharedCatalogEnabled && settings.sharedCatalogConfigFile && !existsSync(config)) return {status:'configuration-error',tracks:[],limited:false,lastSuccess:null};
-    if (settings.sharedCatalogEnabled && existsSync(config) && sharedCatalog) {
-      const result = await sharedCatalog.search(config, query);
-      if (shuttingDown || revision !== sourceVisibilityRevision || !settings.sourceVisibility.karaokenerds || !settings.sharedCatalogEnabled || config !== catalogConfigFile()) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
-      return filteredCatalogResult(result);
-    }
-    if (settings.sharedCatalogEnabled && sharedCatalog && !settings.sharedCatalogConfigFile) {
-      const result = await sharedCatalog.publicSearch(query);
-      if (shuttingDown || revision !== sourceVisibilityRevision || !settings.sourceVisibility.karaokenerds || !settings.sharedCatalogEnabled || settings.sharedCatalogConfigFile || existsSync(catalogConfigFile())) return { status: 'unavailable', tracks: [], limited: false, lastSuccess: null };
-      return filteredCatalogResult(result);
-    }
-    if (!communityBrowser) throw new Error('Catalog unavailable.');
-    const local = communityBrowser.search(query); return filteredCatalogResult(local);
+    return searchKaraokeNerds(query);
   });
   ipcMain.handle('host:request-catalog-track', (event, input: unknown) => { guardHost(event.sender.id); if (!settings.sourceVisibility.karaokenerds) return { ok: false, error: 'Karaoke Nerds search is disabled in Sources.' }; return commitCatalogRequest(input); });
   ipcMain.handle('host:add-youtube', async (event, input: unknown) => {

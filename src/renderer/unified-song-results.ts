@@ -4,7 +4,7 @@ import type { PartyTymeSearchReply } from '../domain/partytyme';
 import type { YouTubeSearchResult } from '../domain/youtube-search';
 import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogSong } from '../domain/provider-catalog';
 import type { LibrarySort } from '../domain/library-view';
-import { normalizeBlacklistIdentity } from '../domain/song-blacklist';
+import { songSearchIdentity as songKey } from '../domain/song-identity';
 import { sourceForVersion } from '../domain/source-visibility';
 
 export type SongResultProvider = 'local' | 'youtube' | 'karaokenerds' | ProviderCatalogId;
@@ -25,12 +25,6 @@ export const RESULT_PROVIDER_COLORS: Record<SongResultProvider, string> = {
 // only exact provider identities so a host edit wins without merging versions.
 function identity(row: LibrarySearchVersion): string {
   return row.source?.provider === 'karafun' ? `karafun:${row.source.catalog}:${row.source.songId}` : row.source?.provider === 'partytyme' ? `partytyme:consumer:${row.source.videoId}` : row.source?.provider === 'youtube' ? `youtube:${row.source.videoId}` : `local:${row.id}`;
-}
-/** A display-only song match, never a recording ID or a replacement for host metadata. */
-function songKey(artist: string | null | undefined, title: string): string | null {
-  const normalize = (value: string) => normalizeBlacklistIdentity(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  const a = normalize(artist ?? ''), t = normalize(title);
-  return a && t ? JSON.stringify([a, t]) : null;
 }
 /** One exact-recording list; stored host metadata wins, and provider IDs never cross namespaces. */
 export function unifiedSongResults(library: readonly LibrarySearchVersion[], savedIds: ReadonlySet<string>, input: {

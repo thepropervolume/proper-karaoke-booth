@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SINGER_ON_HOLD } from '../../src/domain/singer-availability';
-import { parseGuestSnapshot } from '../../src/remote/guest-response';
+import { parseGuestCatalog, parseGuestSnapshot } from '../../src/remote/guest-response';
 import {
   RELAY_OPERATIONS, RESERVED_SLUGS, isRelaySecret, isRelaySlug, isRelayUuid,
   parseGuestRequest, parseHostOpen, parseHostReplyEnvelope, parseRoomIdentity, projectGuestResponse,
@@ -120,6 +120,34 @@ test('the existing relay snapshot accepts and preserves the reserved host hold d
   assert.ok(response);
   assert.equal(parseGuestSnapshot(response.body).unavailableUntilMs, SINGER_ON_HOLD);
   assert.equal(parseGuestRequest('availability', { command: { ...command, minutes: SINGER_ON_HOLD } }, secret), null);
+});
+
+test('source metadata is projected for capable clients and stripped from legacy replies', () => {
+  const recording = { ...song, source: 'karaokenerds', recordingId: 'youtube:abcdefghijk' };
+  const namedRequest = { ...snapshot.requests[0], title: song.title, artist: song.artist };
+  const enriched = { ...snapshot, catalog: [recording], sources: ['karaokenerds', 'partytyme'], requests: [namedRequest] };
+  const raw = { ...enriched, providerAccount: 'private', catalog: [{ ...recording, filePath: '/private/song' }],
+    requests: [{ ...namedRequest, filePath: '/private/song' }] };
+  assert.deepEqual(projectGuestResponse('snapshot', 200, raw), { status: 200, body: enriched });
+  assert.deepEqual(projectGuestResponse('snapshot', 200, raw, false), { status: 200, body: snapshot });
+  assert.deepEqual(parseGuestSnapshot(enriched).sources, enriched.sources);
+  assert.deepEqual(parseGuestSnapshot(enriched).requests, [namedRequest]);
+  assert.deepEqual(parseGuestSnapshot(snapshot).catalog, [song]);
+  assert.throws(() => parseGuestSnapshot({ ...enriched, requests: [{ ...namedRequest, artist: undefined }] }));
+  assert.equal(projectGuestResponse('snapshot', 200, { ...enriched, requests: [{ ...namedRequest, artist: undefined }] }), null);
+  const catalog = { revision: 3, items: [recording], nextOffset: null };
+  assert.deepEqual(parseGuestCatalog(catalog, 0, 50), catalog);
+  assert.deepEqual(projectGuestResponse('catalog', 200, catalog, false)?.body, { ...catalog, items: [song] });
+  for (const invalid of [null, ['karaokenerds', 'karaokenerds'], ['http://private'], Array(1)]) {
+    assert.equal(projectGuestResponse('snapshot', 200, { ...enriched, sources: invalid }), null);
+    assert.throws(() => parseGuestSnapshot({ ...enriched, sources: invalid }));
+  }
+  for (const invalid of [{ ...recording, source: 'unknown' }, { ...recording, source: 'karafun' },
+    { ...recording, recordingId: 'sha256:' + 'a'.repeat(64) }, { ...recording, recordingId: 'http://private' }]) {
+    const value = { ...catalog, items: [invalid] };
+    assert.equal(projectGuestResponse('catalog', 200, value), null);
+    assert.throws(() => parseGuestCatalog(value, 0, 50));
+  }
 });
 
 test('host reply envelope is bounded, strict and separately projects by the pending operation', () => {

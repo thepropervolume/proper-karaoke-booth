@@ -3,9 +3,9 @@ import { isMissingSongStatus, type MissingSongRequest, type MissingSongReview, t
 import type { HistoryEntry } from '../domain/collections';
 import type { PlaylistDestination } from '../domain/playlist-transfer';
 import type { ShowState } from '../domain';
-import type { Settings } from '../domain/settings';
 import { Collections } from './collections';
-import { RemoteQueue, type RemoteApplause, type RemotePhoto } from './remote-queue';
+import { RemoteQueue, type RemoteApplause, type RemotePhoto, type RemoteQueueSettings } from './remote-queue';
+import type { RemoteCatalog } from './remote-catalog';
 import { migrateShowSchema } from './schema-migrations';
 import { openHostShowDatabase } from './show-upgrade';
 import { createShowSnapshot } from './show-snapshots';
@@ -120,8 +120,9 @@ export class Store<T> {
   assertRemoteQueueAvailable(): void { this.assertRemoteAuthority(); }
 
   /** Same SQLite connection as host writes; creates no network listener. */
-  openRemoteQueue(this: Store<ShowState>, settings: () => Pick<Settings, 'autoApprove' | 'rotationMode' | 'pauseIntervalSeconds'> & Partial<Pick<Settings, 'maxFutureRequestsPerSinger' | 'songBlacklist' | 'artistBlacklist' | 'applauseEnabled' | 'pointsEnabled'>>,
-    installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {}, onApplause?: RemoteApplause, onPhoto?: RemotePhoto): RemoteQueue {
+  openRemoteQueue(this: Store<ShowState>, settings: () => RemoteQueueSettings,
+    installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {},
+    onApplause?: RemoteApplause, onPhoto?: RemotePhoto, remoteCatalog?: RemoteCatalog): RemoteQueue {
     this.assertRemoteAuthority();
     if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
     const failAuthority = () => {
@@ -148,7 +149,7 @@ export class Store<T> {
         failAuthority();
         throw new Error('Show authority needs recovery. Restart the application before making further changes.');
       }
-    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority, onApplause, onPhoto);
+    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority, onApplause, onPhoto, remoteCatalog);
     this.remoteQueueOpened = true;
     return queue;
   }

@@ -145,6 +145,12 @@ export function createLanHostProvider(options: LanProviderOptions): HostRoomProv
           resume: secret => { requireActive(); return queue!.resume(secret); },
           snapshot: token => { requireActive(); return queue!.snapshot(token); },
           catalog: (token, offset, limit, query) => { requireActive(); return queue!.catalog(token, offset, limit, query); },
+          searchCatalog: async (token, offset, limit, query) => {
+            requireActive();
+            const result = await queue!.searchCatalog(token, offset, limit, query);
+            requireActive();
+            return result;
+          },
           outcome: (token, id) => { requireActive(); return queue!.outcome(token, id); },
           submit: (token, command) => { requireActive(); return queue!.submit(token, command); },
           setAvailability: (token, command) => { requireActive(); return queue!.setAvailability(token, command); },

@@ -1,5 +1,8 @@
 /** Validate public guest DTOs before a response can change client identity or receipts. */
 import type { Outcome, RequestStatus } from '../domain';
+import { isGuestRecordingId, isGuestSource, isGuestSourceList } from '../domain/guest-sources';
+import type { SourceId } from '../domain/settings';
+import type { RecordingKey } from '../domain/song-rating';
 import type { GuestSnapshot, Song } from './client';
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -15,8 +18,12 @@ function songs(value: unknown, limit: number): Song[] {
   if (!Array.isArray(value) || value.length > limit) return invalid();
   const seen = new Set<string>(), result: Song[] = [];
   for (const item of value) {
-    if (!record(item) || !fields(item, ['id', 'title', 'artist']) || !id(item.id) || seen.has(item.id) || !text(item.title, 500, 1) || !text(item.artist, 500)) return invalid();
-    seen.add(item.id); result.push({ id: item.id, title: item.title, artist: item.artist });
+    if (!record(item) || !fields(item, ['id', 'title', 'artist'], ['source', 'recordingId']) || !id(item.id) || seen.has(item.id) || !text(item.title, 500, 1) || !text(item.artist, 500) ||
+        item.source !== undefined && !isGuestSource(item.source) || item.recordingId !== undefined && !isGuestRecordingId(item.recordingId, item.source)) return invalid();
+    seen.add(item.id);
+    result.push({ id: item.id, title: item.title, artist: item.artist,
+      ...(item.source !== undefined ? { source: item.source as SourceId } : {}),
+      ...(item.recordingId !== undefined ? { recordingId: item.recordingId as RecordingKey } : {}) });
   }
   return result;
 }
@@ -40,19 +47,24 @@ export function parseGuestCatalog(value: unknown, offset: number, limit: number)
 }
 
 export function parseGuestSnapshot(value: unknown): GuestSnapshot {
-  if (!record(value) || !fields(value, ['showId', 'hostEpoch', 'revision', 'singerId', 'singerName', 'catalog', 'catalogNextOffset', 'requests'], ['unavailableUntilMs', 'serverNowMs', 'requestsTruncated', 'applauseEnabled', 'applauseCredits', 'points', 'photoEnabled']) ||
+  if (!record(value) || !fields(value, ['showId', 'hostEpoch', 'revision', 'singerId', 'singerName', 'catalog', 'catalogNextOffset', 'requests'], ['unavailableUntilMs', 'serverNowMs', 'requestsTruncated', 'applauseEnabled', 'applauseCredits', 'points', 'photoEnabled', 'sources']) ||
       !id(value.showId) || !id(value.hostEpoch) || !integer(value.revision) || !id(value.singerId) || !text(value.singerName, 100) ||
       value.unavailableUntilMs !== undefined && !integer(value.unavailableUntilMs) || value.serverNowMs !== undefined && !integer(value.serverNowMs) ||
       value.requestsTruncated !== undefined && typeof value.requestsTruncated !== 'boolean' ||
       value.applauseEnabled !== undefined && typeof value.applauseEnabled !== 'boolean' ||
       value.photoEnabled !== undefined && typeof value.photoEnabled !== 'boolean' ||
+      value.sources !== undefined && !isGuestSourceList(value.sources) ||
       value.applauseCredits !== undefined && (!integer(value.applauseCredits) || value.applauseCredits > 5) ||
       value.points !== undefined && !integer(value.points) || !Array.isArray(value.requests) || value.requests.length > 50) return invalid();
   const catalog = parseGuestCatalog({ revision: value.revision, items: value.catalog, nextOffset: value.catalogNextOffset }, 0, 50);
   const requests: GuestSnapshot['requests'] = [], seen = new Set<string>();
   for (const request of value.requests) {
-    if (!record(request) || !fields(request, ['id', 'versionId', 'status']) || !text(request.id, 500, 1) || seen.has(request.id) || !id(request.versionId) || typeof request.status !== 'string' || !statuses.has(request.status as RequestStatus)) return invalid();
-    seen.add(request.id); requests.push({ id: request.id, versionId: request.versionId, status: request.status as RequestStatus });
+    if (!record(request) || !fields(request, ['id', 'versionId', 'status'], ['title', 'artist']) || !text(request.id, 500, 1) ||
+        seen.has(request.id) || !id(request.versionId) || typeof request.status !== 'string' || !statuses.has(request.status as RequestStatus)) return invalid();
+    const metadata = request.title !== undefined || request.artist !== undefined;
+    if (metadata && (!text(request.title, 500, 1) || !text(request.artist, 500))) return invalid();
+    seen.add(request.id); requests.push({ id: request.id, versionId: request.versionId, status: request.status as RequestStatus,
+      ...(metadata ? { title: request.title as string, artist: request.artist as string } : {}) });
   }
   return { showId: value.showId, hostEpoch: value.hostEpoch, revision: value.revision, singerId: value.singerId, singerName: value.singerName,
     catalog: catalog.items, catalogNextOffset: catalog.nextOffset, requests,
@@ -61,6 +73,7 @@ export function parseGuestSnapshot(value: unknown): GuestSnapshot {
     ...(value.requestsTruncated !== undefined ? { requestsTruncated: value.requestsTruncated as boolean } : {}),
     ...(value.applauseEnabled !== undefined ? { applauseEnabled: value.applauseEnabled as boolean } : {}),
     ...(value.photoEnabled !== undefined ? { photoEnabled: value.photoEnabled as boolean } : {}),
+    ...(value.sources !== undefined ? { sources: value.sources as SourceId[] } : {}),
     ...(value.applauseCredits !== undefined ? { applauseCredits: value.applauseCredits as number } : {}),
     ...(value.points !== undefined ? { points: value.points as number } : {}) };
 }
