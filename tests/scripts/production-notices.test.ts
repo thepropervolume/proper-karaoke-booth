@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
-type Dependency = { version: string; license?: string; dev?: boolean };
+type Dependency = { version: string; license?: string; dev?: boolean; optional?: boolean; os?: string[]; cpu?: string[] };
 type Lock = { packages: Record<string, Dependency> };
 type Notices = (repo: string, lock: Lock) => Promise<string>;
 const helper: Promise<{ productionDependencyNotices: Notices }> = import(pathToFileURL(resolve('scripts/production-notices.mjs')).href);
@@ -55,6 +55,38 @@ test('unknown production packages without notices fail; development dependencies
   const f = await fixture(t); await mkdir(join(f.repo, 'node_modules/other'));
   await assert.rejects(notices(f.repo, { packages: { 'node_modules/other': { version: '6.0.0', license: 'ISC' } } }), /Missing production dependency license: node_modules\/other/);
   assert.doesNotMatch(await notices(f.repo, { packages: { 'node_modules/absent-dev': { version: '1', dev: true } } }), /absent-dev/);
+});
+test('the Ionic, React property and native Rollup notices use reviewed upstream texts', async t => {
+  const { repo } = await fixture(t);
+  const examples = [
+    { name: '@ionic/react', version: '9.0.13', file: 'ionic-react-9.0.13-LICENSE', signature: /Copyright \(c\) 2015-present Drifty Co\./ },
+    { name: 'react-property', version: '2.0.2', file: 'react-property-2.0.2-LICENSE', signature: /Copyright \(c\) Facebook, Inc\. and its affiliates\./ },
+    { name: '@rollup/rollup-win32-x64-msvc', version: '4.44.0', file: 'rollup-4.44.0-LICENSE.md', signature: /github\.com\/rollup\/rollup\/graphs\/contributors/ },
+  ];
+  for (const { name, version, file, signature } of examples) {
+    const directory = `node_modules/${name}`;
+    const dependency = { name, version, license: 'MIT' };
+    await mkdir(join(repo, directory), { recursive: true });
+    await writeFile(join(repo, directory, 'package.json'), JSON.stringify(dependency));
+    await copyFile(resolve('assets/licenses', file), join(repo, 'assets/licenses', file));
+    const text = await notices(repo, { packages: { [directory]: dependency } });
+    assert.ok(text.includes(`${name} ${version} (MIT)`));
+    assert.match(text, signature);
+    await assert.rejects(notices(repo, { packages: { [directory]: { ...dependency, version: '0.0.0' } } }), /Missing production dependency license/);
+  }
+});
+test('only absent optional dependencies excluded by the build platform may be skipped', async t => {
+  const { repo } = await fixture(t);
+  const directory = 'node_modules/native-variant';
+  const variant = { version: '1.0.0', license: 'MIT', optional: true };
+  const incompatible = { ...variant, os: [process.platform === 'darwin' ? 'win32' : 'darwin'] };
+  const result = (dependency: Dependency) => notices(repo, { packages: { [directory]: dependency } });
+  assert.doesNotMatch(await result(incompatible), /native-variant/);
+  await assert.rejects(result({ ...variant, os: [process.platform] }), /ENOENT/);
+  await assert.rejects(result({ ...variant, cpu: ['any', 'another-cpu'] }), /ENOENT/);
+  await assert.rejects(result({ ...incompatible, optional: false }), /ENOENT/);
+  await mkdir(join(repo, directory));
+  await assert.rejects(result(incompatible), /Missing production dependency license/);
 });
 test('dependency paths and license links cannot escape the checked repository package roots', async t => {
   const f = await fixture(t); const outside = join(f.directory, 'outside'); await mkdir(outside); await writeFile(join(outside, 'LICENSE'), 'Outside notice');
