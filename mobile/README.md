@@ -1,6 +1,6 @@
 # TPV Karaoke Mobile
 
-The real mobile web interface lives in `src/mobile`, shared by the PWA and Capacitor Android/iOS projects here. It replaces the earlier disconnected Expo preview. See the [mobile guide](../docs/mobile-app.md), [reference research](../docs/mobile-research.md) and [QA reports](../docs/qa/mobile-090-summary.md).
+The mobile interface lives in `src/mobile`, shared by the PWA and Capacitor Android/iOS projects here. It uses React with Ionic navigation and icon components. See the [mobile requirements and status](../docs/mobile-requirements.md). It replaces the earlier disconnected Expo preview. See the [mobile guide](../docs/mobile-app.md), [reference research](../docs/mobile-research.md) and [QA reports](../docs/qa/mobile-090-summary.md).
 
 From the repository root:
 

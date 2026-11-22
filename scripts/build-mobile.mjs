@@ -1,9 +1,13 @@
 import { build } from 'vite';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { productionDependencyNotices } from './production-notices.mjs';
 await build({ configFile: 'vite.mobile.config.mts' });
 const root = 'dist/mobile', assets = (await readdir(`${root}/assets`)).map(file => `assets/${file}`);
-const shell = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', ...assets];
+const notices = 'THIRD-PARTY-LICENSES.txt';
+const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
+await writeFile(root + '/' + notices, await productionDependencyNotices('.', lock));
+const shell = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', notices, ...assets];
 const hash = createHash('sha256'); for (const file of shell.filter(f => f !== './')) hash.update(await readFile(`${root}/${file}`));
 // Only immutable app assets are cached. Queue replies, credentials, search,
 // provider media and guest data always go to the network or fail visibly.

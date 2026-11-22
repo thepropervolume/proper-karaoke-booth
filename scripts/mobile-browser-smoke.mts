@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import { RelayStore } from '../src/relay/store';
 import { RelayBroker } from '../src/relay/broker';
 import { startQueueRelayService } from '../src/relay/http';
-const origin = 'https://queue.thepropervolume.com', directory = resolve('release/mobile-browser-090');
+const origin = 'https://queue.thepropervolume.com';
 const { version: appVersion } = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
+const directory = resolve('release/mobile-browser-' + appVersion);
 await mkdir(directory, { recursive: true });
 const db = new DatabaseSync(':memory:');
 const broker = new RelayBroker(new RelayStore(db), { pollTimeoutMs: 300, rpcTimeoutMs: 1500 });
@@ -46,8 +47,36 @@ try {
   await host.goto(origin + '/app/');
   assert.equal(await host.locator('.mobile-version').innerText(), appVersion);
   await host.getByRole('button', { name: /^Full Host Mode/ }).click();
+  const workspace = host.getByRole('navigation', { name: 'Host workspace' });
+  assert.equal(await workspace.getByRole('button').count(), 4);
+  assert.equal(await workspace.getByRole('button', { name: 'Library' }).getAttribute('aria-current'), 'page');
+  assert.equal(await host.locator('.mobile-preview').isVisible(), false);
+  for (const [width, height] of [[320, 640], [390, 844], [1024, 768]]) {
+    await host.setViewportSize({ width, height });
+    const search = await host.getByRole('searchbox').boundingBox(), dock = await host.locator('.mobile-dock').boundingBox();
+    const add = await host.getByText('Add a Video', { exact: true }).boundingBox();
+    assert.ok(search && add && dock && search.y >= 0 && add.y + add.height <= dock.y, 'Search and import need to fit above the dock');
+    assert.ok(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Workspace must fit the viewport width');
+  }
+  await host.setViewportSize({ width: 390, height: 844 });
+  await workspace.getByRole('button', { name: 'Collections' }).click();
+  await host.getByText('History', { exact: true }).click();
+  await host.getByRole('heading', { name: 'Show History' }).waitFor();
+  await workspace.getByRole('button', { name: 'Room', exact: true }).click();
+  await host.getByText('Device Storage', { exact: true }).click();
+  await host.getByRole('heading', { name: 'Device Storage' }).waitFor();
+  await workspace.getByRole('button', { name: 'Library' }).click();
+  checks.push('The four workspace destinations fit phone and tablet screens, keep search and import visible, and expose History and Device Storage.');
   await host.getByRole('searchbox').fill('Oasis');
-  await host.getByRole('button', { name: 'Queue Wonderwall' }).click();
+  const result = host.getByRole('button', { name: 'Queue Wonderwall' });
+  await result.waitFor();
+  assert.ok(await host.locator('.mobile-tabs ion-icon').first().evaluate(icon => !!icon.shadowRoot?.querySelector('svg')));
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await host.emulateMedia({ colorScheme });
+    await host.screenshot({ path: resolve(directory, 'library-' + colorScheme + '-390.png') });
+  }
+  await host.emulateMedia({ colorScheme: 'light' });
+  await result.click();
   await host.getByLabel('Singer (optional)').fill('Ben');
   await host.getByRole('button', { name: 'Add Song', exact: true }).click();
   await host.getByRole('button', { name: /^Room$/ }).click();
@@ -84,7 +113,7 @@ try {
   await host.getByText(/Alice · 42 points/).waitFor();
   checks.push('Authenticated guest photo is acknowledged immediately, then displays and scores only after host review and approval under the production CSP.');
   await host.getByRole('button', { name: /^Queue \(2\)$/ }).click();
-  const queue = host.getByRole('region', { name: 'Singer Queue' });
+  const queue = host.getByRole('region', { name: 'Singer Rotation' });
   const status = queue.getByRole('status');
   const statusNode = await status.elementHandle();
   const aliceRow = queue.getByRole('listitem', { name: 'Wonderwall for Alice' });
@@ -102,11 +131,11 @@ try {
   await aliceRow.getByRole('button', { name: 'Remove Wonderwall for Alice', exact: true }).focus();
   await host.keyboard.press('Enter');
   assert.equal(await status.textContent(), 'Wonderwall for Alice removed. 0 songs waiting.');
-  assert.equal(await queue.getByRole('heading', { name: 'Singer Queue' }).evaluate(heading => heading === document.activeElement), true);
+  assert.equal(await host.getByRole('heading', { name: 'Singer Rotation' }).evaluate(heading => heading === document.activeElement), true);
   assert.equal(await status.evaluate((element, original) => element === original, statusNode), true);
   await statusNode.dispose();
   checks.push('Pointer reorder preserves singer identity. Keyboard reorder and removal restore focus and update the same polite status region.');
-  await host.getByRole('button', { name: 'Songs', exact: true }).click(); await host.getByRole('searchbox').fill('');
+  await host.getByRole('button', { name: 'Library', exact: true }).click(); await host.getByRole('searchbox').fill('');
   await host.getByText('Add a Video', { exact: true }).click();
   await host.getByLabel('Import Local Video').setInputFiles(resolve('release/mobile-test.mp4'));
   await host.getByRole('button', { name: 'Queue mobile-test', exact: true }).click();
@@ -119,6 +148,12 @@ try {
   await host.getByRole('button', { name: 'Queue mobile-test', exact: true }).click(); await host.getByRole('button', { name: 'Add Song', exact: true }).click();
   await host.bringToFront(); await host.getByRole('button', { name: 'Play', exact: true }).click();
   await host.waitForFunction(() => (document.querySelector('video')?.currentTime ?? 0) > 0.2);
+  const playingVideo = await host.locator('video').elementHandle();
+  await workspace.getByRole('button', { name: /^Queue/ }).click();
+  await workspace.getByRole('button', { name: 'Library' }).click();
+  assert.ok(await host.locator('video').evaluate((video, original) => video === original && !video.paused, playingVideo));
+  await playingVideo.dispose();
+  checks.push('The active player and playback survive workspace navigation.');
   await host.locator('video').evaluate(video => video.pause()); await host.getByRole('button', { name: 'Play', exact: true }).waitFor();
   await host.locator('video').evaluate(video => video.play()); await host.getByRole('button', { name: 'Pause', exact: true }).waitFor();
   await host.getByLabel('Track position').fill('5'); assert.ok(await host.locator('video').evaluate(video => video.currentTime) >= 4.9);
