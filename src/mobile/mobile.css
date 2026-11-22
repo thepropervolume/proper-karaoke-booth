@@ -114,7 +114,7 @@ a { color: var(--accent); }
 }
 
 /* The dock sits outside the scroll region so it never covers library actions. */
-.mobile-app[data-mode='host'] {
+.mobile-app:is([data-mode='host'], .singer-workspace) {
   display: flex;
   flex-direction: column;
   block-size: var(--mobile-viewport-height, 100vh);
@@ -340,6 +340,8 @@ a { color: var(--accent); }
 .mobile-song:last-child { border-end-start-radius: .75rem; }
 .mobile-song.source-local { border-inline-start-color: #601ce9; }
 .mobile-song.source-youtube { border-inline-start-color: #ff0033; }
+.mobile-song.source-karafun { border-inline-start-color: #d5167a; }
+.mobile-song.source-partytyme { border-inline-start-color: #e5b91f; }
 .mobile-song > div, .mobile-queue li > div { flex: 1; min-inline-size: 0; }
 .mobile-song strong, .mobile-song span, .mobile-song small,
 .mobile-queue strong, .mobile-queue span, .mobile-history strong, .mobile-history span {
@@ -584,6 +586,39 @@ a { color: var(--accent); }
 .mobile-app .singer-page button[type='submit'] { min-block-size: 44px; }
 .mobile-app .singer-page input { margin: 0; }
 .mobile-app .singer-page .singer-message, .mobile-app .singer-page .singer-warning { background: var(--panel-selected); }
+
+.singer-workspace .singer-workspace-main {
+  display: block;
+  max-inline-size: 55rem;
+}
+.singer-workspace-main h1 { margin: 0 0 .8rem; }
+.singer-room-badge { max-inline-size: 43%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.singer-workspace-status {
+  padding: .55rem .7rem;
+  border-inline-start: 3px solid var(--accent);
+  background: var(--panel-selected);
+}
+.singer-catalog-group { margin-block: 1.15rem; }
+.singer-source-filter { display: block; max-inline-size: 17rem; font-size: .88rem; }
+.singer-catalog-group > h2, .mobile-singer-profile > h2, .mobile-singer-playlists > h2 { font-size: 1.1rem; }
+.singer-song { flex-direction: column; align-items: stretch; gap: .35rem; }
+.singer-song-heading, .singer-inline-actions, .mobile-playlist-details li {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.singer-song-heading > div, .mobile-playlist-details li > span { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.singer-inline-actions { flex-wrap: wrap; }
+.mobile-save-playlist > button { padding-block: .35rem; background: var(--panel-soft); font-size: .84rem; }
+.mobile-save-playlist p { margin-block: .2rem; font-size: .86rem; }
+.singer-nearby-option { display: block; margin-block: .3rem; max-inline-size: 100%; overflow-wrap: anywhere; }
+.singer-request-status { text-transform: capitalize; }
+.singer-sources { min-inline-size: 0; margin: 1rem 0 .2rem; padding: .5rem .8rem; border: 1px solid var(--line); }
+.singer-sources legend { font-size: 1.05rem; font-weight: 700; }
+.singer-sources label { display: flex; align-items: center; gap: .55rem; min-block-size: 44px; }
+.singer-sources input { inline-size: 1.2rem; block-size: 1.2rem; }
+.singer-room-actions { margin-block-start: 1rem; }
+.singer-room-actions details, .mobile-singer-playlists details { margin-block: .65rem; }
 
 @media (hover: hover) {
   button:not(:disabled):hover { border-color: var(--accent); }
