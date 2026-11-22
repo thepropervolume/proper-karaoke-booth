@@ -2,7 +2,7 @@
 
 Product specification for the desktop host, singer display and companion applications
 
-**Revision:** 20 November 2026. **Application milestone:** 0.10.10 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
+**Revision:** 22 November 2026. **Application milestone:** 0.10.11 development. Official release target 1.0.0. Platform package versions, build receipts and installation evidence are maintained in the installation guide. **Implementation reference:** current repository checkout and its Git history. **Document owner:** The Proper Volume. This Markdown file is the maintained source for the product specification and companion mockup book; generate other planning formats from it.
 
 This specification describes both the current rehearsal build and the product we intend to build. It updates and preserves the scope of the earlier Word specification, including future singer, staff, provider, subscription, API and policy capabilities. It incorporates the later decisions to approve requests automatically by default, support both local-network and internet remote use, and make embedded metadata edits an explicit per-edit choice. User decisions take precedence over older planning text. Mockups use synthetic data and must never be mistaken for evidence that a planned feature or service is live.
 
@@ -198,13 +198,13 @@ The singer video is bounded to the full window viewport (maximum 100vh/100vw) wi
 
 ## 8. Local and internet singer access
 
-**Experimental mobile in 0.9.0:** an installable web app at `https://queue.thepropervolume.com/app/` has two explicit modes. Full Host searches the cached Karaoke Nerds snapshot, streams its YouTube recordings, imports local videos, accepts direct YouTube links, manages optional singer assignments/manual queue order, favorites/history, volume, timeline, restart/skip and a configurable automatic inter-song gap. It can publish a temporary room whose guests request its published songs. Piggyback joins a desktop or phone host using the existing strict SingerClient admission, session ownership, revision and uncertain-command recovery. No quizzes are included. Mobile paid-provider sign-in, key/tempo, vocal stems and dedicated casting remain planned.
+**Mobile workspace in 0.10.11 source:** The installable web app at `https://queue.thepropervolume.com/app/` uses Ionic React controls in its React and Capacitor shell. In Full Host, Library brings search, desktop-style title/artist/source rows and video import to the foreground. Bottom destinations are Library, Queue, Collections (Favorites and History) and Room (sharing, playback settings and Device Storage). The compact Now Playing dock keeps transport visible and the player stays mounted across destinations. The idle video is hidden by default. Piggyback joins a desktop or phone host using the same SingerClient admission and recovery as the web portal. Mobile paid-provider sign-in, key/tempo, vocal stems and casting remain planned. See [mobile requirements and acceptance](mobile-requirements.md).
 
 Android/iOS wrappers use native DNS-SD to find public room beacons and ask whether to join. Browsers use short-lived same-egress suggestions; shared public internet access is explicitly described as a hint, not proof of a shared LAN. Manual HTTPS room names/links remain available. A host may disable discovery, and discovery never authenticates or joins automatically. Desktop UDP advertising uses verified private interfaces, bounded announcements and trust rechecks; failure preserves manual joining and never changes firewall policy.
 
 Mobile shows, files, favorites, history and unavailable-song requests use local IndexedDB. A writer lock prevents concurrent host tabs; data is loaded after lock acquisition. Restored playback is paused. Unknown/corrupt shows are preserved under a recovery key before replacement. Guest mutations are persisted before success replies. Room capabilities and receipts live in memory, are scoped to a generation and reset on closure. Mobile owner capabilities are independent of configured desktop owners, expire within 12 hours, and have separately bounded reservation capacity in the existing MySQL relay. No new shared SQLite database is introduced. Interrupted opens reuse their owner/open IDs; terminal and expired replies have explicit recovery. Foreground operation, network permissions, streaming on real phones, store signing and long-show reliability require separate acceptance. See `docs/mobile-app.md`, `docs/mobile-research.md` and `docs/qa/mobile-090-summary.md`.
 
-**Mobile storage in 0.10.6:** Full Host → Storage shows the total size and number of this device’s imported video copies. Hosts can search by title, artist, or filename and remove an unused copy after confirmation. Queued and playing copies are protected. Removing a copy preserves the song and its history or favorites. Use Relink to restore playback and guest request availability.
+**Mobile storage:** Full Host → Room → Device Storage shows the total size and number of this device’s imported video copies. Hosts can search by title, artist, or filename and remove an unused copy after confirmation. Queued and playing copies are protected. Removing a copy preserves the song and its history or favorites. Use Relink to restore playback and guest request availability.
 
 **Mobile photo review in 0.10.6:** A validated guest photo can wait in a one-item host inbox for up to 45 seconds. The guest gets a delivery receipt while the host reviews it. The image appears only after the host chooses Show Photo. A visible photo can earn its normal 24 points once. Decline, expiry and room/view changes discard undisplayed images. Image data stays in memory.
 
@@ -1200,37 +1200,37 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
 ```mockup
 {
   "id": "M01",
-  "title": "Mobile Host and Piggyback Modes",
+  "title": "Mobile Library and Queue",
   "status": "Partial",
-  "description": "One mobile web interface powers the PWA and Android or iOS wrappers. Real phone acceptance remains separate.",
+  "description": "The library and singer queue are direct destinations. The host can play or pause from the compact dock.",
   "layout": "phones",
   "phone_titles": [
-    "Choose Your Mode",
-    "Full Host Mode"
+    "Song Library",
+    "Singer Queue"
   ],
   "phone_subtitles": [
-    "Host or join an existing room",
-    "Own player and singer queue"
+    "Full Host • Friday Night",
+    "Full Host • 2 waiting"
   ],
   "phone_rows": [
     [
-      "Full Host Mode | Play and invite singers",
-      "Piggyback Mode | Join another host",
-      "Room Found | Confirm then Join",
-      "Room Name or Link | Manual fallback",
-      "Install | Add to Home Screen",
-      "Native Discovery | Optional network access"
+      "Search Songs | Artist or song title",
+      "Popular | Nada Surf • Karaoke Nerds",
+      "Goodbye | Local video • On this device",
+      "Add a Video | Import or add a YouTube link",
+      "Now Playing | Open player or pause",
+      "Library · Queue · Collections · Room"
     ],
     [
-      "Search Songs | Karaoke Nerds and local",
-      "Popular | Nada Surf",
-      "Add to Queue | Singer optional",
-      "Play or Pause | Timeline and volume",
-      "Storage | Find and remove unused copies",
-      "Room | Name and share a singer link"
+      "Next Up | Casey • Popular",
+      "After That | Jordan • Goodbye",
+      "Move or Remove | Waiting songs",
+      "Current Singer | Robin",
+      "Now Playing | Open player or pause",
+      "Library · Queue · Collections · Room"
     ]
   ],
-  "detail": "Public HTTPS rehearsals covered search, requests, withdrawal, mobile storage and room closure. Device builds compile. Store signing and physical Android or iOS checks remain."
+  "detail": "0.10.11 source design. The transport and navigation remain accessible across the host workspace. Physical phone, accessibility and signed store acceptance remain open."
 }
 ```
 
@@ -1260,11 +1260,11 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     ],
     [
       "Booth Name | Friday Night",
-      "Room Address | friday-night",
       "Open Room | Share singer link",
-      "Suggest Nearby | Optional",
-      "Between Songs | 5 second gap",
-      "Review Photo | Show or discard"
+      "Playback | Set the inter-song gap",
+      "Device Storage | Manage video copies",
+      "Review Photo | Show or discard",
+      "Library · Queue · Collections · Room"
     ]
   ],
   "detail": "Web suggestions can cover different venues. Native discovery uses room beacons and manual HTTPS links remain available. A mobile host reviews guest photos before display. Room closure revokes guest access."
