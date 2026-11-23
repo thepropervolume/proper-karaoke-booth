@@ -42,6 +42,9 @@ try {
   try {
     const state = JSON.parse(db.prepare('SELECT value FROM show_state WHERE id = 1').get().value);
     state.versions = [{ id: 'v1', title: 'First song', artist: 'One', rating: 'clean' }, { id: 'v2', title: 'Replacement song', artist: 'Two', rating: 'clean' }];
+    const present = join(temp, 'staged-fixture.mp4');
+    await writeFile(present, 'Placeholder for staging only; this rehearsal never plays the file.');
+    db.prepare('INSERT INTO media (id, path, fingerprint) VALUES (?, ?, ?)').run('v1', present, 'unused');
     state.singers = [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Ben' }, { id: 'c', name: 'Casey' }];
     state.requests = state.singers.map((singer, index) => ({ id: singer.id + '1', singerId: singer.id, versionId: 'v1', status: 'accepted', round: 1, order: index + 1 }));
     state.nextOrder = 4;
@@ -105,7 +108,16 @@ try {
   assert.equal(state.stagedRequestId, 'b1');
   assert.equal(state.playback, null);
   assert.equal(state.singers.find(s => s.id === 'a').unavailableUntilMs, Number.MAX_SAFE_INTEGER);
-  console.log('Singer hold and return UI, schema 7 rollback copy, durable hold across restart, and automatic timed reintegration passed.');
+  await host.getByRole('button', { name: 'Singers', exact: true }).click();
+  await host.getByRole('button', { name: 'Actions for Alex' }).click();
+  await host.getByRole('menuitem', { name: 'Rename Singer…' }).click();
+  await host.getByLabel('New singer name').fill('Alex Renamed');
+  await host.getByRole('button', { name: 'Save Name' }).click();
+  await host.getByRole('button', { name: 'Actions for Alex Renamed' }).waitFor();
+  state = await host.evaluate(() => window.tpv.getState());
+  assert.equal(state.singers.find(s => s.id === 'a').name, 'Alex Renamed');
+  assert.equal(state.requests.find(request => request.id === 'a1').singerId, 'a');
+  console.log('Singer rename, hold and return UI, schema 7 rollback, durable hold and automatic timed reintegration passed.');
 } finally {
   if (app) await app.close();
   if (temp.startsWith(tempRoot + sep) && (await realpath(temp)) === temp) await rm(temp, { recursive: true, force: true });

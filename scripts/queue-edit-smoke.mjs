@@ -3,7 +3,9 @@ import { waitForHostCondition } from './wait-for-host-condition.mjs';
 // Initializes a disposable show, closes it, then seeds synthetic history before reopening.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -45,7 +47,17 @@ try {
   const db = new DatabaseSync(join(profile, 'show.sqlite'));
   try {
     const state = JSON.parse(db.prepare('SELECT value FROM show_state WHERE id = 1').get().value);
-    state.versions = [{ id: 'v1', title: 'First song', artist: 'One', rating: 'clean' }, { id: 'v2', title: 'Replacement song', artist: 'Two', rating: 'clean' }];
+    state.versions = [{ id: 'v1', title: 'First song', artist: 'One', rating: 'clean' }, { id: 'v2', title: 'Replacement song', artist: 'Two', rating: 'clean' },
+      { id: 'missing-media', title: 'Missing song', artist: 'Three', rating: 'clean' }];
+    const saveMedia = db.prepare('INSERT INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
+    for (const [id, color] of [['v1', 'blue'], ['v2', 'red']]) {
+      const path = join(temp, `${id}.mp4`);
+      const made = spawnSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', `color=c=${color}:s=320x180:r=25`, '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+        '-t', '60', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', path], { windowsHide: true });
+      assert.equal(made.status, 0, made.stderr?.toString());
+      saveMedia.run(id, path, createHash('sha256').update(await readFile(path)).digest('hex'));
+    }
+    saveMedia.run('missing-media', join(temp, 'never-created.mp4'), 'unused');
     state.singers = [{ id: 'a', name: 'Alex' }, { id: 'b', name: 'Ben' }, { id: 'c', name: 'Casey' }];
     state.requests = state.singers.map((singer, index) => ({ id: singer.id + '1', singerId: singer.id, versionId: 'v1', status: 'accepted', round: 1, order: index + 1 }));
     state.nextOrder = 4;
@@ -109,7 +121,25 @@ try {
   assert.equal(state.requests.find(r => r.id === 'a1').versionId, 'v2');
   assert.equal(state.requests.find(r => r.id === 'a1').status, 'staged');
   assert.equal(state.playback, null, 'Restart preserves preparation without automatic karaoke playback.');
-  console.log('Automatic preparation, queue movement, waiting/prepared request edits, staged slot identity and restart persistence passed in an isolated profile with external networking disabled.');
+  await waitForHostCondition(host, async () => (await window.tpv.getMissingLocalMedia())?.includes('missing-media') === true);
+  await host.getByRole('listbox', { name: 'Songs' }).getByText('Missing song', { exact: true }).click({ button: 'right' });
+  assert.equal(await host.getByRole('menuitem', { name: 'Add to Queue' }).isDisabled(), true);
+  assert.equal(await host.getByRole('menuitem', { name: 'Play Song Now' }).isDisabled(), true);
+  const missing = await host.evaluate(() => window.tpv.command({ type: 'request', requestId: 'missing-request', singerId: null, versionId: 'missing-media' }));
+  assert.equal(missing.ok, false); assert.match(missing.error, /Relink File/);
+  await host.keyboard.press('Escape');
+
+  assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
+  await waitForHostCondition(host, async () => (await window.tpv.getTimeline()).seekable);
+  await host.getByRole('listbox', { name: 'Songs' }).getByText('First song', { exact: true }).click({ button: 'right' });
+  assert.equal(await host.getByRole('menuitem', { name: /blacklist/i }).count(), 0);
+  await host.getByRole('menuitem', { name: 'Play Song Now' }).click();
+  await waitForHostCondition(host, async () => (await window.tpv.getState()).playback?.requestId !== 'a1');
+  state = await host.evaluate(() => window.tpv.getState());
+  assert.equal(state.requests.find(request => request.id === state.playback.requestId).versionId, 'v1');
+  assert.equal(state.requests.find(request => request.id === 'a1').status, 'staged');
+  assert.deepEqual(state.manualQueueOrder, ['a1', 'c1', 'b1']);
+  console.log('Queue edits, restart persistence, missing-file rejection and in-show Play Song Now passed in an isolated muted profile with external networking disabled.');
 } finally {
   if (app) await app.close();
   if (temp.startsWith(tempRoot + sep) && (await realpath(temp)) === temp) await rm(temp, { recursive: true, force: true });
