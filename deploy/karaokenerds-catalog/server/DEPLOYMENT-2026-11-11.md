@@ -1,5 +1,16 @@
 # Shared catalog deployment — 11 November 2026
 
+## Sole updater handoff on 23 November 2026
+
+Checked the managed Windows workstation, its Debian WSL instance and Linode
+III for a scheduled legacy updater. Staged the supplied credential privately
+and enabled the Linode refresh timer against the existing 64,261-record
+snapshot. The service returned `not-due` at startup and left the snapshot,
+revision and unknown attempt and success timestamps intact. The first upstream
+attempt becomes eligible at 03:42:37 EST on 24 November 2026. The first
+eligible hourly timer check makes the request. No upstream fetch was made during
+the handoff.
+
 ## Reader update on 20 November 2026
 
 Deployed the revision-checking reader from `5833192` when the queue relay reported zero active rooms. The updated service returned 64,261 searchable records at revision 1. Public HTTPS exact-artist and text search found Nada Surf’s “Amateur”. The reader bundle SHA-256 is `9a29f723756feb77b07303daabdac20eabac6b9e86dd0797062dbd3be314bd24`. The previous reader bundle is preserved at `/var/backups/tpv-karaoke-catalog/reader-0106.xGo30jrO`. The schema and saved snapshot are unchanged, and the upstream refresh timer remains disabled.

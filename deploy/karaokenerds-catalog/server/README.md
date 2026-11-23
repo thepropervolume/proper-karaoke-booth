@@ -146,15 +146,31 @@ dump does not survive loss of this server.
 
 ## Enable the single updater only after verification
 
-Do not create the gate or enable the refresh timer until legacy retirement,
-imported cooldown and sole-updater ownership are verified. Store the upstream
-URL in root-owned mode-0600 `/etc/tpv-karaoke-catalog/upstream.url` using a private
-file transfer. Create root-owned mode-0600 `refresh-enabled.json` in that same
-private directory only when all these facts are true:
+Verify which machines or jobs made upstream requests and stop the other
+updaters before the new timer starts. Transfer the upstream URL privately to
+root-owned mode-0600 `/etc/tpv-karaoke-catalog/upstream.url`. Create the
+root-owned mode-0600 `refresh-enabled.json` in the same directory.
+For a migrated catalog with verified attempt history, use:
 
 ```json
 {"legacyUpdatersStopped":true,"importAndCooldownVerified":true,"singleUpdaterConfirmed":true}
 ```
+
+For a serving snapshot created with `seed-readonly` and no recoverable attempt
+history, use a seeded handoff:
+
+```json
+{"legacyUpdatersStopped":true,"singleUpdaterConfirmed":true,"seededHandoff":{"seedSha256":"<existing seed checksum>","quiescenceVerifiedAtMs":0}}
+```
+
+Replace the checksum with the protected seed marker from `tpv_kn_state` and
+replace the example timestamp with the current MySQL server epoch time in
+milliseconds after verifying the other updaters are stopped. The updater
+requires 24 hours of quiet time after that observation. It checks the saved
+snapshot under the existing database lock and leaves unknown attempt and success
+timestamps empty until a real request. Use the installed gate checker and run
+the service during the hold to confirm it reports `not-due` and the first
+eligible timestamp before enabling its timer.
 
 The gate checker is an operator attestation; it cannot discover other machines.
 The updater still refuses an uninitialized catalog and relies on the database's

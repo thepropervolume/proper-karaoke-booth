@@ -9,7 +9,9 @@ const DAY = 86_400_000;
 const LOCK_NAME = 'tpv-karaoke-community-refresh-v1';
 const SCHEMA_TABLES = ['tpv_kn_version', 'tpv_kn_state', 'tpv_kn_brands', 'tpv_kn_videos', 'tpv_kn_dates'];
 type DbTime = string | number | null;
-type StateRow = RowDataPacket & { snapshot: unknown | null; last_attempt_ms: DbTime; last_success_ms: DbTime; now_ms: DbTime; attempt_token: string | null };
+type StateRow = RowDataPacket & { snapshot: unknown | null; last_attempt_ms: DbTime; last_success_ms: DbTime; now_ms: DbTime;
+  attempt_token: string | null; import_sha256: string | null; sqlite_retired_ms: DbTime };
+export type SeededRefreshHandoff = { seedSha256: string; quiescenceVerifiedAtMs: number };
 export type MySqlRefreshStatus = {
   status: 'updated' | 'not-due' | 'not-initialized' | 'in-progress' | 'recovery-required' | 'failed';
   lastAttempt: number | null; lastSuccess: number | null; nextAttempt: number | null;
@@ -37,10 +39,32 @@ function result(status: MySqlRefreshStatus['status'], row: StateRow): MySqlRefre
 function decodeSnapshot(value: unknown): CommunityCatalog {
   return parseCommunityCatalog(typeof value === 'string' ? JSON.parse(value) : value);
 }
+function serializeSeedSnapshot(catalog: CommunityCatalog): string {
+  // MySQL JSON may reorder keys. Use the seed's field order when proving its identity.
+  return JSON.stringify({ Items: catalog.Items.map(item => ({ Id: item.Id, Artist: item.Artist,
+    Title: item.Title, Brand: item.Brand, Watch: item.Watch, Created: item.Created })) });
+}
+function validSeededHandoff(value: unknown): value is SeededRefreshHandoff {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'quiescenceVerifiedAtMs,seedSha256') return false;
+  const handoff = value as Record<string, unknown>;
+  return typeof handoff.seedSha256 === 'string' && /^[a-f0-9]{64}$/.test(handoff.seedSha256) &&
+    typeof handoff.quiescenceVerifiedAtMs === 'number' && Number.isSafeInteger(handoff.quiescenceVerifiedAtMs) &&
+    handoff.quiescenceVerifiedAtMs > 0 && handoff.quiescenceVerifiedAtMs <= Number.MAX_SAFE_INTEGER - DAY;
+}
+export function parseCatalogRefreshGate(value: unknown): SeededRefreshHandoff | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const gate = value as Record<string, unknown>, keys = Object.keys(gate).sort().join(',');
+    if (gate.legacyUpdatersStopped === true && gate.singleUpdaterConfirmed === true) {
+      if (keys === 'importAndCooldownVerified,legacyUpdatersStopped,singleUpdaterConfirmed' && gate.importAndCooldownVerified === true) return undefined;
+      if (keys === 'legacyUpdatersStopped,seededHandoff,singleUpdaterConfirmed' && validSeededHandoff(gate.seededHandoff)) return gate.seededHandoff;
+    }
+  }
+  throw new Error('Invalid catalog refresh gate.');
+}
 // UTC_TIMESTAMP is independent of the session time zone, including DST folds.
 // TIMESTAMPDIFF compares UTC DATETIME values without interpreting local time.
 const CLOCK = "CAST(TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(3)) DIV 1000 AS UNSIGNED)";
-const STATE = `SELECT snapshot, last_attempt_ms, last_success_ms, attempt_token, ${CLOCK} AS now_ms FROM tpv_kn_state WHERE id = 1`;
+const STATE = `SELECT snapshot, last_attempt_ms, last_success_ms, attempt_token, import_sha256, sqlite_retired_ms, ${CLOCK} AS now_ms FROM tpv_kn_state WHERE id = 1`;
 async function queryState(connection: PoolConnection, lock = false): Promise<StateRow> {
   const [rows] = await connection.query<StateRow[]>(`${STATE}${lock ? ' FOR UPDATE' : ''}`);
   if (rows.length !== 1) throw new Error('Catalog state is unavailable.');
@@ -140,15 +164,13 @@ export class MySqlCommunityCatalogStore {
   /**
    * Publish an existing raw snapshot for reads when refresh history is missing.
    * Unknown attempt/success/retirement times remain NULL. In particular, the
-   * refresh gate rejects this state before calling its fetcher; this is not a
-   * migration of refresh authority or permission to start an updater.
+   * refresh requires a separate, verified handoff before calling its fetcher.
    */
   async seedReadOnlyCatalog(input: unknown): Promise<void> {
     const parsed = parseCommunityCatalog(input);
     // Fixed field order gives the same digest for equivalent JSON input while
     // excluding unknown raw fields from the stored public metadata snapshot.
-    const snapshot = JSON.stringify({ Items: parsed.Items.map(item => ({ Id: item.Id, Artist: item.Artist,
-      Title: item.Title, Brand: item.Brand, Watch: item.Watch, Created: item.Created })) });
+    const snapshot = serializeSeedSnapshot(parsed);
     const digest = createHash('sha256').update(snapshot, 'utf8').digest('hex');
     const connection = await this.pool.getConnection(); let transaction = false, destroy = false;
     try {
@@ -290,7 +312,8 @@ export class MySqlCommunityCatalogStore {
   }
 
   /** Reserve using MySQL server time, commit before I/O, and keep a named lock through finalization. */
-  async refresh(fetcher: () => Promise<unknown>): Promise<MySqlRefreshStatus> {
+  async refresh(fetcher: () => Promise<unknown>, seededHandoff?: SeededRefreshHandoff): Promise<MySqlRefreshStatus> {
+    if (seededHandoff !== undefined && !validSeededHandoff(seededHandoff)) throw new Error('Invalid seeded catalog handoff.');
     const connection = await this.pool.getConnection(); let locked = false, transaction = false, destroy = false;
     const token = randomUUID();
     try {
@@ -301,12 +324,25 @@ export class MySqlCommunityCatalogStore {
       await connection.beginTransaction(); transaction = true;
       const state = await queryState(connection, true), now = millis(state.now_ms), lastAttempt = millis(state.last_attempt_ms);
       if (now === null) throw new Error('Catalog clock is unavailable.');
-      if (state.snapshot === null || lastAttempt === null) { await connection.rollback(); transaction = false; return result('not-initialized', state); }
+      if (state.snapshot === null) { await connection.rollback(); transaction = false; return result('not-initialized', state); }
       // A prior process may have lost its DB session while a request was still
       // running. Never infer safety merely from a timed-out named lock.
       if (state.attempt_token !== null) { await connection.rollback(); transaction = false; return result('recovery-required', state); }
+      if (lastAttempt === null) {
+        if (!seededHandoff || state.last_success_ms !== null || state.sqlite_retired_ms !== null || state.import_sha256 !== seededHandoff.seedSha256) {
+          await connection.rollback(); transaction = false; return result('not-initialized', state);
+        }
+        const nextAttempt = seededHandoff.quiescenceVerifiedAtMs + DAY;
+        if (now < nextAttempt) {
+          await connection.rollback(); transaction = false; return { ...result('not-due', state), nextAttempt };
+        }
+      } else if (now - lastAttempt < DAY) {
+        await connection.rollback(); transaction = false; return result('not-due', state);
+      }
       const previous = decodeSnapshot(state.snapshot);
-      if (now - lastAttempt < DAY) { await connection.rollback(); transaction = false; return result('not-due', state); }
+      if (lastAttempt === null && createHash('sha256').update(serializeSeedSnapshot(previous), 'utf8').digest('hex') !== seededHandoff?.seedSha256) {
+        await connection.rollback(); transaction = false; return result('not-initialized', state);
+      }
       await connection.execute('UPDATE tpv_kn_state SET last_attempt_ms = ?, attempt_token = ? WHERE id = 1', [now, token]);
       await connection.commit(); transaction = false;
       try {

@@ -68,9 +68,23 @@ test('MySQL 8 catalog import, daily gate, cross-connection lock and failure rete
       assert.equal(calls, 0);
       await assert.rejects(first.seedReadOnlyCatalog(payload.snapshot), /already initialized/);
       await assert.rejects(first.importCatalog(bundle), /already initialized/);
+      const [clock] = await pool.query<(RowDataPacket & { now_ms: string })[]>(
+        "SELECT CAST(TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(3)) DIV 1000 AS UNSIGNED) AS now_ms");
+      const serverNow = Number(clock[0].now_ms), handoff = { seedSha256: seeded[0].import_sha256, quiescenceVerifiedAtMs: serverNow };
+      const waiting = await first.refresh(async () => assert.fail('first attempt is still on hold'), handoff);
+      assert.deepEqual(waiting, { status: 'not-due', lastAttempt: null, lastSuccess: null, nextAttempt: serverNow + 86_400_000 });
+      const firstFetch = await first.refresh(async () => {
+        assert.ok((await second.status()).recoveryRequired, 'a second session observes the committed reservation before network I/O');
+        return payload.snapshot;
+      }, { ...handoff, quiescenceVerifiedAtMs: serverNow - 86_400_000 });
+      assert.equal(firstFetch.status, 'updated');
+      assert.ok(firstFetch.lastAttempt! >= serverNow);
+      assert.ok(firstFetch.lastSuccess! >= serverNow);
+      assert.equal((await second.searchMetadata()).revision, '2');
+      assert.equal((await second.refresh(async () => assert.fail('cooldown remains in effect'), handoff)).status, 'not-due');
       // Reset only this explicitly disposable test schema for the separate
       // full-history migration tests below. Production has no such operation.
-      await pool.query('UPDATE tpv_kn_state SET snapshot = NULL, import_sha256 = NULL, revision = 0 WHERE id = 1');
+      await pool.query('UPDATE tpv_kn_state SET snapshot = NULL, import_sha256 = NULL, last_attempt_ms = NULL, last_success_ms = NULL, revision = 0 WHERE id = 1');
       assert.equal(await first.read(), null);
     });
     const failPool = { getConnection: async () => {

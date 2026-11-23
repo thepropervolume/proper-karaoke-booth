@@ -3,7 +3,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { createPool, type PoolOptions } from 'mysql2/promise';
 import { fetchCommunity, validateCommunityUrl } from '../src/catalog/karaokenerds';
-import { initializeMySqlCatalog, MySqlCommunityCatalogStore } from '../src/catalog/karaokenerds-mysql';
+import { initializeMySqlCatalog, MySqlCommunityCatalogStore, parseCatalogRefreshGate } from '../src/catalog/karaokenerds-mysql';
 
 function privateFile(name: string, maxBytes: number): string {
   const file = process.env[name];
@@ -57,7 +57,9 @@ async function main(): Promise<void> {
         if (process.env.TPV_KN_SINGLE_UPDATER_CONFIRMED !== 'yes') throw new Error('Single updater must be confirmed.');
         const endpoint = privateFile('TPV_KN_UPSTREAM_URL_FILE', 16_384).trim();
         validateCommunityUrl(endpoint);
-        const response = await store.refresh(() => fetchCommunity(endpoint));
+        const handoff = process.env.TPV_KN_REFRESH_GATE_FILE === undefined ? undefined
+          : parseCatalogRefreshGate(JSON.parse(privateFile('TPV_KN_REFRESH_GATE_FILE', 1024)));
+        const response = await store.refresh(() => fetchCommunity(endpoint), handoff);
         console.log(JSON.stringify(response));
         if (response.status === 'failed' || response.status === 'not-initialized' || response.status === 'recovery-required') process.exitCode = 1;
       }
