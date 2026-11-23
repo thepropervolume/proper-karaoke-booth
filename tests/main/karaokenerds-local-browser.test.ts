@@ -50,12 +50,23 @@ test('limits results and reports unusable databases without exposing paths', () 
   const browser = new LocalCommunityBrowser(path);
   try {
     db.exec('CREATE TABLE community_catalog (id INTEGER PRIMARY KEY, snapshot TEXT, last_success INTEGER)');
-    db.prepare('INSERT INTO community_catalog VALUES (1, ?, NULL)').run(JSON.stringify({ Items: Array.from({ length: 51 }, (_, i) => item(i)) }));
+    const rows = Array.from({ length: 51 }, (_, i) => ({ ...item(i), Watch: 'https://www.youtube.com/watch?v=video' + String(i).padStart(6, '0') }));
+    // The duplicate surrounds the boundary. It must not consume an offset.
+    rows.splice(50, 0, { ...rows[49], Id: 51 });
+    db.prepare('INSERT INTO community_catalog VALUES (1, ?, NULL)').run(JSON.stringify({ Items: rows }));
     const result = browser.search('nada');
     assert.equal(result.status, 'ready');
     if (result.status !== 'ready') throw new Error('Unexpected status');
     assert.equal(result.tracks.length, 50);
     assert.equal(result.limited, true);
+    assert.ok(result.nextCursor);
+    const next = browser.search('Nada', result.nextCursor);
+    assert.equal(next.status, 'ready');
+    assert.deepEqual(next.tracks.map(track => track.id), [50]);
+    assert.equal(next.nextCursor, null);
+    assert.equal(browser.search('different song', result.nextCursor).status, 'invalid-request');
+    db.prepare('UPDATE community_catalog SET snapshot = ? WHERE id = 1').run(JSON.stringify({ Items: Array.from({ length: 51 }, (_, i) => item(i, 'Updated song')) }));
+    assert.equal(browser.search('nada', result.nextCursor).status, 'invalid-request');
     db.prepare('UPDATE community_catalog SET snapshot = ? WHERE id = 1').run('{not json');
     assert.equal(browser.search('nada').status, 'unavailable');
   } finally { browser.close(); db.close(); rmSync(dir, { recursive: true, force: true }); }

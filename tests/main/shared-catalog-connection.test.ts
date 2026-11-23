@@ -40,6 +40,75 @@ test('a new installation can search the public service without reading or embedd
   assert.equal((await restarted.publicSearch('new query')).status,'unavailable');
 }));
 
+test('both catalog authorities preserve continuations and cache each page independently',async()=>fixture(async root=>{
+  const config=await configFile(root,'connected.json'),seen: (string | null)[]=[];
+  let offline=false;
+  const fetcher: typeof fetch=async input=>{
+    if(offline)throw new Error('offline');
+    const cursor=new URL(String(input)).searchParams.get('cursor');
+    seen.push(cursor);
+    return json(cursor === null ? {...searchPage,nextCursor:'p2'} :
+      {...searchPage,items:[{...searchPage.items[0],youtubeId:'klmnopqrstu',title:'Next'}]});
+  };
+  const build=()=>new SharedCatalogConnection(join(root,'pages.json'),
+    (configuration,cacheFile)=>new SharedCatalogClient({...configuration,cacheFile,fetch:fetcher}),
+    undefined,cacheFile=>new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:fetcher}));
+  const connection=build();
+  const publicPage=await connection.publicSearch('Song');
+  assert.equal(publicPage.status,'ready');assert.ok(publicPage.nextCursor);
+  const nextPublic=await connection.publicSearch('Song',publicPage.nextCursor);
+  assert.equal(nextPublic.status,'ready');assert.equal(nextPublic.tracks[0].title,'Next');assert.equal(nextPublic.nextCursor,null);
+  const privatePage=await connection.search(config,'Song');
+  assert.equal(privatePage.status,'ready');assert.ok(privatePage.nextCursor);
+  const nextPrivate=await connection.search(config,'Song',privatePage.nextCursor);
+  assert.equal(nextPrivate.status,'ready');assert.equal(nextPrivate.tracks[0].title,'Next');
+  assert.deepEqual(seen,[null,'p2',null,'p2']);
+  offline=true;
+  const restarted=build();
+  const cachedPublicPage=await restarted.publicSearch('Song');
+  assert.equal(cachedPublicPage.status,'ready');assert.ok(cachedPublicPage.nextCursor);
+  const cached=await restarted.publicSearch('Song',cachedPublicPage.nextCursor);
+  assert.equal(cached.status,'ready');assert.equal(cached.source,'offline-cache');assert.equal(cached.tracks[0].title,'Next');
+  const cachedPrivatePage=await restarted.search(config,'Song');
+  assert.equal(cachedPrivatePage.status,'ready');assert.ok(cachedPrivatePage.nextCursor);
+  assert.equal((await restarted.search(config,'Song',cachedPrivatePage.nextCursor)).status,'ready');
+}));
+
+test('an in-place credential change invalidates old continuation handles',async()=>fixture(async root=>{
+  const activeFile=await configFile(root,'active.json');
+  let credential=token, requests=0;
+  const connection=new SharedCatalogConnection(join(root,'cache.json'),(config,cacheFile)=>new SharedCatalogClient({...config,cacheFile,fetch:async()=>{
+    ++requests;return json({...searchPage,nextCursor:'p2'});
+  }}),async()=>({baseUrl,token:credential}));
+  const initial=await connection.search(activeFile,'Song');
+  assert.equal(initial.status,'ready');assert.ok(initial.nextCursor);
+  credential+='-replacement';
+  assert.equal((await connection.search(activeFile,'Song',initial.nextCursor)).status,'invalid-request');
+  assert.equal(requests,1);
+}));
+
+test('a cancelled continuation does not wait for the fetcher or return cached results',async()=>fixture(async root=>{
+  let observedSignal: AbortSignal | null | undefined;
+  const started=deferred<void>();
+  let pending=false;
+  const connection=new SharedCatalogConnection(join(root,'cancel.json'),undefined,undefined,cacheFile=>new SharedCatalogClient({
+    baseUrl,public:true,cacheFile,fetch:async (_input,init)=>{
+      if(!pending)return json({...searchPage,nextCursor:'p2'});
+      observedSignal=init?.signal;started.resolve();
+      return new Promise<Response>(()=>{});
+    },timeoutMs:60000,
+  }));
+  const initial=await connection.publicSearch('Song');
+  assert.equal(initial.status,'ready');assert.ok(initial.nextCursor);
+  assert.equal((await connection.publicSearch('Song',initial.nextCursor)).status,'ready');
+  pending=true;
+  const controller=new AbortController();
+  const request=connection.publicSearch('Song',initial.nextCursor,controller.signal);
+  await started.promise;controller.abort();
+  assert.equal((await request).status,'timed-out');
+  assert.equal(observedSignal?.aborted,true);
+}));
+
 test('public replies are fenced when an explicitly selected private configuration is invalid',async()=>fixture(async root=>{
   const started=deferred<void>(),reply=deferred<Response>();
   const connection=new SharedCatalogConnection(join(root,'cache.json'),undefined,async()=>{throw Error('bad private configuration');},cacheFile=>new SharedCatalogClient({baseUrl,public:true,cacheFile,fetch:async()=>{started.resolve();return reply.promise;}}));

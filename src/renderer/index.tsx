@@ -61,6 +61,7 @@ import { SongResults } from './SongResults';
 import { unifiedSongResults, type SongResult } from './unified-song-results';
 import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-streaming-search';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
+import { LibraryCatalogPaging } from './LibraryCatalogStatus';
 import { ProviderCatalogPanel } from './ProviderCatalogPanel';
 import { KHostBridgePanel } from './KHostBridgePanel';
 import { KaraFunPanel, useKaraFunAccount } from './KaraFunPanel';
@@ -129,7 +130,7 @@ declare global {
       retryHistoryExportCleanup: () => Promise<HistoryExportResult>;
       mutateCollections: (action: CollectionsAction) => Promise<CollectionsSnapshot>;
       getSettings: () => Promise<{ settings: Settings; path: string; created: boolean }>;
-      searchCommunityCatalog: (query: string) => Promise<LocalCatalogResult>;
+      searchCommunityCatalog: (query: string, cursor?: string) => Promise<LocalCatalogResult>;
       getProviderCatalogStatus: () => Promise<ProviderCatalogStatus[]>;
       searchProviderCatalog: (query: string) => Promise<ProviderCatalogSearchResult[]>;
       chooseProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
@@ -413,7 +414,8 @@ function App() {
   const blacklist = useMemo(() => compileSongBlacklist(settings), [settings.songBlacklist, settings.artistBlacklist]);
   const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
   const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
-  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library' && settings.sourceVisibility.karaokenerds, JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility]), window.tpv.searchCommunityCatalog);
+  const communityCatalogScope = JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility]);
+  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library' && settings.sourceVisibility.karaokenerds, communityCatalogScope, window.tpv.searchCommunityCatalog);
   const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility, karaFunAccount.state, karaFunAccount.revision, partyTymeAccount.state, partyTymeAccount.revision]);
   const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
   const libraryRows = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
@@ -759,6 +761,7 @@ function App() {
           <div className="search-service-status" role="status">
             {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || partyTymeSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
             {catalogSearch.result && catalogSearch.result.status !== 'ready' && <Tooltip text="Karaoke Nerds is unavailable. Check Sources or retry when connected."><span tabIndex={0}>Karaoke Nerds unavailable ⓘ</span></Tooltip>}
+            {catalogSearch.result?.status === 'ready' && catalogSearch.result.stale && <Tooltip text="This snapshot may be outdated."><span tabIndex={0}>{catalogSearch.result.source === 'offline-cache' ? 'Cached Karaoke Nerds results' : 'Karaoke Nerds snapshot may be outdated'} ⓘ</span></Tooltip>}
             {karaFunSearch.result && karaFunSearch.result.status !== 'ok' && <Tooltip text={karaFunSearch.result.message || 'Check your account in Sources.'}><span tabIndex={0}>KaraFun unavailable ⓘ</span></Tooltip>}
             {settings.sourceVisibility.partytyme && partyTymeAccount.state === 'expired' && <Tooltip text="The Party Tyme session expired. Reconnect it in Sources."><span tabIndex={0}>Party Tyme sign-in expired ⓘ</span></Tooltip>}
             {partyTymeSearch.result && partyTymeSearch.result.status !== 'ok' && <Tooltip text={partyTymeSearch.result.message || 'Check your Party Tyme account in Sources and try again.'}><span tabIndex={0}>Party Tyme unavailable ⓘ</span></Tooltip>}
@@ -775,6 +778,7 @@ function App() {
               const step = rows[1] && rows[0] ? rows[1].offsetTop - rows[0].offsetTop : rows[0]?.offsetHeight;
               if (step && step > 0) setRatingWindowStart(Math.max(0, Math.floor(event.currentTarget.scrollTop / step / 40) * 40));
             }} />
+          <LibraryCatalogPaging state={catalogSearch} />
           <details className="missing-song-request"><summary>Request a missing song</summary>
             <form className="request-form" onSubmit={requestMissingSong}>
               <label>Singer name<input value={missingSinger} onChange={e => setMissingSinger(e.target.value)} maxLength={100} required /></label>
@@ -784,7 +788,7 @@ function App() {
             </form>
           </details>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={settings.sourceVisibility} onSave={async value => setSettings(await window.tpv.saveSettings({ sourceVisibility: value }))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} enabled={settings.sourceVisibility.karafun} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={settings.sourceVisibility} onSave={async value => setSettings(await window.tpv.saveSettings({ sourceVisibility: value }))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel scope={communityCatalogScope} search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} enabled={settings.sourceVisibility.karafun} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}

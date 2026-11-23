@@ -110,7 +110,7 @@ contextBridge.exposeInMainWorld('tpv', {
   reviewMedia: (id: string) => ipcRenderer.invoke('host:review-media', id),
   cancelMediaReview: (id: string) => ipcRenderer.invoke('host:cancel-media-review', id),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
-  searchCommunityCatalog: (query: string) => ipcRenderer.invoke('host:karaokenerds-search', query),
+  searchCommunityCatalog: (query: string, cursor?: string) => ipcRenderer.invoke('host:karaokenerds-search', query, cursor),
   getProviderCatalogStatus: () => ipcRenderer.invoke('host:provider-catalog-status'),
   searchProviderCatalog: (query: string) => ipcRenderer.invoke('host:provider-catalog-search', query),
   chooseProviderCatalogProfile: (provider: string) => ipcRenderer.invoke('host:provider-catalog-choose-profile', provider),

@@ -20,7 +20,7 @@ const karaFun: RemoteCatalogTrack = { title: 'Wonderwall', artist: 'Oasis', rati
 const partyTyme: RemoteCatalogTrack = { title: 'Wonderwall', artist: 'Oasis', rating: 'unrated',
   source: { provider: 'partytyme', catalog: 'consumer', videoId: '123' } };
 
-function fixture(lookup?: RemoteCatalogProviders['search'], withYouTube = false) {
+function fixture(lookup?: RemoteCatalogProviders['search'], withYouTube = false, pageKaraokeNerds?: RemoteCatalogProviders['pageKaraokeNerds']) {
   const store = new Store<ShowState>(':memory:'), settings = structuredClone(DEFAULT_SETTINGS);
   const initial = createInitialState('show-room', 'host-epoch');
   initial.versions.push({ id: 'local-song', title: 'Wonderwall', artist: 'Oasis', rating: 'clean' });
@@ -32,6 +32,7 @@ function fixture(lookup?: RemoteCatalogProviders['search'], withYouTube = false)
       .filter(source => settings.sourceVisibility[source] && (source !== 'youtube' || withYouTube)),
     generation: source => String(sourceGenerations[source]),
     search: lookup ?? (async source => source === 'karaokenerds' ? [karaokeNerds] : source === 'karafun' ? [karaFun] : [partyTyme]),
+    pageKaraokeNerds,
   }, () => now);
   const queue = store.openRemoteQueue(() => settings, () => {}, () => now, undefined, undefined, undefined, remote);
   const join = (name: string) => queue.join(queue.createInvitation(30000), randomUUID(), resumeSecret(), name, store.load()!.revision);
@@ -194,5 +195,95 @@ test('room search uses desktop song matching to keep generic YouTube as fallback
       ['Wonderwall', 'local'], ['Wonderwall', 'karaokenerds'], ['Wonderwall Live', 'youtube'],
     ]);
     assert.ok(f.store.load()!.versions.some(version => version.id === 'saved-youtube'), 'filtering leaves the library recording intact');
+  } finally { f.store.close(); }
+});
+
+const pagedTrack = (index: number): RemoteCatalogTrack => ({
+  title: `Wonderwall Version ${index}`, artist: 'Oasis', rating: 'unrated', discoveryOrigin: 'karaokenerds',
+  source: { provider: 'youtube', videoId: `paged${String(index).padStart(6, '0')}` },
+});
+
+test('connected search pages every Karaoke Nerds match and suppresses late YouTube duplicates', async () => {
+  const directRows = Array.from({ length: 141 }, (_unused, index) => pagedTrack(index));
+  const fallback: RemoteCatalogTrack = { title: 'Wonderwall Version 140', artist: 'Oasis', rating: 'unrated', source: { provider: 'youtube', videoId: 'abcdefghijk' } };
+  const unique: RemoteCatalogTrack = { ...fallback, title: 'Wonderwall Live', source: { provider: 'youtube', videoId: 'abcdefghijl' } };
+  const cursors: (string | null)[] = [];
+  const f = fixture(async source => source === 'youtube' ? [fallback, unique] : [],
+    true, async (query, cursor) => {
+      assert.equal(query, 'Wonderwall');
+      cursors.push(cursor);
+      const index = cursor ? Number(cursor) : 0;
+      return { tracks: directRows.slice(index, index + 50), nextCursor: index + 50 < directRows.length ? String(index + 50) : null };
+    });
+  try {
+    const show = f.store.load()!;
+    // This already-queued recording should preserve its library identity
+    // without consuming two spots in the combined search results.
+    show.versions.push({ id: 'cached-community', ...pagedTrack(50) });
+    f.store.save(show);
+    const singer = f.join('Singer'), other = f.join('Other singer');
+    await assert.rejects(f.queue.searchCatalog(singer.session, 1000000, 50, 'Wonderwall'));
+    assert.deepEqual(cursors, []);
+    const first = parseGuestCatalog(await f.queue.searchCatalog(singer.session, 0, 50, 'Wonderwall'), 0, 50);
+    assert.equal(first.nextOffset, 50);
+    assert.deepEqual(cursors, [null]);
+    await assert.rejects(f.queue.searchCatalog(other.session, 50, 50, 'Wonderwall'));
+    const second = parseGuestCatalog(await f.queue.searchCatalog(singer.session, 50, 50, 'Wonderwall'), 50, 50);
+    assert.equal(second.nextOffset, 100);
+    assert.deepEqual(await f.queue.searchCatalog(singer.session, 50, 50, 'Wonderwall'), second);
+    assert.deepEqual(cursors, [null, '50']);
+    const third = parseGuestCatalog(await f.queue.searchCatalog(singer.session, 100, 50, 'Wonderwall'), 100, 50);
+    const visible = [...first.items, ...second.items, ...third.items];
+    assert.equal(third.nextOffset, null);
+    assert.equal(visible.filter(row => row.source === 'karaokenerds').length, 141);
+    assert.equal(new Set(visible.map(row => row.recordingId ?? row.id)).size, visible.length);
+    assert.deepEqual(visible.filter(row => row.source === 'youtube').map(row => row.title), ['Wonderwall Live']);
+    assert.deepEqual(cursors, [null, '50', '100']);
+    const late = third.items.find(row => row.title === 'Wonderwall Version 140' && row.source === 'karaokenerds')!;
+    assert.equal(f.queue.submit(other.session, f.request(other.session, late.id)).ok, false);
+    assert.equal(f.queue.submit(singer.session, f.request(singer.session, late.id)).ok, true);
+    assert.equal(f.queue.snapshot(singer.session).requests[0].title, 'Wonderwall Version 140');
+  } finally { f.store.close(); }
+});
+
+test('paging resumes after a temporary failure and rejects data after the host disables its source', async () => {
+  const positions: (string | null)[] = [];
+  let interrupts = 1;
+  const f = fixture(async () => [], false, async (_query, cursor) => {
+    positions.push(cursor);
+    if (cursor === null) return { tracks: [pagedTrack(0)], nextCursor: '1' };
+    if (interrupts-- > 0) throw new Error('Temporary provider failure');
+    return { tracks: [pagedTrack(1), pagedTrack(2), pagedTrack(3)], nextCursor: '4' };
+  });
+  try {
+    const singer = f.join('Singer');
+    await assert.rejects(f.queue.searchCatalog(singer.session, 0, 2, 'Wonderwall'));
+    const first = await f.queue.searchCatalog(singer.session, 0, 2, 'Wonderwall');
+    assert.equal(first.nextOffset, 2);
+    assert.deepEqual(first.items.map(row => row.title), ['Wonderwall', 'Wonderwall Version 0']);
+    assert.deepEqual(positions, [null, '1', '1']);
+    f.settings.sourceVisibility.karaokenerds = false;
+    await assert.rejects(f.queue.searchCatalog(singer.session, 2, 2, 'Wonderwall'));
+    const disabled = await f.queue.searchCatalog(singer.session, 0, 2, 'Wonderwall');
+    assert.deepEqual(disabled.items.map(row => row.source), ['local']);
+    assert.deepEqual(positions, [null, '1', '1']);
+  } finally { f.store.close(); }
+});
+
+test('the next catalog page returns the latest revision after changes to the show', async () => {
+  let calls = 0;
+  const f = fixture(async () => [], false, async () => {
+    calls++;
+    return { tracks: [pagedTrack(0), pagedTrack(1)], nextCursor: '2' };
+  });
+  try {
+    const singer = f.join('Singer');
+    const first = await f.queue.searchCatalog(singer.session, 0, 2, 'Wonderwall');
+    f.join('New singer');
+    const changed = await f.queue.searchCatalog(singer.session, 2, 2, 'Wonderwall');
+    assert.equal(changed.revision, first.revision + 1);
+    assert.deepEqual(changed.items, []);
+    assert.equal(changed.nextOffset, null);
+    assert.equal(calls, 1);
   } finally { f.store.close(); }
 });

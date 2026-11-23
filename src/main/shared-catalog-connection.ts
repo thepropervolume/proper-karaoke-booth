@@ -1,5 +1,5 @@
 /** Private desktop service configuration and host-only catalog projection. */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { lstat, open } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { SharedCatalogClient } from './shared-catalog-client';
@@ -10,7 +10,7 @@ export const PUBLIC_CATALOG_ORIGIN = 'https://apps.thepropervolume.com';
 export type CatalogConnectionStatus = { status: string; source?: 'remote' | 'cache'; connectionMode?: 'public' | 'private'; lastSuccess?: number | null; lastAttempt?: number | null;
   fetchedAt?: number; stale?: boolean; recordCount?: number; searchableCount?: number; revision?: string | null; cachePersisted?: boolean };
 type PrivateConfig = { baseUrl: string; token: string };
-type ActiveConnection = { client: SharedCatalogClient; epoch: number };
+type ActiveConnection = { client: SharedCatalogClient; epoch: number; cursorScope: string };
 class SupersededConnection extends Error {}
 const privateFile = (info: {mode:number;uid:number;isFile():boolean}) => info.isFile() && (process.platform === 'win32' ||
   ((info.mode & 0o077) === 0 && (typeof process.getuid !== 'function' || info.uid === process.getuid())));
@@ -44,6 +44,7 @@ export async function readSharedCatalogConfig(path: string): Promise<PrivateConf
 export class SharedCatalogConnection {
   private fingerprint = '';
   private client: SharedCatalogClient | null = null;
+  private cursorScope = randomUUID();
   private activePath: string | null = null;
   private activeEpoch = 0;
   private readSequence = 0;
@@ -56,9 +57,10 @@ export class SharedCatalogConnection {
     if (this.activePath !== '@public') { this.activePath = '@public'; ++this.activeEpoch; }
     if (!this.client || this.fingerprint !== '@public') {
       this.client = this.createPublic(this.cacheFile + '.public'); this.fingerprint = '@public';
+      this.cursorScope = randomUUID();
     }
     this.installedRead = ++this.readSequence;
-    return {client:this.client,epoch:this.activeEpoch};
+    return {client:this.client,epoch:this.activeEpoch,cursorScope:this.cursorScope};
   }
   private async connect(path: string): Promise<ActiveConnection> {
     if (path !== this.activePath) { this.activePath = path; ++this.activeEpoch; }
@@ -71,9 +73,12 @@ export class SharedCatalogConnection {
     // Parallel reads of one configuration may share the authority. An older
     // credential read cannot replace a newer installed scope at the same path.
     if (sequence < this.installedRead && fingerprint !== this.fingerprint) throw new SupersededConnection();
-    if (!this.client || fingerprint !== this.fingerprint) { this.client = this.create(config,this.cacheFile); this.fingerprint = fingerprint; }
+    if (!this.client || fingerprint !== this.fingerprint) {
+      this.client = this.create(config,this.cacheFile); this.fingerprint = fingerprint;
+      this.cursorScope = randomUUID();
+    }
     this.installedRead = Math.max(sequence,this.installedRead);
-    return {client:this.client,epoch};
+    return {client:this.client,epoch,cursorScope:this.cursorScope};
   }
   private current(connection: ActiveConnection): boolean {
     return connection.epoch === this.activeEpoch && connection.client === this.client;
@@ -89,19 +94,24 @@ export class SharedCatalogConnection {
         fetchedAt:result.fetchedAt,stale:result.stale,recordCount:result.recordCount,searchableCount:result.searchableCount,revision:result.revision,cachePersisted:result.cachePersisted};
     } catch { return {status:'unavailable',connectionMode:'public'}; }
   }
-  async publicSearch(query: unknown): Promise<LocalCatalogResult> {
+  async publicSearch(query: unknown, cursor?: unknown, signal?: AbortSignal): Promise<LocalCatalogResult> {
     if (typeof query !== 'string' || query.trim().length < 2 || query.length > 200 || /[\x00-\x1f\x7f]/.test(query)) throw new Error('Enter at least two characters, up to 200.');
+    if (cursor !== undefined && cursor !== null && typeof cursor !== 'string') return {status:'invalid-request',tracks:[],limited:false,lastSuccess:null};
     try {
-      const connection = this.connectPublic(), result = await connection.client.search({query:query.trim(),limit:50});
-      if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
-      return this.projectSearch(result);
+      return await this.searchPage(this.connectPublic(), query.trim(), cursor, signal);
     } catch { return {status:'unavailable',tracks:[],limited:false,lastSuccess:null}; }
   }
-  private projectSearch(result: Awaited<ReturnType<SharedCatalogClient['search']>>): LocalCatalogResult {
+  private async searchPage(connection: ActiveConnection, query: string, cursor: string | null | undefined, signal?: AbortSignal): Promise<LocalCatalogResult> {
+    // The provider cursor is scoped to a query and catalog revision. Add a
+    // local scope as well so a new connection can't append to old results.
+    const prefix = connection.cursorScope + '_';
+    if (cursor != null && !cursor.startsWith(prefix)) return {status:'invalid-request',tracks:[],limited:false,lastSuccess:null};
+    const result = await connection.client.search({query,cursor:cursor?.slice(prefix.length),limit:50},signal);
+    if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
     if (result.status !== 'ready') return {status:result.status,tracks:[],limited:false,lastSuccess:null};
     return {status:'ready',tracks:result.items.map(item => ({id:item.youtubeId,artist:item.artist,title:item.title,
       brand:item.brandSlug || item.brandCode || null,...(item.brandSlug ? {brandSlug:item.brandSlug} : {}),youtubeId:item.youtubeId})),
-      limited:result.nextCursor !== null,lastSuccess:result.lastSuccess,source:result.source === 'cache' ? 'offline-cache' : 'shared',
+      limited:result.nextCursor !== null,nextCursor:result.nextCursor === null ? null : prefix + result.nextCursor,lastSuccess:result.lastSuccess,source:result.source === 'cache' ? 'offline-cache' : 'shared',
       fetchedAt:result.fetchedAt,stale:result.stale,revision:result.revision,cachePersisted:result.cachePersisted};
   }
   async status(path: string, active = true): Promise<CatalogConnectionStatus> {
@@ -118,14 +128,13 @@ export class SharedCatalogConnection {
         fetchedAt:result.fetchedAt,stale:result.stale,recordCount:result.recordCount,searchableCount:result.searchableCount,revision:result.revision,cachePersisted:result.cachePersisted};
     } catch (error) { return {status:error instanceof SupersededConnection ? 'unavailable' : 'configuration-error'}; }
   }
-  async search(path: string, query: unknown): Promise<LocalCatalogResult> {
+  async search(path: string, query: unknown, cursor?: unknown, signal?: AbortSignal): Promise<LocalCatalogResult> {
     if (typeof query !== 'string' || query.trim().length < 2 || query.length > 200 || /[\x00-\x1f\x7f]/.test(query)) throw new Error('Enter at least two characters, up to 200.');
+    if (cursor !== undefined && cursor !== null && typeof cursor !== 'string') return {status:'invalid-request',tracks:[],limited:false,lastSuccess:null};
     try {
       const connection = await this.connect(path);
       if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
-      const result = await connection.client.search({query:query.trim(),limit:50});
-      if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
-      return this.projectSearch(result);
+      return await this.searchPage(connection, query.trim(), cursor, signal);
     } catch (error) { return {status:error instanceof SupersededConnection ? 'unavailable' : 'configuration-error',tracks:[],limited:false,lastSuccess:null}; }
   }
 }

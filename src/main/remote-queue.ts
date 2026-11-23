@@ -12,7 +12,7 @@ import { validPhotoDataUrl } from '../domain/photo';
 import { sourceForVersion, sourceIsVisible } from '../domain/source-visibility';
 import { recordingKeyFor } from '../domain/song-rating';
 import { songSearchIdentity } from '../domain/song-identity';
-import { guestCatalogSong, RemoteCatalog } from './remote-catalog';
+import { guestCatalogSong, RemoteCatalog, type GuestCatalogCandidate } from './remote-catalog';
 import type { Song } from '../remote/client';
 
 type Guest = { id: string; singerId: string; showId: string };
@@ -33,6 +33,19 @@ const validRequestId = (value: unknown): value is string => typeof value === 'st
 const denied = () => new Error('Guest access denied.');
 const MAX_ROOM_GUESTS = 200;
 const MAX_SNAPSHOT_REQUESTS = 50;
+const MAX_SEARCH_CONTINUATIONS = 40;
+const SEARCH_CONTINUATION_MS = 10 * 60_000;
+const SEARCH_PAGE_DEADLINE_MS = 7500;
+const MAX_PROVIDER_PAGES_PER_REQUEST = 20;
+
+type CatalogRow = { versionId: string } | { candidate: GuestCatalogCandidate };
+type YouTubeFallback = { row: CatalogRow; keys: string[] };
+type RoomCatalogPage = { revision: number; items: Song[]; nextOffset: number | null };
+type SearchContinuation = {
+  scope: string; revision: number; expires: number; nextOffset: number | null;
+  cursor: string | null | undefined; buffered: CatalogRow[]; fallback: YouTubeFallback[];
+  lastPage?: { offset: number; limit: number; page: RoomCatalogPage };
+};
 
 /** Registration definitely did not commit; admission can be refreshed and retried. */
 export class JoinRevisionConflict extends Error {
@@ -44,6 +57,7 @@ export class RemoteQueue {
   private readonly runId = randomUUID();
   private relayScopesInitialized = false;
   private authorityFault = false;
+  private readonly catalogContinuations = new Map<string, SearchContinuation>();
   constructor(private readonly db: DatabaseSync, private readonly settings: () => RemoteQueueSettings,
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
@@ -264,33 +278,130 @@ export class RemoteQueue {
   }
   async searchCatalog(token: unknown, offset = 0, limit = 50, query = '', scope = '') {
     if (!this.remoteCatalog || query.trim().length < 2) return this.catalog(token, offset, limit, query, scope);
-    this.authenticate(token, scope);
+    const guest = this.authenticate(token, scope), current = this.state();
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !validCatalogQuery(query)) throw denied();
-    const candidates = await this.remoteCatalog.search(query, this.state());
-    const guest = this.authenticate(token, scope), state = this.state(), settings = this.settings();
-    const local = this.catalogVersions(state, query, settings, new Set(this.remoteCatalog.sources()));
+    const key = JSON.stringify([guest.id, scope, query.trim()]);
+    if (this.remoteCatalog.pagesKaraokeNerds(current) || offset > 0 && this.catalogContinuations.has(key))
+      return this.paginatedCatalog(token, offset, limit, query.trim(), scope, key, current);
+    const candidates = await this.remoteCatalog.search(query, current);
+    this.authenticate(token, scope);
+    const state = this.state();
+    const { primary, fallback } = this.catalogRows(state, this.settings(), query, candidates);
+    const results = [...primary, ...fallback.map(entry => entry.row)];
+    return this.projectCatalogPage(guest.id, state, offset, limit, results.slice(offset, offset + limit), offset + limit < results.length);
+  }
+
+  private catalogRows(state: ShowState, settings: RemoteQueueSettings, query: string, candidates: GuestCatalogCandidate[]) {
+    const catalog = this.remoteCatalog!;
+    const local = this.catalogVersions(state, query, settings, new Set(catalog.sources()));
     const seen = new Set(local.map(version => recordingKeyFor(version.source)));
-    const visible = this.remoteCatalog.visible(state, candidates, settings)
+    const visible = catalog.visible(state, candidates, settings)
       .filter(candidate => {
         const key = recordingKeyFor(candidate.track.source);
         if (seen.has(key)) return false;
         seen.add(key); return true;
       });
-    const saved = local.map(version => ({ source: sourceForVersion(version), version, track: version }));
-    const discovered = visible.map(candidate => ({ source: candidate.source, track: candidate.track, candidate }));
+    const saved = local.map(version => ({ source: sourceForVersion(version), row: { versionId: version.id } as CatalogRow, track: version }));
+    const discovered = visible.map(candidate => ({ source: candidate.source, track: candidate.track, row: { candidate } as CatalogRow }));
     const otherVersions = new Set([...saved, ...discovered].filter(row => row.source !== 'youtube')
       .map(({ track }) => songSearchIdentity(track.artist, track.title)).filter(key => key !== null));
     const savedYouTube = saved.filter(({ source, track }) => source === 'youtube' && !otherVersions.has(songSearchIdentity(track.artist, track.title) ?? ''));
     const existingYouTube = new Set(savedYouTube.map(({ track }) => songSearchIdentity(track.artist, track.title)).filter(key => key !== null));
-    const externalYouTube = discovered.filter(({ source, track }) => {
-      if (source !== 'youtube') return false;
+    const externalYouTube = discovered.filter(row => row.source === 'youtube').flatMap(({ row, track }) => {
       const identity = songSearchIdentity(track.artist, track.title);
       const reverse = track.reverseTitleGuess ? songSearchIdentity(track.title, track.artist) : null;
-      return ![identity, reverse].some(key => key !== null && (otherVersions.has(key) || existingYouTube.has(key)));
+      const keys = [identity, reverse].filter(key => key !== null);
+      return keys.some(key => otherVersions.has(key) || existingYouTube.has(key)) ? [] : [{ row, keys }];
     });
-    const results = [...saved.filter(row => row.source !== 'youtube'), ...discovered.filter(row => row.source !== 'youtube'), ...savedYouTube, ...externalYouTube];
-    const items = results.slice(offset, offset + limit).map(row => 'version' in row ? this.catalogSong(row.version) : this.remoteCatalog!.issue(guest.id, row.candidate));
-    return { revision: state.revision, items, nextOffset: offset + limit < results.length ? offset + limit : null };
+    return {
+      primary: [...saved, ...discovered].filter(row => row.source !== 'youtube').map(entry => entry.row),
+      fallback: [...savedYouTube.map(({ row, track }) => ({ row,
+        keys: [songSearchIdentity(track.artist, track.title)].filter(key => key !== null) })), ...externalYouTube],
+    };
+  }
+
+  private projectCatalogPage(guestId: string, state: ShowState, offset: number, limit: number, rows: CatalogRow[], hasMore: boolean): RoomCatalogPage {
+    const saved = new Set(rows.flatMap(row => 'versionId' in row ? [row.versionId] : []));
+    const versions = new Map(state.versions.filter(version => saved.has(version.id)).map(version => [version.id, version]));
+    const items = rows.map(row => 'candidate' in row ? this.remoteCatalog!.issue(guestId, row.candidate) : this.catalogSong(versions.get(row.versionId)!));
+    return { revision: state.revision, items, nextOffset: hasMore ? offset + limit : null };
+  }
+
+  private catalogScope(state: ShowState): string {
+    const settings = this.settings();
+    return digest(JSON.stringify([state.showId, state.hostEpoch, state.revision, state.policy, this.remoteCatalog!.scope(),
+      settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility]));
+  }
+
+  private saveCatalogContinuation(key: string, continuation: SearchContinuation) {
+    this.catalogContinuations.delete(key);
+    this.catalogContinuations.set(key, { ...continuation, expires: this.now() + SEARCH_CONTINUATION_MS });
+    while (this.catalogContinuations.size > MAX_SEARCH_CONTINUATIONS) this.catalogContinuations.delete(this.catalogContinuations.keys().next().value!);
+  }
+
+  /** Only the next authorized offset is accepted, so an arbitrary high offset
+   * cannot make Booth walk the provider catalog. The provider cursor stays here. */
+  private async paginatedCatalog(token: unknown, offset: number, limit: number, query: string, scope: string, key: string, initial: ShowState): Promise<RoomCatalogPage> {
+    const catalog = this.remoteCatalog!, guest = this.authenticate(token, scope);
+    const initialScope = this.catalogScope(initial);
+    const previous = this.catalogContinuations.get(key);
+    const changed = (current: ShowState) => ({ revision: current.revision, items: [], nextOffset: null });
+    const settings = this.settings(), signal = AbortSignal.timeout(SEARCH_PAGE_DEADLINE_MS);
+    let next: SearchContinuation;
+    if (offset > 0 || previous?.nextOffset === 0 && previous.expires > this.now() && previous.scope === initialScope) {
+      if (previous && previous.revision !== initial.revision) return changed(initial);
+      if (!previous || previous.expires <= this.now() || previous.scope !== initialScope) throw denied();
+      if (previous.lastPage?.offset === offset && previous.lastPage.limit === limit) return previous.lastPage.page;
+      if (previous.nextOffset !== offset) throw denied();
+      next = { ...previous };
+    } else {
+      const candidates = await catalog.search(query, initial);
+      const { primary, fallback } = this.catalogRows(initial, settings, query, candidates);
+      next = { scope: initialScope, revision: initial.revision, expires: 0, nextOffset: 0, cursor: undefined, buffered: primary, fallback };
+    }
+    this.authenticate(token, scope);
+    let current = this.state();
+    if (initial.revision !== current.revision) return changed(current);
+    if (initialScope !== this.catalogScope(current)) throw denied();
+
+    const buffered = [...next.buffered];
+    const localKeys = new Set(this.catalogVersions(initial, query, settings).map(version => recordingKeyFor(version.source)));
+    let fetched = 0;
+    try {
+      while (buffered.length <= limit && next.cursor !== null) {
+        if (++fetched > MAX_PROVIDER_PAGES_PER_REQUEST) throw new Error('Karaoke Nerds search is still filtering rows. Retry to continue.');
+        const chunk = await catalog.karaokeNerdsPage(query, next.cursor ?? null, signal);
+        this.authenticate(token, scope);
+        current = this.state();
+        if (initial.revision !== current.revision) return changed(current);
+        if (initialScope !== this.catalogScope(current)) throw denied();
+        const eligible = catalog.visible(current, chunk.candidates, settings).filter(candidate =>
+          !localKeys.has(recordingKeyFor(candidate.track.source)));
+        const identities = new Set(eligible.map(({ track }) => songSearchIdentity(track.artist, track.title)));
+        buffered.push(...eligible.map(candidate => ({ candidate })));
+        next.fallback = next.fallback.filter(entry => !entry.keys.some(identity => identities.has(identity)));
+        next.cursor = chunk.nextCursor;
+      }
+    } catch (error) {
+      this.authenticate(token, scope);
+      current = this.state();
+      if (initial.revision !== current.revision) return changed(current);
+      // A retry of the same offset can finish scanning filtered rows without
+      // refetching already checked provider pages or skipping visible rows.
+      if (initialScope === this.catalogScope(current) && this.catalogContinuations.get(key) === previous)
+        this.saveCatalogContinuation(key, { ...next, buffered });
+      throw error;
+    }
+    if (next.cursor === null && next.fallback.length) {
+      buffered.push(...next.fallback.map(entry => entry.row));
+      next.fallback = [];
+    }
+    const rows = buffered.slice(0, limit);
+    const page = this.projectCatalogPage(guest.id, current, offset, limit, rows, buffered.length > limit);
+    next = { ...next, buffered: buffered.slice(limit), nextOffset: page.nextOffset, expires: this.now() + SEARCH_CONTINUATION_MS,
+      lastPage: { offset, limit, page } };
+    this.saveCatalogContinuation(key, next);
+    return page;
   }
   catalogItem(token: unknown, versionId: string, scope = '') {
     const state = this.state(); this.authenticate(token, scope);

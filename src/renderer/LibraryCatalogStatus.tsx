@@ -13,7 +13,22 @@ export function LibraryCatalogStatus({ state }: { state: LibraryCatalogSearchSta
   return <p className="muted" role="status">
     {result.source === 'offline-cache' ? `Saved Karaoke Nerds results${result.fetchedAt !== undefined ? ` from ${new Date(result.fetchedAt).toLocaleString()}` : ''}.` : 'Karaoke Nerds results included.'}
     {result.stale ? ' Catalog information may be outdated.' : ''}
-    {result.limited ? ' Refine your search to see more recordings.' : ''}
+    {result.nextCursor ? ' More recordings are available.' : result.limited ? ' Refine your search to see more recordings.' : ''}
     {result.cachePersisted === false ? ' This search could not be saved for offline use. Check disk space and app data permissions.' : ''}
   </p>;
+}
+
+export function LibraryCatalogPaging({ state }: {
+  state: LibraryCatalogSearchState & { loadMore: () => void; restart: () => void };
+}) {
+  if (state.result?.status !== 'ready' || !state.result.nextCursor) return null;
+  return <div className="library-catalog-paging">
+    <button type="button" disabled={state.phase === 'loading-more'} onClick={state.loadMore}>
+      {state.phase === 'loading-more' ? 'Loading Karaoke Nerds…' : 'More Karaoke Nerds Results'}
+    </button>
+    {state.pageError && <>
+      <span role="status">Could not load the next page.</span>
+      <button type="button" className="link" onClick={state.restart}>Restart Search</button>
+    </>}
+  </div>;
 }

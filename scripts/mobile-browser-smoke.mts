@@ -61,7 +61,13 @@ const hostPost = async (operation: string, payload: unknown, signal?: AbortSigna
   return response.json();
 };
 const show = new MobileShow();
-show.add([{ id: 'youtube_Video123456', provider: 'karaokenerds', videoId: 'Video123456', title: 'Wonderwall', artist: 'Oasis' }]);
+show.add([
+  { id: 'youtube_Video123456', provider: 'karaokenerds', videoId: 'Video123456', title: 'Wonderwall', artist: 'Oasis' },
+  ...Array.from({ length: 55 }, (_, index) => {
+    const videoId = 'RoomTest' + String(index).padStart(3, '0');
+    return { id: 'youtube_' + videoId, provider: 'karaokenerds' as const, videoId, title: 'Room Match ' + index, artist: 'Oasis' };
+  }),
+]);
 const authority = new MobileRoomAuthority(show);
 const opened = await hostPost('open', { slug, openId: crypto.randomUUID() });
 const room = { roomId: opened.roomId, generation: opened.generation };
@@ -78,7 +84,7 @@ const polling = (async () => {
           if (call.operation === 'snapshot') reply.body.sources = ['karaokenerds', 'karafun'];
           const field = call.operation === 'snapshot' ? 'catalog' : 'items';
           if (Array.isArray(reply.body[field])) reply.body[field] = reply.body[field].map(song => ({
-            ...song, source: 'karaokenerds', recordingId: 'youtube:Video123456',
+            ...song, source: 'karaokenerds', recordingId: 'youtube:' + song.id.slice('youtube_'.length),
           }));
         }
         return reply;
@@ -144,6 +150,10 @@ try {
   await singer.getByRole('button', { name: 'Join Room', exact: true }).click();
   await singer.getByRole('button', { name: 'Queue Wonderwall', exact: true }).waitFor();
   assert.equal(await singer.getByText('Party Tyme Pro Recording').count(), 0);
+  const roomLaterResult = singer.getByRole('button', { name: 'Queue Room Match 54', exact: true });
+  assert.equal(await roomLaterResult.count(), 0);
+  await singer.getByRole('button', { name: 'Load More Songs', exact: true }).click();
+  await roomLaterResult.waitFor();
   await singer.getByRole('button', { name: 'Queue Wonderwall' }).click();
   await singer.getByText('Request received.', { exact: true }).waitFor();
   assert.equal(show.state().queue.length, 1);
@@ -156,7 +166,7 @@ try {
   await tab('Library');
   await singer.getByText('KaraFun Recording').waitFor();
   assert.equal(await singer.getByText('Party Tyme Pro Recording').count(), 0);
-  checks.push('Nearby suggestion requires explicit join, real relay requests reach the host, and leaving inherits the room sources.');
+  checks.push('Nearby suggestion requires explicit join, match 56 is available after loading more, real relay requests reach the host, and leaving inherits room sources.');
   await singer.reload();
   await tab('Playlists');
   await singer.getByText('At the Show (1)').click();

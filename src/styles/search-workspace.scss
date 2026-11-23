@@ -18,6 +18,8 @@
 .search-workspace .library-meta .link { min-height: 22px; padding: 0; }
 .search-service-status { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: .78rem; }
 .search-service-status:empty { display: none; }
+.library-catalog-paging { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.library-catalog-paging [role="status"] { color: var(--muted); font-size: .85rem; }
 .search-workspace .library-results { flex: 1 1 150px; min-height: 100px; max-height: none; overflow-y: auto; margin: 0; }
 .search-workspace .song-list { gap: 0; }
 .search-workspace .song-option + .song-option { margin-top: 0; }

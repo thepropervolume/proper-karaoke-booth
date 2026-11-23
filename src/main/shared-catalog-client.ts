@@ -164,23 +164,29 @@ export class SharedCatalogClient {
       this.fetcher = options.fetch ?? fetch; this.timeoutMs = options.timeoutMs ?? 10000;
     } catch { throw new Error('Invalid shared catalog configuration.'); }
   }
-  async search(input: SharedCatalogQuery): Promise<SharedCatalogSearchResult> {
+  async search(input: SharedCatalogQuery, signal?: AbortSignal): Promise<SharedCatalogSearchResult> {
     if (!record(input) || Object.keys(input).some(key => !['query', 'artist', 'brandSlug', 'cursor', 'limit'].includes(key)) || !text(input.query, 200) || input.query.trim().length < 2 ||
         (input.artist !== undefined && input.artist !== '' && !text(input.artist, 200)) || (input.brandSlug !== undefined && input.brandSlug !== '' && (!text(input.brandSlug, 200) || input.brandSlug === '.' || input.brandSlug === '..' || /[\/\\?#%]/.test(input.brandSlug))) ||
         (input.cursor !== undefined && input.cursor !== null && (typeof input.cursor !== 'string' || !CURSOR.test(input.cursor))) || (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100))) return { status: 'invalid-request' };
     const values = { q: input.query.trim(), artist: input.artist ?? '', brand: input.brandSlug ?? '', cursor: input.cursor ?? null, limit: input.limit ?? 50 };
     const params = new URLSearchParams({ q: values.q, limit: String(values.limit) });
     if (values.artist) params.set('artist', values.artist); if (values.brand) params.set('brand', values.brand); if (values.cursor) params.set('cursor', values.cursor);
-    return this.request('search', digest(JSON.stringify(values)), this.routePrefix + '/tracks?' + params, value => page(value, values.limit)) as Promise<SharedCatalogSearchResult>;
+    return this.request('search', digest(JSON.stringify(values)), this.routePrefix + '/tracks?' + params, value => page(value, values.limit), signal) as Promise<SharedCatalogSearchResult>;
   }
   status(): Promise<SharedCatalogStatusResult> {
     return this.request('status', digest('status'), this.routePrefix + '/status', status) as Promise<SharedCatalogStatusResult>;
   }
-  private async request(kind: Kind, key: string, path: string, parse: (value: unknown) => Page | ServiceStatus | null): Promise<Ready<Page | ServiceStatus> | Failure> {
+  private async request(kind: Kind, key: string, path: string, parse: (value: unknown) => Page | ServiceStatus | null, signal?: AbortSignal): Promise<Ready<Page | ServiceStatus> | Failure> {
+    if (signal?.aborted) return { status: 'timed-out' };
     const authorizationEpoch = this.authorizationEpoch;
     const controller = new AbortController(); let expired = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<Failure>(resolve => { timer = setTimeout(() => { expired = true; controller.abort(); resolve({ status: 'timed-out' }); }, this.timeoutMs); });
+    let expire!: () => void;
+    const deadline = new Promise<Failure>(resolve => {
+      expire = () => { expired = true; controller.abort(); resolve({ status: 'timed-out' }); };
+      timer = setTimeout(expire, this.timeoutMs);
+      signal?.addEventListener('abort', expire, { once: true });
+    });
     const work = (async (): Promise<{ status: 'ok'; value: Page | ServiceStatus } | Failure> => {
       let received = false;
       try {
@@ -205,19 +211,22 @@ export class SharedCatalogClient {
     })();
     let result: Awaited<typeof work>;
     try { result = await Promise.race([work, deadline]); }
-    finally { if (timer) clearTimeout(timer); }
+    finally { if (timer) clearTimeout(timer); signal?.removeEventListener('abort', expire); }
+    if (signal?.aborted) return { status: 'timed-out' };
     const now = this.now();
     if (!Number.isSafeInteger(now) || now < 0) return { status: 'invalid-response' };
     if (result.status === 'ok') {
       if (authorizationEpoch !== this.authorizationEpoch && this.accessDenied) return { status: this.accessDenied };
       this.accessDenied = null;
       const persisted = await this.cache.put(key, kind, result.value, now);
+      if (signal?.aborted) return { status: 'timed-out' };
       if (authorizationEpoch !== this.authorizationEpoch && this.accessDenied) return { status: this.accessDenied };
       return { ...result.value, status: 'ready', source: 'remote', fetchedAt: now, stale: result.value.lastSuccess === null || now - result.value.lastSuccess > DAY, cachePersisted: persisted, offlineReason: null };
     }
     if (result.status === 'unauthorized' || result.status === 'forbidden') { this.accessDenied = result.status; ++this.authorizationEpoch; await this.cache.invalidate(); }
     if (!this.accessDenied && ['unavailable', 'timed-out', 'rate-limited'].includes(result.status)) {
       const cached = await this.cache.get(key, kind);
+      if (signal?.aborted) return { status: 'timed-out' };
       // Loading a cold cache may yield while another request revokes access.
       // A copied entry must not escape after that authority has changed.
       if (authorizationEpoch !== this.authorizationEpoch || this.accessDenied) return this.accessDenied ? { status: this.accessDenied } : result;
