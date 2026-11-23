@@ -234,6 +234,8 @@ const khostBridge = new KHostBridgeConnection(() => ({ ...settings, policy: stat
 let choosingKHostProfile = false;
 const singerFrames = new SingerScreenFrameHub();
 const singerScreenServer = new SingerScreenServer(singerFrames);
+// A restored checkbox must not trigger a Windows inbound firewall prompt at launch.
+let singerScreenRequested = process.platform !== 'win32';
 let singerScreenError = '';
 let outputRecovery: { generation: string; revision: number } | null = null;
 function previewFrame(): SingerPreviewFrame {
@@ -262,7 +264,7 @@ function singerScreenStatus(): SingerScreenUiStatus {
 async function reconcileSingerScreen(): Promise<void> {
   singerScreenError = '';
   try {
-    if (shuttingDown || !settings.singerScreenEnabled) await singerScreenServer.stop();
+    if (shuttingDown || !settings.singerScreenEnabled || !singerScreenRequested) await singerScreenServer.stop();
     else await singerScreenServer.start({ port: settings.singerScreenPort });
   } catch { singerScreenError = 'The singer-screen port could not be opened. Check whether another app uses it, or choose a different port in Preferences → Singer Display.'; }
 }
@@ -1557,7 +1559,14 @@ else {
   await reconcileSingerScreen();
   ipcMain.handle('host:singer-preview', event => { guardHost(event.sender.id); return previewFrame(); });
   ipcMain.handle('host:singer-screen-status', event => { guardHost(event.sender.id); return singerScreenStatus(); });
-  ipcMain.handle('host:singer-screen-retry', async event => { guardHost(event.sender.id); await reconcileSingerScreen(); return singerScreenStatus(); });
+  ipcMain.handle('host:singer-screen-retry', event => {
+    guardHost(event.sender.id);
+    return settingsUpdates.run(async () => {
+      singerScreenRequested = settings.singerScreenEnabled;
+      await reconcileSingerScreen();
+      return singerScreenStatus();
+    });
+  });
   ipcMain.handle('host:singer-screen-copy', (event, url: unknown) => { guardHost(event.sender.id); if (typeof url !== 'string' || !singerScreenStatus().urls.includes(url)) throw new Error('Choose a current singer-screen address.'); clipboard.writeText(url); });
   ipcMain.handle('host:karafun-status', event => { guardHost(event.sender.id); return karaFunAccount.status(); });
   ipcMain.handle('host:partytyme-status',event=>{guardHost(event.sender.id);return partyTymeAccount.status();});
@@ -1950,6 +1959,8 @@ else {
         const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const sourceVisibilityChanged = JSON.stringify(settings.sourceVisibility) !== JSON.stringify(proposed.sourceVisibility);
         const desktopUpdateModeChanged = settings.desktopUpdateMode !== proposed.desktopUpdateMode;
+        const singerScreenEnabledChanged = settings.singerScreenEnabled !== proposed.singerScreenEnabled;
+        const singerScreenPortChanged = settings.singerScreenPort !== proposed.singerScreenPort;
         settings = sourceVisibilityChanged
           ? saveWithDiscoveryRevision(state, next => store.save(next), next => { installShowState(next); },
             () => writeSettings(settingsPath, proposed), () => broadcast())
@@ -1969,7 +1980,8 @@ else {
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(true);
         broadcast();
         if (youtubeSettingsChanged) youtubeSearch.cancel();
-        await reconcileSingerScreen();
+        if (singerScreenEnabledChanged) singerScreenRequested = settings.singerScreenEnabled;
+        if (singerScreenEnabledChanged || singerScreenPortChanged) await reconcileSingerScreen();
         if (internetQueue) mobileRoomBeacon.update(internetQueue.status(),settings.boothName,settings.mobileRoomDiscovery);
         await reconcileLocalControl();
         return settings;

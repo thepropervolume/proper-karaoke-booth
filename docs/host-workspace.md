@@ -72,7 +72,7 @@ Choose **Preferences → YouTube Search → Approved channels only** for stricte
 
 For the mobile app, **Preferences → Remote Queueing → Suggest my active internet room to nearby mobile singers** defaults on. It advertises only a live room's public join address on trusted private interfaces and allows same-internet-connection suggestions. A singer still chooses to join; discovery grants no host controls. Disable it to use manual room links only. See [mobile modes](mobile-app.md).
 
-Open **Remote Sessions → LAN Singer Screens** or the sharing controls under **Preferences → Singer Display**. Port 4051 is the default. Copy a displayed private-interface address to venue browsers; numeric addresses work without mDNS. This is a silent visual mirror, separate from singer requests. Windows sharing requires verified Private network classification as well as a private address. Unknown/Public profiles stay loopback-only; a 30-second recheck and bounded 5-second classification timeout remove lost trust. No firewall rule or organisation-managed setting is changed. See [LAN setup and limits](singer-screen-sharing.md).
+Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. On Windows, start sharing again after each launch. **Preferences → Singer Display** retains your preference and port, which defaults to 4051. Copy a displayed Private-network address to each venue browser. This is a silent visual mirror, separate from singer requests. Windows verifies each adapter's Private classification before opening its address, and rechecks trust every 30 seconds. See [LAN setup and limits](singer-screen-sharing.md).
 
 ## Native KaraFun in 0.7.0
 

@@ -1,4 +1,12 @@
-# Windows Firewall Inspection — 15 November 2026
+# Windows Firewall and LAN Singer Screens
+
+## Recurrence on 23 November 2026
+
+Booth 0.10.12 had a saved LAN singer-screen setting and TCP listeners on port 4051 on loopback and two Private addresses. Both active network profiles were Private. Windows nevertheless showed a Public-network prompt with **Allow** disabled, and the effective firewall rules included local Public-only inbound blocks for the installed Booth executable.
+
+Booth 0.10.16 keeps the LAN listener closed when Windows starts Booth, including profiles that already saved sharing as enabled. To use it, select **Start Singer-Screen Sharing** under **Remote Sessions → LAN Singer Screens**. Cancel a Public-network prompt if it appears while starting sharing. Normal host playback, the local singer display, and outbound internet requests run independently of this port.
+
+## Inspection on 15 November 2026
 
 The owner's Windows session showed all three active network adapters classified **Private**, with no Azure AD, enterprise, domain or workplace enrollment reported by the inspected system status. The checked firewall Group Policy/MDM/UI-policy registry locations were absent. Two local inbound `electron.exe` **Block** rules applied only to **Public** networks. The process was not elevated; UAC was enabled. Effective firewall profiles were Private/Domain disabled and Public enabled, with inbound blocking and listen notifications enabled on Public. These are observations from that session, not settings changed by TPV.
 

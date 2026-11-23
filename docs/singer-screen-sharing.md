@@ -5,7 +5,7 @@ Source development **0.7.0** provides an opt-in, read-only visual mirror from th
 ## Start and Stop
 
 1. Connect the host and viewing devices to the venue network.
-2. Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. Alternatively, enable sharing under **Preferences → Singer Display**, choose the port and save.
+2. Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. You can also turn sharing on under **Preferences → Singer Display**. Starting with 0.10.16 on Windows, a saved setting remembers the port and preference, and you start sharing again in **Remote Sessions** after each launch.
 3. Copy one of the displayed numeric addresses to each viewing browser, for example `http://192.168.1.20:4051`.
 4. The hidden singer renderer already supplies the interlude or current performance. Opening a visible singer window is optional. Browsers wait/reconnect if its renderer is unavailable; preview never creates another player or starts karaoke.
 5. Use **Stop Singer-Screen Sharing** to close the listener. Stopping sharing does not stop the singer performance. The local host preview can continue independently.
@@ -18,9 +18,9 @@ Development 0.7 binds separate listeners to verified private interfaces plus loo
 
 Use the numeric address when a name such as `proper-computer.local` does not resolve. The application does not install an mDNS service or make a hostname work on every venue network. Changing Wi-Fi, interfaces or host addresses may require copying a fresh address.
 
-Windows may ask whether to allow the application on **Private networks**. An inbound private-network firewall allowance may be needed for the chosen port. Guest-network client isolation can prevent devices from reaching one another even when they share Wi-Fi. Check these network settings with the venue; the app does not silently change firewall rules.
+If Windows shows a **Public networks** access prompt when you start sharing, you can select **Cancel**. Keep the viewing devices on the same trusted Private network. If the screen is unreachable, check the Private firewall profile for the installed Booth executable and selected port. Venue Wi-Fi can also isolate clients on the same network.
 
-The owner's 15 November Windows prompt was inspected without changing policy; see the [read-only firewall findings and recovery guidance](windows-firewall-diagnosis.md). The organisation label's exact origin remains unconfirmed.
+The Windows prompt was inspected without changing policy. See the [firewall findings and recovery guidance](windows-firewall-diagnosis.md).
 
 Keep this listener private to the venue. It is not an internet relay and should not be port-forwarded publicly. The service accepts directly connected private, link-local or loopback peers, validates request hosts/origins and offers only read-only display assets/status. It does not expose the show database, file paths, credentials, media-file URLs or host-control actions.
 

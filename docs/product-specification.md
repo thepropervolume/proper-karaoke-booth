@@ -50,7 +50,7 @@ One persistent hidden singer renderer supplies the actual preview and audio. Clo
 
 Remembered KaraFun sessions are OS-encrypted where safeStorage is usable, validated on restore and retain their opaque account cache scope. Linux plaintext fallback is rejected. Normal quit preserves the session; explicit sign-out forgets it. Fresh start/resume authorization remains required. Primary completed native lyrics use KaraFun pink. Numeric KaraFun catalog/community recording keys are supported for global ratings without SQL changes; the matching production validator is deployed and verified. Community playback itself remains planned.
 
-Read-only LAN screens bind concrete trusted private interfaces and loopback. On Windows, the interface must also be classified Private; unknown/Public results remain loopback-only. Network trust is checked every 30 seconds with a 5-second classification bound, closing untrusted listeners. No firewall/organisation policy is changed.
+Read-only LAN screens bind concrete trusted private interfaces and loopback. Starting with 0.10.16, Windows keeps the LAN listener closed at launch, even when sharing was previously enabled. Start sharing explicitly in Remote Sessions. When sharing runs, Windows requires Private classification and unknown or Public results stay loopback-only. The service checks trust every 30 seconds with a 5-second classification bound.
 
 Focused automation/fade/capture/staging tests and isolated muted Electron rehearsals passed hidden preview, default-output launch music, completion/Skip gaps, Stop, paused restart, concurrent Play, Previous and readiness timeout/retry. Windows protected-session persistence passed independent-launch checks. Physical sound, real monitor/device hot-plug, full-song timing, native Linux/macOS provider playback and new platform packages remain separate acceptance gates. Earlier package/planning evidence below remains version-specific.
 
@@ -214,7 +214,7 @@ Standalone mobile hosting is paused. The earlier Full Host code and locally stor
 
 A saved playlist prepares a set before joining. If a host opens requests early, show received, approved, checked-in and eligible as distinct states. Revalidate the exact version, policy, access and key support when submitting. Approval and check-in rules remain host-configurable product decisions. A proposed heartbeat every two seconds and disabled controls after five seconds without a host update require actual network measurement before adoption. On reconnection a fresh snapshot precedes new actions. The relay expires stale actions.
 
-**Available, updated in 0.7.0 — LAN visual screens:** a separate opt-in read-only listener defaults to port 4051 and binds concrete trusted private interfaces plus loopback. Windows requires actual Private classification; Public/unknown stays loopback-only. A 30-second trust recheck and 5-second classification bound remove untrusted listeners without changing firewall policy. Remote Sessions shows its private-network numeric addresses; Singer Display preferences configure enabled state and port. Up to 64 browser streams mirror the authoritative singer window using bounded multipart JPEG frames; sound remains on the host. It is a viewing surface, not queue admission, a host API or an internet relay. Request links remain separate. Anyone able to reach the private LAN listener can view the screen while enabled.
+**Available, updated in 0.10.16 — LAN visual screens:** a separate opt-in read-only listener defaults to port 4051. On Windows, saved sharing stays off until the host starts it for that launch. Once started, it binds verified Private addresses plus loopback. Unknown and Public profiles stay loopback-only. A 30-second trust recheck and 5-second classification bound remove untrusted listeners. Remote Sessions shows numeric connection addresses, and Singer Display preferences retain enabled state and port. Up to 64 browsers can mirror the singer window with bounded multipart JPEG streams. Sound remains on the host, and song requests use separate links.
 
 Capture polling is approximately 125 ms, deduplicates static frames and never overlaps capture work. Generation fences reject late old-window images; no demand, failures and display invalidation clear stale pixels. Slow-viewer data is bounded and reconnects; the page fits its viewport. Host/origin/method validation, private-peer checks, connection limits, port-conflict recovery and serialized shutdown/reconfiguration are covered by source tests. Numeric addresses are the fallback when `.local` names do not resolve; the app installs no mDNS service or firewall rule. Windows may need a Private-network allowance. Physical multi-device/venue-network latency and endurance remain unverified.
 
@@ -1142,7 +1142,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
   "toolbar": "Remote Sessions | LAN Singer Screens",
   "heading": "Host Sharing Controls",
   "rows": [
-    "Sharing | Enabled explicitly",
+    "Sharing | Start after each Windows launch",
     "Port | 4051",
     "Address | http://192.168.1.20:4051",
     "Viewers | 3 of 64 | Illustrative",
@@ -1160,7 +1160,7 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     "Viewing address | No queue or host controls",
     "Remote Session | Use invitation to request"
   ],
-  "detail": "Concrete private-interface listeners plus loopback. Windows requires actual Private classification; unknown/Public is loopback-only. Trust rechecks every 30s with 5s classification bound; no firewall rule is installed. Hidden preview works without visible singer window."
+  "detail": "Windows leaves sharing off at launch. While running, verified Private addresses and loopback are available. Network trust is rechecked every 30 seconds. The host preview works independently."
 }
 ```
 

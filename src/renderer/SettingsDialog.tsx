@@ -186,7 +186,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <div className="settings-group__content">
             <label className="settings-check"><input type="checkbox" checked={draft.singerScreenEnabled} onChange={event => setDraft({ ...draft, singerScreenEnabled: event.target.checked })} /> Share the singer screen with browsers on the local network</label>
             <label>Singer Screen Port<input aria-label="Singer Screen Port" type="number" min="1024" max="65535" step="1" required value={draft.singerScreenPort} onChange={event => setDraft({ ...draft, singerScreenPort: event.target.valueAsNumber })} /></label>
-            <SettingsHelp label="Singer screen sharing help" text="Shares a read-only visual screen; sound stays on this host. Save, then open Remote Sessions for connection addresses. Local sharing may require private-network firewall access." />
+            <SettingsHelp label="Singer screen sharing help" text="Shares a read-only visual screen with sound on this host. On Windows, select Start Singer-Screen Sharing in Remote Sessions after launching Booth. Local sharing may require private-network firewall access." />
             <label>Lyric Backdrop<select aria-label="Lyric Backdrop" value={draft.lyricBackdrop} onChange={event => setDraft({ ...draft, lyricBackdrop: event.target.value as Settings['lyricBackdrop'] })}>
               <option value="default">TPV Animated Backdrop (Version 3)</option><option value="none">Solid Background</option><option value="custom">Custom Video</option>
             </select></label>
