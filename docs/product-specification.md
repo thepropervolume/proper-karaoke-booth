@@ -429,7 +429,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     }
   ],
   "rows": [
-    "Popular | Nada Surf | Imported | 3:42 | ★",
+    "Popular | Nada Surf | Imported | 3:42 | KJ Picks",
     "Example Song | Sample Artist | Karaoke Nerds",
     "Another Example | Sample Artist | Sample Karaoke Channel",
     "Catalog Example | Sample Artist | KaraFun | 3:04"
@@ -683,7 +683,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "Cancel",
     "Save preferences"
   ],
-  "detail": "One hidden singer renderer handles preview/audio. Launch music needs no visible window. Completion/Skip waits for silence; next karaoke waits for bumper stop and media readiness. Physical sound remains unverified."
+  "detail": "The hidden singer renderer provides preview and audio. After each song, Booth waits for the bumper to stop and the next recording to be ready. Physical sound remains unverified."
 }
 ```
 
