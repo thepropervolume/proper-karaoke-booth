@@ -1,4 +1,5 @@
 import { compileSongBlacklist, type GlobalSongBlacklist } from './song-blacklist';
+import { libraryDate } from './library-result-fields';
 
 export type YouTubeSearchMode = 'karaoke-channels' | 'approved-channels';
 export type YouTubeSearchPreferences = { youtubeSearchEnabled: boolean; youtubeSearchMode: YouTubeSearchMode;
@@ -54,6 +55,7 @@ export function youtubeKaraokeQuery(value: unknown): string {
 export type YouTubeKaraokeSong = { provider: 'youtube'; videoId: string; title: string; artist: string | null;
   videoTitle: string; watchUrl: string; channelId: string; channelHandle: string | null; channelName: string;
   channelUrl: string; durationSeconds: number; channelApproval: 'host-approved' | 'karaoke-hint';
+  dateAdded?: string;
   metadataSource: 'youtube-metadata' | 'video-title' | 'unparsed-video-title' };
 export type YouTubeSearchFilterCounts = { examined: number; returned: number; invalid: number; duplicate: number;
   live: number; duration: number; notKaraoke: number; channelNotApproved: number; blockedChannel: number; blockedSong: number; restricted: number };
@@ -75,14 +77,53 @@ const safeText = (value: unknown, maximum = 500): string | null => typeof value 
 
 /** This is a display suggestion, not verified musical metadata. Do not discard
  * the original title or use the suggestion as a cross-provider recording ID. */
-export function youtubeSongMetadata(videoTitle: string, artist: unknown, track: unknown): Pick<YouTubeKaraokeSong, 'artist' | 'title' | 'metadataSource'> {
+const productionWords = /^(?:(?:karaoke|backing track|instrumental|version|lyrics|lyric video|without lead vocals|with (?:guide vocals|lyrics)|no (?:lead )?vocals|cover|original key|4k|u?hd|hq)[\s,./&-]*)+$/i;
+const productionPhrase = /(?:karaoke|instrumental|backing track|lyrics|vocals)/i;
+const bracketSuffix = /\s*(?:\(([^()]*)\)|\[([^\[\]]*)\]|\{([^{}]*)\})\s*$/u;
+const segmentSuffix = /^(.+)\s+[-–—|•:]\s+(.+?)\s*$/u;
+const inlineSuffix = /\s+(karaoke(?:\s+(?:version|instrumental|cover|with lyrics|lyrics|original key|4k|u?hd|hq))*|instrumental(?:\s+with lyrics)?|backing track|lyric video|with lyrics|no (?:lead )?vocals)\s*$/iu;
+
+function cleanVideoTitle(title: string, channelName?: string): string {
+  let result = title.replace(/^\s*karaoke(?:\s+version)?\s*[:|\-–—]\s*/i, '').trim();
+  // Remove recognized production tags from the end, preserving musical titles like “One (Live)”.
+  for (;;) {
+    const segment = segmentSuffix.exec(result);
+    const bracket = bracketSuffix.exec(result);
+    const value = bracket ? (bracket[1] ?? bracket[2] ?? bracket[3]) : segment?.[2];
+    if (value && (productionWords.test(value.trim()) && productionPhrase.test(value) ||
+      !bracket && !!segment && !!channelName && value.trim().toLocaleLowerCase() === channelName.toLocaleLowerCase())) {
+      result = (bracket ? result.slice(0, bracket.index) : segment![1]).trim();
+      continue;
+    }
+    const cleaned = result.replace(inlineSuffix, '').trim().replace(/\s+[-–—|•:]$/, '');
+    if (cleaned === result) return cleaned;
+    result = cleaned;
+  }
+}
+
+export function youtubeSongMetadata(videoTitle: string, artist: unknown, track: unknown, channelName?: string): Pick<YouTubeKaraokeSong, 'artist' | 'title' | 'metadataSource'> {
   const metadataArtist = safeText(artist), metadataTitle = safeText(track);
   if (metadataArtist && metadataTitle) return { artist: metadataArtist, title: metadataTitle, metadataSource: 'youtube-metadata' };
-  const cleaned = videoTitle.replace(/^\s*karaoke(?:\s+version)?\s*[:|\-–—]\s*/i, '')
-    .replace(/\s*[([\-–—|]*\s*karaoke(?:\s+(?:version|instrumental|with lyrics|lyrics|cover))*\s*[)\]]?\s*$/i, '').trim();
-  const parts = cleaned.split(/\s+[-–—]\s+/);
-  if (parts.length === 2 && parts.every(part => !!safeText(part))) return { artist: parts[0].trim(), title: parts[1].trim(), metadataSource: 'video-title' };
-  return { artist: null, title: cleaned || videoTitle, metadataSource: 'unparsed-video-title' };
+  const cleaned = cleanVideoTitle(videoTitle, channelName);
+  const parts = cleaned.split(/\s+[-–—|:]\s+/u).map(part => cleanVideoTitle(part, channelName));
+  if (parts.length === 2 && parts.every(part => !!safeText(part))) {
+    const same = (left: string, right: string | null) => left.toLocaleLowerCase() === right?.toLocaleLowerCase();
+    const reverse = same(parts[1], metadataArtist) || same(parts[0], metadataTitle);
+    return { artist: metadataArtist ?? parts[reverse ? 1 : 0], title: metadataTitle ?? parts[reverse ? 0 : 1], metadataSource: 'video-title' };
+  }
+  const byline = /^(.+)\s+(?:in the style of|by)\s+(.+)$/iu.exec(cleaned);
+  if (byline) return { artist: metadataArtist ?? cleanVideoTitle(byline[2], channelName), title: metadataTitle ?? cleanVideoTitle(byline[1], channelName), metadataSource: 'video-title' };
+  return { artist: metadataArtist, title: metadataTitle ?? (cleaned || videoTitle), metadataSource: 'unparsed-video-title' };
+}
+
+function youtubePublicationDate(record: Record<string, unknown>): string | undefined {
+  const date = libraryDate(record.release_date) ?? libraryDate(record.upload_date);
+  if (date) return date;
+  for (const timestamp of [record.release_timestamp, record.timestamp]) {
+    if (typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0 && timestamp < 253402300800)
+      return new Date(timestamp * 1000).toISOString().slice(0, 10);
+  }
+  return undefined;
 }
 
 /** Accept metadata from yt-dlp only, reconstruct every URL, and explain filtered
@@ -113,12 +154,13 @@ export function filterYouTubeSearchEntries(value: unknown, preferences: YouTubeS
     const hostApproved = approved.has(channelId) || handles.some(handle => approved.has(handle));
     const karaokeHint = KARAOKE.test(channelName) || handles.some(handle => /karaoke/i.test(handle));
     if (!hostApproved && (preferences.youtubeSearchMode === 'approved-channels' || !karaokeHint)) { ++counts.channelNotApproved; continue; }
-    const metadata = youtubeSongMetadata(title, record.artist, record.track);
+    const metadata = youtubeSongMetadata(title, record.artist, record.track, channelName);
     // Common video titles put artist and title in either order. Check both exact
     // candidates for exclusion while preserving the explicitly labelled display guess.
     const reverse = metadata.metadataSource === 'video-title' ? { artist: metadata.title, title: metadata.artist } : null;
     if (blacklist.isBlocked(metadata) || (reverse && blacklist.isBlocked(reverse))) { ++counts.blockedSong; continue; }
-    songs.push({ provider: 'youtube', videoId: id, ...metadata, videoTitle: title,
+    const dateAdded = youtubePublicationDate(record);
+    songs.push({ provider: 'youtube', videoId: id, ...metadata, videoTitle: title, ...(dateAdded ? { dateAdded } : {}),
       watchUrl: `https://www.youtube.com/watch?v=${id}`, channelId, channelHandle, channelName,
       channelUrl: `https://www.youtube.com/channel/${channelId}`, durationSeconds: duration,
       channelApproval: hostApproved ? 'host-approved' : 'karaoke-hint' }); ++counts.returned;

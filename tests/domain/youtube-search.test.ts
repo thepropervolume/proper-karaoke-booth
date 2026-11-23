@@ -89,6 +89,16 @@ test('metadata suggestions preserve uncertainty and never invent a cross-provide
   assert.deepEqual(youtubeSongMetadata(record.title, 'Verified Artist', 'Verified Track'), { artist: 'Verified Artist', title: 'Verified Track', metadataSource: 'youtube-metadata' });
 });
 
+test('search presentation strips karaoke production suffixes and validates publication dates', () => {
+  const rawTitle = 'Nada Surf - Amateur (Karaoke Version) - Karaoke Studio';
+  const [song] = filter([{ ...record, title: rawTitle, release_date: '20221009', upload_date: '20221102' }]).songs;
+  assert.deepEqual([song.artist, song.title, song.channelName, song.durationSeconds, song.dateAdded], ['Nada Surf', 'Amateur', 'Karaoke Studio', 210, '2022-10-09']);
+  assert.equal(song.videoTitle, rawTitle);
+  assert.equal(filter([{ ...record, release_date: '20240230', upload_date: '20240229' }]).songs[0].dateAdded, '2024-02-29');
+  assert.deepEqual(youtubeSongMetadata('Wonderwall (Karaoke Version) by Oasis', null, null), { artist: 'Oasis', title: 'Wonderwall', metadataSource: 'video-title' });
+  assert.deepEqual(youtubeSongMetadata('Oasis - Wonderwall (Live) | Karaoke With Lyrics', null, null), { artist: 'Oasis', title: 'Wonderwall (Live)', metadataSource: 'video-title' });
+});
+
 test('Google Takeout CSV imports only stable channel IDs with quoted names and duplicate reporting', () => {
   const csv = `\uFEFFChannel Id,Channel Url,Channel Title\r\n${channelId},https://youtube.com/channel/${channelId},"Studio, Karaoke"\r\n${secondChannel},https://youtube.com/channel/${secondChannel},"A ""quoted"" studio"\r\n${channelId},,Duplicate`;
   assert.deepEqual(parseYouTubeSubscriptions(csv), { channels: [channelId, secondChannel], ignored: 1 });
