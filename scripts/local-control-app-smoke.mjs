@@ -65,6 +65,18 @@ const toggle = async (page, value, queueEnabled = false) => {
 };
 try {
   let host = await launch();
+  await host.getByRole('button', { name: 'Preferences', exact: true }).click();
+  const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true });
+  await preferences.locator('summary').filter({ hasText: /^Local API and CLI$/ }).click();
+  assert.match(await preferences.getByText('tpv-karaoke-booth --help', { exact: true }).innerText(), /tpv-karaoke-booth/);
+  const helpWindow = app.waitForEvent('window');
+  await preferences.getByRole('button', { name: 'Local API and CLI documentation', exact: true }).click();
+  const help = await helpWindow;
+  await help.waitForURL('**/index.html#local-control-api', { waitUntil: 'domcontentloaded' });
+  await help.locator('article').getByRole('heading', { name: /Local .*CLI/ }).first().waitFor();
+  await help.close();
+  await preferences.getByRole('button', { name: 'Close preferences' }).click();
+  await preferences.waitFor({ state: 'hidden' });
   assert.equal((await host.evaluate(() => window.tpv.getLocalControlStatus())).status, 'disabled');
   await assert.rejects(access(discoveryFile));
   assert.equal((await cli('status')).code, 3);

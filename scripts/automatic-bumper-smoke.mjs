@@ -17,6 +17,7 @@ const { _electron: electron } = require('playwright-core');
 const tempRoot = await realpath(tmpdir()), temp = await mkdtemp(join(tempRoot, 'tpv-auto-bumper-'));
 const profile = join(temp, 'profile'), stage = join(temp, 'stage'); await mkdir(profile); await mkdir(stage);
 const canonicalProfile = await realpath(profile), fixture = join(temp, 'Synthetic Artist - Intermission.mp4');
+const customBumper = join(temp, 'Synthetic Bumper.wav');
 await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false,
   providerCatalogEnabled: false, youtubeSearchEnabled: false, localControlEnabled: false, singerScreenEnabled: false,
   hostPreviewPosition: 'above', autoAdvance: true, autoBumper: true, bumperOnLaunch: true, bumperFadeMs: 1000,
@@ -103,7 +104,25 @@ try {
   assert.equal(afterRestart.outputReady, true);
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'paused', 'Restart must not resume karaoke.');
   assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.autoBumperTrackId, 'builtin-sunset', 'Selected bumper track must survive restart.');
-  console.log('PASS: hidden preview and launch bumper use one default-output renderer; approved requests stage; natural completion and Skip advance after an acknowledged bumper gap; Stop fences delayed starts; restart leaves karaoke paused. Audio was muted; physical routing was not tested.');
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', customBumper], { windowsHide: true });
+  await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, customBumper);
+  const added = await host.evaluate(() => window.tpv.addBumpers());
+  const custom = added.tracks.filter(track => !track.builtIn);
+  assert.equal(custom.length, 1);
+  await host.getByRole('button', { name: 'Preferences', exact: true }).click();
+  const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true });
+  await preferences.locator('summary').filter({ hasText: /^Audio Controls$/ }).click();
+  await preferences.getByRole('checkbox', { name: 'Include built-in bumper tracks' }).uncheck();
+  const trackPicker = preferences.getByLabel('Automatic bumper track');
+  assert.deepEqual(await trackPicker.locator('option').evaluateAll(options => options.map(option => option.value)), [custom[0].id]);
+  await preferences.getByRole('button', { name: 'Save preferences', exact: true }).click();
+  await preferences.waitFor({ state: 'hidden' });
+  assert.equal((await host.evaluate(() => window.tpv.getBumpers())).status.status, 'stopped');
+  await app.close(); app = undefined;
+  host = await launch();
+  const customLaunch = await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'custom-only launch bumper');
+  assert.equal(customLaunch.status.trackId, custom[0].id);
+  console.log('PASS: launch and interlude audio, automatic queue advance, Stop, and restart with one custom bumper. Audio was muted.');
 } finally {
   if (app) await app.close().catch(() => {});
   const actual = await realpath(temp);
