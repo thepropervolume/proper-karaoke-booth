@@ -12,6 +12,7 @@ import { startQueueRelayService } from '../src/relay/http';
 import { MobileShow } from '../src/mobile/show';
 import { MobileRoomAuthority } from '../src/mobile/room-authority';
 import type { InternetGuestCall } from '../src/main/internet-queue-client';
+import { createSingerStaticHandler } from '../src/main/remote-static';
 
 const origin = 'https://queue.thepropervolume.com';
 const { version } = JSON.parse(await readFile('package.json', 'utf8'));
@@ -21,7 +22,7 @@ const db = new DatabaseSync(':memory:');
 const broker = new RelayBroker(new RelayStore(db, { publicOrigin: origin }), { pollTimeoutMs: 300, rpcTimeoutMs: 3000 });
 const token = 'x'.repeat(43), slug = 'singer-rehearsal';
 const relay = await startQueueRelayService({ publicOrigin: origin, owners: [{ id: crypto.randomUUID(), tokenSha256: createHash('sha256').update(token).digest('hex') }],
-  broker, staticHandler: async () => false, port: 0, closeDependencies: () => db.close(), mobileEnabled: true,
+  broker, staticHandler: createSingerStaticHandler(resolve('dist/ui')), port: 0, closeDependencies: () => db.close(), mobileEnabled: true,
   mobileCatalog: async (_query, _signal, _fetch, filter) => {
     if (filter?.source === 'karafun') return { items: [{ id: '9217', title: 'KaraFun Recording', artist: 'Oasis' }] };
     if (filter?.source === 'partytyme') return { items: [{ id: 'PH1215', title: 'Party Tyme Pro Recording', artist: 'Oasis' }] };
@@ -34,7 +35,7 @@ const config = await readFile('deploy/queue-relay/mobile.conf', 'utf8');
 const csp = /Header always set Content-Security-Policy "([^"]+)"/.exec(config)?.[1];
 assert.ok(csp, 'Mobile deployment CSP is missing.');
 const server = createServer((request, response) => {
-  if (request.url?.startsWith('/v1/')) {
+  if (!request.url?.startsWith('/app/')) {
     const proxy = requestHttp({ host: '127.0.0.1', port: relay.port, path: request.url, method: request.method,
       headers: { ...request.headers, host: new URL(origin).host } }, remote => {
       response.writeHead(remote.statusCode ?? 500, remote.headers); remote.pipe(response);
@@ -154,6 +155,9 @@ try {
   assert.equal(await roomLaterResult.count(), 0);
   await singer.getByRole('button', { name: 'Load More Songs', exact: true }).click();
   await roomLaterResult.waitFor();
+  await singer.getByRole('button', { name: 'Star Wonderwall', exact: true }).click();
+  await singer.getByRole('button', { name: 'Remove Wonderwall from starred songs', pressed: true }).waitFor();
+  assert.equal(show.state().queue.length, 0);
   await singer.getByRole('button', { name: 'Queue Wonderwall' }).click();
   await singer.getByText('Request received.', { exact: true }).waitFor();
   assert.equal(show.state().queue.length, 1);
@@ -162,6 +166,17 @@ try {
   await singer.getByText('Queued', { exact: true }).waitFor();
   await singer.getByRole('button', { name: 'Withdraw' }).click();
   await singer.getByText('Request withdrawn.', { exact: true }).waitFor();
+  const roomPage = await context.newPage();
+  roomPage.on('pageerror', error => errors.push(error.message));
+  await roomPage.goto(origin + '/' + slug);
+  await roomPage.getByLabel('Your name').fill('Browser Guest');
+  await roomPage.getByRole('button', { name: 'Join the show', exact: true }).click();
+  await roomPage.getByText('Hello, Browser Guest!', { exact: true }).waitFor();
+  const requestsBeforeStar = show.state().queue;
+  await roomPage.getByRole('button', { name: 'Star Wonderwall', exact: true }).click();
+  await roomPage.getByText("Browser Guest's Starred Songs (1)", { exact: true }).waitFor();
+  assert.deepEqual(show.state().queue, requestsBeforeStar);
+  await roomPage.close();
   await singer.getByRole('button', { name: 'Leave Room' }).click();
   await tab('Library');
   await singer.getByText('KaraFun Recording').waitFor();
@@ -169,8 +184,11 @@ try {
   checks.push('Nearby suggestion requires explicit join, match 56 is available after loading more, real relay requests reach the host, and leaving inherits room sources.');
   await singer.reload();
   await tab('Playlists');
-  await singer.getByText('At the Show (1)').click();
-  await singer.getByText('Wonderwall', { exact: true }).waitFor();
+  await singer.getByText("Alex's Starred Songs (1)", { exact: true }).waitFor();
+  assert.equal(await singer.getByText("Browser Guest's Starred Songs (1)", { exact: true }).count(), 0);
+  const savedPlaylist = singer.locator('details').filter({ has: singer.getByText('At the Show (1)', { exact: true }) });
+  await savedPlaylist.locator('summary').click();
+  await savedPlaylist.getByText('Wonderwall', { exact: true }).waitFor();
   await tab('Room');
   await singer.getByLabel('Room code or invitation link').fill(origin + '/' + slug);
   assert.equal(await singer.getByLabel('Display name').inputValue(), 'Alex');
@@ -183,6 +201,7 @@ try {
   await hostPost('close', room);
   await singer.getByRole('button', { name: 'Refresh', exact: true }).click();
   await singer.getByText(/This room ended/).waitFor();
+  checks.push('Mobile and browser guests star songs without queueing. Starred playlists are scoped to the singer and persist across reload.');
   checks.push('Profile and playlists survive reload, a manual HTTPS room link works, and closed rooms return to browse mode.');
   assert.deepEqual(errors, []);
 } finally {
