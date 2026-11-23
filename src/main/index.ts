@@ -449,12 +449,15 @@ function syncQueuedDownloads(): void {
   queuedDownloads.reconcile(orderedFuture(state,settings.rotationMode,Date.now()).filter(request => ['accepted','staged'].includes(request.status) && isVersionAllowed(state, request.versionId, settings))
     .map(request=>request.versionId).filter(id=>state.versions.find(version=>version.id===id)?.source?.provider==='youtube' && (!store.media(id) || !existsSync(store.media(id)!.path))));
 }
+function playableBumpers(): BumperTrack[] {
+  return [...(settings.includeBuiltInBumpers ? builtInBumpers : []), ...(bumperCatalog?.forPlayback() ?? [])];
+}
 function automaticBumperEligible(): boolean {
   const launch = startingLaunchBumper && settings?.bumperOnLaunch && state.playback?.status !== 'playing';
   const interlude = settings?.autoBumper && !state.playback && (!settings.autoAdvance || settings.pauseIntervalSeconds > 0 || !state.stagedRequestId);
   return !!(launch || interlude) && !shuttingDown && !playbackTransition && displayReady && !!bumper &&
     bumper.isOutputAvailable() && !youtubeAudioGate.playbackBlocked() &&
-    [...builtInBumpers,...(bumperCatalog?.forPlayback() ?? [])].some(track=>track.id===settings.autoBumperTrackId);
+    playableBumpers().some(track => track.id === settings.autoBumperTrackId);
 }
 const automaticBumper = new AutomaticBumper(automaticBumperEligible, stillEligible => youtubeAudioGate.startBumper(async()=>{
   if(!stillEligible() || !bumper)return false;
@@ -759,6 +762,25 @@ function refreshApplicationMenu(): void {
 function publishSettings(): void {
   refreshApplicationMenu();
   if (host && !host.isDestroyed()) host.webContents.send('host:settings', settings);
+}
+function persistSearchSettings(proposed: Settings): void {
+  const visibilityChanged = JSON.stringify(settings.sourceVisibility) !== JSON.stringify(proposed.sourceVisibility);
+  settings = visibilityChanged
+    ? saveWithDiscoveryRevision(state, next => store.save(next), installShowState,
+      () => writeSettings(settingsPath, proposed), broadcast)
+    : writeSettings(settingsPath, proposed);
+  if (visibilityChanged) {
+    sourceVisibilityRevision++;
+    youtubeSearch.cancel(); karaFunHost.invalidateSearch(); partyTymeHost.invalidateSearch(); khostBridge.cancelSearch();
+  }
+}
+function enableConnectedSearch(source: 'karafun' | 'partytyme'): Promise<void> {
+  return settingsUpdates.run(() => {
+    if (shuttingDown || settings.sourceVisibility[source]) return;
+    persistSearchSettings({ ...settings, sourceVisibility: { ...settings.sourceVisibility, [source]: true } });
+    settingsCreated = false;
+    publishSettings();
+  });
 }
 let localControl: LocalControlServer | null = null;
 let localControlError = '';
@@ -1263,7 +1285,7 @@ type PlaybackCertificate = { generation: string; id: string; path: string; finge
 const pendingMediaCertificates = new Map<string, Promise<PlaybackCertificate>>();
 async function serveMedia(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  if (url.hostname === 'bumper') return bumper ? serveBumper(request, bumper.getState(), [...builtInBumpers, ...(bumperCatalog?.forPlayback() ?? [])]) : new Response(null, { status: 404 });
+  if (url.hostname === 'bumper') return bumper ? serveBumper(request, bumper.getState(), playableBumpers()) : new Response(null, { status: 404 });
   if (url.hostname === 'karafun-stem' || url.hostname === 'lyric-backdrop') {
     const native = activeKaraFun, parts = url.pathname.split('/');
     const origin = request.headers.get('origin');
@@ -1485,7 +1507,7 @@ else {
       if (!display || display.isDestroyed() || !displayReady) throw new Error('Open the singer display first.');
       display.webContents.send('display:bumper-command', request);
     }, () => settings.masterVolume, () => settings.audioOutputId, 5000, () => settings.bumperFadeMs);
-    bumper = new BumperController(bumperOutput, () => [...builtInBumpers, ...(bumperCatalog?.forPlayback() ?? [])], publishBumper);
+    bumper = new BumperController(bumperOutput, playableBumpers, publishBumper);
   } catch (error) { bumper = null; bumperOutput = null; bumperError = error instanceof Error ? error.message : String(error); }
   protocol.handle('tpv-media', serveMedia);
   ipcMain.handle('host:cdg-status', event => { guardHost(event.sender.id); return cdgImport?.snapshot() ?? null; });
@@ -1572,14 +1594,17 @@ else {
   ipcMain.handle('host:partytyme-status',event=>{guardHost(event.sender.id);return partyTymeAccount.status();});
   ipcMain.handle('host:partytyme-connect',async event=>{
     guardHost(event.sender.id);if(shuttingDown||partyTymePickerOpen)throw new Error('Party Tyme connection is busy.');partyTymePickerOpen=true;
+    let status: ReturnType<typeof partyTymeAccount.status>;
     try{
       const options:Electron.OpenDialogOptions={title:'Choose Party Tyme consumer credentials',properties:['openFile'],filters:[{name:'Private credentials',extensions:['json','txt','*']}]};
       const selection=host?await dialog.showOpenDialog(host,options):await dialog.showOpenDialog(options);
       if(selection.canceled||!selection.filePaths[0]||shuttingDown)return partyTymeAccount.status();
       const file=await open(selection.filePaths[0],'r');let raw:string;
       try{const info=await file.stat();if(!info.isFile()||info.size<1||info.size>16384)throw new Error('Choose a supported credentials file.');const bytes=Buffer.alloc(16385);const result=await file.read(bytes,0,bytes.length,0);if(result.bytesRead!==info.size)throw new Error('The credentials file changed. Retry.');raw=bytes.subarray(0,result.bytesRead).toString('utf8');}finally{await file.close();}
-      return await partyTymeAccount.connect(partyTymeCredentials(raw));
+      status = await partyTymeAccount.connect(partyTymeCredentials(raw));
     }catch(error){throw new Error(error instanceof Error&&error.name==='PartyTymeError'?error.message:'The private Party Tyme credentials file could not be opened.');}finally{partyTymePickerOpen=false;}
+    if (status.state === 'connected') await enableConnectedSearch('partytyme');
+    return status;
   });
   ipcMain.handle('host:partytyme-disconnect',event=>{guardHost(event.sender.id);return partyTymeAccount.disconnect();});
   ipcMain.handle('host:partytyme-search',async(event,query:unknown)=>{guardHost(event.sender.id); const revision=sourceVisibilityRevision; if(!settings.sourceVisibility.partytyme)return {status:'ok',songs:[]}; const result=await partyTymeHost.search(query); return revision===sourceVisibilityRevision && settings.sourceVisibility.partytyme ? result : {status:'ok',songs:[]};});
@@ -1591,7 +1616,13 @@ else {
     guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.');
     const result = karaFunMixer.set(input); publishDisplay(); return result;
   });
-  ipcMain.handle('host:karafun-connect', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.connect(host ?? undefined); });
+  ipcMain.handle('host:karafun-connect', async event => {
+    guardHost(event.sender.id);
+    if (shuttingDown) throw new Error('The application is closing.');
+    const status = await karaFunAccount.connect(host ?? undefined);
+    if (status.state === 'connected') await enableConnectedSearch('karafun');
+    return status;
+  });
   ipcMain.handle('host:karafun-retry-sign-in', event => { guardHost(event.sender.id); if (shuttingDown) throw new Error('The application is closing.'); return karaFunAccount.restore(); });
   ipcMain.handle('host:karafun-disconnect', event => { guardHost(event.sender.id); return karaFunAccount.disconnect(); });
   ipcMain.handle('host:karafun-search', async (event, query: unknown) => { guardHost(event.sender.id); const revision=sourceVisibilityRevision; if(!settings.sourceVisibility.karafun)return {status:'ok',songs:[]}; const result=await karaFunHost.search(query); return revision===sourceVisibilityRevision && settings.sourceVisibility.karafun ? result : {status:'ok',songs:[]}; });
@@ -1826,8 +1857,11 @@ else {
     try {
       const chosen = await dialog.showOpenDialog(host, { title: `Choose Private ${provider === 'stingray' ? 'Stingray Developer JSON' : 'Sunfly Access Key'} Profile`, properties: ['openFile'] });
       if (!chosen.canceled && chosen.filePaths[0] && !shuttingDown) await settingsUpdates.run(() => {
-        settings = writeSettings(settingsPath, { ...settings, providerCatalogProfiles: { ...settings.providerCatalogProfiles, [provider]: chosen.filePaths[0] } });
-        host?.webContents.send('host:settings', settings);
+        persistSearchSettings({ ...settings, providerCatalogEnabled: true,
+          sourceVisibility: { ...settings.sourceVisibility, [provider]: true },
+          providerCatalogProfiles: { ...settings.providerCatalogProfiles, [provider]: chosen.filePaths[0] } });
+        settingsCreated = false;
+        publishSettings();
       });
       return providerCatalog.status();
     } finally { choosingProviderProfile = false; }
@@ -1940,6 +1974,7 @@ else {
   ipcMain.handle('host:desktop-update-check', event => { guardHost(event.sender.id); return desktopUpdates?.check(true); });
   ipcMain.handle('host:desktop-update-download', event => { guardHost(event.sender.id); return desktopUpdates?.download(); });
   ipcMain.handle('host:desktop-update-reveal', event => { guardHost(event.sender.id); return desktopUpdates?.reveal(path => shell.showItemInFolder(path)); });
+  ipcMain.handle('host:control-documentation', event => { guardHost(event.sender.id); return openDocumentationWindow(host, 'local-control-api'); });
   ipcMain.handle('host:save-settings', async (event, value: unknown) => {
     guardHost(event.sender.id);
     return settingsUpdates.run(async () => {
@@ -1948,7 +1983,8 @@ else {
         await validateLyricBackdropFile(proposed.lyricBackdropFile);
       const changingOutput = proposed.audioOutputId !== settings.audioOutputId;
       const disablingAutomaticBumper=settings.autoBumper && !proposed.autoBumper;
-      if(changingOutput || proposed.autoBumper !== settings.autoBumper || proposed.autoBumperTrackId !== settings.autoBumperTrackId) automaticBumper.cancel();
+      const excludingBuiltIns = settings.includeBuiltInBumpers && !proposed.includeBuiltInBumpers;
+      if(changingOutput || excludingBuiltIns || proposed.autoBumper !== settings.autoBumper || proposed.autoBumperTrackId !== settings.autoBumperTrackId) automaticBumper.cancel();
       if (changingOutput || !proposed.autoAdvance) showAdvance.cancel();
       if (changingOutput && playbackTransition) throw new Error('Wait for the current playback transition.');
       if (changingOutput) { playbackTransition = true; publishBumper(); }
@@ -1957,24 +1993,20 @@ else {
         const ratingProfileChanged = settings.ratingProfileConfigFile !== proposed.ratingProfileConfigFile;
         const khostSettingsChanged = (['khostBridgeConfigFile', 'songBlacklist', 'artistBlacklist'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
-        const sourceVisibilityChanged = JSON.stringify(settings.sourceVisibility) !== JSON.stringify(proposed.sourceVisibility);
         const desktopUpdateModeChanged = settings.desktopUpdateMode !== proposed.desktopUpdateMode;
         const singerScreenEnabledChanged = settings.singerScreenEnabled !== proposed.singerScreenEnabled;
         const singerScreenPortChanged = settings.singerScreenPort !== proposed.singerScreenPort;
-        settings = sourceVisibilityChanged
-          ? saveWithDiscoveryRevision(state, next => store.save(next), next => { installShowState(next); },
-            () => writeSettings(settingsPath, proposed), () => broadcast())
-          : writeSettings(settingsPath, proposed);
+        persistSearchSettings(proposed);
         if (desktopUpdateModeChanged) {
           desktopUpdates?.setMode(settings.desktopUpdateMode);
           if (settings.desktopUpdateMode === 'download' || settings.desktopUpdateMode === 'install') void desktopUpdates?.check();
         }
-        if (sourceVisibilityChanged) {
-          sourceVisibilityRevision++; youtubeSearch.cancel(); karaFunHost.invalidateSearch(); partyTymeHost.invalidateSearch(); khostBridge.cancelSearch();
-        }
         if (khostSettingsChanged) khostBridge.invalidate();
         if (ratingProfileChanged) { activeRatings = null; activeRatingPath = ''; }
-        if(disablingAutomaticBumper && bumper?.getState().status !== 'stopped') await bumper?.stop();
+        const activeBumper = bumper?.getState();
+        if (activeBumper && activeBumper.status !== 'stopped' &&
+            (disablingAutomaticBumper || excludingBuiltIns && builtInBumpers.some(track => track.id === activeBumper.trackId))) await bumper?.stop();
+        if (excludingBuiltIns) publishBumper();
         settingsCreated = false;
         publishSettings();
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(true);

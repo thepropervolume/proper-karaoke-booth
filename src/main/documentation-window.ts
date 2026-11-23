@@ -3,8 +3,10 @@ import { join } from 'node:path';
 
 let documentation: BrowserWindow | null = null;
 
-export async function openDocumentationWindow(host?: BrowserWindow | null): Promise<void> {
+export async function openDocumentationWindow(host?: BrowserWindow | null, guide?: 'local-control-api'): Promise<void> {
+  const entry = join(__dirname, '../ui/src/help/index.html');
   if (documentation && !documentation.isDestroyed()) {
+    if (guide) await documentation.loadFile(entry, { hash: guide });
     if (documentation.isMinimized()) documentation.restore();
     documentation.show();
     documentation.focus();
@@ -21,7 +23,7 @@ export async function openDocumentationWindow(host?: BrowserWindow | null): Prom
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.on('closed', () => { if (documentation === window) documentation = null; });
   try {
-    await window.loadFile(join(__dirname, '../ui/src/help/index.html'));
+    await window.loadFile(entry, guide ? { hash: guide } : undefined);
     if (!window.isDestroyed()) window.show();
   } catch {
     if (window.isDestroyed()) return;

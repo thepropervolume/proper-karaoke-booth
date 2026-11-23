@@ -1,5 +1,5 @@
 import type { Version } from './index';
-import type { SourceId, SourceVisibility } from './settings';
+import type { Settings, SourceId, SourceVisibility } from './settings';
 
 /** Determine discovery origin without confusing cached provider media with imports. */
 export function sourceForVersion(version: Pick<Version, 'source' | 'discoveryOrigin'> & { catalogTrack?: unknown }): SourceId {
@@ -11,4 +11,15 @@ export function sourceForVersion(version: Pick<Version, 'source' | 'discoveryOri
 
 export function sourceIsVisible(version: Pick<Version, 'source' | 'discoveryOrigin'> & { catalogTrack?: unknown }, visibility?: Partial<SourceVisibility>): boolean {
   return visibility?.[sourceForVersion(version)] !== false;
+}
+
+export function searchSourceChoices(settings: Settings): SourceVisibility {
+  return { ...settings.sourceVisibility, youtube: settings.sourceVisibility.youtube && settings.youtubeSearchEnabled };
+}
+
+export function sourceSearchPatch(settings: Settings, sourceVisibility: SourceVisibility): Partial<Settings> {
+  const enablesCatalog = (['karafun', 'partytyme', 'sunfly', 'stingray'] as const)
+    .some(id => sourceVisibility[id] && !settings.sourceVisibility[id]);
+  return { sourceVisibility, youtubeSearchEnabled: sourceVisibility.youtube,
+    providerCatalogEnabled: settings.providerCatalogEnabled || enablesCatalog };
 }

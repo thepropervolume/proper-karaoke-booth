@@ -6,7 +6,6 @@ export function YouTubeSearchSettings({ value, onChange, bridge }: { value: Sett
   const [message, setMessage] = useState(''), [importing, setImporting] = useState(false);
   const lines = (text: string) => text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   return <details className="settings-group" data-settings-section="youtube"><summary>YouTube Search</summary><div className="settings-group__content">
-    <label className="settings-check"><input type="checkbox" checked={value.youtubeSearchEnabled} onChange={event => onChange({ ...value, youtubeSearchEnabled: event.target.checked })} />Include YouTube karaoke in library search</label>
     <label>Channel selection<select value={value.youtubeSearchMode} onChange={event => onChange({ ...value, youtubeSearchMode: event.target.value as Settings['youtubeSearchMode'] })}><option value="karaoke-channels">Karaoke channel hints and approved channels</option><option value="approved-channels">Approved channels only</option></select></label>
     <p className="muted">Every search includes “karaoke.” Results must also identify a karaoke video and a suitable channel. These are metadata filters, not a guarantee of track quality.</p>
     <label>Approved YouTube channels, one per line<textarea rows={4} value={value.youtubeApprovedChannels.join('\n')} onChange={event => onChange({ ...value, youtubeApprovedChannels: lines(event.target.value) })} placeholder={'UC channel ID, @handle, or canonical channel URL'} /></label>

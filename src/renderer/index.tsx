@@ -63,11 +63,11 @@ import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-st
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { LibraryCatalogPaging } from './LibraryCatalogStatus';
 import { ProviderCatalogPanel } from './ProviderCatalogPanel';
-import { KHostBridgePanel } from './KHostBridgePanel';
 import { KaraFunPanel, useKaraFunAccount } from './KaraFunPanel';
 import type { KaraFunBridge } from '../domain/karafun';
 import { PartyTymePanel, usePartyTymeAccount } from './PartyTymePanel';
 import { SourceToggles } from './SourceToggles';
+import { searchSourceChoices, sourceSearchPatch } from '../domain/source-visibility';
 import type { PartyTymeBridge } from '../domain/partytyme';
 
 import type { KHostBridgeApi } from '../domain/khost-bridge';
@@ -102,6 +102,7 @@ declare global {
       updateMenuContext: (value: WorkspaceMenuContext) => Promise<void>;
       toggleHostFullscreen: () => Promise<void>;
       getLocalControlStatus: () => Promise<LocalControlUiStatus>;
+      showControlDocumentation: () => Promise<void>;
       showControlCli: () => Promise<void>;
       onAppAction: (callback: (action: AppAction) => void) => () => void;
       onSettings: (callback: (value: Settings) => void) => () => void;
@@ -798,7 +799,7 @@ function App() {
             </form>
           </details>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={settings.sourceVisibility} onSave={async value => setSettings(await window.tpv.saveSettings({ sourceVisibility: value }))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel scope={communityCatalogScope} search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /><KHostBridgePanel bridge={window.tpv.khostBridge} scope={JSON.stringify([settings.khostBridgeConfigFile, state?.policy, settings.songBlacklist, settings.artistBlacklist])} enabled={settings.sourceVisibility.karafun} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={searchSourceChoices(settings)} onSave={async value => setSettings(await window.tpv.saveSettings(sourceSearchPatch(settings, value)))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel scope={communityCatalogScope} search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}

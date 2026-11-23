@@ -15,6 +15,8 @@ import { SingerBrandingSettings } from './SingerBrandingSettings';
 import { Tooltip } from './Tooltip';
 import { MetadataPreview } from './MetadataPreview';
 import { DesktopUpdateSettings } from './DesktopUpdateSettings';
+import { SearchSourceCheckboxes } from './SourceToggles';
+import { searchSourceChoices, sourceSearchPatch } from '../domain/source-visibility';
 import { DEFAULT_HOST_PANEL_SIZES } from '../domain/host-layout';
 import type { Shortcuts } from '../domain/shortcuts';
 import type { SettingsSection } from '../domain/app-action';
@@ -46,6 +48,8 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
     if (initialSection === 'general') return;
     const section = dialog.current?.querySelector<HTMLDetailsElement>(`[data-settings-section="${initialSection}"]`);
     if (section) {
+      const group = section.parentElement?.closest('details');
+      if (group) group.open = true;
       section.open = true;
       requestAnimationFrame(() => { section.scrollIntoView({ block: 'start' }); section.querySelector<HTMLElement>('summary')?.focus(); });
     }
@@ -74,10 +78,6 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
       <div className="settings-groups">
         <DesktopUpdateSettings mode={draft.desktopUpdateMode} onChange={desktopUpdateMode => setDraft({ ...draft, desktopUpdateMode })} />
         <SharedCatalogControls value={draft} onChange={setDraft} />
-        <details className="settings-group" data-settings-section="ratings">
-          <summary>Song Ratings</summary>
-          <div className="settings-group__content"><RatingProfileControls configFile={draft.ratingProfileConfigFile} onChange={ratingProfileConfigFile => setDraft({ ...draft, ratingProfileConfigFile })} /></div>
-        </details>
         <details className="settings-group" data-settings-section="appearance" open>
           <summary>Appearance</summary>
           <div className="settings-group__content">
@@ -108,10 +108,6 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <div className="settings-inline-help"><button type="button" onClick={() => setDraft({ ...draft, hostPanelSizes: { ...DEFAULT_HOST_PANEL_SIZES } })}>Reset Panel Sizes</button><SettingsHelp label="Panel resizing help" text="Drag separators to resize panels. Arrow keys move a focused separator; Shift moves farther. Double-click to reset." /></div>
           </div>
         </details>
-        <details className="settings-group" data-settings-section="blacklist">
-          <summary>Song and Artist Blacklist</summary>
-          <div className="settings-group__content"><BlacklistSettings value={draft} onChange={setDraft} /></div>
-        </details>
         <YouTubeSearchSettings value={draft} onChange={setDraft} bridge={window.tpv.youtubeSearch} />
         <details className="settings-group">
           <summary>Library Settings</summary>
@@ -122,19 +118,24 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
               <option value="artist-title">Artist - Title</option><option value="title-artist">Title - Artist</option><option value="filename">Full filename as title</option>
             </select></label>
             <MetadataPreview />
+            <details className="settings-group" data-settings-section="blacklist">
+              <summary>Song and Artist Blacklist</summary>
+              <div className="settings-group__content"><BlacklistSettings value={draft} onChange={setDraft} /></div>
+            </details>
+            <details className="settings-group" data-settings-section="ratings">
+              <summary>Song Ratings</summary>
+              <div className="settings-group__content"><RatingProfileControls configFile={draft.ratingProfileConfigFile} onChange={ratingProfileConfigFile => setDraft({ ...draft, ratingProfileConfigFile })} /></div>
+            </details>
           </div>
         </details>
         <details className="settings-group">
           <summary>Karaoke Services</summary>
           <div className="settings-group__content">
-            <label className="settings-check"><input type="checkbox" checked={draft.providerCatalogEnabled} onChange={event => setDraft({ ...draft, providerCatalogEnabled: event.target.checked })} /> Search service catalogs in Song Library</label>
+            <SearchSourceCheckboxes value={searchSourceChoices(draft)} onChange={(id, checked) => setDraft(current => ({
+              ...current, ...sourceSearchPatch(current, { ...searchSourceChoices(current), [id]: checked }),
+            }))} />
+            <label className="settings-check"><input type="checkbox" checked={draft.providerCatalogEnabled} onChange={event => setDraft({ ...draft, providerCatalogEnabled: event.target.checked })} /> Include search-only service catalogs</label>
             <div className="settings-inline-help"><span>Connect accounts in Sources.</span><SettingsHelp label="Karaoke service search help" text="KaraFun, Party Tyme and Sunfly Store have public catalogs. Sunfly Store artist search is unverified. Stingray and the Sunfly partner catalog need developer profiles. Search-only services cannot be queued until playback is connected." /></div>
-            <ul aria-label="Karaoke service availability">
-              <li>KaraFun — Public catalog and connected-account playback</li>
-              <li>Party Tyme — Consumer Premium in Sources; Pro catalog search only</li>
-              <li>Sunfly Store — Public title/SKU search; optional developer catalog profile; playback pending</li>
-              <li>Stingray — Catalog access requires a provider profile; playback pending</li>
-            </ul>
           </div>
         </details>
         <details className="settings-group">
@@ -178,6 +179,8 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <label className="settings-check"><input type="checkbox" checked={draft.bumperOnLaunch} onChange={event => setDraft({ ...draft, bumperOnLaunch: event.target.checked })} /> Play bumper music when the app opens</label>
             <label>Bumper Fade-In<span className="settings-range"><input aria-label="Bumper Fade-In" type="range" min="500" max="1700" step="50" value={draft.bumperFadeMs} onChange={event => setDraft({ ...draft, bumperFadeMs: Number(event.target.value) })} /><output>{draft.bumperFadeMs} ms</output></span></label>
             <BumperControls autoBumper={draft.autoBumper} autoBumperTrackId={draft.autoBumperTrackId}
+              includeBuiltIn={draft.includeBuiltInBumpers}
+              onBuiltInChange={(includeBuiltInBumpers, autoBumperTrackId) => setDraft({ ...draft, includeBuiltInBumpers, autoBumperTrackId })}
               onAutoChange={(autoBumper, autoBumperTrackId) => setDraft({ ...draft, autoBumper, autoBumperTrackId })} />
           </div>
         </details>
@@ -200,14 +203,6 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <SingerBrandingSettings value={draft} onChange={setDraft} />
           </div>
         </details>
-        <details className="settings-group">
-          <summary>Configuration Files</summary>
-          <div className="settings-group__content">
-            <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="settings-file-tip" onClick={() => void reveal('settings')}>Show settings.json in file manager</button><span id="settings-file-tip" role="tooltip">Show {path} in the file manager</span></span></p>
-            <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="shortcuts-file-tip" onClick={() => void reveal('shortcuts')}>Show keybindings.json in file manager</button><span id="shortcuts-file-tip" role="tooltip">Show {shortcutsPath} in the file manager</span></span></p>
-            <p className="muted">Close the app before editing settings. Restart to apply file edits.</p>
-          </div>
-        </details>
         <details className="settings-group" data-settings-section="keyboard-shortcuts">
           <summary>Keyboard Shortcuts</summary>
           <div className="settings-group__content"><KeyboardShortcuts value={shortcuts} onSave={onSaveShortcuts} onEditFile={() => window.tpv.editShortcutsFile()} /></div>
@@ -217,6 +212,14 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <div className="settings-group__content"><LocalControlSettings enabled={draft.localControlEnabled} queueEnabled={draft.localQueueControlEnabled}
             onChange={localControlEnabled => setDraft({ ...draft, localControlEnabled, localQueueControlEnabled: localControlEnabled && draft.localQueueControlEnabled })}
             onQueueChange={localQueueControlEnabled => setDraft({ ...draft, localQueueControlEnabled })} /></div>
+        </details>
+        <details className="settings-group">
+          <summary>Configuration Files</summary>
+          <div className="settings-group__content">
+            <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="settings-file-tip" onClick={() => void reveal('settings')}>Show settings.json in file manager</button><span id="settings-file-tip" role="tooltip">Show {path} in the file manager</span></span></p>
+            <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="shortcuts-file-tip" onClick={() => void reveal('shortcuts')}>Show keybindings.json in file manager</button><span id="shortcuts-file-tip" role="tooltip">Show {shortcutsPath} in the file manager</span></span></p>
+            <p className="muted">Close the app before editing settings. Restart to apply file edits.</p>
+          </div>
         </details>
       </div>
       {error && <p role="alert">{error}</p>}

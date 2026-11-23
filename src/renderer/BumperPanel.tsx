@@ -5,8 +5,10 @@ export type BumperTrackInfo = { id: string; name: string; builtIn: boolean };
 export type BumperStatus = { status: 'stopped' | 'starting' | 'playing'; trackId: string | null };
 export type BumperInfo = { tracks: BumperTrackInfo[]; status: BumperStatus; outputReady: boolean; karaokeActive: boolean; error: string };
 
-export function BumperControls({ autoBumper, autoBumperTrackId, onAutoChange }: {
-  autoBumper: boolean; autoBumperTrackId: string; onAutoChange: (enabled: boolean, trackId: string) => void;
+export function BumperControls({ autoBumper, autoBumperTrackId, includeBuiltIn, onBuiltInChange, onAutoChange }: {
+  autoBumper: boolean; autoBumperTrackId: string; includeBuiltIn: boolean;
+  onBuiltInChange: (enabled: boolean, trackId: string) => void;
+  onAutoChange: (enabled: boolean, trackId: string) => void;
 }) {
   const [info, setInfo] = useState<BumperInfo | null>(null);
   const [error, setError] = useState('');
@@ -19,17 +21,24 @@ export function BumperControls({ autoBumper, autoBumperTrackId, onAutoChange }: 
     return () => { alive = false; unsubscribe(); };
   }, []);
   if (!info) return <p role="status">{error || 'Loading bumper music…'}</p>;
+  const tracks = info.tracks.filter(track => includeBuiltIn || !track.builtIn);
   return <>
     {info.error && <p role="alert">{info.error}</p>}
+    <label className="settings-check"><input type="checkbox" checked={includeBuiltIn} onChange={event => {
+      const enabled = event.currentTarget.checked;
+      const available = info.tracks.filter(track => enabled || !track.builtIn);
+      const selected = available.find(track => track.id === autoBumperTrackId) ?? available[0];
+      onBuiltInChange(enabled, selected?.id ?? autoBumperTrackId);
+    }} /> Include built-in bumper tracks</label>
     <label className="settings-check"><input type="checkbox" checked={autoBumper} onChange={event => onAutoChange(event.target.checked, autoBumperTrackId)} /> Enable bumper music between songs</label>
     <label>Automatic bumper track<select value={autoBumperTrackId} onChange={event => onAutoChange(autoBumper, event.target.value)}>
-      {!info.tracks.some(track => track.id === autoBumperTrackId) && <option value={autoBumperTrackId}>Selected track is unavailable</option>}
-      {info.tracks.map(track => <option key={track.id} value={track.id}>{track.name}{track.builtIn ? ' (built in)' : ''}</option>)}
+      {!tracks.some(track => track.id === autoBumperTrackId) && <option value={autoBumperTrackId}>Selected track is unavailable</option>}
+      {tracks.map(track => <option key={track.id} value={track.id}>{track.name}{track.builtIn ? ' (built in)' : ''}</option>)}
     </select></label>
     <Tooltip text="Music fills the gap after a song and stops before the next performance. The singer window can stay closed. Stop cancels automatic song advancement; output loss needs a manual restart after choosing a working device."><button type="button" className="help-button" aria-label="Bumper playback help">?</button></Tooltip>
     {autoBumper && !info.outputReady && <p role="status">Bumper audio is not ready. Check the output device.</p>}
-    {autoBumper && !info.tracks.some(track => track.id === autoBumperTrackId) && <p role="alert">The automatic bumper track is unavailable. Choose another track.</p>}
-    <BumperPanel {...info}
+    {autoBumper && !tracks.some(track => track.id === autoBumperTrackId) && <p role="alert">The automatic bumper track is unavailable. Add a track or choose another.</p>}
+    <BumperPanel {...info} tracks={tracks}
       add={async () => { setInfo(await window.tpv.addBumpers()); }}
       remove={async id => { setInfo(await window.tpv.removeBumper(id)); }}
       start={async id => { setInfo(await window.tpv.startBumper(id)); }}

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyCommand, createInitialState, orderedFuture, type Command } from '../../src/domain/index';
 import { DEFAULT_SETTINGS, parseSettings } from '../../src/domain/settings';
+import { searchSourceChoices, sourceSearchPatch } from '../../src/domain/source-visibility';
 
 test('settings have validated defaults and reject malformed or misspelled values', () => {
   assert.deepEqual(parseSettings({}), DEFAULT_SETTINGS);
@@ -21,6 +22,9 @@ test('settings have validated defaults and reject malformed or misspelled values
   for (const key of ['constructor', '__proto__', 'toString']) assert.throws(() => parseSettings(JSON.parse(`{"${key}": true}`)), /Unknown settings/);
   assert.equal(parseSettings({}).audioOutputId, '');
   assert.equal(parseSettings({}).autoBumper, true);
+  assert.equal(parseSettings({}).includeBuiltInBumpers, true);
+  assert.equal(parseSettings({ includeBuiltInBumpers: false }).includeBuiltInBumpers, false);
+  assert.throws(() => parseSettings({ includeBuiltInBumpers: 'false' }));
   assert.equal(parseSettings({}).applauseEnabled, true);
   assert.equal(parseSettings({}).pointsEnabled, true);
   assert.equal(parseSettings({ applauseEnabled: false }).applauseEnabled, false);
@@ -52,6 +56,21 @@ test('provider search settings migrate old files and keep secrets outside settin
   assert.equal(saved.providerCatalogEnabled, false);
   for (const value of [false, {}, { ...profiles, surprise: 'secret' }, { ...profiles, sunfly: 'relative/file' }, { ...profiles, sunfly: 'bad\npath' }]) assert.throws(() => parseSettings({ providerCatalogProfiles: value }));
   assert.throws(() => parseSettings({ providerCatalogEnabled: 'yes' }));
+});
+
+test('search switches respect the legacy YouTube preference and re-enable an opted-in developer catalog', () => {
+  const settings = parseSettings({
+    providerCatalogEnabled: false, youtubeSearchEnabled: false,
+    sourceVisibility: { ...DEFAULT_SETTINGS.sourceVisibility, sunfly: false },
+  });
+  const visible = searchSourceChoices(settings);
+  assert.equal(visible.youtube, false);
+  assert.equal(sourceSearchPatch(settings, { ...visible, local: false }).providerCatalogEnabled, false);
+  const patch = sourceSearchPatch(settings, { ...visible, sunfly: true, youtube: true });
+  const saved = parseSettings({ ...settings, ...patch });
+  assert.equal(saved.youtubeSearchEnabled, true);
+  assert.equal(saved.sourceVisibility.sunfly, true);
+  assert.equal(saved.providerCatalogEnabled, true);
 });
 
 test('auto approval and queue modes determine staging while preserving the locked song', () => {

@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('tpv', {
   updateMenuContext: (value: WorkspaceMenuContext) => ipcRenderer.invoke('host:menu-context', value),
   toggleHostFullscreen: () => ipcRenderer.invoke('host:toggle-host-fullscreen'),
   getLocalControlStatus: () => ipcRenderer.invoke('host:control-status'),
+  showControlDocumentation: () => ipcRenderer.invoke('host:control-documentation'),
   installControlCli: () => ipcRenderer.invoke('host:install-control-cli'),
   showControlCli: () => ipcRenderer.invoke('host:show-control-cli'),
   onAppAction: (callback: (action: unknown) => void) => {
