@@ -10,7 +10,7 @@ Search for **The Proper Volume Karaoke Booth** from Windows Start, macOS Spotlig
 
 ## Check for updates
 
-Choose **Help → Check for Updates** for a manual check, even with **Preferences → Updates** set to **Do Nothing**. Automatic modes show a notice in the host window when Booth finds a verified update at startup. **Download and Install** prepares the update and starts installation after you quit normally. **Download Only** prepares the download for manual installation.
+Choose **Help → Check for Updates** for a manual check, even with **Preferences → Updates** set to **Do Nothing**. **Notify me on startup** shows a notice in the host window when Booth finds a verified update. **Download and Install** prepares the update and starts installation after you quit normally. **Download Only** prepares the download for manual installation.
 
 ## Install the CLI
 
