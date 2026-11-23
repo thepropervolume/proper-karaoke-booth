@@ -841,6 +841,8 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
 
 **0.10.6 catalog reader:** the shared MySQL service revalidates its search snapshot with a primary-key revision query before reloading the full recording data. Exact artist and verified brand filters use sorted in-memory indexes. Freshness timestamps can advance without invalidating a page cursor when the recording revision is unchanged. Concurrent requests share revalidation, and a failed revalidation reports unavailability. The upstream refresh gate remains independent of reads.
 
+**0.10.13 catalog access:** Desktop Song Library and the dedicated Karaoke Nerds source continue through match pages. An authenticated singer can use Load More Songs to continue the same desktop-backed search in a room. Linode III is the central updater. It checks hourly, makes at most one upstream request per rolling 24 hours, and retains the last complete snapshot after a failed refresh. An imported snapshot with unknown attempt history can transition through a verified handoff and a full 24-hour quiet period. Its freshness remains unknown until a real refresh succeeds.
+
 Mapped brands use `BASE/karaokenerds/Brands/BRAND_SLUG/ARTIST/ARTIST - TITLE.mp4`; plain links/unmapped brands use `BASE/youtube/ARTIST/ARTIST - TITLE.mp4`. Safe names and exclusive publication prevent overwrite; a video-ID suffix is used only for an occupied name. A verified ownership/fingerprint sidecar is required to reuse unattached cache files. Same song, request and history identities are retained. Cached media uses normal output selection, transport, timeline and offline playback. Downloads never arm a new show; an already running show can advance when ready. Missing or changed files require deliberate recovery. Complete files survive restart and app exit and need separate media backup.
 
 The separate embedded preview still uses system audio and requires internet; it remains outside the show and does not download. Version 0.5.0 implements bounded, karaoke-filtered YouTube metadata search with channel approvals/blocklists, Takeout subscription import and receipt-validated singer selection through the normal request/download authority. YouTube account login and automatic brand/artist batch selection remain planned. The earlier installed tools downloaded the owner's video and verified H.264/AAC with zero-network reuse; that historical check does not verify every new search result. Real show output, each recording's acquisition, supported platforms and packaged tool distribution remain verification work. Version 0.6.0 adds experimental native KaraFun account, queue and playback; public provider metadata discovery, partner catalog adapters and optional external KHost handoff remain separate capabilities. The official partner routes still need KaraFun OEM terms, Stingray credentials/terms and Sunfly SDK/trial approval. Native account/media evidence is recorded in the integration guide.
@@ -878,7 +880,7 @@ The separate embedded preview still uses system audio and requires internet; it 
     "Cancel",
     "Save preferences"
   ],
-  "detail": "Illustrative connection state. No database or provider keys enter the interface. Feed refresh is disabled pending verified retirement and cooldown history."
+  "detail": "Illustrative connection state. The Linode updater refreshes the shared snapshot on its own schedule. Freshness reflects the last successful fetch."
 }
 ```
 
@@ -1259,6 +1261,6 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
       "Library · Room · Playlists · Profile"
     ]
   ],
-  "detail": "Native discovery and same-egress suggestions find relay rooms. A trusted LAN-only link opens in the browser. Live Library results follow the desktop host’s enabled sources and song rules."
+  "detail": "Native discovery and same-egress suggestions find relay rooms. A trusted LAN-only link opens in the browser. Live Library results follow the desktop host’s enabled sources and song rules. A 0.10.13 host can return further Karaoke Nerds matches when the singer loads more."
 }
 ```

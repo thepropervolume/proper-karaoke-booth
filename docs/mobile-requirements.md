@@ -8,12 +8,12 @@ Ionic React and Capacitor share one singer workspace across iOS, Android, and th
 
 ## Requirements and status
 
-| Area | Requirements and 0.10.12 development status |
+| Area | Requirements and 0.10.13 development status |
 | --- | --- |
 | Browse Mode | Start in Library. Search title and artist in the public Karaoke Nerds catalog by default. More Karaoke Nerds Results pages through the shared snapshot, including matches beyond the first 50. Public KaraFun CSV and Party Tyme Pro songbook metadata are optional sources. No playback action is offered in Browse Mode. |
 | Source choices | Let singers choose public catalogs in Profile without provider credentials. After visiting a room, remember the host’s sources that have a public equivalent. Keep the browse choices distinct from the live host’s request policy and any paid catalog access. |
 | Join | Accept an internet room code or invitation link, show the last room for quick re-entry and ask before joining a nearby suggestion. Native DNS-SD and same-egress suggestions find relay rooms. LAN-only use hands a trusted local HTTPS invitation to the browser on the host’s network. Native discovery and venue networking still need physical-phone coverage. |
-| Connected search | Search the host library and currently enabled, supported provider sources. Respect room policy, source changes, and blacklists. Keep result grants scoped to the guest. Phone search and requests require the updated desktop host and relay to exercise the new protocol. |
+| Connected search | Search the host library and currently enabled, supported provider sources. Respect room policy, source changes, and blacklists. Keep result grants scoped to the guest. A desktop host running 0.10.13 can supply further Karaoke Nerds pages to both local and internet rooms when the singer selects Load More Songs. |
 | Requests | Queue the chosen host result, see the request status, withdraw eligible requests, or ask for a song the host lacks. Preserve guest request recovery after connection loss. Applause, photo submission, and temporary absence remain room actions. |
 | Profile and playlists | Save a display name, an optional email and named playlists on the device. Use the display name for room admission. Keep the email and playlists local. Save exact public recording IDs or room-scoped IDs for tracks without a portable ID. **Find in Room** searches by title, so the singer can select the available version. |
 | Hosting boundary | Hide the former Full Host workspace, transport, import, and room creation from the mobile app. Retain its source code and earlier show records for future work. Current mobile sessions request changes only through the host. |

@@ -1,6 +1,6 @@
 # Shared Karaoke Nerds catalog
 
-Ordinary Song Library search uses the shared catalog when enabled. A new installation can use the public, read-only service at `https://apps.thepropervolume.com` without a private connection file or a bundled API key. Searches read the shared database snapshot; they do not call the upstream Karaoke Nerds feed. Refresh remains a separate server operation with the provider's once-per-day limit. Unknown freshness remains labeled unknown.
+Ordinary Song Library search uses the shared catalog when enabled. A new installation can use the public, read-only service at `https://apps.thepropervolume.com` without a private connection file or a bundled API key. Searches read the shared database snapshot; they do not call the upstream Karaoke Nerds feed. Linode III runs the upstream updater with a minimum 24-hour interval between attempts. Freshness remains unknown until the first successful refresh.
 
 The public service routes are `GET /v1/catalog/public/status` and `GET /v1/catalog/public/tracks`. Private configured hosts retain the authenticated `/v1/catalog/status` and `/v1/catalog/tracks` routes. Both use the same bounded JSON contract and exact case-sensitive YouTube recording identity. Public requests contain no authorization header, browser cookies, provider keys, database password, or local media path. Server rate limits apply.
 
@@ -12,9 +12,11 @@ An existing default `catalog-connection.json` in the application data folder rem
 
 ## Offline behavior and authority boundaries
 
-The client stores up to 100 successful bounded queries in an at-most-20-MiB cache. Public and private caches have separate scopes and files. Previously saved searches can be used on transient outages; new queries need a service connection. Cached results show their age. Unauthorized, forbidden, malformed, and incompatible replies do not become offline successes.
+The client stores up to 100 successful bounded search pages in an at-most-20-MiB cache. Public and private caches have separate scopes and files. Previously saved searches can be used on transient outages; new queries need a service connection. Cached results show their age. Unauthorized, forbidden, malformed, and incompatible replies do not become offline successes.
 
 The 0.10.6 reader checks the database revision before reloading the full catalog. Exact artist and verified brand filters use in-memory indexes. Existing text matching and pagination continue to use the same published revision. The read path never calls the upstream feed.
+
+In 0.10.13, desktop Song Library and Sources → Karaoke Nerds offer more results for shared and local catalog searches. Connected singer rooms continue fetching Karaoke Nerds matches when a singer taps **Load More Songs**. Changing the query starts a new search, and a catalog change can require restarting an earlier page sequence.
 
 Changing credentials or configuration scope fences in-flight results from the old authority. Unsaved connection checks use separate status clients and cannot replace the active search authority or clear its offline queries. For integration, use `SharedCatalogConnection.publicSearch(query)` and `.publicStatus(active)` for the explicit public mode; preserve `.search(path, query)` and `.status(path, active)` for private mode. An unsaved public status check passes `active = false`.
 

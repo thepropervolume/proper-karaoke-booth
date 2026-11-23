@@ -1,6 +1,6 @@
 # TPV Karaoke Mobile Singer Guide
 
-The 0.10.12 mobile workspace opens to **Library**. Browse and save songs on your own, then join a desktop host’s room when you are ready to request a song. The same workspace is built for the [mobile web app](https://queue.thepropervolume.com/app/), iOS, and Android. Full Host is paused while the mobile singer experience takes priority.
+The mobile workspace opens to **Library**. Browse and save songs on your own, then join a desktop host’s room when you are ready to request a song. The same workspace is built for the [mobile web app](https://queue.thepropervolume.com/app/), iOS, and Android. Full Host is paused while the mobile singer experience takes priority.
 
 ## Browse and Save Songs
 
@@ -22,7 +22,7 @@ Open **Profile**, enter a display name and, optionally, an email, and choose **S
 
 ## Request a Song in a Room
 
-Search by artist or title in **Library**. Results come from the host’s library and currently enabled, supported providers. The host’s song rules still apply. Choose **Queue** on the exact version you want. The host controls approval, playback and rotation. From a saved playlist, **Find in Room** searches by title so you can choose an available recording before queueing.
+Search by artist or title in **Library**. Results come from the host’s library and currently enabled, supported providers. On a desktop host running 0.10.13 or later, tap **Load More Songs** to continue through matches from the shared Karaoke Nerds catalog. The host’s song rules still apply. Choose **Queue** on the exact version you want. The host controls approval, playback and rotation. From a saved playlist, **Find in Room** searches by title so you can choose an available recording before queueing.
 
 Open **Room** to check your requests, withdraw eligible requests, or use the attendance, missing-song, applause, and photo actions the host makes available. Use **Reconnect** when the room is still open after an interruption. **Leave Room** returns you to catalog browsing and keeps your playlists. If the host closes the room, the app returns to browsing and asks for a live invitation when you want to queue again.
 
