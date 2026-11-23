@@ -46,7 +46,7 @@
   text-align: left;
   font-size: .92rem;
   font-weight: 750;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-button);
 }
 .nav-item svg { width: 19px; height: 19px; flex: none; }
 .nav-item:hover:not(:disabled) { color: var(--text); background: var(--panel-raised); border-color: transparent; }
