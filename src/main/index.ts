@@ -728,6 +728,14 @@ function dispatchHostAction(action: AppAction): void {
   if (window && hostActionsReady) { window.webContents.send('host:app-action', action); return; }
   if (pendingHostActions.length < 16) pendingHostActions.push(action);
 }
+async function checkForStartupUpdate(window: BrowserWindow): Promise<void> {
+  if (!desktopUpdates || settings.desktopUpdateMode === 'off' || shuttingDown) return;
+  const result = await desktopUpdates.check();
+  if (result.phase !== 'available' || settings.desktopUpdateMode !== 'notify' || shuttingDown || window.isDestroyed()) return;
+  const answer = await dialog.showMessageBox(window, { type: 'info', title: 'Booth Update Available',
+    message: `Booth ${result.version} is available.`, buttons: ['View Release', 'Later'], defaultId: 1, cancelId: 1, noLink: true });
+  if (answer.response === 0 && !shuttingDown) await shell.openExternal('https://release.thepropervolume.com/booth/');
+}
 let hostFullscreen: DisplayFullscreen | null = null;
 function dispatchApplicationMenuAction(action: ApplicationMenuAction): void {
   if (shuttingDown) return;
@@ -1722,9 +1730,13 @@ else {
     shell.showItemInFolder(path);
   });
   ipcMain.handle('host:ui-ready', event => {
-    guardHost(event.sender.id); hostActionsReady = true;
+    guardHost(event.sender.id);
+    if (hostActionsReady) return;
+    hostActionsReady = true;
     const actions = pendingHostActions; pendingHostActions = [];
     for (const action of actions) host?.webContents.send('host:app-action', action);
+    // The renderer has subscribed and loaded its preferences before an update can be announced.
+    if (host) void checkForStartupUpdate(host).catch(() => {});
   });
   ipcMain.handle('host:save-shortcuts', (event, value: unknown) => {
     guardHost(event.sender.id);
@@ -2159,16 +2171,6 @@ else {
     }
   });
   createHost();
-  const updateWindow = host as BrowserWindow | null;
-  updateWindow?.webContents.once('did-finish-load', () => {
-    if (settings.desktopUpdateMode === 'off' || shuttingDown) return;
-    void desktopUpdates?.check().then(result => {
-      if (result.phase !== 'available' || settings.desktopUpdateMode !== 'notify' || shuttingDown || updateWindow.isDestroyed()) return;
-      return dialog.showMessageBox(updateWindow, { type: 'info', message: 'Booth ' + result.version + ' is available.',
-        buttons: ['View Release', 'Later'], defaultId: 1, cancelId: 1, noLink: true })
-        .then(answer => { if (answer.response === 0) return shell.openExternal('https://release.thepropervolume.com/booth/'); });
-    }).catch(() => {});
-  });
   broadcast();
   void karaFunAccount.restore();
   void partyTymeAccount.restore();

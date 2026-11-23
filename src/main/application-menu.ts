@@ -83,6 +83,8 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
   result.push({ label: 'Help', submenu: [
     { label: 'Documentation', click: () => dispatch('documentation') },
     { label: 'Keyboard Shortcuts', click: () => dispatch('keybindings') },
+    { type: 'separator' },
+    { label: 'Check for Updates', enabled: !context.modal, click: () => dispatch('checkDesktopUpdate') },
   ] });
   return result;
 }

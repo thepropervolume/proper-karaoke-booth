@@ -642,6 +642,11 @@ function App() {
     if (action === 'toggleHostFullscreen') { void window.tpv.toggleHostFullscreen().catch(() => {}); return; }
     if (mediaReviewOpen && action !== 'stop') return;
     if (action === 'search') { focusSearch(); return; }
+    if (action === 'checkDesktopUpdate') {
+      openPreferences('updates');
+      void window.tpv.checkDesktopUpdate().catch(() => setNotice('Could not start the update check. Try Check Now in Preferences.', 'error'));
+      return;
+    }
     if (action === 'preferences' || action === 'keybindings' || action === 'appearance' || action === 'accentColor') {
       openPreferences(action === 'keybindings' ? 'keyboard-shortcuts' : action === 'appearance' || action === 'accentColor' ? 'appearance' : 'general'); return;
     }

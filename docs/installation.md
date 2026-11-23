@@ -4,6 +4,14 @@ Download installers and checksums from the [Karaoke Booth downloads page](https:
 
 The Android debug APK is for development testing, and the unsigned Android App Bundle is not directly installable. The unsigned iOS Simulator ZIP is for the simulator only; it is not an iPhone installer. Native device testing, production signing and store distribution remain open.
 
+## Find Booth after installation
+
+Search for **The Proper Volume Karaoke Booth** from Windows Start, macOS Spotlight or your Linux app launcher. Booth also ships keywords such as **TPV**, **Karaoke Host**, **CDG** and **Karaoke Nerds**. Compatible Linux launchers match the desktop entry keywords. Windows Start and macOS Spotlight control which keyword matches appear and how they rank. On Linux, an AppImage appears in the app launcher once you integrate it into your desktop.
+
+## Check for updates
+
+Choose **Help → Check for Updates** for a manual check, even with **Preferences → Updates** set to **Do Nothing**. Automatic modes show a notice in the host window when Booth finds a verified update at startup. **Download and Install** prepares the update and starts installation after you quit normally. **Download Only** prepares the download for manual installation.
+
 ## Install the CLI
 
 Starting with 0.10.9, open a new terminal after installing Booth and run `tpv-karaoke-booth --help`.

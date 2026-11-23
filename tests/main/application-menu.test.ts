@@ -21,7 +21,7 @@ test('native menus route desktop actions and mark saved View selections', () => 
     ['Edit', ['Find Song', 'Preferences…']],
     ['Playback', ['Play / Pause', 'Stop', 'Restart Current Song', 'Skip Song…', 'Rewind 10 Seconds', 'Forward 10 Seconds']],
     ['Window', ['Show Host Window', 'Toggle Host Full Screen', 'Open Singer Display', 'Toggle Singer Display Full Screen']],
-    ['Help', ['Documentation', 'Keyboard Shortcuts']],
+    ['Help', ['Documentation', 'Keyboard Shortcuts', 'Check for Updates']],
   ] as const) {
     for (const label of labels) {
       const item = named(children(named(menu, top)), label);
@@ -32,7 +32,7 @@ test('native menus route desktop actions and mark saved View selections', () => 
   }
   assert.deepEqual(actions, ['importVideo', 'importDirectory', 'importCdg', 'backupShow', 'restoreShow', 'search', 'preferences',
     'playPause', 'stop', 'previous', 'skip', 'seekBackward', 'seekForward', 'showHostWindow', 'toggleHostFullscreen',
-    'singerDisplay', 'toggleFullscreen', 'documentation', 'keybindings']);
+    'singerDisplay', 'toggleFullscreen', 'documentation', 'keybindings', 'checkDesktopUpdate']);
 
   const view = children(named(menu, 'View'));
   for (const [submenu, selection, action] of [
@@ -59,6 +59,7 @@ test('native menus respect the picker, modal, transport and singer window availa
   assert.equal(item('Playback', 'Rewind 10 Seconds').enabled, false);
   assert.equal(item('Window', 'Toggle Singer Display Full Screen').enabled, false);
   assert.notEqual(item('Window', 'Toggle Host Full Screen').enabled, false);
+  assert.equal(item('Help', 'Check for Updates').enabled, false);
 
   const indexing = applicationMenu(DEFAULT_SETTINGS, () => {}, 'linux', { ...INITIAL_WORKSPACE_MENU_CONTEXT, videoImportBlocked: true });
   const file = children(named(indexing, 'File'));
