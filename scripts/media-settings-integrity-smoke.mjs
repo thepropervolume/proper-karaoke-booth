@@ -7,10 +7,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { waitForHostCondition } from './wait-for-host-condition.mjs';
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 
 const repo = await realpath(resolve(process.argv[2] ?? '.')), parent = await realpath(tmpdir());
 const require = createRequire(join(repo, 'package.json')), { _electron: electron } = require('playwright-core');
 const root = await mkdtemp(join(parent, 'tpv-media-settings-qa-')), profile = join(root, 'profile'); await mkdir(profile);
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ bumperOnLaunch: false, sharedCatalogEnabled: false,
+  providerCatalogEnabled: false, youtubeSearchEnabled: false, singerScreenEnabled: false }));
 const blue = join(root, 'QA Artist - Original.mp4'), red = join(root, 'Replacement.mp4');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 let app;
@@ -35,7 +38,7 @@ require(process.env.TPV_QA_ENTRY);`);
   const launch = async () => {
     app = await electron.launch({ executablePath: require('electron'), args: [bootstrap, `--user-data-dir=${profile}`, '--mute-audio'], cwd: repo, env });
     assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), await realpath(profile));
-    const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv?.playPause); return host;
+    const host = await waitForHostWindow(app); await host.waitForFunction(() => !!window.tpv?.playPause); return host;
   };
   let host = await launch();
   const old = (await host.evaluate(() => window.tpv.getSettings())).settings;
@@ -80,7 +83,9 @@ require(process.env.TPV_QA_ENTRY);`);
   await writeFile(blue, original);
   await app.close(); app = undefined;
   host = await launch();
-  state = await host.evaluate(() => window.tpv.getState()); assert.equal(state.playback.status, 'paused'); assert.equal(app.windows().length, 1);
+  state = await host.evaluate(() => window.tpv.getState()); assert.equal(state.playback.status, 'paused');
+  assert.ok(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .filter(window => window.webContents.getURL().includes('/display/')).every(window => !window.isVisible())));
   assert.equal((await host.evaluate(() => window.tpv.playPause())).ok, true);
   const display = app.windows().find(page => page !== host); assert.ok(display);
   await waitForHostCondition(display, () => { const player = document.querySelector('video'); return !!player && player.readyState >= 2 && player.error === null; });
