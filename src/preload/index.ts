@@ -137,6 +137,15 @@ contextBridge.exposeInMainWorld('tpv', {
   playPause: () => ipcRenderer.invoke('host:play-pause'),
   restartTrack: () => ipcRenderer.invoke('host:restart-track'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
+  desktopUpdateStatus: () => ipcRenderer.invoke('host:desktop-update-status') as Promise<import('../domain/desktop-update-preference').DesktopUpdateStatus>,
+  checkDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-check'),
+  downloadDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-download'),
+  revealDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-reveal'),
+  onDesktopUpdate: (callback: (value: import('../domain/desktop-update-preference').DesktopUpdateStatus) => void) => {
+    const listener = (_event: unknown, value: import('../domain/desktop-update-preference').DesktopUpdateStatus) => callback(value);
+    ipcRenderer.on('host:desktop-update-state', listener);
+    return () => ipcRenderer.removeListener('host:desktop-update-state', listener);
+  },
   cycleAccentColor: () => ipcRenderer.invoke('host:cycle-accent-color'),
   revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),

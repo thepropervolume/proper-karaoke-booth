@@ -1,6 +1,6 @@
 {
   "name": "proper-karaoke-booth",
-  "version": "0.10.13",
+  "version": "0.10.14",
   "private": true,
   "description": "Local-first karaoke host and singer display",
   "main": "dist/main/index.cjs",
@@ -25,6 +25,7 @@
     "@ionic/react": "9.0.13",
     "@peculiar/asn1-schema": "3.0.0",
     "@peculiar/x509": "3.1.0",
+    "@thepropervolume/karaoke-core": "file:vendor/thepropervolume-karaoke-core-0.1.2.tgz",
     "ionicons": "8.1.1",
     "multicast-dns": "7.2.5",
     "mysql2": "^3.24.6",

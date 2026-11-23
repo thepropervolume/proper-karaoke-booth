@@ -2,6 +2,12 @@
 
 Use **File** to import videos, folders, and paired lyric files or to back up and restore your show. Open **Edit → Preferences** for settings. **View** changes the appearance, accent color, font, and layout. **Playback** exposes transport controls, including restart and 10-second seek actions. Use **Window** to control full screen separately for the host and singer display. **Help → Documentation** opens the [offline guides](help.md).
 
+## App Updates
+
+In **Edit → Preferences → Updates**, set **Available Updates Mechanism** and click **Save**. **Notify me on startup** is the default and offers the release page when a newer version is available. **Download Only** saves the verified package for later. Use **Show Download** to find it. **Download and Install** prepares the package and applies it after a normal quit, when the show and rooms are saved and closed. **Do Nothing** turns off automatic checks. **Check Now** is available for a manual check in any mode.
+
+The Windows setup, macOS PKG, and Linux Debian package open with the system installer and can require approval. A writable AppImage updates in place after quit. The portable Windows ZIP can be downloaded from Preferences for manual extraction.
+
 ## Applause and Singer Points
 
 Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles the six supplied clap recordings, playing each for its full duration, with at most three at once; the host has unlimited applause. Recordings range from approximately 4 to 11.2 seconds, so the longest takes more than eight seconds to finish. Check the chosen output and levels on your actual sound system before a show.

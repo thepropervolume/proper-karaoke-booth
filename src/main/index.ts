@@ -104,9 +104,11 @@ import { PartyTymeHost } from './partytyme-host';
 import { PartyTymeMediaCache, type PartyTymePrepared } from './partytyme-media';
 import { KaraFunMediaCache, type KaraFunPreparedMedia } from './karafun-media';
 import { KaraFunMixer } from './karafun-mixer';
+import { BoothDesktopUpdates } from './desktop-updates';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 let host: BrowserWindow | null = null;
+let desktopUpdates: BoothDesktopUpdates | undefined;
 let display: BrowserWindow | null = null;
 const applauseOutput = new ApplauseOutput(request => {
   if (!display || display.isDestroyed() || !displayReady) throw new Error('The singer player is unavailable.');
@@ -1374,6 +1376,12 @@ else {
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   settingsCreated = !existsSync(settingsPath);
   settings = readSettings(settingsPath);
+  try {
+    desktopUpdates = new BoothDesktopUpdates(app.getVersion(), join(app.getPath('userData'), 'desktop-updates'), settings.desktopUpdateMode,
+      app.isPackaged, process.resourcesPath, value => {
+        if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:desktop-update-state', value);
+      });
+  } catch { /* Update configuration failure must not prevent hosting. */ }
   if (!settings.bannerOnLaunch) settings.bannerEnabled = false;
   const localData = process.platform === 'win32' ? process.env.LOCALAPPDATA : process.env.XDG_DATA_HOME || join(app.getPath('home'), '.local', 'share');
   communityBrowser = new LocalCommunityBrowser(join(localData || app.getPath('userData'), 'ProperKaraokeBooth', 'karaokenerds', 'community.sqlite'));
@@ -1904,6 +1912,13 @@ else {
   ipcMain.handle('host:remote-invite', (event, ttl: unknown) => { guardHost(event.sender.id); return remoteHost.createInvitation(ttl); });
   ipcMain.handle('host:remote-revoke-invites', event => { guardHost(event.sender.id); return remoteHost.revokeInvitations(); });
   ipcMain.handle('host:remote-revoke-guest', (event, singerId: unknown) => { guardHost(event.sender.id); return remoteHost.revokeGuest(singerId); });
+  ipcMain.handle('host:desktop-update-status', event => {
+    guardHost(event.sender.id);
+    return desktopUpdates?.status() ?? { phase: 'unavailable', message: 'Update checks are unavailable for this build.' };
+  });
+  ipcMain.handle('host:desktop-update-check', event => { guardHost(event.sender.id); return desktopUpdates?.check(true); });
+  ipcMain.handle('host:desktop-update-download', event => { guardHost(event.sender.id); return desktopUpdates?.download(); });
+  ipcMain.handle('host:desktop-update-reveal', event => { guardHost(event.sender.id); return desktopUpdates?.reveal(path => shell.showItemInFolder(path)); });
   ipcMain.handle('host:save-settings', async (event, value: unknown) => {
     guardHost(event.sender.id);
     return settingsUpdates.run(async () => {
@@ -1922,10 +1937,15 @@ else {
         const khostSettingsChanged = (['khostBridgeConfigFile', 'songBlacklist', 'artistBlacklist'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const sourceVisibilityChanged = JSON.stringify(settings.sourceVisibility) !== JSON.stringify(proposed.sourceVisibility);
+        const desktopUpdateModeChanged = settings.desktopUpdateMode !== proposed.desktopUpdateMode;
         settings = sourceVisibilityChanged
           ? saveWithDiscoveryRevision(state, next => store.save(next), next => { installShowState(next); },
             () => writeSettings(settingsPath, proposed), () => broadcast())
           : writeSettings(settingsPath, proposed);
+        if (desktopUpdateModeChanged) {
+          desktopUpdates?.setMode(settings.desktopUpdateMode);
+          if (settings.desktopUpdateMode === 'download' || settings.desktopUpdateMode === 'install') void desktopUpdates?.check();
+        }
         if (sourceVisibilityChanged) {
           sourceVisibilityRevision++; youtubeSearch.cancel(); karaFunHost.invalidateSearch(); partyTymeHost.invalidateSearch(); khostBridge.cancelSearch();
         }
@@ -2139,6 +2159,16 @@ else {
     }
   });
   createHost();
+  const updateWindow = host as BrowserWindow | null;
+  updateWindow?.webContents.once('did-finish-load', () => {
+    if (settings.desktopUpdateMode === 'off' || shuttingDown) return;
+    void desktopUpdates?.check().then(result => {
+      if (result.phase !== 'available' || settings.desktopUpdateMode !== 'notify' || shuttingDown || updateWindow.isDestroyed()) return;
+      return dialog.showMessageBox(updateWindow, { type: 'info', message: 'Booth ' + result.version + ' is available.',
+        buttons: ['View Release', 'Later'], defaultId: 1, cancelId: 1, noLink: true })
+        .then(answer => { if (answer.response === 0) return shell.openExternal('https://release.thepropervolume.com/booth/'); });
+    }).catch(() => {});
+  });
   broadcast();
   void karaFunAccount.restore();
   void partyTymeAccount.restore();
@@ -2152,8 +2182,10 @@ else {
   });
 }
 let quitStarted = false, quitReady = false, storeClosed = false;
+let updateHandoffStarted = false, updateHandoffAllowed = true;
 function closeStore(): void { if (!storeClosed && store) { storeClosed = true; communityBrowser?.close(); store.close(); } }
 async function finishShowRestore(candidate: PreparedShowRestore): Promise<void> {
+  updateHandoffAllowed = false;
   try { await candidate.install(destination => store.backupBeforeRestore(destination), closeStore); }
   catch {
     closeStore();
@@ -2226,4 +2258,15 @@ app.on('before-quit', event => {
     if (restore) await finishShowRestore(restore);
     quitReady = true; closeStore(); app.quit();
   }).catch(async () => { await stopBeforeRestore(); app.exit(1); });
+});
+
+// Let the normal quit handler save the show and close rooms before handing off
+// a verified installer. Updates never initiate quit.
+app.on('will-quit', event => {
+  if (!updateHandoffAllowed || !quitReady || updateHandoffStarted || !desktopUpdates?.canApplyOnQuit()) return;
+  event.preventDefault();
+  updateHandoffStarted = true;
+  void desktopUpdates.applyOnQuit(path => shell.openPath(path)).catch(() => {
+    dialog.showErrorBox('Booth update could not be opened', 'You can check again in Preferences → Updates and open the downloaded installer.');
+  }).finally(() => app.quit());
 });

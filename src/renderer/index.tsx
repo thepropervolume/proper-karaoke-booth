@@ -158,6 +158,11 @@ declare global {
       applause?: { trigger: () => Promise<Result> };
       restartTrack: () => Promise<Result>;
       saveSettings: (settings: Partial<Settings>) => Promise<Settings>;
+      desktopUpdateStatus: () => Promise<import('../domain/desktop-update-preference').DesktopUpdateStatus>;
+      checkDesktopUpdate: () => Promise<void>;
+      downloadDesktopUpdate: () => Promise<void>;
+      revealDesktopUpdate: () => Promise<void>;
+      onDesktopUpdate: (callback: (value: import('../domain/desktop-update-preference').DesktopUpdateStatus) => void) => () => void;
       chooseLyricBackdrop: () => Promise<string | null>;
       cycleAccentColor: () => Promise<Settings['accentColor']>;
       subscribe: (callback: (state: ShowState) => void) => () => void;

@@ -2,6 +2,8 @@
 
 The **Release on version change** GitHub Actions workflow builds the desktop and mobile development packages and publishes verified artifacts to [Karaoke Booth downloads](https://release.thepropervolume.com/booth/). Anyone with the link can download the files; no preview sign-in is required. A successful run publishes a complete desktop, mobile and planning set from one source commit directly to Linode. Cloudflare points the release hostname to `apps.thepropervolume.com`.
 
+Starting in 0.10.14, the packaged desktop app reads the signed update feed for its architecture from the release site. The shared [Karaoke Core feed publisher](https://github.com/thepropervolume/proper-karaoke-core/tree/main/deploy) periodically checks published releases and signs their verified artifact metadata on Linode. Wait for the signed feed to advertise the expected version when testing upgrade behavior. The apps retain native operating-system authorization and installer prompts.
+
 ## Publish an update
 
 1. Increase the root and mobile package versions and platform version metadata together. Use semantic `0.x.y` versions; **1.0.0** remains the approved official release target.

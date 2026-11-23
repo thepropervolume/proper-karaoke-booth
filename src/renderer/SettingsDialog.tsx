@@ -14,6 +14,7 @@ import { YouTubeSearchSettings } from './YouTubeSearchSettings';
 import { SingerBrandingSettings } from './SingerBrandingSettings';
 import { Tooltip } from './Tooltip';
 import { MetadataPreview } from './MetadataPreview';
+import { DesktopUpdateSettings } from './DesktopUpdateSettings';
 import { DEFAULT_HOST_PANEL_SIZES } from '../domain/host-layout';
 import type { Shortcuts } from '../domain/shortcuts';
 import type { SettingsSection } from '../domain/app-action';
@@ -71,6 +72,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
         <button type="button" className="icon-button settings-dialog__close" aria-label="Close preferences" onClick={onClose} disabled={saving}><Icon name="close" /></button>
       </div>
       <div className="settings-groups">
+        <DesktopUpdateSettings mode={draft.desktopUpdateMode} onChange={desktopUpdateMode => setDraft({ ...draft, desktopUpdateMode })} />
         <SharedCatalogControls value={draft} onChange={setDraft} />
         <details className="settings-group" data-settings-section="ratings">
           <summary>Song Ratings</summary>

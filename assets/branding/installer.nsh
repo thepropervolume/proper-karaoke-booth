@@ -36,6 +36,11 @@
 !macroend
 
 !macro customInstall
+  ClearErrors
+  FileOpen $0 "$INSTDIR\resources\tpv-booth-installed" w
+  ${IfNot} ${Errors}
+    FileClose $0
+  ${EndIf}
   StrCpy $1 "--register-windows-path"
   ${If} $installMode == "all"
     StrCpy $1 "--register-windows-path-machine"
