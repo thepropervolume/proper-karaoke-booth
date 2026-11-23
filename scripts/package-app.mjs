@@ -112,7 +112,14 @@ try {
     // Debian installs under /opt/<productName>. Chromium's SUID sandbox fallback
     // needs a path without spaces. Keep the friendly name in the launcher entry.
     ...(platform === 'linux' ? { productName: configuration.executableName } : {}),
-    linux: { ...configuration.linux, icon: join(stage, configuration.linux.icon), desktop: { entry: { Name: configuration.productName } } },
+    linux: {
+      ...configuration.linux,
+      icon: join(stage, configuration.linux.icon),
+      desktop: {
+        ...configuration.linux.desktop,
+        entry: { ...configuration.linux.desktop.entry, Name: configuration.productName },
+      },
+    },
     mac: { ...configuration.mac, icon: join(stage, configuration.mac.icon) },
     ...(platform === 'linux' ? { deb: { ...configuration.deb, fpm: [`${linuxSystemCli}=/usr/bin/${cliName}`] } } : {}),
     nsis: { ...configuration.nsis, installerIcon: join(stage, configuration.nsis.installerIcon),
