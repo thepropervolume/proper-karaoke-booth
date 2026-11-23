@@ -98,6 +98,28 @@ management is available in App Store Connect from a browser.
    and sync the web bundle into iOS. Record the commit and the resulting
    TestFlight build number against the paired Android candidate.
 
+## Upload an internal beta from GitHub Actions
+
+Use **Upload an internal iOS beta to TestFlight** for a manually approved upload from the official repository's `main` branch. First complete the App ID and app record setup above. This workflow uploads an **Internal Only** build. Use a separate upload for external TestFlight testing or the App Store. [Apple distribution options](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases)
+
+In GitHub **Settings → Environments**, create `testflight`. Restrict deployments to the `main` branch. The workflow is manual. You can also add a required reviewer if you want separate approval for each upload. Keep the variables and secrets below in this environment. [GitHub environment protections](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+
+| Name | Where | Value |
+| --- | --- | --- |
+| `APPLE_TEAM_ID` | Environment variable | The authorized Apple Developer Team ID from Membership Details. |
+| `ASC_KEY_ID` | Environment secret | The App Store Connect Team API key ID. |
+| `ASC_ISSUER_ID` | Environment secret | The issuer ID on the App Store Connect Team Keys page. |
+| `ASC_PRIVATE_KEY` | Environment secret | The full raw contents of the downloaded `.p8` file, including its PEM lines. |
+
+The Account Holder requests App Store Connect API access. An Account Holder or Admin can create a dedicated **Team** key. Team keys apply across the account, so choose the narrowest role that can provision and upload for your team. Apple allows Developer, App Manager, Admin, and Account Holder roles to upload. Cloud-managed signing and Certificates, Identifiers & Profiles access are separate permissions. Individual API keys lack provisioning access. Store the signing key in the protected environment. Revoke a temporary key after TestFlight confirms delivery. [Team API keys](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/) · [Cloud-managed signing](https://developer.apple.com/help/account/certificates/cloud-managed-certificates/) · [Upload roles](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+
+1. Review the exact pushed commit and run **Verify paired mobile store candidate** on it. Find the highest build number already uploaded for the version in App Store Connect.
+2. Run **Upload an internal iOS beta to TestFlight** against `main`. Enter the full reviewed SHA and an unused build number between 1 and 9999 that is at least as high as the checked-in number. If a reviewer is configured, approve the deployment after confirming the commit and inputs.
+3. The job builds the locked mobile web assets and resolves the pinned Swift packages before exposing signing credentials. It uses Xcode automatic signing with `-allowProvisioningUpdates` and the App Store Connect Team key flags `-authenticationKeyPath`, `-authenticationKeyID`, and `-authenticationKeyIssuerID`. It verifies the archive's Apple team, bundle ID, version, and iPhoneOS arm64 binary before using Xcode's `app-store-connect` upload mode and the Internal Only flag. The key, archive, and signing logs stay on the ephemeral runner.
+4. When Apple finishes processing, resolve any export-compliance prompt in App Store Connect. Use an internal tester group with automatic distribution disabled if you want to inspect each build first. Add the build to that group and install it from TestFlight. [Build delivery status](https://developer.apple.com/help/app-store-connect/manage-builds/view-builds-and-metadata/) · [Internal TestFlight groups](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/)
+
+If automatic provisioning fails on an empty runner, check the Team key's access and signing setup. Use the trusted Mac or Xcode Cloud path above if the team needs a local signing setup or cannot use a Team key in GitHub. After an uncertain upload, check App Store Connect delivery status before trying a new build number.
+
 ## Review and device checks before submission
 
 - Exercise local video import/playback, resume without autoplay, rotation,
