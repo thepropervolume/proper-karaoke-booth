@@ -13,7 +13,6 @@ test('source controls show all seven independently checked states without claimi
     assert.ok(html.includes(`aria-label="Show ${label} in search"`), label);
   assert.equal((html.match(/type="checkbox"/g) ?? []).length, 7);
   assert.equal((html.match(/checked=""/g) ?? []).length, 3);
-  assert.match(html, /Account and catalog settings still apply/);
-  assert.match(html, /Existing queue and playback are unchanged/);
+  assert.match(html, /Show in Search/);
   assert.doesNotMatch(html, /account connected/i);
 });

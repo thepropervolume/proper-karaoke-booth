@@ -61,19 +61,16 @@ try {
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ appearance: 'day', sharedCatalogEnabled: true,
     providerCatalogEnabled: true, youtubeSearchEnabled: true, showDisplayLogo: false, masterVolume: 0,
     autoBumper: false, bumperOnLaunch: false, autoAdvance: false, localControlEnabled: false,
-    ratingProfileConfigFile: join(profile, 'rating-connection.json'), singerDisplayFullscreen: false }));
+    singerDisplayFullscreen: false }));
   await writeFile(join(profile, 'catalog-connection.json'), JSON.stringify({ baseUrl: 'https://catalog.example.test', token: 'synthetic-catalog-read-token-123456789' }), { mode: 0o600 });
-  await writeFile(join(profile, 'rating-connection.json'), JSON.stringify({ baseUrl: 'https://ratings.example.test', token: 'synthetic-host-voter-token-12345678901234567890' }), { mode: 0o600 });
   await writeFile(bootstrap, `const {app,dialog,session,shell}=require('electron');const fs=require('node:fs');
 app.setPath('userData',process.env.TPV_SEARCH_QA_PROFILE);app.setAppPath(process.env.TPV_SEARCH_QA_REPO);app.getVersion=()=>${JSON.stringify(metadata.version)};
 if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_SEARCH_QA_PROFILE))throw Error('Unsafe rehearsal profile');
-globalThis.searchWorkspaceQa={unexpectedFetches:0,downloads:0,youtubeQueries:[],ratingKeys:[],ratingVotes:[],failNextVote:true,nextOpenFile:null,dialogs:[]};
+globalThis.searchWorkspaceQa={unexpectedFetches:0,downloads:0,youtubeQueries:[],nextOpenFile:null,dialogs:[]};
 dialog.showOpenDialog=async()=>{const file=searchWorkspaceQa.nextOpenFile;searchWorkspaceQa.nextOpenFile=null;return file?{canceled:false,filePaths:[file]}:{canceled:true,filePaths:[]};};
 dialog.showMessageBox=async(_parent,value)=>{searchWorkspaceQa.dialogs.push(value?.message||'');return{response:0};};
 shell.openExternal=async()=>{throw Error('External browsers are disabled in this rehearsal');};
 globalThis.fetch=async(input,options)=>{const url=new URL(String(input));const xml=body=>new Response('<response status="ok">'+body+'</response>',{headers:{'Content-Type':'application/xml'}});
-if(url.origin==='https://ratings.example.test'&&url.pathname==='/v1/ratings/lookup'){const keys=JSON.parse(options.body).recordingKeys;searchWorkspaceQa.ratingKeys.push(...keys);return new Response(JSON.stringify({items:keys.map(recordingKey=>({recordingKey,average:null,count:0,ownVote:null}))}),{headers:{'content-type':'application/json'}});}
-if(url.origin==='https://ratings.example.test'&&url.pathname==='/v1/ratings/vote'){const {recordingKey,value}=JSON.parse(options.body);searchWorkspaceQa.ratingVotes.push({recordingKey,value});if(searchWorkspaceQa.failNextVote){searchWorkspaceQa.failNextVote=false;return new Response('',{status:503});}return new Response(JSON.stringify({recordingKey,average:value,count:1,ownVote:value}),{headers:{'content-type':'application/json'}});}
 if(url.origin==='https://catalog.example.test'&&url.pathname==='/v1/catalog/tracks')return new Response(JSON.stringify({items:${JSON.stringify(community)},nextCursor:null,metadata:{revision:'1',lastSuccess:null,lastAttempt:null}}),{headers:{'content-type':'application/json'}});
 if(url.hostname==='api.karafun.com')switch(url.pathname){case'/session/info':return xml('<session/>');case'/search/top':return xml('<list><song id="6229"/></list>');case'/song/info':return xml('<song id="6229"><title>KaraFun Search Song</title><artist>Synthetic Artist</artist><len>180</len><explicit>0</explicit></song>');case'/song/request':searchWorkspaceQa.downloads++;throw Error('No media downloads are allowed in this rehearsal');}
 searchWorkspaceQa.unexpectedFetches++;throw Error('Unexpected network request blocked');};
@@ -126,6 +123,14 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true }); await preferences.waitFor();
   await host.keyboard.press('Control+f'); await preferences.waitFor({ state: 'hidden' });
   assert.equal(await search.evaluate(node => document.activeElement === node), true);
+  await host.getByRole('button', { name: 'Preferences', exact: true }).click();
+  await preferences.locator('summary').filter({ hasText: /^Karaoke Services$/ }).click();
+  await preferences.getByRole('checkbox', { name: 'Show Karaoke Nerds in search', exact: true }).waitFor();
+  await preferences.getByRole('checkbox', { name: 'Show YouTube in search', exact: true }).waitFor();
+  await preferences.getByRole('checkbox', { name: 'Show KaraFun in search', exact: true }).uncheck();
+  assert.equal(await preferences.locator('.settings-groups > details > summary').last().innerText(), 'Configuration Files');
+  await preferences.getByRole('button', { name: 'Save preferences', exact: true }).click();
+  await preferences.waitFor({ state: 'hidden' });
 
   await app.evaluate(({ dialog }, fixture) => { globalThis.searchWorkspaceQa.nextOpenFile = fixture; }, fixture);
   await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
@@ -135,6 +140,7 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await host.getByRole('button', { name: 'Sources', exact: true }).click();
   await host.getByRole('button', { name: 'Sign In to KaraFun', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.karaFun.status()).state === 'connected');
+  await waitForHostCondition(host, async () => (await window.tpv.getSettings()).settings.sourceVisibility.karafun);
   await host.keyboard.press('Control+f'); await search.fill('Search');
   const songs = host.getByRole('listbox', { name: 'Songs', exact: true });
   await songs.getByText('KaraFun Search Song', { exact: true }).waitFor();
@@ -194,18 +200,16 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await karaFunRow.scrollIntoViewIfNeeded(); await karaFunRow.click({ button: 'right' });
   await host.screenshot({ path: join(screenshots, 'unified-karafun-context-menu.png') });
   await host.keyboard.press('Control+f');
-  await karaFunRow.getByRole('button', { name: /^Rate KaraFun Search Song\./ }).click();
-  const rating = host.getByRole('dialog', { name: 'Rate This Recording', exact: true }); await rating.waitFor();
-  assert.equal(await rating.getByRole('radio', { name: '7 stars out of 10', exact: true }).isEnabled(), true);
-  assert.equal((await app.evaluate(() => searchWorkspaceQa.ratingKeys)).includes('karafun:catalog:6229'), true,
-    'A search-only KaraFun recording must use its exact global identity without an imported fingerprint.');
-  await rating.getByRole('radio', { name: '7 stars out of 10', exact: true }).click();
-  await rating.getByRole('alert').waitFor();
-  assert.equal(await rating.isVisible(), true, 'A failed vote keeps the dialog open for review.');
-  await rating.getByRole('radio', { name: '8 stars out of 10', exact: true }).click();
-  await rating.waitFor({ state: 'hidden' });
-  assert.deepEqual(await app.evaluate(() => searchWorkspaceQa.ratingVotes), [
-    { recordingKey: 'karafun:catalog:6229', value: 7 }, { recordingKey: 'karafun:catalog:6229', value: 8 }]);
+  assert.equal(await karaFunRow.getByRole('button', { name: /^Rate / }).count(), 0);
+  await karaFunRow.getByRole('button', { name: 'Star KaraFun Search Song in KJ Picks', exact: true }).click();
+  await karaFunRow.getByRole('button', { name: 'Remove KaraFun Search Song from KJ Picks', pressed: true }).waitFor();
+  const savedPick = await host.evaluate(async () => {
+    const state = await window.tpv.getState();
+    const version = state.versions.find(song => song.source?.provider === 'karafun');
+    return { source: version?.source, queued: state.requests.length, onPlaylist: (await window.tpv.getCollections()).items
+      .some(item => item.playlistId === 'kj-picks' && item.versionId === version?.id) };
+  });
+  assert.deepEqual(savedPick, { source: { provider: 'karafun', catalog: 'catalog', songId: '6229' }, queued: 0, onPlaylist: true });
   await host.locator('.library-results').evaluate(node => { node.scrollTop = 0; });
   const geometry = await host.evaluate(() => {
     const results = document.querySelector('.library-results').getBoundingClientRect(), workspace = document.querySelector('.main-panel').getBoundingClientRect();
@@ -272,7 +276,7 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   const counters = await app.evaluate(() => ({ unexpectedFetches: searchWorkspaceQa.unexpectedFetches, downloads: searchWorkspaceQa.downloads }));
   assert.deepEqual(counters, { unexpectedFetches: 0, downloads: 0 }); assert.deepEqual(pageErrors, []);
   assert.deepEqual(geometryProblems, []);
-  console.log(`PASS ${metadata.version}: global search/navigation/focus, unified synthetic providers, borders/context menus/metadata precedence, global KaraFun rating identity, dominant results (${Math.round(geometry.results / geometry.workspace * 100)}% of workspace), fixed transport, immediate logo preview, branding/timezone save and hidden singer preview. Screenshots: ${screenshots}`);
+  console.log(`PASS ${metadata.version}: global search, unified providers, source activation, columns and filtering, KaraFun KJ Picks, fixed transport, branding and hidden singer preview. Screenshots: ${screenshots}`);
 } catch (error) {
   if (host) { await host.screenshot({ path: join(screenshots, 'failure.png') }).catch(() => {}); console.error((await host.locator('body').ariaSnapshot().catch(() => '')).slice(-12000)); }
   throw error;

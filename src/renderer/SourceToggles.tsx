@@ -40,7 +40,6 @@ export function SourceToggles({ value, onSave }: {
 
   return <section className="source-toggles" aria-label="Search sources" aria-busy={saving}>
     <h3>Show in Search</h3>
-    <p className="muted">Choose the sources that appear in library search.</p>
     <SearchSourceCheckboxes value={value} disabled={saving} onChange={(id, checked) => void change(id, checked)} />
     {error && <p role="alert">{error}</p>}
   </section>;
