@@ -19,6 +19,9 @@ const messages = {
   'not-entitled': 'KaraFun did not authorize this recording. Check the account subscription and recording availability.'
 } as const;
 const failure = (code: keyof typeof messages) => new KaraFunAccountError(code, messages[code]);
+class KaraFunRouteUnauthorized extends KaraFunAccountError {
+  constructor() { super('expired', messages.expired); }
+}
 const songId = (value: unknown): value is string => typeof value === 'string' && /^[1-9]\d{0,11}$/.test(value);
 const text = (value: string | null, empty = false): value is string => value !== null && value.length <= 500 && (empty || !!value.trim()) && !/[\x00-\x1f\x7f\ufffd]/.test(value);
 
@@ -166,7 +169,10 @@ export class KaraFunAccount {
     try {
       signal.throwIfAborted(); const request = karaFunSignedRequest(path, query, sessionKey, Math.floor((this.dependencies.clock?.() ?? Date.now()) / 1000));
       const response = await (this.dependencies.fetch ?? fetch)(request.url, { method: 'GET', headers: request.headers, redirect: 'manual', signal });
-      if (response.status === 401) { void response.body?.cancel().catch(() => {}); throw failure('expired'); }
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        throw path === 'session/info' ? failure('expired') : new KaraFunRouteUnauthorized();
+      }
       if ((response.status === 403 || response.status === 402) && path === 'song/request') {
         void response.body?.cancel().catch(() => {}); throw failure('not-entitled');
       }
@@ -196,6 +202,17 @@ export class KaraFunAccount {
     const context = this.context();
     try { const value = await task(context); this.assertCurrent(context); return value; }
     catch (error) {
+      if (error instanceof KaraFunRouteUnauthorized && context.scope === this.accountScope()) {
+        // A route can deny a request while the account session is still valid.
+        // Check the accepted session before deleting the encrypted sign-in.
+        let expired = false;
+        try {
+          const { clientId, sessionKey } = context.material;
+          await this.read('session/info', clientId ? { client: clientId } : {}, sessionKey);
+        } catch (reason) { expired = reason instanceof KaraFunAccountError && reason.code === 'expired'; }
+        this.assertCurrent(context);
+        if (!expired) throw failure('unavailable');
+      }
       if (error instanceof KaraFunAccountError && error.code === 'expired' && context.scope === this.accountScope()) {
         this.persistence = 'memory-only'; this.publish('expired', messages.expired); await this.forget();
         try { await this.dependencies.sessionStore?.clear(context.scope); } catch {}

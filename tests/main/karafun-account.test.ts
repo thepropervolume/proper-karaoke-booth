@@ -111,13 +111,18 @@ test('a cancelled sign-in cannot open a native session or publish connected afte
 });
 
 test('HTTP authorization failures have distinct session and recording effects and never expose provider bodies', async () => {
-  let status = 403, disposed = 0;
+  let status = 403, disposed = 0, expired = false;
   const account = new KaraFunAccount({ authenticate: async () => ({ sessionKey: 'fixture-key', dispose: () => { disposed++; } }),
-    fetch: async input => new URL(String(input)).pathname === '/session/info' ? session() : new Response('private provider fixture-key', { status }) });
+    fetch: async input => new URL(String(input)).pathname === '/session/info'
+      ? (expired ? new Response(null, { status: 401 }) : session()) : new Response('private provider fixture-key', { status }) });
   await account.connect(); const scope = account.accountScope();
   await assert.rejects(account.search('Popular'), error => error instanceof KaraFunAccountError && error.code === 'unavailable' && !error.message.includes('fixture-key'));
   assert.equal(account.accountScope(), scope); assert.equal(disposed, 0);
   status = 401;
+  await assert.rejects(account.search('Popular'), { code: 'unavailable' });
+  assert.equal(account.accountScope(), scope);
+  assert.equal(disposed, 0);
+  expired = true;
   await assert.rejects(account.search('Popular'), { code: 'expired' });
   assert.equal(account.status().state, 'expired'); assert.equal(account.accountScope(), null); assert.equal(disposed, 1);
   for (const status of [402, 403]) {

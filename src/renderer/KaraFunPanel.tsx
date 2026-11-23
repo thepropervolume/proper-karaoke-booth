@@ -20,6 +20,7 @@ export function KaraFunPanel({ bridge, status, versions }: { bridge: KaraFunBrid
     <p>Search and queue with your existing subscription.</p>
     <p role="status"><strong>{status.state === 'connected' ? 'Signed In' : status.state === 'connecting' ? 'Signing In…' : status.state === 'expired' ? 'Sign-In Expired' : 'Not Signed In'}</strong>{status.message ? ` · ${status.message}` : ''}</p>
     {status.state === 'connected' && <p className="muted">{status.persistence === 'os-protected' ? 'Sign-in is remembered securely on this computer.' : 'Secure session storage is unavailable; sign-in lasts until the app closes.'}</p>}
+    {status.state === 'expired' && <p className="muted">KaraFun rejected the saved session. Sign in through the KaraFun window to renew it. Booth remembers the new session in your operating system’s secure storage when available.</p>}
     {status.retrySavedSignIn && <button type="button" disabled={busy} onClick={() => void connect(true)}>Retry Saved Sign-In</button>}{' '}
     {status.state !== 'connected' && <button type="button" disabled={busy || status.state === 'connecting'} onClick={() => void connect(false)}>Sign In to KaraFun</button>}{' '}
     {(status.state === 'connected' || status.retrySavedSignIn) && <button type="button" disabled={busy} onClick={() => void bridge.signOut().catch(() => setError('Could not finish signing out.'))}>Sign Out</button>}
