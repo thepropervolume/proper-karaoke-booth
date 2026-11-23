@@ -6,6 +6,17 @@ import type { StoredMedia } from './store';
 type MediaLocation = Pick<StoredMedia, 'id' | 'path'>;
 type Inspect = (path: string) => Promise<{ isFile(): boolean; size: number }>;
 
+export async function inspectMediaLocation(path: string, inspect: Inspect = lstat): Promise<MediaReviewIssue['reason'] | undefined> {
+  if (!isAbsolute(path)) return 'invalid';
+  try {
+    const info = await inspect(path);
+    if (!info.isFile() || info.size === 0) return 'invalid';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unavailable';
+  }
+}
+
 /** A check uses storage metadata only. Even disconnected storage occupies at most one worker. */
 export class MediaReview {
   private current: { id: string; cancelled: boolean } | null = null;
@@ -20,17 +31,7 @@ export class MediaReview {
       const issues: MediaReviewIssue[] = [];
       for (const { id: versionId, path } of files) {
         if (session.cancelled) return { status: 'cancelled' };
-        let reason: MediaReviewIssue['reason'] | undefined;
-        try {
-          if (!isAbsolute(path)) reason = 'invalid';
-          else {
-            const info = await this.inspect(path);
-            if (!info.isFile() || info.size === 0) reason = 'invalid';
-          }
-        } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          reason = code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unavailable';
-        }
+        const reason = await inspectMediaLocation(path, this.inspect);
         if (reason) issues.push({ versionId, filename: path.split(/[\\/]/).pop() ?? '', reason });
       }
       return session.cancelled ? { status: 'cancelled' } : { status: 'completed', checked: files.length, issues };

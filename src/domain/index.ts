@@ -24,6 +24,7 @@ export type Command =
   | { type: 'addVersion'; version: Version }
   | { type: 'editVersion'; id: string; title: string; artist: string; isDuet?: boolean }
   | { type: 'addSinger'; singer: Singer }
+  | { type: 'renameSinger'; singerId: string; name: string }
   | { type: 'removeSinger'; singerId: string }
   | { type: 'setSingerAvailability'; singerId: string; minutes: number; releaseStaged?: boolean }
   | { type: 'holdSinger'; singerId: string }
@@ -39,6 +40,7 @@ export type Command =
   | { type: 'stage'; requestId?: string }
   | { type: 'release' }
   | { type: 'start'; generationId: string }
+  | { type: 'playNow'; versionId: string; requestId: string; generationId: string }
   | { type: 'pause' } | { type: 'resume' } | { type: 'stop' } | { type: 'applause' } | { type: 'photo'; photoHash: string }
   | { type: 'complete'; generationId: string }
   | { type: 'skip'; generationId: string; confirmed: boolean }
@@ -223,6 +225,13 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else if (state.singers.some(s => s.id === cmd.singer.id)) reject('DUPLICATE', 'Singer already exists');
       else state.singers.push({ ...cmd.singer });
       break;
+    case 'renameSinger': {
+      const singer = state.singers.find(item => item.id === cmd.singerId && !item.archived);
+      if (!singer || !nonempty(cmd.name) || cmd.name.trim().length > 100)
+        reject('INVALID', 'Choose a singer in this show and enter a name of up to 100 characters');
+      else singer.name = cmd.name.trim();
+      break;
+    }
     case 'removeSinger': {
       const singer = state.singers.find(s => s.id === cmd.singerId && !s.archived);
       if (!singer) reject('INVALID', 'Singer is not in this show');
@@ -373,8 +382,30 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       else { staged.status = 'accepted'; state.stagedRequestId = null; }
       break;
     }
-    case 'start': {
-      const staged = state.requests.find(r => r.id === state.stagedRequestId && r.status === 'staged');
+    case 'start': case 'playNow': {
+      let staged = state.requests.find(r => r.id === state.stagedRequestId && r.status === 'staged');
+      if (cmd.type === 'playNow') {
+        if (!versionAllowed(cmd.versionId)) { reject('NOT_AVAILABLE', 'Version is not available'); break; }
+        if (!nonempty(cmd.requestId) || state.requests.some(request => request.id === cmd.requestId)) {
+          reject('INVALID', 'Playback request must be new'); break;
+        }
+        // The desk's override returns an interrupted performance to its turn.
+        // Keep singer assignments, queue order, and points tied to existing IDs.
+        const interrupted = state.requests.find(request => request.id === state.playback?.requestId);
+        if (interrupted) {
+          interrupted.status = 'accepted';
+          if (interrupted.round === state.currentRound) state.finalTurnBegun = false;
+        }
+        if (staged) staged.status = 'accepted';
+        staged = state.requests.find(request => request.status === 'accepted' && request.id !== interrupted?.id &&
+          request.singerId === null && request.versionId === cmd.versionId);
+        if (!staged) {
+          staged = { id: cmd.requestId, singerId: null, versionId: cmd.versionId, status: 'staged', round: state.currentRound, order: state.nextOrder++ };
+          state.requests.push(staged);
+        }
+        state.playback = null;
+        state.nextStartAtMs = 0;
+      }
       if (state.playback) reject('INVALID_STATE', 'A track is already active');
       else if (!staged) reject('INVALID_STATE', 'No queued next song');
       else if (remainingPauseSeconds(state, nowMs)) reject('PAUSE_INTERVAL', `Wait ${remainingPauseSeconds(state, nowMs)} seconds before starting the next song.`);
@@ -391,11 +422,11 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
           !heldSingers.has(r.singerId ?? '') && !heldSingers.has(r.coSingerId ?? '');
         const earlierWaiting = state.requests.some(r => waitingForRound(r) && r.round !== null &&
           r.round < staged.round! && versionAllowed(r.versionId));
-        if (staged.round! > state.currentRound && !earlierWaiting) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
+        if (cmd.type === 'start' && staged.round! > state.currentRound && !earlierWaiting) { state.currentRound = staged.round!; state.finalTurnBegun = false; }
         staged.status = 'playing'; state.stagedRequestId = null;
         state.playback = { requestId: staged.id, generationId: cmd.generationId, status: 'playing' };
         state.usedGenerationIds.push(cmd.generationId);
-        if (staged.round === state.currentRound && !state.requests.some(r => waitingForRound(r) && r.round === state.currentRound && versionAllowed(r.versionId))) state.finalTurnBegun = true;
+        if (cmd.type === 'start' && staged.round === state.currentRound && !state.requests.some(r => waitingForRound(r) && r.round === state.currentRound && versionAllowed(r.versionId))) state.finalTurnBegun = true;
       }
       break;
     }
@@ -453,7 +484,7 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
   }
   if (!error.value) {
     const options = { pointsEnabled: settings.pointsEnabled !== false, applauseEnabled: settings.applauseEnabled !== false };
-    const relevant = ['addSinger', 'request', 'editRequest', 'editVersion', 'start', 'applause', 'photo', 'complete', 'skip', 'stop'].includes(cmd.type);
+    const relevant = ['addSinger', 'request', 'editRequest', 'editVersion', 'start', 'playNow', 'applause', 'photo', 'complete', 'skip', 'stop'].includes(cmd.type);
     if (relevant) {
       try {
         let points = state.points ?? newPointsLedger(state.showId);
@@ -501,12 +532,8 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
             }
           }
         }
-        if (cmd.type === 'start') {
-          const request = state.requests.find(item => item.id === state.playback?.requestId);
-          start(cmd.generationId, request);
-        }
         const oldPlayback = original.playback;
-        if (oldPlayback && ['applause', 'complete', 'skip', 'stop'].includes(cmd.type) && !points.performances.some(item => item.generationId === oldPlayback.generationId)) {
+        if (oldPlayback && ['applause', 'complete', 'skip', 'stop', 'playNow'].includes(cmd.type) && !points.performances.some(item => item.generationId === oldPlayback.generationId)) {
           const request = original.requests.find(item => item.id === oldPlayback.requestId);
           start(oldPlayback.generationId, request);
         }
@@ -514,8 +541,10 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
           actor: envelope.actor.role === 'singer' ? { role: 'singer', singerId: envelope.actor.id } : { role: 'host' },
           generationId: oldPlayback?.status === 'playing' ? oldPlayback.generationId : null });
         if (cmd.type === 'photo') record({ type: 'photo', eventId: `photo:${envelope.commandId}`, singerId: envelope.actor.id });
-        if (oldPlayback && (cmd.type === 'complete' || cmd.type === 'skip' || cmd.type === 'stop'))
+        if (oldPlayback && (cmd.type === 'complete' || cmd.type === 'skip' || cmd.type === 'stop' || cmd.type === 'playNow'))
           record({ type: 'finish', eventId: `finish:${oldPlayback.generationId}`, generationId: oldPlayback.generationId, completed: cmd.type === 'complete' });
+        if (cmd.type === 'start' || cmd.type === 'playNow')
+          start(cmd.generationId, state.requests.find(item => item.id === state.playback?.requestId));
         state.points = points;
       } catch (cause) {
         reject('POINTS', cause instanceof Error ? cause.message : 'Points could not be recorded');

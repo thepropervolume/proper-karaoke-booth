@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('tpv', {
     return () => ipcRenderer.removeListener('host:timeline', listener);
   },
   getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
+  getMissingLocalMedia: () => ipcRenderer.invoke('host:get-missing-local-media'),
   previewFilenameMetadata: () => ipcRenderer.invoke('host:preview-filename-metadata'),
   readEmbeddedMetadata: (versionId: string, requestId: string) => ipcRenderer.invoke('host:read-embedded-metadata', versionId, requestId),
   cancelEmbeddedMetadata: (requestId: string) => ipcRenderer.invoke('host:cancel-embedded-metadata', requestId),
@@ -136,6 +137,7 @@ contextBridge.exposeInMainWorld('tpv', {
   saveShortcuts: (value: unknown) => ipcRenderer.invoke('host:save-shortcuts', value),
   editShortcutsFile: () => ipcRenderer.invoke('host:edit-shortcuts-file'),
   playPause: () => ipcRenderer.invoke('host:play-pause'),
+  playSongNow: (versionId: string) => ipcRenderer.invoke('host:play-song-now', versionId),
   restartTrack: () => ipcRenderer.invoke('host:restart-track'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('host:save-settings', settings),
   desktopUpdateStatus: () => ipcRenderer.invoke('host:desktop-update-status') as Promise<import('../domain/desktop-update-preference').DesktopUpdateStatus>,

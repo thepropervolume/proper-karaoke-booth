@@ -48,8 +48,8 @@ import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { RemoteCatalog, type RemoteCatalogProviders, type RemoteCatalogTrack } from './remote-catalog';
 import { InternetQueueClient } from './internet-queue-client';
 import { createSingerStaticHandler } from './remote-static';
-import { fingerprintMedia, mediaIdentityMatches, verifyAndRelinkMedia, type MediaIdentity } from './media-verification';
-import { MediaReview } from './media-review';
+import { fingerprintMedia, fingerprintPlaybackMedia, mediaIdentityMatches, verifyAndRelinkMedia, type MediaIdentity } from './media-verification';
+import { inspectMediaLocation, MediaReview } from './media-review';
 import { startPolicyError } from './playback-policy';
 import { openVerifiedMediaFile, VerifiedMediaFileError } from './verified-media-file';
 import { cachedVideoIdentityMatches, inspectCachedVideo, sameStoredMedia } from './cached-video-integrity';
@@ -390,6 +390,7 @@ const playlistTransfer = new PlaylistTransfer({
 const mediaChecks = new Set<AbortController>();
 let metadataRead: { id: string; controller: AbortController } | null = null;
 const mediaReview = new MediaReview();
+const libraryMediaReview = new MediaReview();
 let verifiedPlayback: { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity } | null = null;
 let reportedMediaError = '';
 let youtubeDownloads: YouTubeDownloads | null = null;
@@ -421,8 +422,6 @@ function videoCacheDirectory(): string {
   return settings.karaokeNerdsCacheDirectory || join(app.getPath('videos'), 'The Proper Volume Karaoke');
 }
 function queueMediaReady(versionId: string): boolean {
-  const provider = state.versions.find(version => version.id === versionId)?.source?.provider;
-  if (provider !== 'youtube' && provider !== 'karafun' && provider !== 'partytyme') return true;
   const media = store.media(versionId);
   return !!media && existsSync(media.path);
 }
@@ -687,6 +686,7 @@ function perform(command: Command, actor: 'host' | 'engine' = 'host', control?: 
   installShowState(result.state);
   if (result.outcome.ok && (command.type === 'pause' || command.type === 'stop' || command.type === 'release')) { showAdvance.cancel(); cancelPendingPlayback(); }
   if (result.outcome.ok && command.type === 'release') autoStageSuspended = true;
+  if (result.outcome.ok && command.type === 'playNow') autoStageSuspended = false;
   if (result.outcome.ok && command.type === 'setPolicy') youtubeSearch.cancel();
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) { verifiedPlayback = null; activeKaraFun = null; activePartyTyme = null; outputRecovery = null; }
   if (result.outcome.ok && (command.type === 'complete' || command.type === 'skip' || command.type === 'stop')) bumper?.karaokeEnded();
@@ -1084,6 +1084,20 @@ function hostPlayPause(): Promise<TransportResult> {
     return executeHostCommand(generation ? { type: 'resume' } : { type: 'start', generationId: randomUUID() }, true, recoveryIntent, undefined, current);
   });
 }
+function hostPlayNow(versionId: string): Promise<TransportResult> {
+  if (shuttingDown || playbackTransition || hostTransport.busy() || playbackTimeline.snapshot().seeking)
+    return Promise.resolve({ ok: false, error: 'Wait for the current playback action to finish.' });
+  if (!isVersionAllowed(state, versionId, settings)) return Promise.resolve({ ok: false, error: 'The song is unavailable under the current show policy.' });
+  if (!queueMediaReady(versionId)) return Promise.resolve({ ok: false, error: 'Prepare or relink this song before playing it now.' });
+  showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false;
+  const show = state.showId, epoch = state.hostEpoch, interrupted = state.playback?.generationId;
+  return hostTransport.run('playNow', async current => {
+    const stillCurrent = () => current() && !shuttingDown && state.showId === show && state.hostEpoch === epoch && state.playback?.generationId === interrupted;
+    await ensureSingerDisplayReady();
+    if (!stillCurrent()) return { ok: false, error: 'Playback was cancelled.' };
+    return executeHostCommand({ type: 'playNow', versionId, requestId: randomUUID(), generationId: randomUUID() }, true, null, undefined, stillCurrent);
+  });
+}
 function restartCurrentTrack(): Promise<TransportResult> {
   const recoveryIntent = outputRecovery ? { ...outputRecovery } : null;
   return hostTransport.run('restart', async current => {
@@ -1113,6 +1127,8 @@ function validateCommand(value: unknown): Command | null {
         ? { type: 'editVersion', id: value.id, title: value.title, artist: value.artist, ...(value.isDuet !== undefined ? { isDuet: value.isDuet as boolean } : {}) } : null;
     case 'addSinger':
       return isRecord(value.singer) && shortString(value.singer.id) && shortString(value.singer.name) ? { type: 'addSinger', singer: { id: value.singer.id, name: value.singer.name } } : null;
+    case 'renameSinger':
+      return shortString(value.singerId) && shortString(value.name) ? { type: 'renameSinger', singerId: value.singerId, name: value.name } : null;
     case 'removeSinger':
       return shortString(value.singerId) ? { type: 'removeSinger', singerId: value.singerId } : null;
     case 'request':
@@ -1136,41 +1152,66 @@ function validateCommand(value: unknown): Command | null {
     default: return null;
   }
 }
-function playable(command: Command): string | null {
-  if (command.type !== 'start' && command.type !== 'resume') return null;
+type PlaybackCommand = Extract<Command, { type: 'start' | 'resume' | 'playNow' }>;
+function playbackSelection(command: PlaybackCommand): { requestId: string | null | undefined; versionId: string | undefined } {
+  if (command.type === 'playNow') return { requestId: command.requestId, versionId: command.versionId };
+  const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
+  return { requestId, versionId: state.requests.find(request => request.id === requestId)?.versionId };
+}
+function playable(command: PlaybackCommand): string | null {
   if (youtubeAudioGate.playbackBlocked()) return 'Close the YouTube player before starting or resuming karaoke.';
   if (youtubeAudioGate.bumperStartPending()) return 'Wait for bumper music to finish starting before starting karaoke.';
   const remaining = remainingPauseSeconds(state, Date.now());
   if (command.type === 'start' && remaining) return `Wait ${remaining} seconds before starting the next song.`;
   if (!display || display.isDestroyed() || !displayReady) return 'Open the singer display before starting or resuming.';
-  const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
-  const request = state.requests.find(r => r.id === requestId);
-  const streaming = state.versions.find(version => version.id === request?.versionId)?.source;
-  const media = request && store.media(request.versionId);
+  const { versionId } = playbackSelection(command);
+  const streaming = state.versions.find(version => version.id === versionId)?.source;
+  const media = versionId && store.media(versionId);
   if (streaming?.provider === 'partytyme' && partyTymeAccount?.status().state !== 'connected') return 'Sign in to Party Tyme in Sources before playing this recording.';
   if (streaming?.provider === 'youtube' && !media) return null;
   if (streaming?.provider === 'youtube' && media && !existsSync(media.path)) return 'The saved video is missing. Right-click the library song and choose Download Video / Retry, or relink the original file.';
   if (!media || streaming && !existsSync(media.path)) return 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.';
   return null;
 }
+function playbackPolicyError(command: Command, requestId?: string | null): string | null {
+  if (command.type === 'playNow')
+    return isVersionAllowed(state, command.versionId, settings) ? null : 'The song is unavailable under the current show policy.';
+  return startPolicyError(state, command, requestId, settings);
+}
+async function localQueueMediaError(versionId: string): Promise<string | null> {
+  const version = state.versions.find(item => item.id === versionId);
+  if (!version || version.source) return null;
+  const media = store.media(versionId);
+  const reason = media ? await inspectMediaLocation(media.path) : 'missing';
+  if (shuttingDown) return 'The application is closing.';
+  if (store.media(versionId)?.path !== media?.path) return 'The song link changed. Try adding it again.';
+  return reason === 'missing' || reason === 'invalid' ? 'The source file is unavailable. Right-click the song in Song Library and choose Relink File.' : null;
+}
 async function executeHostCommand(command: Command, transportOwned = false, observedRecovery?: { generation: string; revision: number } | null, automaticCurrent?: () => boolean, transportCurrent?: () => boolean): Promise<{ ok: boolean; error?: string }> {
   // Invalidate delayed work at the host's intent, including while an async file
   // check is busy, so Stop can never be followed by a late automatic start.
-  if (!automaticCurrent && ['pause', 'stop', 'release', 'start', 'resume'].includes(command.type)) { showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false; }
+  if (!automaticCurrent && ['pause', 'stop', 'release', 'start', 'resume', 'playNow'].includes(command.type)) { showAdvance.cancel(); automaticBumper.cancel(); startupBumperPending = false; }
   if (['pause', 'stop', 'release'].includes(command.type)) cancelPendingPlayback();
   const intentCurrent = transportCurrent ?? hostTransport.capture();
   const startIntent = command.type === 'start' ? startIntentFence.capture(state, settings, Date.now()) : null;
   const current = () => intentCurrent() && (!automaticCurrent || automaticCurrent()) && (command.type !== 'start' || startIntentFence.current(state, settings, Date.now(), startIntent));
-  if ((command.type === 'start' || command.type === 'resume') && !current()) return { ok: false, error: 'Playback was cancelled.' };
+  const plays = command.type === 'start' || command.type === 'resume' || command.type === 'playNow';
+  if (plays && !current()) return { ok: false, error: 'Playback was cancelled.' };
   if (command.type === 'stop' && !state.playback) {
     try { await bumper?.stop(); publishBumper(); return { ok: true }; }
     catch { return { ok: false, error: 'Bumper audio did not confirm stopping. Check the audio output.' }; }
   }
   const recoveryAtIntent = observedRecovery === undefined ? command.type === 'resume' && outputRecovery ? { ...outputRecovery } : null : observedRecovery;
-  if ((playbackTransition || hostTransport.busy() && !transportOwned) && ['start', 'resume', 'skip', 'stage', 'release'].includes(command.type))
+  if ((playbackTransition || hostTransport.busy() && !transportOwned) && (plays || ['skip', 'stage', 'release'].includes(command.type)))
     return { ok: false, error: 'Wait for the current playback transition to finish.' };
-  const initialPolicyError = startPolicyError(state, command, undefined, settings);
+  const initialPolicyError = playbackPolicyError(command);
   if (initialPolicyError) return { ok: false, error: initialPolicyError };
+  if (command.type === 'request' || command.type === 'editRequest') {
+    const { showId, hostEpoch } = state;
+    const error = await localQueueMediaError(command.versionId);
+    if (error) return { ok: false, error };
+    if (state.showId !== showId || state.hostEpoch !== hostEpoch) return { ok: false, error: 'The show changed. Add the song again in the current show.' };
+  }
   if (command.type === 'start' || command.type === 'resume') {
     const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
     const version = state.versions.find(item => item.id === state.requests.find(request => request.id === requestId)?.versionId);
@@ -1189,14 +1230,13 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       } catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Could not download this video.' }; }
     }
   }
-  const initial = playable(command);
-  if (initial) return { ok: false, error: initial };
-  if (command.type === 'start' || command.type === 'resume') {
+  if (plays) {
+    const initial = playable(command);
+    if (initial) return { ok: false, error: initial };
     automaticBumper.cancel();
     playbackTransition = true; publishBumper();
     try {
-      const requestId = command.type === 'start' ? state.stagedRequestId : state.playback?.requestId;
-      const versionId = state.requests.find(item => item.id === requestId)?.versionId;
+      const { requestId, versionId } = playbackSelection(command);
       const media = versionId && store.media(versionId);
       if (!media) return { ok: false, error: 'The source file is unavailable. Relink the song in Song Library.' };
       const nativeVersion = state.versions.find(version => version.id === versionId)?.source?.provider === 'karafun';
@@ -1214,7 +1254,7 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
             verifiedPlayback.id === media.id && verifiedPlayback.path === media.path && verifiedPlayback.fingerprint === media.fingerprint &&
             await mediaIdentityMatches(media.path, verifiedPlayback.identity)) sourceIdentity = verifiedPlayback.identity;
         else {
-          const checked = await fingerprintMedia(media.path, check.signal);
+          const checked = await fingerprintPlaybackMedia(media.path, check.signal);
           if (checked.fingerprint !== media.fingerprint) return { ok: false, error: 'The song file has changed since import. Relink the original file before playing.' };
           sourceIdentity = checked.identity;
         }
@@ -1222,8 +1262,8 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       finally { mediaChecks.delete(check); }
       if (shuttingDown || !await mediaIdentityMatches(media.path, sourceIdentity)) return { ok: false, error: 'The song file changed during verification. Check or relink the original file.' };
       if (!current()) return { ok: false, error: 'Playback was cancelled.' };
-      if (state.requests.find(item => item.id === requestId)?.versionId !== versionId) return { ok: false, error: 'The selected recording changed. Review the queue and press Play.' };
-      const policyBeforeBumper = startPolicyError(state, command, requestId, settings);
+      if (playbackSelection(command).versionId !== versionId) return { ok: false, error: 'The selected recording changed. Review the queue and press Play.' };
+      const policyBeforeBumper = playbackPolicyError(command, requestId);
       if (policyBeforeBumper) return { ok: false, error: policyBeforeBumper };
       // A deliberate Play/Resume is also the recovery action after checking the
       // output. Automatic advancement never re-enables a lost device itself.
@@ -1233,10 +1273,10 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
       const stillMatches = await mediaIdentityMatches(media.path, sourceIdentity);
       if (shuttingDown) return { ok: false, error: 'The application is closing.' };
-      const reason = startPolicyError(state, command, requestId, settings) || playable(command);
+      const reason = playbackPolicyError(command, requestId) || playable(command);
       const currentMedia = versionId && store.media(versionId);
       if (reason || !currentMedia || currentMedia.path !== media.path || currentMedia.fingerprint !== media.fingerprint || !stillMatches ||
-          state.requests.find(item => item.id === requestId)?.versionId !== versionId || !current()) {
+          playbackSelection(command).versionId !== versionId || !current()) {
         if (!state.playback) bumper?.karaokeEnded();
         return { ok: false, error: !current() ? 'Playback was cancelled.' : reason || 'The song file changed during verification. Check or relink the original file.' };
       }
@@ -1250,12 +1290,17 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
       const previousNative = activeKaraFun;
       if (partyMedia && (partyRevision !== partyTymeAccount.revision() || partyMedia.accountScope !== partyTymeAccount.accountScope())) return {ok:false,error:'The Party Tyme account changed. Sign in and press Play again.'};
       const previousParty = activePartyTyme;
-      if(partyMedia)activePartyTyme={generation:command.type==='start'?command.generationId:state.playback!.generationId,versionId:versionId!,media:partyMedia,revision:partyRevision};
-      if (nativeMedia) activeKaraFun = { generation: command.type === 'start' ? command.generationId : state.playback!.generationId,
+      const generation = command.type === 'resume' ? state.playback!.generationId : command.generationId;
+      if(partyMedia)activePartyTyme={generation,versionId:versionId!,media:partyMedia,revision:partyRevision};
+      else if (command.type === 'playNow') activePartyTyme = null;
+      if (nativeMedia) activeKaraFun = { generation,
         versionId: versionId!, media: nativeMedia, revision: nativeRevision };
-      const result = perform(command);
-      if (!result.ok) activeKaraFun = previousNative;
-      if (!result.ok) activePartyTyme = previousParty;
+      else if (command.type === 'playNow') activeKaraFun = null;
+      let result: ReturnType<typeof perform> | undefined;
+      try { result = perform(command); }
+      finally {
+        if (!result?.ok) { activeKaraFun = previousNative; activePartyTyme = previousParty; }
+      }
       if (result.ok && state.playback) { verifiedPlayback = { ...media, generation: state.playback.generationId, identity: sourceIdentity }; reportedMediaError = ''; outputRecovery = null; }
       if (!result.ok && !state.playback) bumper?.karaokeEnded();
       return result.ok ? { ok: true } : { ok: false, error: result.message };
@@ -1547,6 +1592,15 @@ else {
     if (typeof id === 'string' && id.length === 36) mediaReview.cancel(id);
   });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
+  ipcMain.handle('host:get-missing-local-media', async event => {
+    guardHost(event.sender.id);
+    if (shuttingDown) return null;
+    const result = await libraryMediaReview.scan(randomUUID(), () => {
+      const locations = new Map(store.mediaLocations().map(row => [row.id, row.path]));
+      return [...reviewableMedia()].map(id => ({ id, path: locations.get(id) ?? '' }));
+    });
+    return result.status === 'completed' ? result.issues.filter(issue => issue.reason !== 'unavailable').map(issue => issue.versionId) : null;
+  });
   ipcMain.handle('host:preview-filename-metadata', event => {
     guardHost(event.sender.id);
     return previewMetadata(state.versions, id => store.media(id), settings.metadataTemplates, settings.metadataFormat);
@@ -2066,6 +2120,10 @@ else {
   });
   ipcMain.handle('host:open-display', async event => { guardHost(event.sender.id); await createDisplay(); });
   ipcMain.handle('host:play-pause', event => { guardHost(event.sender.id); return hostPlayPause(); });
+  ipcMain.handle('host:play-song-now', (event, versionId: unknown) => {
+    guardHost(event.sender.id);
+    return shortString(versionId) ? hostPlayNow(versionId) : { ok: false, error: 'Choose a song in the library.' };
+  });
   ipcMain.handle('host:restart-track', event => { guardHost(event.sender.id); return restartCurrentTrack(); });
   ipcMain.handle('host:get-bumpers', event => { guardHost(event.sender.id); return bumperInfo(); });
   ipcMain.handle('host:add-bumpers', async event => {
@@ -2256,7 +2314,7 @@ function waitForImport(job: ImportJob): Promise<boolean> {
 app.on('before-quit', event => {
   automaticBumper.close(); showAdvance.close();
   cancelPendingPlayback();
-  shuttingDown = true; mediaReview.cancel(); for (const check of mediaChecks) check.abort();
+  shuttingDown = true; mediaReview.cancel(); libraryMediaReview.cancel(); for (const check of mediaChecks) check.abort();
   for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.setAudioMuted(true);
   if (display && !display.isDestroyed() && displayReady) display.webContents.send('display:state', { playback: null, next: [], logo: null, shortcuts, bumperVolume: 0 });
   const nativePending = (karaFunHost?.needsShutdownWait() ?? false) || (partyTymeHost?.needsShutdownWait() ?? false);

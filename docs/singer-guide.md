@@ -28,6 +28,8 @@ The host starts the show with Play. By default subsequent performances start aft
 
 The host may limit pending, accepted and staged future requests; playback does not count. They may edit the track or singer of a waiting/staged request without changing its identity. Remote requests always remain assigned to the singer who joined the session; guests cannot submit or take ownership of unassigned host requests. A duet can have two assigned singers when the host marks the recording as a duet; both singers’ availability is considered. Larger groups remain planned.
 
+Ask the host if your singer name needs a correction. Renaming your show entry keeps your queued songs, playlists and points. If the host starts another track using **Play Song Now**, an interrupted performance returns to its place in the rotation.
+
 Native KaraFun checks the host's subscription for each start/resume. Its remembered session uses operating-system protection where available; expiry may require another official sign-in. Signing out silences native playback and forgets the session. Retained media never guarantees future access. The optional external KHost queue is separate and unnecessary for native TPV playback. Physical audio and native provider playback on Linux/macOS remain unverified.
 
 ## Join a Session

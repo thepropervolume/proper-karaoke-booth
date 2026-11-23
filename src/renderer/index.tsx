@@ -19,7 +19,7 @@ import type { CatalogRequestTrack } from '../domain/catalog-request';
 import { recordingKeyFor, type RecordingKey, type SongRating } from '../domain/song-rating';
 import type { HostRatingsLookup, HostRatingVote } from '../main/host-song-ratings';
 import type { SongRatingsLookup } from '../main/song-ratings-client';
-import { compileSongBlacklist, normalizeBlacklistIdentity } from '../domain/song-blacklist';
+import { compileSongBlacklist } from '../domain/song-blacklist';
 import { DEFAULT_HOST_PANEL_SIZES, fittedHostPanels, HOST_PANEL_LIMITS, type HostPanelSizes } from '../domain/host-layout';
 import type { LocalControlUiStatus } from './LocalControlSettings';
 import { SongRatingButton, SongRatingDialog } from './SongRating';
@@ -114,6 +114,7 @@ declare global {
       onTimeline: (callback: (value: PlaybackTimelineState) => void) => () => void;
       seek: (input: PlaybackSeek) => Promise<PlaybackSeekResult>;
       getLibraryFilenames: () => Promise<Record<string, string>>;
+      getMissingLocalMedia: () => Promise<string[] | null>;
       previewFilenameMetadata: () => Promise<import('../main/metadata-preview').MetadataProposal[]>;
       readEmbeddedMetadata: (versionId: string, requestId: string) => Promise<import('../main/embedded-metadata').EmbeddedMetadataResult>;
       cancelEmbeddedMetadata: (requestId: string) => Promise<void>;
@@ -155,6 +156,7 @@ declare global {
       saveShortcuts: (value: Shortcuts) => Promise<Shortcuts>;
       editShortcutsFile: () => Promise<void>;
       playPause: () => Promise<Result>;
+      playSongNow: (versionId: string) => Promise<Result>;
       installControlCli: () => Promise<{ ok: boolean; command?: string; message: string; files?: string[] }>;
       applause?: { trigger: () => Promise<Result> };
       restartTrack: () => Promise<Result>;
@@ -234,6 +236,7 @@ function App() {
   const [queueMenu, setQueueMenu] = useState<{ request: SongRequest; x: number; y: number } | null>(null);
   const draggedRequest = useRef('');
   const [queueVersion, setQueueVersion] = useState<QueueSelection | null>(null);
+  const [missingLocalMedia, setMissingLocalMedia] = useState<ReadonlySet<string>>(new Set());
   const [playlistVersion, setPlaylistVersion] = useState<Version | null>(null);
   const [contextMenu, setContextMenu] = useState<{ version: SongResult; x: number; y: number } | null>(null);
   const [collections, setCollections] = useState<CollectionsSnapshot>({ playlists: [], items: [], history: [] });
@@ -352,6 +355,22 @@ function App() {
       .catch(() => { if (alive) setNotice('Filename search is unavailable.', 'error'); });
     return () => { alive = false; };
   }, [state?.revision, filenameRefresh]);
+
+  const versionCount = state?.versions.length;
+  useEffect(() => {
+    if (screen !== 'library' || versionCount === undefined) return;
+    let active = true, checking = false;
+    const refresh = () => {
+      if (checking) return;
+      checking = true;
+      void window.tpv.getMissingLocalMedia().then(ids => {
+        if (active && ids) setMissingLocalMedia(new Set(ids));
+      }).catch(() => {}).finally(() => { checking = false; });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [screen, versionCount, filenameRefresh]);
 
   useEffect(() => {
     let alive = true;
@@ -534,7 +553,10 @@ function App() {
     setRelinkBusy(true); setNotice('Checking the selected file…');
     try {
       const result = await window.tpv.relinkMedia(id);
-      if (result.ok && !result.cancelled) setFilenameRefresh(value => value + 1);
+      if (result.ok && !result.cancelled) {
+        setMissingLocalMedia(current => { const next = new Set(current); next.delete(id); return next; });
+        setFilenameRefresh(value => value + 1);
+      }
       setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.', result.ok ? 'success' : 'error');
       return result;
     } catch (reason) {
@@ -692,20 +714,6 @@ function App() {
   const panelStyle = { '--sidebar-width': `${fittedPanels.sidebar}px`, '--queue-width': `${Math.min(fittedPanels.queue, queueMaximum)}px`, '--preview-height': `${previewSize}px`, '--library-queue-height': `${fittedPanels.libraryQueue}px` } as React.CSSProperties;
   const preview = settings.hostPreviewPosition !== 'hidden' ? <SingerPreview bridge={window.tpv.singerScreens} onOpen={() => void run(() => window.tpv.openDisplay())} /> : null;
   const previewSeparator = preview ? <PanelSeparator className="preview-separator" label="Resize Singer Preview" orientation="horizontal" value={previewSize} minimum={90} maximum={previewMaximum} defaultValue={DEFAULT_HOST_PANEL_SIZES.preview} reverse={settings.hostPreviewPosition === 'below'} onChange={value => changePanelSize('preview', value)} onCommit={value => commitPanelSize('preview', value)} /> : null;
-  const blacklistSelection = (kind: 'song' | 'artist', version: LibrarySearchVersion) => {
-    setContextMenu(null);
-    void run(async () => {
-      if (kind === 'artist') {
-        const artist = version.artist?.trim() || '';
-        if (!artist) return { ok: false, error: 'This song has no artist. Add a song rule or edit its metadata first.' };
-        if (settings.artistBlacklist.some(item => normalizeBlacklistIdentity(item) === normalizeBlacklistIdentity(artist))) return;
-        setSettings(await window.tpv.saveSettings({ artistBlacklist: [...settings.artistBlacklist, artist] }));
-      } else {
-        if (blacklist.isBlocked(version)) return;
-        setSettings(await window.tpv.saveSettings({ songBlacklist: [...settings.songBlacklist, { artist: version.artist || '', title: version.title }] }));
-      }
-    }, kind === 'artist' ? 'Artist blacklisted across this host’s sources.' : 'Song blacklisted across this host’s sources and recording versions.');
-  };
 
   return <div className="app" data-layout={settings.layout} style={panelStyle}>
     <header className="topbar">
@@ -781,8 +789,8 @@ function App() {
             {youtubeSearch.result && !['ok', 'disabled', 'cancelled'].includes(youtubeSearch.result.status) && <Tooltip text={youtubeSearch.result.message}><span tabIndex={0}>YouTube unavailable ⓘ</span></Tooltip>}
             {providerSearch.failed && <Tooltip text="Some service catalogs could not be reached. Try again or check Sources."><span tabIndex={0}>Some sources unavailable ⓘ</span></Tooltip>}
           </div>
-          <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId}
-            onQueue={row => { if (busy) return; if (row.catalogOnly) { setNotice('Playback is not connected for this service.'); return; } setQueueVersion(row); }}
+          <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId} {...{ missingMedia: missingLocalMedia }}
+            onQueue={row => { if (busy || missingLocalMedia.has(row.id)) return; if (row.catalogOnly) { setNotice('Playback is not connected for this service.'); return; } setQueueVersion(row); }}
             onContext={(version, x, y) => setContextMenu({ version, x: Math.max(0, Math.min(x, window.innerWidth - 240)), y: Math.max(0, Math.min(y, window.innerHeight - 330)) })}
             rating={ratingButton} onScroll={event => {
               const rows = event.currentTarget.querySelectorAll<HTMLElement>('.song-option');
@@ -815,7 +823,13 @@ function App() {
         </>}
         {screen === 'singers' && <>
           <h2>Singers</h2><form className="inline-form" onSubmit={addSinger}><label>Singer name<input autoComplete="off" value={singerName} onChange={e => setSingerName(e.target.value)} placeholder="Enter a name" maxLength={100} /></label><button className="primary" disabled={busy || !singerName.trim()} type="submit">Add singer</button></form>
-          <h3>In This Show</h3><p className="muted">Timed absences expire automatically. A hold lasts until you choose Return now. Both keep existing requests and limit new arrivals to one upcoming request.</p>{state.singers.filter(s => !s.archived).map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} onHold={() => holdSinger(s.id)} removeBlocked={state.requests.some(r => ['pending', 'accepted', 'staged', 'playing'].includes(r.status) && (r.singerId === s.id || r.coSingerId === s.id))} onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
+          <h3>In This Show</h3><p className="muted">Timed absences expire automatically. A hold lasts until you choose Return now. Both keep existing requests and limit new arrivals to one upcoming request.</p>{state.singers.filter(s => !s.archived).map(s => <SingerAvailabilityControl key={s.id} singer={s} nowMs={clockMs} busy={busy} points={settings.pointsEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.points ?? 0 : undefined} credits={settings.applauseEnabled ? state.points?.accounts.find(account => account.singerId === s.id)?.credits ?? 3 : undefined} onChange={minutes => setAvailability(s.id, minutes)} onHold={() => holdSinger(s.id)} removeBlocked={state.requests.some(r => ['pending', 'accepted', 'staged', 'playing'].includes(r.status) && (r.singerId === s.id || r.coSingerId === s.id))}
+            onRename={async name => {
+              let saved = false;
+              await run(async () => { const result = await window.tpv.command({ type: 'renameSinger', singerId: s.id, name }); saved = result.ok; return result; }, 'Singer renamed.');
+              return saved;
+            }}
+            onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
           {!state.singers.some(s => !s.archived) && <p className="empty">No singers yet.</p>}
         </>}
         {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} refreshCollections={async () => setCollections(await window.tpv.getCollections())} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
@@ -925,20 +939,19 @@ function App() {
       if (!result.ok) throw new Error(result.error || 'The song could not be updated.');
     }} />}
     {contextMenu && <div className="song-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y, maxHeight: `calc(100vh - ${contextMenu.y + 8}px)` }}>
-      <button role="menuitem" disabled={busy || !!contextMenu.version.catalogOnly} onClick={() => { setQueueVersion(contextMenu.version); setContextMenu(null); }}>Add to Queue</button>
+      <button role="menuitem" disabled={busy || !!contextMenu.version.catalogOnly || missingLocalMedia.has(contextMenu.version.id)} onClick={() => { setQueueVersion(contextMenu.version); setContextMenu(null); }}>Add to Queue</button>
+      <button role="menuitem" disabled={busy || transportBusy || !contextMenu.version.persisted || missingLocalMedia.has(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.playSongNow(id)); }}>Play Song Now</button>
       <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { setPlaylistVersion(contextMenu.version); setContextMenu(null); }}>Add to Playlist</button>
       <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { setEditingVersion(contextMenu.version); setContextMenu(null); }}>Edit Metadata</button>
-      <button role="menuitem" disabled={busy} onClick={() => blacklistSelection('song', contextMenu.version)}>Blacklist Song</button>
-      <button role="menuitem" disabled={busy || !contextMenu.version.artist?.trim()} onClick={() => blacklistSelection('artist', contextMenu.version)}>Blacklist Artist</button>
       {contextMenu.version.catalogOnly && <button role="menuitem" onClick={() => { const song = contextMenu.version.catalogOnly!; setContextMenu(null); void run(() => window.tpv.openProviderCatalogSong({ provider: song.provider, id: song.id })); }}>Open Provider Page</button>}
       {contextMenu.version.source?.provider === 'karafun' && <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(async () => { await window.tpv.karaFun.retry(id); return { ok: true }; }); }}>Prepare Song / Retry</button>}
       {contextMenu.version.source?.provider === 'partytyme' && <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { const id=contextMenu.version.id;setContextMenu(null);void run(async()=>{await window.tpv.partyTyme.retry(id);return{ok:true};}); }}>Prepare Song / Retry</button>}
       {contextMenu.version.source?.provider === 'youtube' && <button role="menuitem" disabled={busy || !!contextMenu.version.youtubeSearchReceipt} onClick={() => { const version = contextMenu.version; setContextMenu(null); void run(async () => { const result = await downloadLibrarySong(version, window.tpv); if (result.ok && result.versionId) setSelectedVersionId(result.versionId); return result; }); }}>Download Video / Retry</button>}
       <button role="menuitem" disabled={relinkBusy || !contextMenu.version.persisted || !!contextMenu.version.source} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
       <button role="menuitem" disabled={!contextMenu.version.persisted || !!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files…</button>
-      <button role="menuitem" onClick={() => { setContextMenu(null); openPreferences('blacklist'); }}>Manage Blacklist…</button>
     </div>}
     {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers.filter(s => !s.archived)} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated, coSingerId) => {
+      if (missingLocalMedia.has(queueVersion.id)) throw new Error('The source file is unavailable. Relink it in Song Library before queueing.');
       let queueNotice = '';
       await requestWithSinger(choice, {
         createSingerId: () => crypto.randomUUID(),

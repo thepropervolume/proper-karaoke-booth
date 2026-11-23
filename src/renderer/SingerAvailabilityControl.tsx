@@ -2,13 +2,15 @@ import React, { useEffect, useState } from 'react';
 import type { Singer } from '../domain';
 import { SINGER_ON_HOLD, timedSingerReturnAt } from '../domain/singer-availability';
 
-/** Availability and removal are tucked into a keyboard-accessible context menu. */
-export function SingerAvailabilityControl({ singer, nowMs, busy, onChange, onHold, onRemove, removeBlocked, points, credits }: {
+/** Singer actions are tucked into a keyboard-accessible context menu. */
+export function SingerAvailabilityControl({ singer, nowMs, busy, onChange, onHold, onRemove, onRename, removeBlocked, points, credits }: {
   singer: Singer; nowMs: number; busy: boolean; onChange: (minutes: number) => void; onHold: () => void; onRemove: () => void;
+  onRename: (name: string) => Promise<boolean>;
   removeBlocked: boolean; points?: number; credits?: number;
 }) {
   const [minutes, setMinutes] = useState(5);
   const [menu, setMenu] = useState<{x:number;y:number} | null>(null);
+  const [rename, setRename] = useState<string | null>(null);
   const held = singer.unavailableUntilMs === SINGER_ON_HOLD;
   const remaining = Math.ceil(Math.max(0, timedSingerReturnAt(singer.unavailableUntilMs) - nowMs) / 60000);
   useEffect(() => {
@@ -18,12 +20,23 @@ export function SingerAvailabilityControl({ singer, nowMs, busy, onChange, onHol
     window.addEventListener('mousedown', dismiss); window.addEventListener('keydown', escape);
     return () => { window.removeEventListener('mousedown', dismiss); window.removeEventListener('keydown', escape); };
   }, [menu, singer.id]);
-  const open = (x:number, y:number) => setMenu({x: Math.max(0, Math.min(x, window.innerWidth - 280)), y: Math.max(0, Math.min(y, window.innerHeight - 225))});
+  const open = (x:number, y:number) => setMenu({x: Math.max(0, Math.min(x, window.innerWidth - 280)), y: Math.max(0, Math.min(y, window.innerHeight - 260))});
   return <div className="track-row" onContextMenu={event => {event.preventDefault(); open(event.clientX, event.clientY);}}>
     <div><strong>{singer.name}</strong><small>{held ? 'On hold' : remaining ? `Unavailable · back in ${remaining} min` : 'Available'}</small>
       {(points !== undefined || credits !== undefined) && <small>{points !== undefined && `${points} points`}{points !== undefined && credits !== undefined && ' · '}{credits !== undefined && `${credits} applause credits`}</small>}</div>
     <button type="button" aria-label={`Actions for ${singer.name}`} aria-haspopup="menu" aria-expanded={!!menu} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); open(rect.left, rect.bottom); }}>⋯</button>
+    {rename !== null && <form className="inline-form" style={{ gridColumn: '1 / -1' }}
+      onKeyDown={event => { if (event.key === 'Escape' && !busy) setRename(null); }}
+      onSubmit={async event => {
+        event.preventDefault();
+        if (!busy && rename.trim() && await onRename(rename.trim())) setRename(null);
+      }}>
+      <label>New singer name<input autoFocus value={rename} onFocus={event => event.currentTarget.select()} onChange={event => setRename(event.currentTarget.value)} maxLength={100} required /></label>
+      <button type="submit" disabled={busy || !rename.trim() || rename.trim() === singer.name}>Save Name</button>
+      <button type="button" disabled={busy} onClick={() => setRename(null)}>Cancel</button>
+    </form>}
     {menu && <div className="song-menu" role="menu" aria-label={`${singer.name} actions`} data-singer-menu={singer.id} style={{left:menu.x,top:menu.y,maxHeight:`calc(100vh - ${menu.y + 8}px)`}}>
+      <button role="menuitem" disabled={busy} onClick={() => { setMenu(null); setRename(singer.name); }}>Rename Singer…</button>
       {!held && <>
         <label>Unavailable for <input type="number" aria-label={`${singer.name} unavailable minutes`} min="1" max="60" step="1" value={minutes}
           disabled={busy} onChange={event => setMinutes(Number(event.target.value))} style={{width:'5em'}} /> min</label>

@@ -18,7 +18,8 @@ export function mediaVerificationDetail(error: unknown, resuming: boolean): stri
   const relink = resuming ? 'Restore access and press Play, or Stop to return the request to the queue and relink its original file.' :
     'Right-click the song in Song Library and choose Relink File.';
   if (code === 'ENOENT' || code === 'ENOTDIR') return `The source file is unavailable. ${relink}`;
-  if (code === 'EACCES' || code === 'EPERM') return `Booth could not read the source file because access was denied. Check the file and folder permissions. ${relink}`;
-  if (code === 'EIO' || code === 'EBUSY') return `Booth could not read the source file. Check the drive connection and close other apps using the file. ${relink}`;
-  return `The song file could not be verified. Check that the source is a readable original MP4. ${relink}`;
+  if (code === 'EACCES' || code === 'EPERM') return 'Booth could not read the source file because access was denied. Check its permissions, then press Play to retry.';
+  if (code === 'ERR_MEDIA_CHANGED_DURING_READ' || code === 'ERR_STREAM_PREMATURE_CLOSE' || code === 'EIO' || code === 'EBUSY' || code === 'EAGAIN')
+    return 'Booth could not finish reading the song. Check the drive connection and let any download or file sync finish, then press Play to retry.';
+  return 'The song file could not be verified. Check that the source is a readable original MP4, then press Play to retry.';
 }

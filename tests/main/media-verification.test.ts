@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { fingerprintMedia, mediaIdentityMatches, verifyAndRelinkMedia } from '../../src/main/media-verification';
+import { fingerprintMedia, fingerprintPlaybackMedia, mediaIdentityMatches, verifyAndRelinkMedia } from '../../src/main/media-verification';
+import { inspectMediaLocation } from '../../src/main/media-review';
 import { Store } from '../../src/main/store';
 import { mediaErrorDetail, mediaVerificationDetail } from '../../src/main/media-error-message';
 
@@ -32,11 +33,48 @@ test('playback warnings map only bounded codes and never echo arbitrary renderer
   assert.match(mediaErrorDetail('PLAY_BLOCKED'), /blocked/i);
   assert.doesNotMatch(mediaErrorDetail('C:\\private\\song.mp4'), /private|song\.mp4/i);
   const denied = { code: 'EACCES', message: 'C:\\private\\song.mp4' };
-  assert.match(mediaVerificationDetail(denied, false), /permissions.+Relink File/);
+  assert.match(mediaVerificationDetail(denied, false), /permissions.+press Play/);
   assert.doesNotMatch(mediaVerificationDetail(denied, false), /private|song\.mp4/i);
   assert.match(mediaVerificationDetail({ code: 'ENOENT' }, true), /Restore access and press Play.+return the request/);
   assert.match(mediaVerificationDetail({ code: 'EIO' }, false), /drive connection/);
+  assert.doesNotMatch(mediaVerificationDetail(new Error('temporary read problem'), false), /Relink File/);
   assert.match(mediaErrorDetail('MEDIA_ERR_SRC_NOT_SUPPORTED'), /return the request to the queue.+supported codec/);
+});
+
+test('playback retries a settling sync file but still verifies its original bytes', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-media-retry-'));
+  try {
+    const original = join(directory, 'song.mp4');
+    writeFileSync(original, 'original recording');
+    const signal = new AbortController().signal;
+    let attempts = 0;
+    const checked = await fingerprintPlaybackMedia(original, signal, async (path, activeSignal) => {
+      if (++attempts === 1) throw Object.assign(new Error('Cloud file changed during its first open'), { code: 'ERR_MEDIA_CHANGED_DURING_READ' });
+      return fingerprintMedia(path, activeSignal);
+    });
+    assert.equal(attempts, 2);
+    assert.equal(checked.fingerprint, createHash('sha256').update('original recording').digest('hex'));
+    rmSync(original);
+    attempts = 0;
+    await assert.rejects(fingerprintPlaybackMedia(original, signal, (path, activeSignal) => {
+      attempts++; return fingerprintMedia(path, activeSignal);
+    }), { code: 'ENOENT' });
+    assert.equal(attempts, 1);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('local file inspection distinguishes known absence from temporary denial', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-media-location-'));
+  try {
+    const original = join(directory, 'song.mp4');
+    assert.equal(await inspectMediaLocation(original), 'missing');
+    assert.equal(await inspectMediaLocation(directory), 'invalid');
+    writeFileSync(original, 'original recording');
+    assert.equal(await inspectMediaLocation(original), undefined);
+    assert.equal(await inspectMediaLocation(original, async () => {
+      throw Object.assign(new Error('Temporary read problem'), { code: 'EACCES' });
+    }), 'unavailable');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('conditional relink updates only the matched row and preserves fingerprint and show state', () => {

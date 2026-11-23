@@ -1,5 +1,5 @@
 export type TransportResult = { ok: boolean; error?: string };
-export type TransportAction = 'playPause' | 'restart';
+export type TransportAction = 'playPause' | 'restart' | 'playNow';
 
 /** Identical clicks share one operation; a different intent cannot race an
  * opening display, verified start, or acknowledged restart seek. */

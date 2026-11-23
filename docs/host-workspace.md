@@ -44,6 +44,8 @@ See [installation](installation.md) for available packages and [release acceptan
 
 In **Add to Queue**, leave **Singer (optional)** empty to add a song without assigning anyone. This works for local, Karaoke Nerds, YouTube and connected native KaraFun recordings. The queue shows **Unassigned**; no singer profile is created. Queued requests remain editable, removable and reorderable until playback starts, including a song that has already been prepared. Right-click to change the track or singer; use drag, arrow controls or promotion to adjust the order. The app can prepare a different next song without starting it. If the host changes a request while its Start checks are still running, the obsolete start is cancelled and the host is asked to review the queue and press Play again. An active performance remains protected.
 
+From the desktop Library, right-click a saved, ready recording and choose **Play Song Now** to start it immediately. The interrupted song returns to its previous place in the rotation. The override plays without a singer assignment and can reuse an existing unassigned queue entry for that recording. An online song needs to finish preparing before this action can start it.
+
 Unassigned requests retain FIFO order and each gets its own place in the current eligible fair round (the next round if the final turn has already begun). They do not share a fake singer, singer absence state or per-singer request limit. Remote singer requests still belong to the signed-in session's singer. Back up before the schema-5 upgrade; older apps cannot open the upgraded database.
 
 ## Preview and Resizable Panels
@@ -56,7 +58,7 @@ Drag the separators between the sidebar, library and Host Queue, or between the 
 
 Open **Preferences → Song and Artist Blacklist** to add or remove artist names and artist/title pairs. Save to apply the draft; Cancel leaves saved rules intact. A song rule covers every version matching that complete artist and title across sources. An artist rule covers that artist's songs. Matches fold case, spacing and typographic equivalents; they do not use substring or wildcard matching. An empty artist means unknown-artist results only.
 
-Right-click a library row for **Blacklist Song**, **Blacklist Artist** or **Manage Blacklist…**. These rules belong to the host settings across shows, separate from a show's clean/explicit and version-specific policy. They filter discovery and are checked again at request/playback boundaries. Existing queue items are retained with unavailable status so the host can remove or change them deliberately.
+Manage song and artist blacklist rules under **Preferences**. The rules apply across shows and filter discovery, requests and playback. Existing queue items remain available for the host to remove or change. Each show has its own clean/explicit and version-specific policy.
 
 ## YouTube Karaoke Search
 
@@ -139,6 +141,8 @@ Approved eligible requests stage automatically. Press **Play/Pause** to start th
 
 Each local media range uses a verified open file handle. A changed or replaced source is rejected and the current performance pauses with a restore/relink recovery message. This catches observed changes before a range is served; it does not promise immutable source files against every possible concurrent in-place write.
 
+Library results mark a confirmed missing local file as **File missing** and disable queueing. Use **Relink File** from the row’s context menu to locate the original. If a cloud-synced file is still downloading or temporarily unreadable, let it finish syncing and press **Play** to retry.
+
 ## Catalog and Heart Ratings
 
 The unified result list identifies each provider with a label and 3px left border: local/imported purple `#601CE9`, Karaoke Nerds blue `#007bff`, YouTube red `#ff0033`, KaraFun pink `#d5167a`. Right-click any source for the common menu; unsupported actions are disabled. Connected KaraFun and Party Tyme consumer Premium can queue. KaraFun rows stay hidden while signed out. The separate public Party Tyme Pro export and available Sunfly/Stingray metadata remain explicitly Search Only. Sunfly Store is bounded title/SF-SKU discovery, while protected Sunfly/Stingray still requires issued profiles. See [provider limits](provider-catalog-search.md).
@@ -185,7 +189,7 @@ Search and right-click Party Tyme results to add them to the ordinary queue with
 
 ### Singers and playlists
 
-In **Singers**, right-click a singer or choose their actions button for availability and **Remove from show**. Removal requires confirmation and is blocked until their pending, waiting, staged or playing songs, including duets, are removed or reassigned. It archives their show identity: existing history, playlist ownership and points remain, but the singer no longer appears in new song selections and their remote session and resume access end. A returning person can join again as a new singer.
+In **Singers**, right-click a singer or choose their actions button for **Rename Singer**, availability and **Remove from show**. Rename updates the display name on their existing singer record. Queued songs, playlists and points stay assigned to that record, and past performances retain the names recorded at the time. Removal requires confirmation and is blocked until their pending, waiting, staged or playing songs, including duets, are removed or reassigned. It archives their show identity: existing history, playlist ownership and points remain, but the singer no longer appears in new song selections and their remote session and resume access end. A returning person can join again as a new singer.
 
 In **Playlists → Singer Playlists**, search the visible list by playlist or singer name and select a result. Expand **Create a playlist** to add one for an active singer. Existing playlists belonging to removed singers retain their names and contents.
 

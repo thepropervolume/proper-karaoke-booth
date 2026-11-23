@@ -104,6 +104,56 @@ test('edits enforce song policy, recipient limits and valid singer without chang
   assert.deepEqual(f.get().requests.find(r => r.id === 'c1'), original);
 });
 
+test('Play Song Now leaves interrupted and upcoming singers in their existing turns', () => {
+  const f = fixture();
+  f.ok({ type: 'moveRequest', requestId: 'c1', beforeRequestId: 'a1' });
+  f.ok({ type: 'stage' });
+  f.ok({ type: 'start', generationId: 'interrupted' });
+  f.ok({ type: 'stage' });
+  const turns = f.get().requests.map(request => [request.id, request.singerId, request.round, request.order]);
+  const override: Command = { type: 'playNow', versionId: 'v2', requestId: 'host-override', generationId: 'override' };
+  for (const role of ['staff', 'singer', 'engine'] as const) assert.equal(f.send(override, { role, id: 'a' }).ok, false);
+  const before = f.get();
+  assert.equal(f.send({ ...override, generationId: 'interrupted' }).ok, false);
+  assert.deepEqual(f.get().playback, before.playback);
+  assert.deepEqual(f.get().requests, before.requests);
+
+  f.ok(override);
+  assert.deepEqual(f.get().playback, { requestId: 'host-override', generationId: 'override', status: 'playing' });
+  assert.equal(f.get().requests.at(-1)?.singerId, null);
+  assert.equal(f.get().requests.find(request => request.id === 'c1')?.status, 'accepted');
+  assert.deepEqual(f.ids(), ['c1', 'a1', 'b1', 'a2']);
+  assert.deepEqual(f.get().requests.slice(0, turns.length).map(request => [request.id, request.singerId, request.round, request.order]), turns);
+  assert.equal(f.get().points?.accounts.find(account => account.singerId === 'c')?.credits, 3);
+  assert.equal(f.send({ type: 'complete', generationId: 'interrupted' }, { role: 'engine', id: 'engine' }).ok, false);
+});
+
+test('Play Song Now respects content policy and reuses an already queued unassigned song', () => {
+  const f = fixture();
+  const override: Command = { type: 'playNow', versionId: 'v2', requestId: 'host-override', generationId: 'override' };
+  f.ok({ type: 'request', versionId: 'v2', requestId: 'already-queued', singerId: null });
+  f.ok({ type: 'setPolicy', policy: { ageRestricted: false, includeVersionIds: null, excludeVersionIds: ['v2'] } });
+  assert.equal(f.send(override).ok, false);
+  assert.equal(f.get().playback, null);
+  f.ok({ type: 'setPolicy', policy: { ageRestricted: false, includeVersionIds: null, excludeVersionIds: [] } });
+  f.replace({ ...f.get(), nextStartAtMs: Date.now() + 120000 });
+  f.ok(override);
+  assert.equal(f.get().playback?.requestId, 'already-queued');
+  assert.equal(f.get().nextStartAtMs, 0);
+});
+
+test('renaming a singer changes only their display name and preserves their waiting turns', () => {
+  const f = fixture();
+  const before = f.get();
+  const rename: Command = { type: 'renameSinger', singerId: 'a', name: '  Greg the Egg  ' };
+  assert.equal(f.send(rename, { role: 'singer', id: 'a' }).ok, false);
+  assert.equal(f.send({ ...rename, name: '  ' }).ok, false);
+  f.ok(rename);
+  assert.deepEqual(f.get().singers.find(singer => singer.id === 'a'), { id: 'a', name: 'Greg the Egg' });
+  assert.deepEqual(f.get().requests, before.requests);
+  assert.deepEqual(f.get().points, before.points);
+});
+
 test('snapshot validation accepts legacy/manual queues and rejects duplicate, stale and pending references', () => {
   const f = fixture(); const db = new DatabaseSync(':memory:');
   try {
