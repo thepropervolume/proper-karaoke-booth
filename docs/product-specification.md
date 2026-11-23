@@ -404,7 +404,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "D01",
   "title": "Desktop host",
   "status": "Current",
-  "description": "Unified search, singer preview, automatic transitions and host applause.",
+  "description": "Source filtering, configurable search fields, KJ Picks and the singer preview.",
   "layout": "desktop",
   "navigation": [
     "Library",
@@ -413,7 +413,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   ],
   "selected_navigation": "Library",
   "heading": "Song Library",
-  "toolbar": "Sort     Filter",
+  "toolbar": "Sort     Filter     Source     Columns",
   "import_actions": [
     {
       "icon": "importVideo",
@@ -429,10 +429,10 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     }
   ],
   "rows": [
-    "Popular | Nada Surf | Local | 8.2/10 stars",
+    "Popular | Nada Surf | Imported | 3:42 | ★",
     "Example Song | Sample Artist | Karaoke Nerds",
-    "Another Example | Sample Artist | YouTube",
-    "Catalog Example | Sample Artist | KaraFun"
+    "Another Example | Sample Artist | Sample Karaoke Channel",
+    "Catalog Example | Sample Artist | KaraFun | 3:04"
   ],
   "side_heading": "Singer Preview / Host Queue",
   "side_rows": [
@@ -452,7 +452,7 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "stop",
     "skip"
   ],
-  "detail": "Queue with Singer (optional) empty or choose a name; assign later. No fake singer is created. Shared menus and an outer-only search focus ring. Approved turns prepare; Play begins the show.",
+  "detail": "Queue a recording with or without a singer. Star it to save to KJ Picks. A confirmed missing file is dimmed and needs relinking. Play Song Now is a host action for a ready recording.",
   "host_navigation": [
     "Requests",
     "Singers",
@@ -652,11 +652,13 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "Appearance",
     "Queue Management",
     "Library Settings",
+    "Karaoke Services",
     "Video Downloads & Karaoke Nerds Cache",
     "Remote Queueing",
     "Audio Controls",
     "Singer Display",
     "Keyboard Shortcuts",
+    "Local API and CLI",
     "Configuration Files"
   ],
   "selected_navigation": "Audio Controls",
@@ -667,13 +669,13 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
     "Bumper on launch | Enabled",
     "Bumper between songs | Enabled",
     "Fade-in | 1000 ms · Range 500–1700",
-    "Theme | Soft Ambient · Up to 5 custom files"
+    "Built-in tracks | Optional · Up to 5 custom files"
   ],
   "side_heading": "Other groups",
   "side_rows": [
     "Appearance | Theme, accent, font, layout, preview",
     "Queue | Rotation, approval, singer limit",
-    "Keyboard Shortcuts | Multiple bindings and reset",
+    "Karaoke Services | Choose which sources to search",
     "Singer Display | Booth name, logo size, banner"
   ],
   "footer_heading": "Preferences",
@@ -1224,21 +1226,21 @@ The 0.4.0 workspace and keyboard behavior is documented in `docs/host-workspace.
     [
       "Search Songs | Artist or song title",
       "Popular | Nada Surf • Karaoke Nerds",
-      "Save to Playlist | Choose or create a list",
+      "Star | Save to your Starred Songs playlist",
       "More Karaoke Nerds Results | Next page",
       "Browse Sources | Set in Profile",
       "Library · Room · Playlists · Profile"
     ],
     [
       "New Playlist | Create a named list",
-      "Friday Picks | 2 saved recordings",
+      "Alex's Starred Songs | 2 saved recordings",
       "Popular | Nada Surf • Karaoke Nerds",
       "Find in Room | Available after joining",
       "Rename or Remove | Manage saved songs",
       "Library · Room · Playlists · Profile"
     ]
   ],
-  "detail": "0.10.12 source design. Public Karaoke Nerds, KaraFun, and Party Tyme Pro are browse sources. Queue actions use the connected desktop host. Physical-phone and signed store acceptance remain open."
+  "detail": "Public Karaoke Nerds, KaraFun and Party Tyme Pro are browse sources. Starred Songs is stored on this device. Queue requests go to the connected desktop host. Physical-phone and signed store acceptance remain open."
 }
 ```
 
