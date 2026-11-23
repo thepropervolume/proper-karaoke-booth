@@ -9,7 +9,7 @@ import { mobileFetch } from './api';
 import { BROWSE_LABELS, BROWSE_SOURCES, browseCatalog, chooseBrowseSources, type BrowseSong, type BrowseSource } from './browse-catalog';
 import { discoverRooms, roomSlug, type DiscoveredRoom } from './discovery';
 import { SingerRoomActions, SingerRequests } from './SingerRoomActions';
-import { SaveToSingerPlaylist, SingerPlaylistsPanel, SingerProfilePanel, useSingerProfile } from './SingerProfilePanel';
+import { SaveToSingerPlaylist, SingerPlaylistsPanel, SingerProfilePanel, SingerStarButton, useSingerProfile } from './SingerProfilePanel';
 import type { SingerPlaylistRecording } from './singer-profile';
 import '@fontsource/nunito-sans/latin-400.css';
 import '@fontsource/nunito-sans/latin-700.css';
@@ -227,13 +227,17 @@ export function SingerWorkspace() {
   function songRow(song: Song, available: boolean, browseSong?: BrowseSong) {
     const source = song.source;
     const label = browseSong ? BROWSE_LABELS[browseSong.source] : source ? sourceNames[source] : 'Host Library';
+    const recording = saveRecording(song, browseSong);
     return <li className={'mobile-song singer-song source-' + (source ?? 'local')} key={label + ':' + song.id}>
       <div className="singer-song-heading">
         <div><strong>{song.title}</strong><span>{song.artist || 'Unknown artist'}</span><small>{label}{browseSong?.brand ? ' · ' + browseSong.brand : ''}</small></div>
         {available && room && <button className="mobile-primary" type="button" disabled={guest?.busy || guest?.uncertain}
           aria-label={'Queue ' + song.title} onClick={() => void room.client.request(song.id, view => updateRoom(room.number, view))}>Queue</button>}
       </div>
-      <SaveToSingerPlaylist store={store} recording={saveRecording(song, browseSong)} />
+      <div className="singer-inline-actions">
+        <SingerStarButton store={store} recording={recording} displayName={snapshot?.singerName} />
+        <SaveToSingerPlaylist store={store} recording={recording} />
+      </div>
     </li>;
   }
 

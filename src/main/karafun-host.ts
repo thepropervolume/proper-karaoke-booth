@@ -90,15 +90,20 @@ export class KaraFunHost {
     } catch { return { status: this.account.status().state === 'connected' ? 'unavailable' : 'disconnected', songs: [], message: 'KaraFun search is unavailable. Check the account in Sources and retry.' }; }
     finally { if (this.searchAbort === abort) this.searchAbort = null; }
   }
+  lookup(searchId: unknown, catalog: unknown, songId: unknown): KaraFunSong | undefined {
+    const receipt = this.receipts;
+    if (this.closed || !receipt || receipt.id !== searchId || receipt.revision !== this.account.revision() ||
+        receipt.until < Date.now() || this.account.status().state !== 'connected' ||
+        typeof catalog !== 'string' || typeof songId !== 'string') return;
+    return receipt.songs.get(`${catalog}:${songId}`);
+  }
   request(value: unknown): { ok: boolean; versionId?: string; error?: string; notice?: string } {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, error: 'Choose a current KaraFun search result.' };
-    const input = value as Record<string, unknown>, receipt = this.receipts;
+    const input = value as Record<string, unknown>;
     if (Object.keys(input).some(key => !['searchId', 'songId', 'catalog', 'singerId', 'requestId'].includes(key)) ||
-        !receipt || receipt.id !== input.searchId || receipt.revision !== this.account.revision() || receipt.until < Date.now() ||
-        this.account.status().state !== 'connected' || typeof input.songId !== 'string' || typeof input.catalog !== 'string' ||
         (input.singerId !== null && typeof input.singerId !== 'string') || typeof input.requestId !== 'string') return { ok: false, error: 'Search KaraFun again before requesting this recording.' };
-    const song = receipt.songs.get(`${input.catalog}:${input.songId}`);
-    if (!song) return { ok: false, error: 'Choose a current KaraFun search result.' };
+    const song = this.lookup(input.searchId, input.catalog, input.songId);
+    if (!song) return { ok: false, error: 'Search KaraFun again before requesting this recording.' };
     const planned = karaFunRequest(this.ports.state(), { songId: song.songId, catalog: song.catalog, title: song.title, artist: song.artist, explicit: song.explicit },
       input.singerId, input.requestId, this.ports.settings(), { versionId: randomUUID(), commandId: randomUUID() }, Date.now(),
       this.ports.songSeenBefore ? { songSeenBefore: version => this.ports.songSeenBefore!(version) } : undefined);

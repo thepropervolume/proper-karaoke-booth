@@ -28,16 +28,8 @@ if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_WO
 // This bootstrap bypasses Electron's normal manifest entrypoint. Supply the
 // source manifest version for UI labels, rather than the wrapper runtime version.
 const qaVersion=JSON.parse(fs.readFileSync(require('node:path').join(process.env.TPV_WORKSPACE_QA_REPO,'package.json'),'utf8')).version;app.getVersion=()=>qaVersion;
-globalThis.workspaceQa={dialogs:[],openedFiles:[],nextOpenFile:null,delayNextRating:false,ratingPending:0,ratingReleased:0,ratingBodyRead:false};
-globalThis.fetch=async(url,options)=>{
-  if(String(url).endsWith('/v1/ratings/lookup')){
-    const keys=JSON.parse(options.body).recordingKeys;
-    const respond=tracked=>new Response(new ReadableStream({pull(controller){if(tracked)workspaceQa.ratingBodyRead=true;controller.enqueue(new TextEncoder().encode(JSON.stringify({items:keys.map(recordingKey=>({recordingKey,average:6,count:2,ownVote:null}))})));controller.close();}},{highWaterMark:0}),{headers:{'Content-Type':'application/json'}});
-    if(workspaceQa.delayNextRating){workspaceQa.delayNextRating=false;workspaceQa.ratingPending++;return new Promise(resolve=>{workspaceQa.releaseRating=()=>{workspaceQa.ratingReleased++;resolve(respond(true));};});}
-    return respond(false);
-  }
-  return new Response('QA offline',{status:503});
-};
+globalThis.workspaceQa={dialogs:[],openedFiles:[],nextOpenFile:null};
+globalThis.fetch=async()=>new Response('QA offline',{status:503});
 dialog.showOpenDialog=async(first,second)=>{const options=second||first;workspaceQa.dialogs.push({kind:'open',title:options?.title||'',properties:options?.properties||[]});const file=workspaceQa.nextOpenFile;workspaceQa.nextOpenFile=null;return file?{canceled:false,filePaths:[file]}:{canceled:true,filePaths:[]};};
 dialog.showSaveDialog=async(first,second)=>{const options=second||first;workspaceQa.dialogs.push({kind:'save',title:options?.title||''});return {canceled:true};};
 dialog.showMessageBox=async(first,second)=>{const options=second||first;workspaceQa.dialogs.push({kind:'message',title:options?.title||''});return {response:0,checkboxChecked:false};};
@@ -169,20 +161,14 @@ try {
   await untilHost(async () => (await window.tpv.imports.status())?.phase === 'completed');
   await search.fill('');
   const song = host.getByRole('listbox', { name: 'Songs', exact: true }).getByRole('option').first();
-  const songRating = song.getByRole('button', { name: /^Rate Workspace Shortcuts/ });
-  await untilHost(() => [...document.querySelectorAll('.song-rating-button')].some(element => element.getAttribute('aria-label')?.includes('6.0 / 10; 2 ratings')));
-  await app.evaluate(() => { globalThis.workspaceQa.delayNextRating = true; });
-  await songRating.click();
-  await untilApp(() => globalThis.workspaceQa.ratingPending === 1);
+  const star = song.getByRole('button', { name: 'Star Workspace Shortcuts in KJ Picks', exact: true });
+  await star.click();
+  await song.getByRole('button', { name: 'Remove Workspace Shortcuts from KJ Picks', pressed: true }).waitFor();
   assert.equal(await host.getByRole('dialog', { name: 'Add to Queue', exact: true }).count(), 0);
+  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.length, 0);
+  assert.equal(await song.getByRole('button', { name: /^Rate / }).count(), 0);
   await song.dblclick({ position: { x: 10, y: 10 } });
   await host.getByRole('dialog', { name: 'Add to Queue', exact: true }).waitFor();
-  await app.evaluate(() => globalThis.workspaceQa.releaseRating());
-  await untilApp(() => globalThis.workspaceQa.ratingReleased === 1 && globalThis.workspaceQa.ratingBodyRead);
-  // The main IPC round trip runs after the released local response's microtasks;
-  // the animation-frame barrier then allows renderer modal effects to finish.
-  await host.evaluate(async () => { await window.tpv.getState(); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
-  assert.equal(await host.getByRole('dialog', { name: 'Rate This Recording', exact: true }).count(), 0, 'A delayed rating response cannot stack a modal over a newer request dialog.');
   await host.getByRole('dialog', { name: 'Add to Queue', exact: true }).getByRole('button', { name: 'Cancel', exact: true }).click();
   const versionId = (await host.evaluate(() => window.tpv.getState())).versions[0].id;
   await host.evaluate(async id => {
@@ -205,6 +191,10 @@ try {
   const reset = (await host.evaluate(() => window.tpv.getShortcuts())).shortcuts;
   assert.deepEqual(reset.playPause, ['Space']); assert.deepEqual(reset.removeRequest, ['Delete']); assert.deepEqual(reset.previous, []);
   await closePreferences();
+  const persistedStar = host.getByRole('button', { name: 'Remove Workspace Shortcuts from KJ Picks', pressed: true });
+  await persistedStar.click();
+  await host.getByRole('button', { name: 'Star Workspace Shortcuts in KJ Picks', pressed: false }).waitFor();
+  assert.equal((await host.evaluate(() => window.tpv.getCollections())).items.length, 0);
   await host.getByRole('listbox', { name: 'Singer Rotation', exact: true }).getByRole('option').first().click(); await host.keyboard.press('Delete');
   await untilHost(async () => (await window.tpv.getState()).requests.find(value => value.id === 'shortcut-request')?.status === 'removed');
 

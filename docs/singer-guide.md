@@ -50,13 +50,13 @@ On Windows, screen sharing listens on verified Private interfaces, with loopback
 
 The host may show a booth name, adjustable logo, upcoming singers and a scrolling top/bottom announcement. A banner can expire and normally resets on next launch. Video fits the viewport. The host’s font choice applies to the screen’s overlays and live-rendered lyrics, including KaraFun. Imported and converted videos retain the lyric style rendered into them. Native KaraFun's primary completed-lyric color is pink.
 
-## Missing Songs, Availability and Ratings
+## Missing Songs, Availability and Starred Songs
 
 Use **Can't find your song?** to send a title and optional artist. This creates a review request, not a recording or rotation entry. The host privately tracks Pending, Reviewing, Fulfilled and Declined.
 
 Use availability to step away for 1–60 minutes or return immediately. While away, at most one future request is allowed; existing extras remain. At return you become eligible in the existing fair/FIFO order, subject to host overrides. If already singing, speak to the host first.
 
-Stars rate recording quality from 1–10, not your singing or Clean/Explicit classification. YouTube/Karaoke Nerds votes use the shared service; source-less file votes stay on this host. Version 0.7 also identifies KaraFun catalog/community recordings for shared ratings; the matching production validator is deployed and verified. Remote singer voting, personal accounts, favorites and self-service data management remain planned.
+Tap a song’s star to save it to your **Starred Songs** playlist. For example, Greg The Egg sees **Greg The Egg's Starred Songs**. Tap the filled star to remove the song. In the mobile app, open **Playlists** to find the list. On a room’s singer page, expand the starred list beneath search. The playlist stays in the app or browser that saved it. See [the mobile guide](mobile-app.md).
 
 Singer/request information stays in the host show; internet requests also pass through the relay. Installers exclude private profiles, song media, yt-dlp and FFmpeg. Development versions remain `0.x.y`; `1.0.0` is the approved official-release target.
 

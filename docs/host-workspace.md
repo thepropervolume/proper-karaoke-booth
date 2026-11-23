@@ -143,7 +143,7 @@ Each local media range uses a verified open file handle. A changed or replaced s
 
 Library results mark a confirmed missing local file as **File missing** and disable queueing. Use **Relink File** from the row’s context menu to locate the original. If a cloud-synced file is still downloading or temporarily unreadable, let it finish syncing and press **Play** to retry.
 
-## Catalog and Heart Ratings
+## Catalog and KJ Picks
 
 The unified result list identifies each provider with a label and 3px left border: local/imported purple `#601CE9`, Karaoke Nerds blue `#007bff`, YouTube red `#ff0033`, KaraFun pink `#d5167a`. Right-click any source for the common menu; unsupported actions are disabled. Connected KaraFun and Party Tyme consumer Premium can queue. KaraFun rows stay hidden while signed out. The separate public Party Tyme Pro export and available Sunfly/Stingray metadata remain explicitly Search Only. Sunfly Store is bounded title/SF-SKU discovery, while protected Sunfly/Stingray still requires issued profiles. See [provider limits](provider-catalog-search.md).
 
@@ -153,9 +153,7 @@ In **Preferences → Karaoke Services**, choose which providers, local files, Yo
 
 Fresh installs can search the shared Karaoke Nerds catalog without a reader configuration file or a bundled secret. Optional private catalog profiles remain supported; an invalid selected private file is reported rather than bypassed. The recovered snapshot's upstream freshness is still unknown and automatic feed refresh remains disabled. Saved searches can be reused offline. See [shared catalog help](shared-catalog.md).
 
-Star controls in the library, queue and On Stage use exact recording identities. YouTube/Karaoke Nerds uses its YouTube ID. Version 0.7.0 adds `karafun:catalog:NUMERIC_ID` and `karafun:community:NUMERIC_ID` without requiring an imported fingerprint; the matching service validator is deployed and has passed disposable-voter checks. No SQL migration is needed. Source-less files use imported SHA256 and save **Your Local Rating** in this host show, offline. Artist/title edits never merge different recordings.
-
-Open the rating control and choose 1–10 stars. Selecting a star saves immediately; the control closes after the save is confirmed, or remains open with an error if saving fails. **Clear My Rating** removes the vote after confirmation. A global vote needs a provisioned private writer profile; a catalog-reader token does not grant write access. Public lookup remains aggregate-only. The interface checks capability per recording so a shared outage or read-only profile does not disable local ratings. A failed global write is never relabeled as a successful local save. Use **Preferences → Song Ratings** to select/check a private profile; a draft check does not apply it or delete the file. Remote singer voting and cross-device person ownership remain planned. These stars are separate from Clean/Explicit classifications. See [ratings help](song-ratings.md).
+Select a song’s star in **Song Library** to add that exact recording to **Playlists → KJ Picks**. Select the filled star to remove it. Starring a playable provider discovery saves its library entry and playlist membership together.
 
 ## Launcher Flags
 

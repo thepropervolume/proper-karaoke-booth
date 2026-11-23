@@ -168,7 +168,7 @@ Authenticated singers may withdraw their own pending or queued request, includin
 
 **Host-only hold in 0.10.7:** In a desktop singer’s Actions menu, choose Hold until returned. Existing requests keep their place while other eligible singers continue through the rotation. A current performance keeps playing. Only the host can return a held singer. Either performer being held pauses eligibility for a queued duet. Schema 8 preserves holds through restart and creates a verified schema 7 backup during upgrade.
 
-**Desktop queue keyboard navigation in 0.10.8.** With focus on a queue row, Up and Down move between requests and Home and End jump to either end. Rating buttons retain their own keyboard focus and behavior.
+**Desktop queue keyboard navigation in 0.10.8.** With focus on a queue row, Up and Down move between requests and Home and End jump to either end.
 
 **Planned:** skip-turn rules, actor/reason audit history, touch controls, own-song ordering without advancing one's turn, per-request key and tempo, private notes, duplicate handling, group invitations, and better wait estimates. A group performance belongs to one lead singer and consumes one turn. Invitees keep their own place. Wait estimates should use ranges where appropriate, recalculate after changes, and stay unavailable during unbounded pauses. Pre-arrival lists do not reserve a turn.
 
@@ -235,6 +235,8 @@ The host can create a validated SQLite snapshot to a new filename. Existing dest
 Required failure handling covers missing/corrupt files, unsupported codecs, output and screen loss, media stalls, disk-full and database errors, stale staff edits, provider outages and relay disconnects. A failed persistence operation cannot be acknowledged as successful. Preserve the active singer's turn when preparation fails; do not silently substitute a different recording, reroute sound or resume playback.
 
 ## 10. Collections, history and policies
+
+**Starred songs:** the desktop library’s star toggles an exact recording in KJ Picks. An eligible provider search result can be saved and starred in one local show transaction. The singer workspace auto-creates a device-local playlist named for the singer (for example, **Greg The Egg's Starred Songs**). The standalone singer page scopes that list to the current browser and join name. Playlists store exact recording memberships independently from historical scores.
 
 **Portable playlists in 0.10.7:** Export a singer playlist or KJ Picks to a new Booth JSON file. On another Booth library, choose Import Playlist, review the exact recording matches, and confirm a new singer playlist or add matches to KJ Picks. The file contains display metadata and recording identities. The preview groups missing or disallowed recordings under **Unavailable in this library** and calls out ambiguous matches and duplicates. Booth rechecks the matches before saving. The format accepts up to 1,000 entries in a 1 MiB file.
 
@@ -965,7 +967,7 @@ The owner selected **Microphone Play** on 13 November: a vintage microphone insi
 }
 ```
 
-## Shared Star Ratings and Current Host Controls
+## Historical Recording Ratings
 
 **Available in 0.10.3 source:** exact recordings receive 1–10-star host ratings. A click saves immediately and closes the control only on confirmation; a failed save leaves it open with an error. Clear My Rating removes the vote. YouTube/Karaoke Nerds uses its case-sensitive YouTube ID. KaraFun uses `karafun:catalog:NUMERIC_ID` or `karafun:community:NUMERIC_ID` without an imported fingerprint. The matching validator is deployed on Linode III. Live disposable-voter lookup, vote, update and withdrawal checks passed in both namespaces on 15 November, with no retained test votes or SQL changes. Identified recordings use the authenticated global MySQL-backed service. A source-less file uses its imported SHA256 and stores its vote in local schema-5 `show.sqlite` (the rating table was introduced in schema 3), works offline and never sends its path or local fingerprint to the shared service. Identical contents share that local score; different converted CDG outputs can have different fingerprints. Provider metadata edits never merge distinct recordings.
 

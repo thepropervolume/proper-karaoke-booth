@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { isMissingSongStatus, type MissingSongRequest, type MissingSongReview, type MissingSongStatus } from '../domain/missing-request';
-import type { HistoryEntry } from '../domain/collections';
+import { KJ_PICKS_ID, type HistoryEntry } from '../domain/collections';
 import type { PlaylistDestination } from '../domain/playlist-transfer';
 import type { ShowState } from '../domain';
 import { Collections } from './collections';
@@ -64,14 +64,24 @@ export class Store<T> {
   // An imported version without its media row (or a completed turn without
   // its history) is an invalid partial outcome, so these share one transaction.
   save(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
+    this.writeTransaction(() => this.writeState(state, media, history));
+  }
+
+  saveDiscoveredKjPick(this: Store<ShowState>, state: ShowState, versionId: string): void {
+    // The new library entry and its KJ Picks membership must survive together.
     this.writeTransaction(() => {
-      const before = this.load();
-      const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
-      for (const item of media) putMedia.run(item.id, item.path, item.fingerprint);
-      recordQueuedSongs(this.db, before, state);
-      this.db.prepare('INSERT INTO show_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(JSON.stringify(state));
-      if (history) this.collections.record(history);
+      this.writeState(state);
+      this.collections.mutate({ type: 'add', playlistId: KJ_PICKS_ID, versionId }, state.singers, state.versions);
     });
+  }
+
+  private writeState(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
+    const before = this.load();
+    const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
+    for (const item of media) putMedia.run(item.id, item.path, item.fingerprint);
+    recordQueuedSongs(this.db, before, state);
+    this.db.prepare('INSERT INTO show_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(JSON.stringify(state));
+    if (history) this.collections.record(history);
   }
 
   importPlaylist(destination: PlaylistDestination, versions: readonly string[], singers: readonly { id: string }[],

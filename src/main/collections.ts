@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import type { CollectionsAction, CollectionsSnapshot, HistoryEntry, Playlist, PlaylistItem } from '../domain/collections';
+import { KJ_PICKS_ID, type CollectionsAction, type CollectionsSnapshot, type HistoryEntry, type Playlist, type PlaylistItem } from '../domain/collections';
 import { MAX_PLAYLIST_ENTRIES, type PlaylistDestination } from '../domain/playlist-transfer';
 
-export const KJ_PICKS_ID = 'kj-picks';
+export { KJ_PICKS_ID };
 function validString(value: unknown, maximum = 500): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
 }

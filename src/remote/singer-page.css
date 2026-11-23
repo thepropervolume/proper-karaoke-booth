@@ -69,6 +69,8 @@
 .singer-page .singer-warning p:last-child { margin-bottom: 0; }
 .singer-page .singer-songs li { align-items: center; }
 .singer-page .singer-songs strong { color: var(--sp-text); }
+.singer-page .singer-song-star { min-width: 44px; font-size: 1.25rem; padding: .35rem .55rem; }
+.singer-page .singer-song-star[aria-pressed='true'] { color: var(--sp-warm); }
 @media (max-width: 520px) {
   .singer-page { padding-inline: .85rem; }
   .singer-page section { padding: .85rem; }

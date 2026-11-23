@@ -37,6 +37,8 @@
 .song-option__identity strong { display: block; font-size: 1rem; line-height: 1.25; overflow-wrap: anywhere; }
 .song-option__identity small { display: block; font-size: .85rem; line-height: 1.25; margin-top: 2px; }
 .song-option__actions { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; }
+.song-option .song-star { display: grid; place-items: center; min-height: 28px; min-width: 30px; padding: 0 4px; font-size: 1.15rem; line-height: 1; }
+.song-option .song-star[aria-pressed='true'] { color: var(--accent); }
 .song-source { color: var(--muted); font-size: .76rem; white-space: nowrap; }
 .missing-song-request { font-size: .8rem; max-height: 35%; overflow: auto; }
 .missing-song-request summary, .queue-advanced summary { cursor: pointer; color: var(--muted); }

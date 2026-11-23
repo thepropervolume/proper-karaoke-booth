@@ -119,6 +119,12 @@ export class PartyTymeHost {
                 this.searchAbort = null;
         }
     }
+    lookup(searchId: unknown, videoId: unknown): PartyTymeSong | undefined {
+        const receipt = this.receipt, account = this.account.status();
+        if (this.closed || !receipt || searchId !== receipt.id || receipt.revision !== this.account.revision() ||
+            receipt.until < Date.now() || account.state !== 'connected' || !account.premium || typeof videoId !== 'string') return;
+        return receipt.songs.get(videoId);
+    }
     request(value: unknown): {
         ok: boolean;
         versionId?: string;
@@ -127,13 +133,13 @@ export class PartyTymeHost {
     } {
         if (!value || typeof value !== 'object' || Array.isArray(value))
             return { ok: false, error: 'Choose a current Party Tyme result.' };
-        const input = value as Record<string, unknown>, receipt = this.receipt;
-        if (Object.keys(input).some(k => !['searchId', 'videoId', 'singerId', 'requestId'].includes(k)) || !receipt || input.searchId !== receipt.id || receipt.revision !== this.account.revision() || receipt.until < Date.now() ||
-            this.account.status().state !== 'connected' || !this.account.status().premium || typeof input.videoId !== 'string' || input.singerId !== null && typeof input.singerId !== 'string' || typeof input.requestId !== 'string')
+        const input = value as Record<string, unknown>;
+        if (Object.keys(input).some(k => !['searchId', 'videoId', 'singerId', 'requestId'].includes(k)) ||
+            input.singerId !== null && typeof input.singerId !== 'string' || typeof input.requestId !== 'string')
             return { ok: false, error: 'Connect Party Tyme Premium and search again before queueing this recording.' };
-        const song = receipt.songs.get(input.videoId);
+        const song = this.lookup(input.searchId, input.videoId);
         if (!song)
-            return { ok: false, error: 'Choose a current Party Tyme result.' };
+            return { ok: false, error: 'Connect Party Tyme Premium and search again before queueing this recording.' };
         const planned = partyTymeRequest(this.ports.state(), song, input.singerId as string | null, input.requestId, this.ports.settings(), { versionId: randomUUID(), commandId: randomUUID() }, Date.now(),
           this.ports.songSeenBefore ? { songSeenBefore: version => this.ports.songSeenBefore!(version) } : undefined);
         if (!planned.result.ok)

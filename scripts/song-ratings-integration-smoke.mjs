@@ -1,3 +1,4 @@
+// Historical pre-0.5 Electron UI harness. For current host stars, run workspace-shortcuts-smoke.mjs.
 // Actual app → public catalog / shared ratings, with synthetic media and a QA voter.
 // Usage: npx tsx scripts/song-ratings-integration-smoke.mjs /private/qa-rating.json
 import assert from 'node:assert/strict';

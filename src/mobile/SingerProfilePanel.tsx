@@ -1,26 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  loadSingerProfile, parseSingerProfile, saveSingerProfile, singerRecordingIdentity,
+  loadSingerProfile, parseSingerProfile, saveSingerProfile, singerRecordingIdentity, starredPlaylist, starredPlaylistName,
   type SingerPlaylist, type SingerPlaylistRecording, type SingerProfileAction,
 } from './singer-profile';
 
 const messageFrom = (error: unknown) => error instanceof Error ? error.message : 'That change could not be saved.';
 
-export function useSingerProfile() {
+export function useSingerProfile(guestName?: string) {
   const [profile, setProfile] = useState(() => parseSingerProfile(undefined));
-  const [ready, setReady] = useState(false);
+  const [loaded, setLoaded] = useState<{ guestName?: string } | null>(null);
   const [storageError, setStorageError] = useState('');
+  const currentGuest = useRef(guestName);
+  currentGuest.current = guestName;
+  const ready = loaded !== null && loaded.guestName === guestName;
   useEffect(() => {
     let active = true;
-    void loadSingerProfile().then(saved => {
-      if (active) { setProfile(saved); setReady(true); }
+    setLoaded(null);
+    setStorageError('');
+    void loadSingerProfile(guestName).then(saved => {
+      if (active) { setProfile(saved); setLoaded({ guestName }); }
     }).catch(error => { if (active) setStorageError(messageFrom(error)); });
     return () => { active = false; };
-  }, []);
+  }, [guestName]);
   async function apply(action: SingerProfileAction): Promise<void> {
     if (!ready) throw new Error(storageError || 'Wait for your singer profile to load.');
-    const next = await saveSingerProfile(action);
-    setProfile(next);
+    const next = await saveSingerProfile(action, guestName);
+    if (currentGuest.current === guestName) setProfile(next);
   }
   return {
     profile, ready, storageError,
@@ -30,6 +35,11 @@ export function useSingerProfile() {
     removePlaylist: (playlistId: string) => apply({ type: 'remove-playlist', playlistId }),
     addRecording: (playlistId: string, recording: SingerPlaylistRecording) => apply({ type: 'add-recording', playlistId, recording }),
     removeRecording: (playlistId: string, key: string) => apply({ type: 'remove-recording', playlistId, key }),
+    setStarred: (recording: SingerPlaylistRecording, selected: boolean, displayName?: string) => apply({
+      type: 'set-starred', recording, selected,
+      newPlaylistId: Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join(''),
+      displayName: guestName ?? displayName,
+    }),
   };
 }
 
@@ -77,10 +87,10 @@ function PlaylistDetails({ playlist, store, renderRecordingAction }: {
   const { working, run, status } = useProfileAction();
   useEffect(() => { setName(playlist.name); }, [playlist.name]);
   return <div className="mobile-playlist-details">
-    <form onSubmit={event => { event.preventDefault(); void run(() => store.renamePlaylist(playlist.id, name), 'Playlist renamed.'); }}>
+    {!playlist.kind && <form onSubmit={event => { event.preventDefault(); void run(() => store.renamePlaylist(playlist.id, name), 'Playlist renamed.'); }}>
       <label>Playlist name<input maxLength={100} required value={name} disabled={working} onChange={event => setName(event.target.value)} /></label>
       <button disabled={working || name.trim() === playlist.name}>Rename</button>
-    </form>
+    </form>}
     {playlist.recordings.length ? <ul className="mobile-songs">{playlist.recordings.map(recording => {
       const key = singerRecordingIdentity(recording);
       if (!key) return null;
@@ -147,4 +157,31 @@ export function SaveToSingerPlaylist({ store, recording }: { store: SingerProfil
     </div>}
     {status}
   </div>;
+}
+
+export function SingerStarButton({ store, recording, displayName }: {
+  store: SingerProfileStore; recording: SingerPlaylistRecording; displayName?: string;
+}) {
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+  const key = singerRecordingIdentity(recording);
+  if (!key) return null;
+  const playlist = store.ready ? starredPlaylist(store.profile) : undefined;
+  const selected = playlist?.recordings.some(item => singerRecordingIdentity(item) === key) ?? false;
+  const label = selected ? `Remove ${recording.title} from starred songs` : `Star ${recording.title}`;
+  const toggle = async () => {
+    setWorking(true);
+    setError('');
+    try { await store.setStarred(recording, !selected, displayName); }
+    catch (failure) { setError(messageFrom(failure)); }
+    finally { setWorking(false); }
+  };
+  return <>
+    <button type="button" className="singer-song-star" aria-label={label} aria-pressed={selected}
+      title={selected ? label : `Save to ${playlist?.name ?? starredPlaylistName(store.profile.displayName || displayName || '')}`}
+      disabled={!store.ready || working} onClick={() => void toggle()}>
+      <span aria-hidden="true">{selected ? '★' : '☆'}</span>
+    </button>
+    {error && <span role="alert">{error}</span>}
+  </>;
 }

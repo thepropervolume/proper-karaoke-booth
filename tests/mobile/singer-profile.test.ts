@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright-core';
 import {
-  parseSingerProfile, singerRecordingIdentity, updateSingerProfile,
+  parseSingerProfile, singerRecordingIdentity, starredPlaylist, updateSingerProfile,
   type SingerPlaylistRecording, type SingerProfile, type SingerProfileAction,
 } from '../../src/mobile/singer-profile';
 
@@ -41,6 +41,27 @@ test('playlist entries match exact recording versions and keep room-only IDs sco
   profile = updateSingerProfile(profile, { type: 'remove-recording', playlistId: 'first', key: 'room:my-room:local_song' });
   assert.deepEqual(profile.playlists[0].recordings.map(singerRecordingIdentity), ['youtube:Video123456', 'karafun:catalog:123', 'room:other-room:local_song']);
   assert.throws(() => add({ title: 'Wonderwall', artist: 'Oasis', id: 'unscoped' }), /no playlist identity/);
+});
+
+test('singer stars create, deduplicate, rename and remove recordings in one per-profile playlist', () => {
+  const initial = parseSingerProfile(undefined);
+  const star = (recording: SingerPlaylistRecording, selected = true, newPlaylistId = 'stars'): Extract<SingerProfileAction, { type: 'set-starred' }> =>
+    ({ type: 'set-starred', recording, selected, newPlaylistId, displayName: 'Greg The Egg' });
+  const first = updateSingerProfile(initial, star(oasis));
+  assert.equal(starredPlaylist(first)?.name, "Greg The Egg's Starred Songs");
+  assert.equal(starredPlaylist(first)?.kind, 'starred');
+  assert.deepEqual(updateSingerProfile(first, star({ ...oasis, source: 'youtube' }, true, 'another-id')), first);
+  assert.deepEqual(parseSingerProfile(first), first);
+  const renamed = updateSingerProfile(first, { type: 'identity', displayName: 'Gregory', email: '' });
+  assert.equal(starredPlaylist(renamed)?.name, "Gregory's Starred Songs");
+  assert.deepEqual(starredPlaylist(renamed)?.recordings, [oasis]);
+  assert.deepEqual(starredPlaylist(updateSingerProfile(renamed, star(oasis, false)))?.recordings, []);
+  assert.deepEqual(initial.playlists, []);
+  const manual = updateSingerProfile(initial, { type: 'create-playlist', playlistId: 'current', name: 'Starred Songs', recording: local });
+  const adopted = updateSingerProfile(manual, { ...star(oasis), displayName: undefined });
+  assert.equal(adopted.playlists.length, 1);
+  assert.equal(starredPlaylist(adopted)?.id, 'current');
+  assert.deepEqual(starredPlaylist(adopted)?.recordings, [local, oasis]);
 });
 
 test('saved profile parsing preserves valid fields and excludes foreign session details', () => {
@@ -85,6 +106,14 @@ test('singer writes serialize across browser tabs and survive reload', { skip: e
     await first.reload();
     const stored = await first.evaluate(() => (window as unknown as SingerWindow).singerStorage.loadSingerProfile());
     assert.deepEqual(stored, { format: 1, displayName: 'Singer', email: 'person@example.com', playlists: [{ id: 'first', name: 'Songs', recordings: [oasis] }] });
+    const guestStar = { type: 'set-starred', selected: true, newPlaylistId: 'starred', recording: oasis, displayName: 'Greg The Egg' } as const;
+    await first.evaluate(action => (window as unknown as SingerWindow).singerStorage.saveSingerProfile(action, 'Greg The Egg'), guestStar);
+    await second.reload();
+    const guestProfile = await second.evaluate(() => (window as unknown as SingerWindow).singerStorage.loadSingerProfile('Greg The Egg'));
+    assert.deepEqual(starredPlaylist(guestProfile)?.recordings, [oasis]);
+    const otherGuest = await second.evaluate(() => (window as unknown as SingerWindow).singerStorage.loadSingerProfile('Other Singer'));
+    assert.deepEqual(otherGuest.playlists, []);
+    assert.deepEqual(await second.evaluate(() => (window as unknown as SingerWindow).singerStorage.loadSingerProfile()), stored);
     await context.close();
   } finally {
     await browser.close();

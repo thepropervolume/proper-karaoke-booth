@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('tpv', {
   restoreShow: () => ipcRenderer.invoke('host:restore-show'),
   retryBackupCleanup: () => ipcRenderer.invoke('host:backup-cleanup'),
   getCollections: () => ipcRenderer.invoke('host:get-collections'),
+  saveDiscoveredKjPick: (recording: unknown) => ipcRenderer.invoke('host:save-discovered-kj-pick', recording),
   exportPlaylist: (id: string) => ipcRenderer.invoke('host:export-playlist', id),
   previewPlaylist: () => ipcRenderer.invoke('host:preview-playlist'),
   discardPlaylistPreview: (token: string) => ipcRenderer.invoke('host:discard-playlist-preview', token),

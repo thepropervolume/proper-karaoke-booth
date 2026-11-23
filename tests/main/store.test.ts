@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../src/main/store';
 import { normalizeMissingRequest } from '../../src/domain/missing-request';
+import { createInitialState, type ShowState } from '../../src/domain';
+import { KJ_PICKS_ID } from '../../src/domain/collections';
 
 test('persists show state and private media across a reopen', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tpv-store-'));
@@ -46,6 +48,24 @@ test('performance history and the show state commit or roll back together', () =
     assert.throws(() => db.save({ revision: 2 }, [], { ...history, generationId: '' }));
     assert.deepEqual(db.load(), { revision: 1 });
     assert.equal(db.collections.snapshot().history.length, 1);
+  } finally { db.close(); }
+});
+
+test('saving a discovered KJ pick commits the recording and star together without a request', () => {
+  const db = new Store<ShowState>(':memory:');
+  try {
+    const before = createInitialState('show', 'host-epoch');
+    db.save(before);
+    const after: ShowState = { ...before, revision: before.revision + 1, versions: [
+      { id: 'discovered', title: 'Amateur', artist: 'Nada Surf', rating: 'unrated', source: { provider: 'youtube', videoId: 'Abcdefghijk' } },
+    ] };
+    assert.throws(() => db.saveDiscoveredKjPick(after, 'invalid'));
+    assert.deepEqual(db.load(), before);
+    assert.deepEqual(db.collections.snapshot().items, []);
+    db.saveDiscoveredKjPick(after, 'discovered');
+    assert.deepEqual(db.load(), after);
+    assert.deepEqual(db.load()?.requests, []);
+    assert.deepEqual(db.collections.snapshot().items, [{ playlistId: KJ_PICKS_ID, versionId: 'discovered' }]);
   } finally { db.close(); }
 });
 

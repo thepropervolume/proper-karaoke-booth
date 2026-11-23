@@ -8,9 +8,9 @@ import { unlink, readFile, lstat, open } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { userInfo } from 'node:os';
 import { Readable } from 'node:stream';
-import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Actor, type Command, type Outcome, type ShowState } from '../domain';
+import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Actor, type Command, type Outcome, type ShowState, type Version } from '../domain';
 import { nextSingerReturnAt } from '../domain/singer-availability';
-import type { HistoryEntry } from '../domain/collections';
+import { KJ_PICKS_ID, type HistoryEntry } from '../domain/collections';
 import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-request';
 import { metadataFromPath } from '../domain/metadata';
 import { previewMetadata } from './metadata-preview';
@@ -82,7 +82,7 @@ import { isYouTubePlayerActive, openYouTubePlayer } from './youtube-player-windo
 import { YouTubeAudioGate } from './youtube-audio-gate';
 import { YouTubeDownloads } from './youtube-download';
 import { QueuedVideoDownloads } from './queued-video-downloads';
-import { catalogRequest } from '../domain/catalog-request';
+import { catalogRecording, catalogRequest, isCatalogRequestTrack } from '../domain/catalog-request';
 import { AutomaticBumper } from './automatic-bumper';
 import { ShowAdvance } from './show-advance';
 import { stageNextApproved } from './stage-next';
@@ -707,6 +707,51 @@ function commitCatalogRequest(input: unknown, discoveryOrigin: 'karaokenerds' | 
     try{broadcast();}catch{/* A committed request remains successful even if a view closes. */}
     return {...planned.result,...(notice?{notice}:{})};
 }
+
+function discoveredKjPick(input: unknown): Version {
+  if (!isRecord(input)) throw new Error('Select an available search result.');
+  const id = randomUUID();
+  if (input.kind === 'karaokenerds' && isCatalogRequestTrack(input.track)) return catalogRecording(input.track, id, input.kind);
+  if (input.kind === 'youtube') {
+    const song = youtubeSearch.lookup(input.searchId, input.videoId);
+    if (song) return catalogRecording({ youtubeId: song.videoId, title: song.title, artist: song.artist || '' }, id, input.kind);
+  }
+  if (input.kind === 'karafun') {
+    const song = karaFunHost.lookup(input.searchId, input.catalog, input.songId);
+    if (song) return { id, title: song.title, artist: song.artist, rating: song.explicit === true ? 'explicit' : song.explicit === false ? 'clean' : 'unrated',
+      source: { provider: 'karafun', catalog: song.catalog, songId: song.songId } };
+  }
+  if (input.kind === 'partytyme') {
+    const song = partyTymeHost.lookup(input.searchId, input.videoId);
+    if (song) return { id, title: song.title, artist: song.artist, rating: 'unrated',
+      source: { provider: 'partytyme', catalog: 'consumer', videoId: song.videoId } };
+  }
+  throw new Error('Search again and choose an available recording.');
+}
+
+function saveDiscoveredKjPick(input: unknown) {
+  if (shuttingDown || restorePending || restoreRequest) throw new Error('Show changes are unavailable right now.');
+  const recording = discoveredKjPick(input);
+  if (!sourceIsVisible(recording, settings.sourceVisibility) || compileSongBlacklist(settings).isBlocked(recording)) throw new Error('This song is unavailable under the current settings.');
+  const key = recordingKeyFor(recording.source);
+  const matches = state.versions.filter(version => key && recordingKeyFor(version.source) === key);
+  if (matches.length > 1) throw new Error('This recording has conflicting library entries. Review them before starring.');
+  const existing = matches[0];
+  if (existing) {
+    if (!isVersionAllowed(state, existing.id, settings)) throw new Error('This song is unavailable under the current show policy.');
+    store.collections.mutate({ type: 'add', playlistId: KJ_PICKS_ID, versionId: existing.id }, state.singers, state.versions);
+  } else {
+    const added = applyCommand(state, { commandId: randomUUID(), showId: state.showId, hostEpoch: state.hostEpoch,
+      expectedRevision: state.revision, actor: { role: 'host', id: 'host' }, command: { type: 'addVersion', version: recording } }, settings, Date.now());
+    if (!added.outcome.ok) throw new Error(added.outcome.message);
+    if (!isVersionAllowed(added.state, recording.id, settings)) throw new Error('This song is unavailable under the current show policy.');
+    store.saveDiscoveredKjPick(added.state, recording.id);
+    installShowState(added.state);
+    try { broadcast(); } catch { /* The durable save survives a closed view. */ }
+  }
+  return store.collections.snapshot();
+}
+
 function pauseForOutputLoss(): boolean {
   if (!shuttingDown && state.playback?.status === 'playing') return perform({ type: 'pause' }).ok;
   return false;
@@ -1749,6 +1794,7 @@ else {
     const error = await shell.openPath(directory); if (error) throw new Error('The download folder could not be opened.');
   });
   ipcMain.handle('host:get-collections', event => { guardHost(event.sender.id); return store.collections.snapshot(); });
+  ipcMain.handle('host:save-discovered-kj-pick', (event, input: unknown) => { guardHost(event.sender.id); return saveDiscoveredKjPick(input); });
   ipcMain.handle('host:export-playlist', (event, id: unknown) => { guardHost(event.sender.id); return playlistTransfer.export(id); });
   ipcMain.handle('host:preview-playlist', event => { guardHost(event.sender.id); return playlistTransfer.preview(); });
   ipcMain.handle('host:discard-playlist-preview', (event, token: unknown) => { guardHost(event.sender.id); playlistTransfer.discard(token); });

@@ -1,5 +1,7 @@
 # Song ratings
 
+The current Booth library star adds or removes a recording in **KJ Picks**. The details below describe historical recording-quality votes and the retained ratings service. See [playlist help](host-workspace.md#catalog-and-kj-picks).
+
 Development **0.7.0** extends the 0.5 local/shared split with native KaraFun IDs and separates shared recording votes from local-file votes. YouTube/Karaoke Nerds and native KaraFun recordings can have a community average from 1–10 stars and a vote count; a provisioned host can set **Your Host Rating**. Files without a provider recording ID save **Your Local Rating** in the host database and work offline without a remote profile. Choosing a star immediately saves or replaces the current vote; the dialog closes after confirmation, and remains open if saving fails. **Clear My Rating** removes the vote. Stars are distinct from clean/explicit content-policy ratings.
 
 The shared service stores provider-identified votes/aggregates in its MySQL database behind `apps.thepropervolume.com`; the desktop never writes MySQL directly. The service derives voter identity from a dedicated per-host credential. Catalog-reader tokens and public lookup cannot submit votes. Local source-less votes stay in schema-3 `show.sqlite`, with their fingerprint and score never sent to the shared service. Full singer accounts and cross-device person ownership are not implemented; a host installation is not a verified individual singer account.

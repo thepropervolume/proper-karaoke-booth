@@ -1,4 +1,5 @@
 // Isolated component rehearsal: no show, real credentials, network or media.
+// The current host workspace uses playlist stars. This exercises the historical rating component.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';

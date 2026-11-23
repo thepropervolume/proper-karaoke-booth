@@ -16,18 +16,15 @@ import type { PlaylistApplyResult, PlaylistDestination, PlaylistExportResult, Pl
 import { MediaReviewDialog } from './MediaReviewDialog';
 import { unifiedLibrary, type LibrarySearchVersion } from '../domain/unified-library';
 import type { CatalogRequestTrack } from '../domain/catalog-request';
-import { recordingKeyFor, type RecordingKey, type SongRating } from '../domain/song-rating';
-import type { HostRatingsLookup, HostRatingVote } from '../main/host-song-ratings';
 import type { SongRatingsLookup } from '../main/song-ratings-client';
 import { compileSongBlacklist } from '../domain/song-blacklist';
 import { DEFAULT_HOST_PANEL_SIZES, fittedHostPanels, HOST_PANEL_LIMITS, type HostPanelSizes } from '../domain/host-layout';
 import type { LocalControlUiStatus } from './LocalControlSettings';
-import { SongRatingButton, SongRatingDialog } from './SongRating';
 import { DEFAULT_SHORTCUTS, KARAOKE_PAIR_IMPORT_LABEL, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
 import type { AppAction, SettingsSection } from '../domain/app-action';
 import type { WorkspaceMenuContext } from '../main/application-menu';
 import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
-import type { CollectionsAction, CollectionsSnapshot } from '../domain/collections';
+import { KJ_PICKS_ID, type CollectionsAction, type CollectionsSnapshot, type KjDiscoverySelection } from '../domain/collections';
 import { Icon } from './Icon';
 import { CollectionsPanel } from './CollectionsPanel';
 import { PlaybackTimeline } from './PlaybackTimeline';
@@ -122,6 +119,7 @@ declare global {
       restoreShow: () => Promise<RestoreResult>;
       retryBackupCleanup: () => Promise<BackupResult>;
       getCollections: () => Promise<CollectionsSnapshot>;
+      saveDiscoveredKjPick: (input: KjDiscoverySelection) => Promise<CollectionsSnapshot>;
       exportPlaylist: (id: string) => Promise<PlaylistExportResult>;
       previewPlaylist: () => Promise<PlaylistPreviewResult>;
       discardPlaylistPreview: (token: string) => Promise<void>;
@@ -138,9 +136,7 @@ declare global {
       chooseProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
       clearProviderCatalogProfile: (provider: ProviderCatalogId) => Promise<ProviderCatalogStatus[]>;
       openProviderCatalogSong: (input: { provider: ProviderCatalogId; id: string }) => Promise<void>;
-      ratingKeys: (ids: string[]) => Promise<Record<string, RecordingKey>>;
-      lookupSongRatings: (keys: RecordingKey[]) => Promise<HostRatingsLookup>;
-      rateSong: (key: RecordingKey, value: number | null) => Promise<HostRatingVote>;
+
       singerScreens: SingerScreenBridge;
       youtubeSearch: YouTubeSearchBridge;
       karaFun: KaraFunBridge;
@@ -226,7 +222,7 @@ function App() {
   const searchInput = useRef<HTMLInputElement>(null);
   const songList = useRef<HTMLDivElement>(null);
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
-  const focusSearch = () => { pendingPreferences.current = null; ++ratingOpenSequence.current; setRatingDialog(null); setEditingRequest(null); setQueueMenu(null); setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
+  const focusSearch = () => { pendingPreferences.current = null; setEditingRequest(null); setQueueMenu(null); setSettingsOpen(false); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setContextMenu(null); setScreen('library'); setSearchFocusRequest(value => value + 1); };
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [cachedVideoIds, setCachedVideoIds] = useState<string[]>([]);
   const [downloadStatus, setDownloadStatus] = useState<YouTubeDownloadStatus | null>(null);
@@ -240,6 +236,9 @@ function App() {
   const [playlistVersion, setPlaylistVersion] = useState<Version | null>(null);
   const [contextMenu, setContextMenu] = useState<{ version: SongResult; x: number; y: number } | null>(null);
   const [collections, setCollections] = useState<CollectionsSnapshot>({ playlists: [], items: [], history: [] });
+  const [starSaving, setStarSaving] = useState(false);
+  const starWritePending = useRef(false);
+  const kjPicks = useMemo(() => new Set(collections.items.filter(item => item.playlistId === KJ_PICKS_ID).map(item => item.versionId)), [collections.items]);
 
   const [singerName, setSingerName] = useState('');
 
@@ -298,27 +297,13 @@ function App() {
   const openPreferences = (section: SettingsSection = 'general') => {
     if (busy) { pendingPreferences.current = section; setNotice('Preferences will open when the current action finishes.'); return; }
     pendingPreferences.current = null;
-    ++ratingOpenSequence.current; setEditingRequest(null); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setQueueMenu(null); setContextMenu(null); setRatingDialog(null);
+    setEditingRequest(null); setEditingVersion(null); setQueueVersion(null); setPlaylistVersion(null); setQueueMenu(null); setContextMenu(null);
     setSettingsSection(section); setSettingsFocusRequest(value => value + 1); setSettingsOpen(true);
   };
   useEffect(() => { if (!busy && pendingPreferences.current) openPreferences(pendingPreferences.current); }, [busy]);
   const [editingVersion, setEditingVersion] = useState<Version | null>(null);
-  const [ratingKeys, setRatingKeys] = useState<Record<string, RecordingKey>>({});
-  const [ratings, setRatings] = useState<Record<string, SongRating>>({});
-  const [ratingsLoading, setRatingsLoading] = useState(false);
-  const [canRateByKey, setCanRateByKey] = useState<Record<string, boolean>>({});
-  const [ratingDialog, setRatingDialog] = useState<{ title: string; key: RecordingKey } | null>(null);
-  const ratingOpenSequence = useRef(0);
-  const ratingWriteEpoch = useRef(0);
-  const [ratingReload, setRatingReload] = useState(0);
-  const [ratingWindowStart, setRatingWindowStart] = useState(0);
-  useEffect(() => { setRatingWindowStart(0); songList.current?.scrollTo(0, 0); }, [search, librarySort, libraryFilter]);
-  useEffect(() => { setRatings({}); setCanRateByKey({}); setRatingDialog(null); ++ratingOpenSequence.current; }, [settings.ratingProfileConfigFile]);
-  useEffect(() => {
-    ++ratingOpenSequence.current;
-    if (settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || mediaReviewOpen) setRatingDialog(null);
-  }, [screen, settingsOpen, !!queueVersion, !!editingRequest, !!editingVersion, !!playlistVersion, mediaReviewOpen]);
-  const modalOpen = !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || ratingDialog || mediaReviewOpen);
+  useEffect(() => { songList.current?.scrollTo(0, 0); }, [search, librarySort, libraryFilter]);
+  const modalOpen = !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || mediaReviewOpen);
 
   useEffect(() => {
     let deadline = state?.nextStartAtMs ?? 0;
@@ -466,32 +451,6 @@ function App() {
   const staged = state?.requests.find(r => r.id === state.stagedRequestId);
   const stagedBlocked = !!(state && staged && !hostVersionAllowed(staged.versionId));
   const active = state?.requests.find(r => r.id === state.playback?.requestId);
-  const ratingSelection = JSON.stringify([...new Set([...filtered.slice(ratingWindowStart, ratingWindowStart + 80).map(version => version.id), ...future.map(request => request.versionId), ...(active ? [active.versionId] : [])])].slice(0, 1000));
-  useEffect(() => {
-    let alive = true;
-    const writeEpoch = ratingWriteEpoch.current;
-    setRatingsLoading(true);
-    void (async () => {
-      const ids = JSON.parse(ratingSelection) as string[];
-      const resolved = await window.tpv.ratingKeys(ids);
-      for (const version of filtered) { const key = recordingKeyFor(version.source); if (key && ids.includes(version.id)) resolved[version.id] = key; }
-      if (!alive) return;
-      setRatingKeys(resolved);
-      const keys = [...new Set(Object.values(resolved))];
-      if (!keys.length) return;
-      const loaded: Record<string, SongRating> = {};
-      const allowed: Record<string, boolean> = {}, failed = new Set<string>();
-      for (let offset = 0; offset < keys.length; offset += 100) {
-        const batch = keys.slice(offset, offset + 100), result = await window.tpv.lookupSongRatings(batch);
-        if (!alive || writeEpoch !== ratingWriteEpoch.current) return;
-        if (result.status !== 'ready') { for (const key of batch) { allowed[key] = false; failed.add(key); } continue; }
-        for (const key of batch) { allowed[key] = result.canVoteByKey[key] === true; if (!result.items.some(item => item.recordingKey === key)) failed.add(key); }
-        for (const item of result.items) loaded[item.recordingKey] = item;
-      }
-      if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings(current => { const next = { ...current, ...loaded }; for (const key of failed) delete next[key]; return next; }); setCanRateByKey(current => ({ ...current, ...allowed })); }
-    })().catch(() => { if (alive && writeEpoch === ratingWriteEpoch.current) { setRatings({}); setCanRateByKey({}); } }).finally(() => { if (alive) setRatingsLoading(false); });
-    return () => { alive = false; };
-  }, [ratingSelection, settings.ratingProfileConfigFile, ratingReload, filenameRefresh]);
   const pauseRemaining = state ? remainingPauseSeconds(state, clockMs) : 0;
   const canPlay = !busy && !transportBusy && (!!active || (!stagedBlocked && !pauseRemaining && !!(staged || eligibleFuture)));
   const canStop = !!state;
@@ -581,6 +540,29 @@ function App() {
     try { setCollections(await window.tpv.mutateCollections(action)); setNotice(''); return true; }
     catch (error) { setNotice(error instanceof Error ? error.message : String(error), 'error'); return false; }
   };
+  const starButton = (row: SongResult) => {
+    const selection: KjDiscoverySelection | undefined = row.karaFunReceipt ? { kind: 'karafun', ...row.karaFunReceipt } :
+      row.partyTymeReceipt ? { kind: 'partytyme', ...row.partyTymeReceipt } :
+      row.youtubeSearchReceipt ? { kind: 'youtube', ...row.youtubeSearchReceipt } :
+      row.catalogTrack ? { kind: 'karaokenerds', track: row.catalogTrack } : undefined;
+    if (row.catalogOnly || !row.persisted && !selection) return null;
+    const starred = kjPicks.has(row.id);
+    const label = starred ? `Remove ${row.title} from KJ Picks` : `Star ${row.title} in KJ Picks`;
+    return <Tooltip text={starred ? 'Remove from KJ Picks' : 'Star in KJ Picks'}>
+      <button type="button" className="song-star" aria-pressed={starred} aria-label={label} disabled={busy || starSaving}
+        onDoubleClick={event => event.stopPropagation()} onClick={async event => {
+          event.stopPropagation();
+          if (starWritePending.current) return;
+          starWritePending.current = true;
+          setStarSaving(true);
+          try {
+            if (row.persisted) await mutateCollections({ type: starred ? 'remove' : 'add', playlistId: KJ_PICKS_ID, versionId: row.id });
+            else if (selection) { setCollections(await window.tpv.saveDiscoveredKjPick(selection)); setNotice(''); }
+          } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not update KJ Picks.', 'error'); }
+          finally { setStarSaving(false); starWritePending.current = false; }
+        }}><span aria-hidden="true">{starred ? '★' : '☆'}</span></button>
+    </Tooltip>;
+  };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -633,23 +615,6 @@ function App() {
       void command({ type: 'skip', generationId: state.playback.generationId, confirmed: true });
   };
   const shortcutHint = (label: string, action: ShortcutAction) => `${label}${shortcuts[action].length ? ` (${shortcuts[action].map(formatShortcut).join(', ')}${SHORTCUT_ACTIONS.find(item => item.id === action)?.scope === 'player' ? '; player window' : ''})` : ''}`;
-  const showSongRating = async (version: Pick<Version, 'id' | 'title' | 'source'>) => {
-    const sequence = ++ratingOpenSequence.current;
-    try {
-      const key = recordingKeyFor(version.source) ?? ratingKeys[version.id] ?? (await window.tpv.ratingKeys([version.id]))[version.id];
-      if (!key) { setNotice('This recording needs an imported media fingerprint before it can be rated.', 'error'); return; }
-      const result = await window.tpv.lookupSongRatings([key]);
-      if (sequence !== ratingOpenSequence.current) return;
-      if (result.status !== 'ready') { setNotice(`Ratings are unavailable (${result.status}). Your song and queue are unchanged.`, 'error'); return; }
-      setRatings(current => ({ ...current, ...Object.fromEntries(result.items.map(item => [item.recordingKey, item])) }));
-      setCanRateByKey(current => ({ ...current, ...result.canVoteByKey })); setRatingDialog({ title: version.title, key });
-    } catch { if (sequence === ratingOpenSequence.current) setNotice('Ratings could not be loaded. Your song and queue are unchanged.', 'error'); }
-  };
-  const ratingButton = (version: Version | LibrarySearchVersion | undefined) => {
-    if (!version) return null;
-    const key = recordingKeyFor(version.source) ?? ratingKeys[version.id];
-    return <SongRatingButton title={version.title} rating={key ? ratings[key] ?? null : null} loading={ratingsLoading && !!key && !ratings[key]} onClick={() => void showSongRating(version)} />;
-  };
   const savePreferencePatch = (patch: Partial<Settings>) => run(async () => {
     if (patch.layout === 'rotation') patch = { ...patch, hostPanelSizes: { ...panelSizesRef.current, queue: Math.max(360, Math.min(1000, Math.round(window.innerWidth * .4))) } };
     else if (patch.layout === 'standard') patch = { ...patch, hostPanelSizes: { ...panelSizesRef.current, queue: DEFAULT_HOST_PANEL_SIZES.queue } };
@@ -682,7 +647,7 @@ function App() {
       return;
     }
     if (action === 'stop') { void command({ type: 'stop' }); return; }
-    if (busy || settingsOpen || editingVersion || editingRequest || queueVersion || playlistVersion || ratingDialog) return;
+    if (busy || settingsOpen || editingVersion || editingRequest || queueVersion || playlistVersion) return;
     switch (action) {
       case 'playPause': void playPause(); break;
       case 'previous': void run(() => window.tpv.restartTrack()); break;
@@ -792,11 +757,7 @@ function App() {
           <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId} {...{ missingMedia: missingLocalMedia }}
             onQueue={row => { if (busy || missingLocalMedia.has(row.id)) return; if (row.catalogOnly) { setNotice('Playback is not connected for this service.'); return; } setQueueVersion(row); }}
             onContext={(version, x, y) => setContextMenu({ version, x: Math.max(0, Math.min(x, window.innerWidth - 240)), y: Math.max(0, Math.min(y, window.innerHeight - 330)) })}
-            rating={ratingButton} onScroll={event => {
-              const rows = event.currentTarget.querySelectorAll<HTMLElement>('.song-option');
-              const step = rows[1] && rows[0] ? rows[1].offsetTop - rows[0].offsetTop : rows[0]?.offsetHeight;
-              if (step && step > 0) setRatingWindowStart(Math.max(0, Math.floor(event.currentTarget.scrollTop / step / 40) * 40));
-            }} />
+            star={starButton} />
           <LibraryCatalogPaging state={catalogSearch} />
           <details className="missing-song-request"><summary>Request a missing song</summary>
             <form className="request-form" onSubmit={requestMissingSong}>
@@ -845,7 +806,7 @@ function App() {
       </div>
       <div className="on-stage">
         <div className="on-stage__status"><span className={`status-dot ${active ? 'is-live' : ''}`} aria-hidden="true" /><span className="eyebrow">{active ? (state?.playback?.status === 'paused' ? 'Paused' : 'Playing now') : 'On stage'}</span></div>
-        {active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small>{ratingButton(state?.versions.find(version => version.id === active.versionId))}</> : <span className="muted">No singer on stage</span>}
+        {active ? <><strong>{current.singer}</strong><small>{current.title} · {state?.playback?.status === 'paused' ? 'Paused' : 'Playing'}</small></> : <span className="muted">No singer on stage</span>}
       </div>
       <div className="rotation__section-heading"><span className="eyebrow">Up next · {future.length} waiting</span>{future.some(request => queueWaits.get(request.id) == null) && <Tooltip text="Waits are unavailable when playback is stopped or paused, automatic advance is off, the current timing is unknown, or a song or singer is not ready."><span tabIndex={0}>Some waits unavailable ⓘ</span></Tooltip>}</div>
       <div className="rotation__actions">
@@ -878,7 +839,7 @@ function App() {
           event.preventDefault();
           const row = event.currentTarget.parentElement?.children.item(destination);
           if (row instanceof HTMLElement) row.focus();
-        }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{held ? 'Singer on hold' : request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Next · unavailable under current policy' : 'Next in queue') : returnAt > clockMs ? `Unavailable · back in ${Math.ceil((returnAt - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? 'Promoted · next' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}{queueWaits.get(request.id) != null && <Tooltip text="Approximate wait assumes four minutes per queued song, the configured gap, uninterrupted playback, and playable files. Actual wait can change."><small tabIndex={0} aria-label={`Approximate wait ${formatQueueWait(queueWaits.get(request.id)!)}`}>{formatQueueWait(queueWaits.get(request.id)!)}</small></Tooltip>}</div>{ratingButton(state?.versions.find(version => version.id === request.versionId))}</div></div>; })}</div>
+        }}><div className="queue-row__head"><span className="queue-row__number">{String(index + 1).padStart(2, '0')}</span><div><strong>{item.singer}</strong><small>{item.title}</small><small>{held ? 'Singer on hold' : request.status === 'staged' ? (state && !hostVersionAllowed(request.versionId) ? 'Next · unavailable under current policy' : 'Next in queue') : returnAt > clockMs ? `Unavailable · back in ${Math.ceil((returnAt - clockMs) / 60000)} min` : state && !hostVersionAllowed(request.versionId) ? 'Unavailable under current policy' : state?.promotedRequestId === request.id ? 'Promoted · next' : settings.rotationMode === 'singer' ? `Round ${request.round}` : 'In request order'}</small>{preparation && <small className={preparation.failed ? 'queue-row__preparation is-failed' : 'queue-row__preparation'}>{preparation.label}</small>}{queueWaits.get(request.id) != null && <Tooltip text="Approximate wait assumes four minutes per queued song, the configured gap, uninterrupted playback, and playable files. Actual wait can change."><small tabIndex={0} aria-label={`Approximate wait ${formatQueueWait(queueWaits.get(request.id)!)}`}>{formatQueueWait(queueWaits.get(request.id)!)}</small></Tooltip>}</div></div></div>; })}</div>
       {!future.length && <p className="empty">Accepted requests will appear here.</p>}
       </div>
       {settings.hostPreviewPosition === 'below' && <>{previewSeparator}{preview}</>}
@@ -924,16 +885,6 @@ function App() {
       setNotice('Queued request updated.', 'success');
     }} />}
     {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} shortcuts={shortcuts} initialSection={settingsSection} focusRequest={settingsFocusRequest} onSaveShortcuts={async value => { setBusy(true); try { setShortcuts(await window.tpv.saveShortcuts(value)); } finally { setBusy(false); } }} onClose={() => setSettingsOpen(false)} onSave={async value => { setBusy(true); try { const saved = await window.tpv.saveSettings(value); setSettings(saved); } finally { setBusy(false); } }} />}
-    {ratingDialog && <SongRatingDialog title={ratingDialog.title} recordingKey={ratingDialog.key} rating={ratings[ratingDialog.key] ?? null} canVote={canRateByKey[ratingDialog.key] === true} onClose={() => setRatingDialog(null)} onOpenPreferences={() => { setRatingDialog(null); openPreferences('ratings'); }} onSave={async value => {
-      ++ratingWriteEpoch.current;
-      setBusy(true);
-      try {
-        const result = await window.tpv.rateSong(ratingDialog.key, value);
-        if (result.status !== 'ready') throw new Error(`Your rating was not confirmed (${result.status}). Check the connection or rating profile and retry explicitly.`);
-        setRatings(current => ({ ...current, [result.item.recordingKey]: result.item })); setRatingReload(current => current + 1); return result.item;
-      } catch (error) { setNotice(error instanceof Error ? error.message : 'Your rating was not confirmed.', 'error'); throw error; }
-      finally { setBusy(false); }
-    }} />}
     {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist, isDuet) => {
       const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist, isDuet });
       if (!result.ok) throw new Error(result.error || 'The song could not be updated.');

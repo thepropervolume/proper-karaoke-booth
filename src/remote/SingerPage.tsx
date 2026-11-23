@@ -4,6 +4,8 @@ import { httpsGuestTransport } from './transport';
 import './singer-page.css';
 import { prepareGuestPhoto } from './photo';
 import { SINGER_ON_HOLD } from '../domain/singer-availability';
+import { SingerStarButton, useSingerProfile } from '../mobile/SingerProfilePanel';
+import { singerRecordingIdentity, starredPlaylist } from '../mobile/singer-profile';
 
 /** Embeddable page; a secure server and asset bundle are still required to use it. */
 export function SingerPage({ client }: { client: SingerClient }) {
@@ -16,12 +18,14 @@ export function SingerPage({ client }: { client: SingerClient }) {
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  const singerProfile = useSingerProfile(view.snapshot?.singerName);
   useEffect(() => {
     if (!view.joined) return;
     const timer = window.setInterval(() => void client.refresh(setView), 15000);
     return () => window.clearInterval(timer);
   }, [client, view.joined]);
   const songs = view.songs;
+  const starred = singerProfile.ready ? starredPlaylist(singerProfile.profile) : undefined;
   const held = view.snapshot?.unavailableUntilMs === SINGER_ON_HOLD;
   const availableIn = Math.ceil(((view.snapshot?.unavailableUntilMs ?? 0) - (view.snapshot?.serverNowMs ?? Date.now())) / 60000);
   return <main className="singer-page">
@@ -77,10 +81,20 @@ export function SingerPage({ client }: { client: SingerClient }) {
         })}</ul> : <p>You have no current requests.</p>}{view.snapshot.requestsTruncated && <p>Showing up to 50 requests, prioritizing active requests.</p>}</section>
         <section><h2>Song library</h2><label>Search host library<input type="search" disabled={!view.snapshot} maxLength={200} value={query} onChange={event => { const value = event.target.value; setQuery(value); void client.search(value, setView); }} /></label>
           {view.searching ? <p>Searching…</p> : !songs.length && <p>No songs match your search.</p>}
+          {singerProfile.storageError && <p role="status">Starred songs are unavailable in this browser.</p>}
           <ul className="singer-songs">{songs.map(song => <li key={song.id}><span><strong>{song.title}</strong><br />{song.artist}</span>
+            <SingerStarButton store={singerProfile} recording={{ title: song.title, artist: song.artist, source: song.source,
+              recordingKey: song.recordingId, roomId: view.snapshot?.showId, id: song.id }} />
             <button disabled={view.busy || view.uncertain} onClick={() => void client.request(song.id, setView)}>Request</button></li>)}</ul>
           {view.nextOffset !== null && <button disabled={view.busy} onClick={() => void client.more(setView)}>Load more songs</button>}
         </section>
+        {starred && <details>
+          <summary>{starred.name} ({starred.recordings.length})</summary>
+          <ul className="singer-songs">{starred.recordings.map(recording => <li key={singerRecordingIdentity(recording)}>
+            <span><strong>{recording.title}</strong><br />{recording.artist}</span>
+            <SingerStarButton store={singerProfile} recording={recording} />
+          </li>)}</ul>
+        </details>}
         <section><h2>Can't find your song?</h2><p>Send a request to the host. It will not be added to the singer rotation automatically.</p>
           <form onSubmit={event => { event.preventDefault(); void client.requestMissing(missingTitle, missingArtist, setView); }}>
             <label>Song title<input value={missingTitle} onChange={event => setMissingTitle(event.target.value)} maxLength={200} required /></label>

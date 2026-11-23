@@ -609,6 +609,8 @@ a { color: var(--accent); }
 }
 .singer-song-heading > div, .mobile-playlist-details li > span { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
 .singer-inline-actions { flex-wrap: wrap; }
+.singer-inline-actions .singer-song-star { min-inline-size: 44px; font-size: 1.25rem; }
+.singer-inline-actions .singer-song-star[aria-pressed='true'] { color: var(--accent); }
 .mobile-save-playlist > button { padding-block: .35rem; background: var(--panel-soft); font-size: .84rem; }
 .mobile-save-playlist p { margin-block: .2rem; font-size: .86rem; }
 .singer-nearby-option { display: block; margin-block: .3rem; max-inline-size: 100%; overflow-wrap: anywhere; }
