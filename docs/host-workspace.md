@@ -145,6 +145,10 @@ Library results mark a confirmed missing local file as **File missing** and disa
 
 ## Catalog and KJ Picks
 
+Use **Source** above the Song Library results to narrow the current view. **All sources** combines enabled providers and shows YouTube as a fallback when another visible source has the same song. Select **YouTube** to browse those recordings directly. Source switches in Preferences control which providers can appear in the filter.
+
+Open **Columns** above the results to choose fields or restore the defaults. Booth remembers the selection. The defaults are title, artist, duration, service/location, DJ code and release number, BPM, key and date added. DJ code, BPM and key appear only when the results include those values. YouTube uses its channel name and publication date when available and infers artist and title from common karaoke video naming patterns.
+
 The unified result list identifies each provider with a label and 3px left border: local/imported purple `#601CE9`, Karaoke Nerds blue `#007bff`, YouTube red `#ff0033`, KaraFun pink `#d5167a`. Right-click any source for the common menu; unsupported actions are disabled. Connected KaraFun and Party Tyme consumer Premium can queue. KaraFun rows stay hidden while signed out. The separate public Party Tyme Pro export and available Sunfly/Stingray metadata remain explicitly Search Only. Sunfly Store is bounded title/SF-SKU discovery, while protected Sunfly/Stingray still requires issued profiles. See [provider limits](provider-catalog-search.md).
 
 Sources distinguishes public/developer catalog modes. **Choose Developer Profile…** selects optional protected Sunfly access. **Use Public Store Search** clears its selection only and retains the credential file; a bad explicitly selected profile is an error, never a silent public fallback. Stingray's **Remove Profile Selection** likewise keeps its file and leaves Stingray unconfigured. Store results retain the exact SF SKU separately from `store:productID`; these store identities are not streaming identities or proof of subscription access. Missing artist/duration remains unknown; enrichment never guesses from a URL slug.

@@ -1,0 +1,75 @@
+import { execFile } from 'node:child_process';
+import { lstat } from 'node:fs/promises';
+import { extname, isAbsolute } from 'node:path';
+import { promisify } from 'node:util';
+import { libraryBpm, libraryMusicalKey, type LibraryResultMetadata } from '../domain/library-result-fields';
+import type { StoredMedia } from './store';
+
+const probe = promisify(execFile);
+export const MAX_LIBRARY_METADATA_BATCH = 32;
+const CACHE_SIZE = 2000;
+
+export function readContainerMetadata(value: unknown): LibraryResultMetadata {
+  const format = value && typeof value === 'object' ? (value as { format?: unknown }).format : null;
+  if (!format || typeof format !== 'object') return {};
+  const { duration, tags } = format as { duration?: unknown; tags?: Record<string, unknown> };
+  const normalized = new Map(Object.entries(tags ?? {}).map(([key, v]) => [key.toLowerCase(), v]));
+  const seconds = typeof duration === 'string' && /^\d+(?:\.\d+)?$/.test(duration) ? Number(duration) : 0;
+  const bpm = libraryBpm(normalized.get('bpm') ?? normalized.get('tbpm') ?? normalized.get('tempo'));
+  const musicalKey = libraryMusicalKey(normalized.get('initialkey') ?? normalized.get('tkey') ?? normalized.get('key'));
+  return {
+    ...(seconds > 0 && seconds <= 86400 ? { durationSeconds: seconds } : {}),
+    ...(bpm === undefined ? {} : { bpm }),
+    ...(musicalKey === undefined ? {} : { musicalKey }),
+  };
+}
+
+/** Probe only visible host-library files. Keep paths private and cap parallel probes, including during fast scrolling. */
+export class LibraryMediaMetadata {
+  private readonly cache = new Map<string, { identity: string; details: LibraryResultMetadata }>();
+  private batches = 0;
+
+  async load(media: readonly StoredMedia[]): Promise<Record<string, LibraryResultMetadata> | null> {
+    if (media.length > MAX_LIBRARY_METADATA_BATCH) throw new Error('Too many library metadata requests.');
+    // The view retries a busy read only while those rows are still visible.
+    if (this.batches >= 2) return null;
+    this.batches++;
+    try {
+      const entries: [string, LibraryResultMetadata][] = [];
+      let cursor = 0;
+      const readRemaining = async () => {
+        while (cursor < media.length) {
+          const item = media[cursor++];
+          entries.push([item.id, await this.read(item)]);
+        }
+      };
+      await Promise.all([readRemaining(), readRemaining()]);
+      return Object.fromEntries(entries);
+    } finally { this.batches--; }
+  }
+
+  private async read(item: StoredMedia): Promise<LibraryResultMetadata> {
+    if (!isAbsolute(item.path)) return {};
+    const file = await lstat(item.path).catch(() => null);
+    if (!file?.isFile()) return {};
+    const identity = JSON.stringify([item.path, item.fingerprint, file.size, file.mtimeMs, file.birthtimeMs]);
+    const cached = this.cache.get(item.id);
+    if (cached?.identity === identity) return cached.details;
+    const dateAdded = file.birthtimeMs > 0 ? file.birthtime.toISOString().slice(0, 10) : undefined;
+    let details: LibraryResultMetadata = dateAdded ? { dateAdded } : {};
+    if (extname(item.path).toLowerCase() === '.mp4') {
+      try {
+        // Match the existing FFprobe path restrictions for imported MP4 container tags.
+        const { stdout } = await probe('ffprobe', [
+          '-v', 'error', '-protocol_whitelist', 'file,pipe', '-f', 'mov', '-enable_drefs', '0', '-i', item.path,
+          '-show_entries', 'format=duration:format_tags=bpm,TBPM,initialkey,TKEY,key,tempo', '-of', 'json=string_validation=fail',
+        ], { timeout: 3500, maxBuffer: 16384, windowsHide: true, killSignal: 'SIGKILL' });
+        details = { ...details, ...readContainerMetadata(JSON.parse(stdout)) };
+      } catch { /* Unsupported media or missing FFprobe can still show its filesystem date. */ }
+    }
+    this.cache.delete(item.id);
+    if (this.cache.size >= CACHE_SIZE) this.cache.delete(this.cache.keys().next().value!);
+    this.cache.set(item.id, { identity, details });
+    return details;
+  }
+}

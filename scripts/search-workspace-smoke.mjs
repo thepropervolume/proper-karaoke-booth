@@ -27,7 +27,7 @@ const youtube = Array.from({ length: 5 }, (_, index) => ({ provider: 'youtube', 
   title: `YouTube Search Song ${index}`, artist: 'Synthetic Artist', videoTitle: `Synthetic Artist - Search Song ${index} Karaoke`,
   watchUrl: `https://www.youtube.com/watch?v=ytqa${String(index).padStart(7, '0')}`, channelId: 'UC' + 'A'.repeat(22),
   channelHandle: '@synthetic-karaoke', channelName: 'Synthetic Karaoke', channelUrl: 'https://www.youtube.com/channel/UC' + 'A'.repeat(22),
-  durationSeconds: 180, channelApproval: 'karaoke-hint', metadataSource: 'youtube-metadata' }));
+  durationSeconds: 180, dateAdded: '2024-04-15', channelApproval: 'karaoke-hint', metadataSource: 'youtube-metadata' }));
 const catalogs = ['partytyme', 'sunfly', 'stingray'].map(provider => ({ provider, label: provider, status: 'ok', message: '', songs: [
   { provider, id: 'synthetic-1', title: `${provider} Search Song`, artist: 'Synthetic Artist', durationSeconds: 180,
     language: 'en', webUrl: null, playbackAvailable: false },
@@ -142,6 +142,25 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await songs.getByText('Community Search Song 01', { exact: true }).waitFor();
   await songs.getByText('Saved Metadata Override', { exact: true }).waitFor();
   assert.equal(await songs.getByText('Community Search Song 00', { exact: true }).count(), 0, 'Stored host metadata must win over exact catalog duplicates.');
+  const headers = host.locator('.song-list__columns span');
+  assert.deepEqual(await headers.allTextContents(), ['Name / Title', 'Artist', 'Duration', 'Service / Location', 'Date Added']);
+  const localRow = songs.locator('[data-provider="local"]').first();
+  await localRow.getByText('0:02', { exact: true }).waitFor();
+  const sourceFilter = host.getByRole('combobox', { name: 'Source', exact: true });
+  await sourceFilter.selectOption('youtube');
+  await songs.getByText('YouTube Search Song 0', { exact: true }).waitFor();
+  assert.equal(await songs.locator('[data-provider]:not([data-provider="youtube"])').count(), 0);
+  const youtubeRow = songs.locator('[data-provider="youtube"]').first();
+  assert.equal(await youtubeRow.locator('[data-field="source"]').textContent(), 'Synthetic Karaoke');
+  assert.ok(await youtubeRow.locator('[data-field="date"]').textContent());
+  await sourceFilter.selectOption('all');
+  await songs.getByText('KaraFun Search Song', { exact: true }).waitFor();
+  await host.locator('.library-fields summary').click();
+  await host.getByRole('checkbox', { name: 'Duration', exact: true }).click();
+  await waitForHostCondition(host, async () => !(await window.tpv.getSettings()).settings.libraryResultFields.includes('duration'));
+  await host.getByRole('button', { name: 'Restore Defaults', exact: true }).click();
+  await waitForHostCondition(host, async () => (await window.tpv.getSettings()).settings.libraryResultFields.includes('duration'));
+  await host.locator('.library-fields summary').click();
   const colors = { local: 'rgb(96, 28, 233)', karafun: 'rgb(213, 22, 122)', karaokenerds: 'rgb(0, 123, 255)', youtube: 'rgb(255, 0, 51)', partytyme: 'rgb(250, 204, 21)' };
   for (const [provider, color] of Object.entries(colors)) {
     const row = songs.locator(`[data-provider="${provider}"]`).first(); await row.waitFor();
@@ -153,7 +172,7 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
     const style = getComputedStyle(node);
     return { height: node.getBoundingClientRect().height, radius: style.borderRadius };
   });
-  assert.ok(compact.height >= 48 && compact.height <= 62 && parseFloat(compact.radius) === 0, `Song results must be compact, accessible flat rows: ${JSON.stringify(compact)}`);
+  assert.ok(compact.height >= 34 && compact.height <= 50 && parseFloat(compact.radius) === 0, `Song results must be compact, accessible flat rows: ${JSON.stringify(compact)}`);
   const dayKeyline = await partyRow.evaluate(node => { const line = getComputedStyle(node, '::before'); return { content: line.content, color: line.backgroundColor, width: line.width }; });
   assert.equal(dayKeyline.content, '""'); assert.equal(dayKeyline.color, 'rgb(107, 82, 0)'); assert.equal(dayKeyline.width, '1px', 'Day theme keeps a contrasting edge next to the yellow stripe.');
   for (const provider of ['local', 'karafun', 'karaokenerds', 'youtube', 'partytyme', 'sunfly', 'stingray']) {

@@ -80,3 +80,14 @@ test('cached generic YouTube rows also defer to other sources without deleting s
   const rows = unifiedSongResults(library, new Set(['cached', 'file']), { karaFunConnected: false, sort: 'import-oldest' });
   assert.deepEqual(rows.map(row => row.id), ['file']); assert.equal(library.length, 2); assert.equal(library[0].id, 'cached');
 });
+
+test('source filter limits the view before fallback matching and keeps exact provider metadata', () => {
+  const local = [{ id: 'local', artist: 'Oasis', title: 'Wonderwall', rating: 'clean' as const }];
+  const videos = youtube([{ videoId: 'Discovery01', title: 'Wonderwall', artist: 'Oasis' }]);
+  Object.assign(videos.songs[0], { channelName: 'A karaoke channel', durationSeconds: 240, dateAdded: '2024-03-01' });
+  const input = { karaFunConnected: false, sort: 'import-oldest' as const, youtube: videos };
+  assert.deepEqual(unifiedSongResults(local, new Set(['local']), input).map(row => row.id), ['local']);
+  const rows = unifiedSongResults(local, new Set(['local']), { ...input, sourceFilter: 'youtube' });
+  assert.deepEqual(rows.map(row => [row.resultProvider, row.channelName, row.durationSeconds, row.dateAdded]), [['youtube', 'A karaoke channel', 240, '2024-03-01']]);
+  assert.deepEqual(unifiedSongResults(local, new Set(['local']), { ...input, sourceFilter: 'youtube', sourceVisibility: { youtube: false } }), []);
+});

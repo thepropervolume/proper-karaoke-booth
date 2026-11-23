@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { parseCommunityCatalog } from '../catalog/karaokenerds';
 import { youtubeVideoId } from '../catalog/karaokenerds-brand-map';
+import { libraryDate } from '../domain/library-result-fields';
 
-export type LocalCatalogTrack = { id: number | string; artist: string; title: string; brand: string | null; brandSlug?: string; youtubeId: string | null };
+export type LocalCatalogTrack = { id: number | string; artist: string; title: string; brand: string | null; brandSlug?: string; youtubeId: string | null; dateAdded?: string };
 export type LocalCatalogResult =
   | { status: 'ready'; tracks: LocalCatalogTrack[]; limited: boolean; nextCursor?: string | null; lastSuccess: number | null; source?: 'shared' | 'offline-cache'; fetchedAt?: number; stale?: boolean; revision?: string | null; cachePersisted?: boolean }
   | { status: 'missing' | 'unavailable' | 'uninitialized' | 'unauthorized' | 'forbidden' | 'configuration-error' | 'rate-limited' | 'timed-out' | 'invalid-request' | 'invalid-response'; tracks: []; limited: false; lastSuccess: null };
@@ -57,7 +58,9 @@ export class LocalCommunityBrowser {
           const brands = new Map(mappings.map(item => [item.upstream_brand, item.display_name]));
           const slugs = new Map(mappings.filter(item => item.slug && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(item.slug)).map(item => [item.upstream_brand, item.slug!]));
           this.entries = catalog.Items.map(item => {
-            const track = { id: item.Id, artist: item.Artist, title: item.Title, brand: brands.get(item.Brand) ?? null, ...(slugs.has(item.Brand) ? {brandSlug: slugs.get(item.Brand)!} : {}), youtubeId: youtubeVideoId(item.Watch) };
+            const dateAdded = libraryDate(item.Created);
+            const track = { id: item.Id, artist: item.Artist, title: item.Title, brand: brands.get(item.Brand) ?? null, ...(slugs.has(item.Brand) ? {brandSlug: slugs.get(item.Brand)!} : {}), youtubeId: youtubeVideoId(item.Watch),
+              ...(dateAdded ? { dateAdded } : {}) };
             return { track, search: normalize(`${track.artist} ${track.title} ${track.brand ?? ''}`) };
           });
           this.snapshotDigest = createHash('sha256').update(row.snapshot).update(JSON.stringify(mappings)).digest('hex');

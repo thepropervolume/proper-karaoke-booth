@@ -4,6 +4,7 @@ import { lstat, open } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { SharedCatalogClient } from './shared-catalog-client';
 import type { LocalCatalogResult } from './karaokenerds-local-browser';
+import { libraryDate } from '../domain/library-result-fields';
 
 export const PUBLIC_CATALOG_ORIGIN = 'https://apps.thepropervolume.com';
 
@@ -110,7 +111,8 @@ export class SharedCatalogConnection {
     if (!this.current(connection)) return {status:'unavailable',tracks:[],limited:false,lastSuccess:null};
     if (result.status !== 'ready') return {status:result.status,tracks:[],limited:false,lastSuccess:null};
     return {status:'ready',tracks:result.items.map(item => ({id:item.youtubeId,artist:item.artist,title:item.title,
-      brand:item.brandSlug || item.brandCode || null,...(item.brandSlug ? {brandSlug:item.brandSlug} : {}),youtubeId:item.youtubeId})),
+      brand:item.brandSlug || item.brandCode || null,...(item.brandSlug ? {brandSlug:item.brandSlug} : {}),youtubeId:item.youtubeId,
+      ...(item.uploadDate ? {dateAdded:libraryDate(item.uploadDate)} : {})})),
       limited:result.nextCursor !== null,nextCursor:result.nextCursor === null ? null : prefix + result.nextCursor,lastSuccess:result.lastSuccess,source:result.source === 'cache' ? 'offline-cache' : 'shared',
       fetchedAt:result.fetchedAt,stale:result.stale,revision:result.revision,cachePersisted:result.cachePersisted};
   }

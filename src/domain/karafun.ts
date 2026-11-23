@@ -1,3 +1,5 @@
+import type { LibraryResultMetadata } from './library-result-fields';
+
 /** Public account/search DTOs never contain account identity, sessions or media URLs. */
 export type KaraFunAccountStatus = {
   state: 'disconnected' | 'connecting' | 'connected' | 'expired';
@@ -6,7 +8,7 @@ export type KaraFunAccountStatus = {
   retrySavedSignIn?: boolean;
   persistence: 'memory-only' | 'os-protected';
 };
-export type KaraFunSong = {
+export type KaraFunSong = LibraryResultMetadata & {
   songId: string; catalog: 'catalog' | 'community'; title: string; artist: string;
   durationSeconds: number | null; explicit: boolean | null;
 };

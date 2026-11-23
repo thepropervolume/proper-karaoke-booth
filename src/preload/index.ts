@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('tpv', {
   },
   getLibraryFilenames: () => ipcRenderer.invoke('host:get-library-filenames'),
   getMissingLocalMedia: () => ipcRenderer.invoke('host:get-missing-local-media'),
+  getLibraryMetadata: (ids: string[]) => ipcRenderer.invoke('host:get-library-metadata', ids),
   previewFilenameMetadata: () => ipcRenderer.invoke('host:preview-filename-metadata'),
   readEmbeddedMetadata: (versionId: string, requestId: string) => ipcRenderer.invoke('host:read-embedded-metadata', versionId, requestId),
   cancelEmbeddedMetadata: (requestId: string) => ipcRenderer.invoke('host:cancel-embedded-metadata', requestId),

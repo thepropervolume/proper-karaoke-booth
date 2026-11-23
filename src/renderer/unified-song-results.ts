@@ -6,11 +6,13 @@ import type { ProviderCatalogId, ProviderCatalogSearchResult, ProviderCatalogSon
 import type { LibrarySort } from '../domain/library-view';
 import { songSearchIdentity as songKey } from '../domain/song-identity';
 import { sourceForVersion } from '../domain/source-visibility';
+import type { LibraryResultMetadata } from '../domain/library-result-fields';
 
 export type SongResultProvider = 'local' | 'youtube' | 'karaokenerds' | ProviderCatalogId;
-export type SongResult = LibrarySearchVersion & {
+export type SongResult = LibrarySearchVersion & LibraryResultMetadata & {
   resultProvider: SongResultProvider; persisted: boolean; catalogOnly?: ProviderCatalogSong;
   durationSeconds?: number | null;
+  channelName?: string;
   karaFunReceipt?: { searchId: string; songId: string; catalog: 'catalog' | 'community' };
   partyTymeReceipt?: { searchId: string; videoId: string };
   youtubeSearchReceipt?: { searchId: string; videoId: string };
@@ -31,13 +33,28 @@ export function unifiedSongResults(library: readonly LibrarySearchVersion[], sav
   karaFun?: KaraFunSearchReply | null; youtube?: YouTubeSearchResult | null;
   partyTyme?: PartyTymeSearchReply | null; partyTymeConnected?: boolean;
   sourceVisibility?: Partial<Record<SongResultProvider, boolean>>;
+  sourceFilter?: SongResultProvider | 'all';
   catalogs?: readonly ProviderCatalogSearchResult[] | null; karaFunConnected: boolean; sort: LibrarySort;
 }): SongResult[] {
   const rows: SongResult[] = [], seen = new Set<string>();
   // Apply visibility before YouTube duplicate suppression: a hidden source
   // must not hide an otherwise eligible YouTube recording of the same song.
-  const append = (row: SongResult) => { if (input.sourceVisibility?.[row.resultProvider] === false) return; const key = row.catalogOnly ? row.catalogOnly.provider === 'karafun' ? `karafun:catalog:${row.catalogOnly.id}` : `catalog:${row.catalogOnly.provider}:${row.catalogOnly.id}` : identity(row); if (!seen.has(key)) { seen.add(key); rows.push(row); } };
-  for (const row of library) if ((row.source?.provider !== 'karafun' || input.karaFunConnected) && (row.source?.provider !== 'partytyme' || input.partyTymeConnected)) append({ ...row, persisted: savedIds.has(row.id), resultProvider: sourceForVersion(row) });
+  const append = (row: SongResult) => {
+    if (input.sourceVisibility?.[row.resultProvider] === false || input.sourceFilter && input.sourceFilter !== 'all' && row.resultProvider !== input.sourceFilter) return;
+    const key = row.catalogOnly ? `catalog:${row.catalogOnly.provider}:${row.catalogOnly.id}` : identity(row);
+    if (!seen.has(key)) { seen.add(key); rows.push(row); }
+  };
+  const youtubeMetadata = new Map(input.youtube?.songs.map(song => [song.videoId, song]) ?? []);
+  const karaFunMetadata = new Map(input.karaFun?.songs.map(song => [`${song.catalog}:${song.songId}`, song]) ?? []);
+  const partyTymeMetadata = new Map(input.partyTyme?.songs.map(song => [song.videoId, song]) ?? []);
+  for (const row of library) if ((row.source?.provider !== 'karafun' || input.karaFunConnected) && (row.source?.provider !== 'partytyme' || input.partyTymeConnected)) {
+    const resultProvider = sourceForVersion(row);
+    const youtube = resultProvider === 'youtube' && row.source?.provider === 'youtube' ? youtubeMetadata.get(row.source.videoId) : undefined;
+    const karaFun = row.source?.provider === 'karafun' ? karaFunMetadata.get(`${row.source.catalog}:${row.source.songId}`) : undefined;
+    const partyTyme = row.source?.provider === 'partytyme' ? partyTymeMetadata.get(row.source.videoId) : undefined;
+    append({ ...row, persisted: savedIds.has(row.id), resultProvider, durationSeconds: youtube?.durationSeconds ?? karaFun?.durationSeconds ?? partyTyme?.durationSeconds,
+      channelName: youtube?.channelName, dateAdded: row.dateAdded ?? youtube?.dateAdded ?? karaFun?.dateAdded, bpm: karaFun?.bpm, musicalKey: karaFun?.musicalKey });
+  }
   if (input.partyTymeConnected && input.partyTyme?.status === 'ok' && input.partyTyme.searchId) for (const song of input.partyTyme.songs) append({
     id: `partytyme-search:consumer:${song.videoId}`, title: song.title, artist: song.artist, rating: 'unrated',
     source: { provider: 'partytyme', catalog: 'consumer', videoId: song.videoId }, resultProvider: 'partytyme', persisted: false,
@@ -48,11 +65,13 @@ export function unifiedSongResults(library: readonly LibrarySearchVersion[], sav
     id: `karafun-search:${song.catalog}:${song.songId}`, title: song.title, artist: song.artist,
     source: { provider: 'karafun', catalog: song.catalog, songId: song.songId }, rating: song.explicit === true ? 'explicit' : song.explicit === false ? 'clean' : 'unrated',
     resultProvider: 'karafun', persisted: false, durationSeconds: song.durationSeconds,
+    dateAdded: song.dateAdded, bpm: song.bpm, musicalKey: song.musicalKey,
     karaFunReceipt: { searchId: input.karaFun.searchId, songId: song.songId, catalog: song.catalog },
   });
   if (input.youtube?.status === 'ok' && input.youtube.searchId) for (const song of input.youtube.songs) append({
     id: `youtube-search:${song.videoId}`, title: song.title, artist: song.artist || '', rating: 'unrated', source: { provider: 'youtube', videoId: song.videoId },
-    resultProvider: 'youtube', persisted: false, durationSeconds: song.durationSeconds, youtubeSearchReceipt: { searchId: input.youtube.searchId, videoId: song.videoId },
+    resultProvider: 'youtube', persisted: false, durationSeconds: song.durationSeconds, channelName: song.channelName, dateAdded: song.dateAdded,
+    youtubeSearchReceipt: { searchId: input.youtube.searchId, videoId: song.videoId },
   });
   // KaraFun has one authenticated search path; public metadata must not reappear
   // as an unplayable substitute when that account is disconnected.
@@ -63,7 +82,6 @@ export function unifiedSongResults(library: readonly LibrarySearchVersion[], sav
   const discovery = (row: SongResult) => !!row.youtubeSearchReceipt;
   const availableSongs = new Set(rows.filter(row => row.resultProvider !== 'youtube').map(row => songKey(row.artist, row.title)).filter((key): key is string => key !== null));
   const savedYouTubeSongs = new Set(rows.filter(row => row.resultProvider === 'youtube' && !discovery(row)).map(row => songKey(row.artist, row.title)).filter((key): key is string => key !== null));
-  const youtubeMetadata = new Map(input.youtube?.songs.map(song => [song.videoId, song]) ?? []);
   const visible = rows.filter(row => {
     if (row.resultProvider !== 'youtube') return true;
     const song = row.youtubeSearchReceipt ? youtubeMetadata.get(row.youtubeSearchReceipt.videoId) : undefined;

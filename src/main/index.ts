@@ -15,6 +15,7 @@ import { isMissingSongStatus, normalizeMissingRequest } from '../domain/missing-
 import { metadataFromPath } from '../domain/metadata';
 import { previewMetadata } from './metadata-preview';
 import { readEmbeddedMp4, type EmbeddedMetadataResult } from './embedded-metadata';
+import { LibraryMediaMetadata, MAX_LIBRARY_METADATA_BATCH } from './library-media-metadata';
 import { Store, type StoredMedia } from './store';
 import { readSettings, writeSettings } from './settings';
 import { nextAccentColor, type Settings } from '../domain/settings';
@@ -122,6 +123,7 @@ let displayFullscreen: DisplayFullscreen | null = null;
 let displayId: number | null = null;
 let displayOutputIds = new Set<number>();
 let store: Store<ShowState>;
+const libraryMediaMetadata = new LibraryMediaMetadata();
 let karaFunAccount: KaraFunAccount;
 let partyTymeAccount: PartyTymeAccount;
 let partyTymeHost: PartyTymeHost;
@@ -1645,6 +1647,15 @@ else {
       return [...reviewableMedia()].map(id => ({ id, path: locations.get(id) ?? '' }));
     });
     return result.status === 'completed' ? result.issues.filter(issue => issue.reason !== 'unavailable').map(issue => issue.versionId) : null;
+  });
+  ipcMain.handle('host:get-library-metadata', (event, ids: unknown) => {
+    guardHost(event.sender.id);
+    if (!Array.isArray(ids) || ids.length > MAX_LIBRARY_METADATA_BATCH ||
+        !ids.every(id => typeof id === 'string' && id.length > 0 && id.length <= 200)) throw new Error('Invalid library metadata request.');
+    return libraryMediaMetadata.load([...new Set<string>(ids)].flatMap(id => {
+      const media = store.media(id);
+      return media ? [media] : [];
+    }));
   });
   ipcMain.handle('host:preview-filename-metadata', event => {
     guardHost(event.sender.id);

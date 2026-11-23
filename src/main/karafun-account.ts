@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { BrowserWindow } from 'electron';
 import type { KaraFunAccountStatus, KaraFunSong } from '../domain/karafun';
+import { libraryBpm, libraryDate, libraryMusicalKey } from '../domain/library-result-fields';
 import type { KaraFunSource } from '../domain/streaming-source';
 import { karaFunElements, karaFunEnvelopeOk, karaFunSignedRequest, karaFunValue, parseKaraFunXml, type KaraFunXml } from './karafun-account-protocol';
 import { KaraFunSessionVaultError, type KaraFunRememberedSession, type KaraFunSessionStore } from './karafun-session-vault';
@@ -233,7 +234,11 @@ export class KaraFunAccount {
         const id = node.attributes.id, title = karaFunValue(node, 'title'), artist = karaFunValue(node, 'artist') ?? '';
         if (!songId(id) || !ids.includes(id) || seen.has(id) || !text(title) || !text(artist, true)) continue;
         const seconds = Number(karaFunValue(node, 'len')), explicit = karaFunValue(node, 'explicit');
+        const bpm = libraryBpm(karaFunValue(node, 'bpm'));
+        const musicalKey = libraryMusicalKey(karaFunValue(node, 'key') ?? karaFunValue(node, 'initialkey'));
+        const dateAdded = libraryDate(karaFunValue(node, 'date_added') ?? karaFunValue(node, 'added'));
         songs.push({ songId: id, catalog: 'catalog', title: title.trim(), artist: artist.trim(), durationSeconds: Number.isFinite(seconds) && seconds > 0 && seconds <= 86400 ? seconds : null,
+          ...(bpm ? { bpm } : {}), ...(musicalKey ? { musicalKey } : {}), ...(dateAdded ? { dateAdded } : {}),
           explicit: explicit === '1' || explicit?.toLowerCase() === 'true' ? true : explicit === '0' || explicit?.toLowerCase() === 'false' ? false : null }); seen.add(id);
       }
       return songs;

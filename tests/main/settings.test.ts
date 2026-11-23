@@ -5,6 +5,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readSettings, writeSettings } from '../../src/main/settings';
 import { nextAccentColor } from '../../src/domain/settings';
+import { DEFAULT_LIBRARY_RESULT_FIELDS } from '../../src/domain/library-result-fields';
+
+test('custom library columns persist while older settings get defaults', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-library-columns-'));
+  const path = join(directory, 'settings.json');
+  try {
+    writeFileSync(path, '{}');
+    const defaults = readSettings(path);
+    assert.deepEqual(defaults.libraryResultFields, DEFAULT_LIBRARY_RESULT_FIELDS);
+    const saved = writeSettings(path, { ...defaults, libraryResultFields: ['filename', 'title', 'source'] });
+    assert.deepEqual(readSettings(path).libraryResultFields, ['title', 'source', 'filename']);
+    assert.throws(() => writeSettings(path, { ...saved, libraryResultFields: ['artist'] }), /title field/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 
 test('volume persists, upgrades older preferences, and rejects invalid edits without overwriting', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-settings-test-'));

@@ -1,10 +1,11 @@
 import { visibleVersions, type ShowState, type Version } from './index';
 import type { CatalogRequestTrack } from './catalog-request';
 import { libraryView, type LibraryFilter, type LibrarySort } from './library-view';
+import { libraryDate } from './library-result-fields';
 
-export type LibraryCatalogTrack = { youtubeId: string | null; title: string; artist: string; brandSlug?: string };
+export type LibraryCatalogTrack = { youtubeId: string | null; title: string; artist: string; brandSlug?: string; dateAdded?: string };
 /** A catalog-only row is a selection, never a persisted show version. */
-export type LibrarySearchVersion = Version & { catalogTrack?: CatalogRequestTrack };
+export type LibrarySearchVersion = Version & { catalogTrack?: CatalogRequestTrack; dateAdded?: string };
 const validText = (value: unknown, required = false): value is string => typeof value === 'string' && value.length <= 500 &&
   (!required || !!value.trim()) && !/[\x00-\x1f\x7f\ufffd]/u.test(value);
 
@@ -20,7 +21,11 @@ export function unifiedLibrary(state: ShowState, query: string, filenames: Reado
     rows.push(version);
   };
   // Sort once after merging, so newest-first does not reverse local rows twice.
-  for (const version of libraryView(allowedVersions, query, filenames, 'import-oldest', filter)) append(version);
+  const catalogDates = new Map(matches.map(track => [track.youtubeId, libraryDate(track.dateAdded)]));
+  for (const version of libraryView(allowedVersions, query, filenames, 'import-oldest', filter)) {
+    const dateAdded = version.source?.provider === 'youtube' && catalogDates.get(version.source.videoId);
+    append(dateAdded ? { ...version, dateAdded } : version);
+  }
   const knownVideos = new Set<string>(), allowedByVideo = new Map<string, Version>();
   if (matches.length) {
     for (const version of state.versions) if (version.source?.provider === 'youtube') knownVideos.add(version.source.videoId);
@@ -32,7 +37,7 @@ export function unifiedLibrary(state: ShowState, query: string, filenames: Reado
     if (knownVideos.has(match.youtubeId)) {
       // A catalog match must never create a replacement identity for a blocked song.
       const allowed = allowedByVideo.get(match.youtubeId);
-      if (allowed) append(allowed);
+      if (allowed) append({ ...allowed, dateAdded: catalogDates.get(match.youtubeId) });
       continue;
     }
     const id = `catalog:youtube:${match.youtubeId}`;
@@ -40,7 +45,8 @@ export function unifiedLibrary(state: ShowState, query: string, filenames: Reado
     const track: CatalogRequestTrack = { youtubeId: match.youtubeId, title: match.title, artist: match.artist,
       ...(typeof match.brandSlug === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(match.brandSlug) ? { brandSlug: match.brandSlug } : {}) };
     append({ id, title: track.title, artist: track.artist, rating: 'unrated',
-      source: { provider: 'youtube', videoId: track.youtubeId, ...(track.brandSlug ? { brandSlug: track.brandSlug } : {}) }, catalogTrack: track });
+      source: { provider: 'youtube', videoId: track.youtubeId, ...(track.brandSlug ? { brandSlug: track.brandSlug } : {}) }, catalogTrack: track,
+      dateAdded: catalogDates.get(track.youtubeId) });
   }
   return libraryView(rows, '', filenames, sort, filter) as LibrarySearchVersion[];
 }

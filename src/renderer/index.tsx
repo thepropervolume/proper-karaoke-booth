@@ -55,7 +55,9 @@ import { estimateQueueWaits, formatQueueWait } from '../domain/queue-wait';
 import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { SongResults } from './SongResults';
-import { unifiedSongResults, type SongResult } from './unified-song-results';
+import { RESULT_PROVIDER_LABELS, unifiedSongResults, type SongResult, type SongResultProvider } from './unified-song-results';
+import type { LibraryResultField, LibraryResultMetadata } from '../domain/library-result-fields';
+import { LibraryFieldPicker } from './LibraryFieldPicker';
 import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-streaming-search';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { LibraryCatalogPaging } from './LibraryCatalogStatus';
@@ -112,6 +114,7 @@ declare global {
       seek: (input: PlaybackSeek) => Promise<PlaybackSeekResult>;
       getLibraryFilenames: () => Promise<Record<string, string>>;
       getMissingLocalMedia: () => Promise<string[] | null>;
+      getLibraryMetadata: (ids: string[]) => Promise<Record<string, LibraryResultMetadata> | null>;
       previewFilenameMetadata: () => Promise<import('../main/metadata-preview').MetadataProposal[]>;
       readEmbeddedMetadata: (versionId: string, requestId: string) => Promise<import('../main/embedded-metadata').EmbeddedMetadataResult>;
       cancelEmbeddedMetadata: (requestId: string) => Promise<void>;
@@ -217,6 +220,8 @@ function App() {
   const [providerCatalogRevision, setProviderCatalogRevision] = useState(0);
   const [librarySort, setLibrarySort] = useState<LibrarySort>('import-oldest');
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
+  const [librarySource, setLibrarySource] = useState<SongResultProvider | 'all'>('all');
+  const [savingLibraryFields, setSavingLibraryFields] = useState(false);
   const [libraryFilenames, setLibraryFilenames] = useState<Record<string, string>>({});
   const [filenameRefresh, setFilenameRefresh] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -425,18 +430,32 @@ function App() {
   const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
   const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
   const communityCatalogScope = JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility]);
-  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library' && settings.sourceVisibility.karaokenerds, communityCatalogScope, window.tpv.searchCommunityCatalog);
+  const sourceChoices = (Object.keys(RESULT_PROVIDER_LABELS) as SongResultProvider[]).filter(provider => settings.sourceVisibility[provider]);
+  const sourceFilter = librarySource === 'all' || sourceChoices.includes(librarySource) ? librarySource : 'all';
+  const offersSource = (provider: SongResultProvider) => sourceFilter === 'all' || sourceFilter === provider;
+  useEffect(() => { songList.current?.scrollTo(0, 0); }, [sourceFilter]);
+  const catalogSearch = useLibraryCatalogSearch(search, screen === 'library' && settings.sourceVisibility.karaokenerds && offersSource('karaokenerds'), communityCatalogScope, window.tpv.searchCommunityCatalog);
   const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility, karaFunAccount.state, karaFunAccount.revision, partyTymeAccount.state, partyTymeAccount.revision]);
-  const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all', providerCatalogScope, window.tpv.searchProviderCatalog);
+  const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all'
+    && (offersSource('partytyme') || offersSource('sunfly') || offersSource('stingray')), providerCatalogScope, window.tpv.searchProviderCatalog);
   const libraryRows = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
     catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version)) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result, blacklist]);
-  const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, settings.sourceVisibility.karafun && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
-  const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, settings.sourceVisibility.partytyme && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
-  const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.sourceVisibility.youtube && settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
+  const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, settings.sourceVisibility.karafun && offersSource('karafun') && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
+  const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, settings.sourceVisibility.partytyme && offersSource('partytyme') && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
+  const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.sourceVisibility.youtube && offersSource('youtube') && settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
     JSON.stringify([providerCatalogScope, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]));
   const filtered = useMemo(() => unifiedSongResults(libraryRows, new Set(state?.versions.map(row => row.id)), {
-    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort, sourceVisibility: settings.sourceVisibility,
-  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist, settings.sourceVisibility]);
+    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort, sourceVisibility: settings.sourceVisibility, sourceFilter,
+  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist, settings.sourceVisibility, sourceFilter]);
+
+  const saveLibraryFields = async (fields: readonly LibraryResultField[]) => {
+    setSavingLibraryFields(true);
+    try {
+      const saved = await window.tpv.saveSettings({ libraryResultFields: [...fields] });
+      setSettings(current => ({ ...current, libraryResultFields: saved.libraryResultFields }));
+    } catch (error) { setNotice(`Could not save search columns: ${String(error)}`, 'error'); }
+    finally { setSavingLibraryFields(false); }
+  };
 
   const pending = state?.requests.filter(r => r.status === 'pending') ?? [];
   const future = state ? orderedFuture(state, settings.rotationMode, clockMs) : [];
@@ -739,7 +758,11 @@ function App() {
           </div>
           <div className="library-meta">
             <span role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</span>
-            {(search.trim() || libraryFilter !== 'all') && <button type="button" className="link" onClick={() => { setSearch(''); setLibraryFilter('all'); }}>Clear search and filters</button>}
+            <label className="library-source-filter">Source<select value={sourceFilter} onChange={event => setLibrarySource(event.target.value as SongResultProvider | 'all')}>
+              <option value="all">All sources</option>{sourceChoices.map(provider => <option key={provider} value={provider}>{RESULT_PROVIDER_LABELS[provider]}</option>)}
+            </select></label>
+            <LibraryFieldPicker value={settings.libraryResultFields} disabled={savingLibraryFields} onChange={fields => void saveLibraryFields(fields)} />
+            {(search.trim() || libraryFilter !== 'all' || sourceFilter !== 'all') && <button type="button" className="link" onClick={() => { setSearch(''); setLibraryFilter('all'); setLibrarySource('all'); }}>Clear search and filters</button>}
             {settings.sourceVisibility.local && <button type="button" className="link" disabled={busy || relinkBusy} onClick={() => setMediaReviewOpen(true)}>Review Missing Files</button>}
           </div>
           <div className="search-service-status" role="status">
@@ -754,7 +777,8 @@ function App() {
             {youtubeSearch.result && !['ok', 'disabled', 'cancelled'].includes(youtubeSearch.result.status) && <Tooltip text={youtubeSearch.result.message}><span tabIndex={0}>YouTube unavailable ⓘ</span></Tooltip>}
             {providerSearch.failed && <Tooltip text="Some service catalogs could not be reached. Try again or check Sources."><span tabIndex={0}>Some sources unavailable ⓘ</span></Tooltip>}
           </div>
-          <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId} {...{ missingMedia: missingLocalMedia }}
+          <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId} missingMedia={missingLocalMedia}
+            columns={settings.libraryResultFields} filenames={libraryFilenames} readMetadata={window.tpv.getLibraryMetadata} metadataRevision={filenameRefresh}
             onQueue={row => { if (busy || missingLocalMedia.has(row.id)) return; if (row.catalogOnly) { setNotice('Playback is not connected for this service.'); return; } setQueueVersion(row); }}
             onContext={(version, x, y) => setContextMenu({ version, x: Math.max(0, Math.min(x, window.innerWidth - 240)), y: Math.max(0, Math.min(y, window.innerHeight - 330)) })}
             star={starButton} />
