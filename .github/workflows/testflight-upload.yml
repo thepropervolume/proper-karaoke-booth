@@ -1,0 +1,56 @@
+name: Upload an internal iOS beta to TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_commit:
+        description: Full SHA of the reviewed main commit
+        required: true
+        type: string
+      build_number:
+        description: Unused positive Apple build number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    if: github.repository == 'thepropervolume/proper-karaoke-booth' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 50
+    environment: testflight
+    concurrency:
+      group: booth-testflight-upload
+      cancel-in-progress: false
+    env:
+      TPV_REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+      TPV_TESTFLIGHT_BUILD_NUMBER: ${{ inputs.build_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Validate the source and native version
+        shell: bash
+        run: bash scripts/upload-testflight.sh verify
+      - name: Build the pinned mobile interface and resolve Swift packages
+        shell: bash
+        run: |
+          mobile/ios/App/ci_scripts/ci_post_clone.sh
+          xcodebuild -resolvePackageDependencies -project mobile/ios/App/App.xcodeproj -scheme App \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/tpv-testflight-swift" -onlyUsePackageVersionsFromResolvedFile
+          bash scripts/upload-testflight.sh verify
+      - name: Sign, verify and upload the internal beta
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: bash scripts/upload-testflight.sh upload
