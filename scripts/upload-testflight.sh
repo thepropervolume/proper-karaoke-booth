@@ -35,6 +35,37 @@ NODE
     fail 'Choose a build number at least as high as the one in the reviewed source.'
 }
 
+
+# Xcode can include signing identifiers in errors. Match fixed categories
+# privately so the public job log contains only these checked-in messages.
+report_xcode_failure() {
+  local stage="$1" log="$2" reported=0
+  local pattern message
+  while IFS=':' read -r pattern message; do
+    if grep -Eiq -- "$pattern" "$log"; then
+      printf 'Xcode %s diagnostic - %s\n' "$stage" "$message" >&2
+      reported=1
+    fi
+  done <<'DIAGNOSTICS'
+(no devices (are registered|registered|available)|has no devices|there are no devices):Apple reports no eligible devices for development provisioning.
+(failed to register bundle identifier|bundle identifier.*is not available):Apple could not access the registered App ID.
+(no profiles for|iphoneos.*provisioning profile.*not found|requires a provisioning profile):Xcode could not find a matching provisioning profile.
+(failed to create provisioning profile|couldn.t create.*profile):Xcode could not create a provisioning profile.
+(no signing certificate|no certificate matching|with a private key was found):Xcode could not find the signing certificate and its private key.
+requires a development team:Xcode did not recognize the configured development team.
+(insufficient permissions|is not permitted|does not have access|not authorized):Apple denied a signing or upload operation.
+(unable to authenticate|authentication failed|invalid api key|invalid issuer):Apple or Xcode rejected the API authentication.
+(agreement|contract).*(accept|expired|updated|required):Apple indicated an agreement or contract issue.
+(unrecognized option|invalid option|cannot be used together|mutually exclusive):Xcode rejected one or more command options.
+(Command CodeSign failed|errSecInternalComponent):Xcode reported a keychain or code-signing error.
+ITMS-90[0-9]{3}:Apple rejected binary validation or an upload requirement.
+(build number|bundle version).*(higher|previously|duplicate|already):Apple may require an unused build number.
+DIAGNOSTICS
+  if [[ "$reported" == 0 ]]; then
+    printf 'Xcode %s diagnostic - No recognized failure match.\n' "$stage" >&2
+  fi
+}
+
 verify_archive() {
   local app_bundle="$1/Products/Applications/App.app"
   local plist="$app_bundle/Info.plist"
@@ -102,8 +133,10 @@ upload() {
     -clonedSourcePackagesDirPath "$RUNNER_TEMP/tpv-testflight-swift" -disableAutomaticPackageResolution \
     -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates "${apple_auth[@]}" \
     "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" "CURRENT_PROJECT_VERSION=$TPV_TESTFLIGHT_BUILD_NUMBER" \
-    CODE_SIGN_STYLE=Automatic archive >"$scratch/archive.log" 2>&1 ||
-    fail 'Xcode could not sign the archive. Confirm the App ID, team provisioning access, and automatic signing setup.'
+    CODE_SIGN_STYLE=Automatic archive >"$scratch/archive.log" 2>&1 || {
+    report_xcode_failure archive "$scratch/archive.log"
+    fail 'Xcode could not sign the archive.'
+  }
   verify_archive "$archive"
 
   plutil -create xml1 "$export_options"
@@ -116,8 +149,10 @@ upload() {
   plutil -insert testFlightInternalTestingOnly -bool YES "$export_options"
 
   xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$export_options" \
-    -exportPath "$scratch/export" "${apple_auth[@]}" >"$scratch/upload.log" 2>&1 ||
+    -exportPath "$scratch/export" "${apple_auth[@]}" >"$scratch/upload.log" 2>&1 || {
+    report_xcode_failure upload "$scratch/upload.log"
     fail 'Xcode did not confirm the upload. Check App Store Connect delivery status before retrying with an unused build number.'
+  }
 
   printf 'Uploaded internal TestFlight build %s (%s) from %s. Wait for Apple to finish processing it.\n' \
     "$version" "$TPV_TESTFLIGHT_BUILD_NUMBER" "$TPV_REVIEWED_COMMIT" | tee -a "$GITHUB_STEP_SUMMARY"
