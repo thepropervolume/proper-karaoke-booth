@@ -33,6 +33,42 @@ python scripts/generate-brand-assets.py
 Use `--output-root /separate/path` to verify exports without touching the checkout.
 No design-service account or installed font is required to regenerate the assets.
 
+### Mobile launch artwork
+
+The opening screen uses The Proper Volume's [homepage composition](https://thepropervolume.com/).
+The [purple block](https://thepropervolume.com/assets/images/logo-block-proper-purple.svg)
+and [cyan block](https://thepropervolume.com/assets/images/logo-block-volume-blue.svg)
+appear only during startup. iOS uses the centered wordmark with a static navy
+backdrop rendered using the site's [stage fog texture](https://thepropervolume.com/assets/images/fog-wisps.png).
+Android uses the same artwork as a padded vector on solid navy to fit the
+system launch mask. These launch assets are bundled and maintained separately
+from the generated launcher icons.
+
+Check the committed assets with `node scripts/verify-brand-assets.mjs`.
+On a Mac with Xcode, build an unsigned simulator app from the repository root:
+
+```sh
+bash mobile/ios/App/ci_scripts/ci_post_clone.sh
+xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App \
+  -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+On a host with the Android SDK and JDK, prepare the mobile dependencies and build
+the debug app:
+
+```sh
+npm ci
+npm ci --prefix mobile
+npm run build:mobile
+(cd mobile && npx --no-install cap sync android)
+(cd mobile/android && ./gradlew assembleDebug)
+```
+
+For the visual smoke test, close the app, open it from the launcher, then
+confirm the wordmark is centered at cold start and Welcome shows the Booth
+microphone mark.
+
 - `app.ico`: Windows executable, installer/uninstaller and window icon, with nine
   explicit 16–256 px PNG entries. `app-dark.ico` and `app-light.ico` retain both editions.
 - `app.icns`: macOS icon container with 16–1024 px representations; both theme

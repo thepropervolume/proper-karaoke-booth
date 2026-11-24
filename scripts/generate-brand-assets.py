@@ -155,8 +155,8 @@ def generate(output_root: Path) -> dict:
     else:
         write(brand / "installer.nsh", installer_script.read_bytes())
 
-    # Native/PWA slots are derived from the same approved mark, including opaque
-    # store art, adaptive density exports and branded launch screens.
+    # Native launcher and PWA icons use the same approved Booth mark.
+    # The homepage-style startup art is maintained separately in the native projects.
     mobile_exports = runpy.run_path(str(REPO / "scripts" / "sync-mobile-icons.py"))["sync"](output_root)
     written.update(mobile_exports)
     # Source-of-truth records are deliberately separate from app versioning: one

@@ -4,7 +4,6 @@
     <dependencies>
         <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="17105"/>
-        <capability name="System colors in document resources" minToolsVersion="11.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -12,11 +11,32 @@
         <scene sceneID="EHf-IW-A2E">
             <objects>
                 <viewController id="01J-lp-oVM" sceneMemberID="viewController">
-                    <imageView key="view" userInteractionEnabled="NO" contentMode="scaleAspectFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="Splash" id="snD-IY-ifK">
+                    <view key="view" contentMode="scaleToFill" id="snD-IY-ifK">
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
-                        <autoresizingMask key="autoresizingMask"/>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-                    </imageView>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="TPVLaunchBackdrop" translatesAutoresizingMaskIntoConstraints="NO" id="TPV-bk-drp">
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                            </imageView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="TPVLaunchWordmark" translatesAutoresizingMaskIntoConstraints="NO" id="TPV-lg-mrk">
+                                <rect key="frame" x="41.25" y="284.75" width="292.5" height="97.5"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" relation="lessThanOrEqual" constant="440" id="TPV-mx-wid"/>
+                                    <constraint firstAttribute="width" secondItem="TPV-lg-mrk" secondAttribute="height" multiplier="3:1" id="TPV-lw-asp"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
+                        <color key="backgroundColor" red="0.035294" green="0.054902" blue="0.094118" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="TPV-bk-drp" firstAttribute="top" secondItem="snD-IY-ifK" secondAttribute="top" id="TPV-bk-top"/>
+                            <constraint firstItem="TPV-bk-drp" firstAttribute="bottom" secondItem="snD-IY-ifK" secondAttribute="bottom" id="TPV-bk-btm"/>
+                            <constraint firstItem="TPV-bk-drp" firstAttribute="leading" secondItem="snD-IY-ifK" secondAttribute="leading" id="TPV-bk-ldg"/>
+                            <constraint firstItem="TPV-bk-drp" firstAttribute="trailing" secondItem="snD-IY-ifK" secondAttribute="trailing" id="TPV-bk-tlg"/>
+                            <constraint firstItem="TPV-lg-mrk" firstAttribute="centerX" secondItem="snD-IY-ifK" secondAttribute="centerX" id="TPV-lg-ctr"/>
+                            <constraint firstItem="TPV-lg-mrk" firstAttribute="centerY" secondItem="snD-IY-ifK" secondAttribute="centerY" id="TPV-lg-mid"/>
+                            <constraint firstItem="TPV-lg-mrk" firstAttribute="width" secondItem="snD-IY-ifK" secondAttribute="width" multiplier="0.78" priority="750" id="TPV-lg-wid"/>
+                        </constraints>
+                    </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
@@ -24,9 +44,7 @@
         </scene>
     </scenes>
     <resources>
-        <image name="Splash" width="1366" height="1366"/>
-        <systemColor name="systemBackgroundColor">
-            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
+        <image name="TPVLaunchBackdrop" width="390" height="845"/>
+        <image name="TPVLaunchWordmark" width="440" height="147"/>
     </resources>
 </document>

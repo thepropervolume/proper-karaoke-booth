@@ -28,15 +28,6 @@ def sync(root=REPO):
             save(tile.resize((size,size), Image.Resampling.LANCZOS), target/name)
         edge = round(size * 108 / 48)
         save(foreground.resize((edge,edge), Image.Resampling.LANCZOS), target/"ic_launcher_foreground.png")
-    splash_paths = list((root/"mobile/android/app/src/main/res").glob("drawable*/splash.png"))
-    splash_paths += list((root/"mobile/ios/App/App/Assets.xcassets/Splash.imageset").glob("*.png"))
-    for path in splash_paths:
-        width, height = Image.open(path).size
-        canvas = Image.new("RGB", (width,height), "#090e18")
-        size = max(32, round(min(width,height) * .25))
-        mark = tile.resize((size,size), Image.Resampling.LANCZOS)
-        canvas.paste(mark, ((width-size)//2, (height-size)//2))
-        save(canvas, path)
     return written
 if __name__ == "__main__":
     written = sync()

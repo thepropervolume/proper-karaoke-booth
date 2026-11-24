@@ -70,6 +70,20 @@ assert.deepEqual(png(await readFile(join(brand, 'app.png'))), [1024, 1024]);
 assert.match(await readFile(join(repo, 'mobile/capacitor.config.ts'), 'utf8'), /com\.thepropervolume\.karaoke/);
 for (const size of [192, 512]) assert.deepEqual(png(await readFile(join(repo, `mobile/web-public/icon-${size}.png`))), [size, size]);
 assert.deepEqual(png(await readFile(join(repo, 'mobile/ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png'))), [1024, 1024]);
+const iosAssets = join(repo, 'mobile/ios/App/App/Assets.xcassets');
+assert.deepEqual(png(await readFile(join(iosAssets, 'TPVLaunchBackdrop.imageset/tpv-launch-backdrop.png'))), [780, 1690]);
+const launchWordmark = await readFile(join(iosAssets, 'TPVLaunchWordmark.imageset/tpv-launch-wordmark.png'));
+assert.deepEqual(png(launchWordmark), [1320, 441]);
+assert.equal(launchWordmark[25], 6, 'The iOS launch wordmark must have an alpha channel.');
+const iosLaunch = await readFile(join(repo, 'mobile/ios/App/App/Base.lproj/LaunchScreen.storyboard'), 'utf8');
+assert.match(iosLaunch, /image="TPVLaunchBackdrop"/);
+assert.match(iosLaunch, /image="TPVLaunchWordmark"/);
+const androidResources = join(repo, 'mobile/android/app/src/main/res');
+const androidLaunch = await readFile(join(androidResources, 'values/styles.xml'), 'utf8');
+assert.match(androidLaunch, /name="windowSplashScreenAnimatedIcon">@drawable\/tpv_launch_wordmark/);
+const androidWordmark = await readFile(join(androidResources, 'drawable/tpv_launch_wordmark.xml'), 'utf8');
+assert.match(androidWordmark, /android:width="288dp"/);
+assert.match(androidWordmark, /android:height="288dp"/);
 for (const [density, size] of [['mdpi',48],['hdpi',72],['xhdpi',96],['xxhdpi',144],['xxxhdpi',192]])
   assert.deepEqual(png(await readFile(join(repo, `mobile/android/app/src/main/res/mipmap-${density}/ic_launcher.png`))), [size, size]);
 for (const [name, width, height] of [['installer-header.bmp',150,57],['installer-sidebar.bmp',164,314]]) {
