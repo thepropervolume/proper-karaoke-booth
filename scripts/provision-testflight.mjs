@@ -167,10 +167,11 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
       'The selected Apple team does not have one matching iOS Booth App ID.');
     const bundleResourceId = validId(bundles.data[0], 'bundleIds');
 
+    // The previous internal beta keeps its signing certificate. Apple decides whether it can issue one more.
     const existing = await apiRequest(fetcher, auth, 'GET',
-      '/v1/certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=1');
-    check(Array.isArray(existing?.data) && existing.data.length === 0,
-      'An iOS distribution certificate already exists. Use its existing signing identity or review it in the Apple account.');
+      '/v1/certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=2');
+    check(Array.isArray(existing?.data) && existing.data.length < 2,
+      'Two distribution certificates are already listed. Use a reusable signing identity for further uploads.');
 
     const cert = await apiRequest(fetcher, auth, 'POST', '/v1/certificates', {
       data: { type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', csrContent: csr } }
