@@ -1,0 +1,40 @@
+[Unit]
+Description=The Proper Volume Booth account verification mail
+After=network-online.target
+ConditionPathExists=/etc/tpv-queue-relay/booth-account-mail.json
+ConditionPathExists=/etc/tpv-queue-relay/booth-account-mail.token
+
+[Service]
+Type=simple
+DynamicUser=yes
+User=tpv-booth-account-mail
+Group=tpv-booth-account-mail
+UMask=0077
+LoadCredential=mail.json:/etc/tpv-queue-relay/booth-account-mail.json
+LoadCredential=mail.token:/etc/tpv-queue-relay/booth-account-mail.token
+ExecStart=/usr/bin/python3 -I /opt/tpv-queue-relay/booth-account-mail.py
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LimitNOFILE=64
+TasksMax=12
+MemoryMax=96M
+
+[Install]
+WantedBy=multi-user.target

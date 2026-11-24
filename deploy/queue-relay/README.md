@@ -180,3 +180,46 @@ schema version separately; the verification helper intentionally cannot restore
 over the live schema. Arrange off-host copies separately if these leases must
 survive server loss. Losing relay metadata must leave the desktop's existing
 local show usable.
+
+## Booth mobile accounts
+
+Booth accounts use a separate `tpv_booth_accounts` database. The room lease schema,
+desktop show ownership, and website member database retain their existing roles.
+Room nicknames, playlists, and account sessions remain separate. The service stores
+a normalized email, display name, salted scrypt password verifier, and hashes of the
+temporary verification and session tokens. Account links expire after 30 minutes
+and work once; sessions expire after 30 days. Password reset revokes old sessions
+and outstanding account links. Lookups, sign-in attempts and mail are rate limited.
+
+One-time setup on Linode III:
+
+1. Keep the existing relay secrets and install the reviewed `booth-accounts.sql`
+   and `provision-booth-accounts.py` beside one another. Run the provisioning
+   script with `--apply` through root's MySQL socket. It creates only the Booth
+   account database and runtime grant, reuses the verified sender from the private
+   website staging mail configuration, and writes account credentials under
+   `/etc/tpv-queue-relay` without printing them. A failed apply leaves a marker for
+   private operator inspection and never replaces credentials.
+2. Install `scripts/booth-account-mail.py` into `/opt/tpv-queue-relay/` and the
+   private `tpv-booth-account-mail.service` into `/etc/systemd/system/`. The
+   adapter uses the existing Google Workspace relay with verified STARTTLS over
+   IPv4 and accepts only token-authenticated loopback traffic. Configure sender and
+   envelope addresses on the same TPV domain. Start the unit and keep the queue
+   relay itself restricted to localhost egress.
+3. Install `booth-accounts.conf` as a queue relay service drop-in. Stage the
+   reviewed relay and mobile web builds. Before restart, check for active rooms
+   and preserve the current bundle, static app, and configs in a private backup.
+   Restart only when idle. Confirm guest routes, Apache syntax, and
+   `GET /v1/mobile/account/status` with `{"enabled":true}`, then verify actual
+   email delivery during an account owner’s authorized test.
+4. Keep the Booth account schema in the private database backup policy. It is
+   independent of the existing queue lease dump. Protect account backups as
+   user data. When retiring this beta feature, disabling the config and sidecar
+   preserves the account data for a verified restore.
+
+The HTTPS relay accepts credentials only on `/v1/mobile/account/` routes.
+Native clients can use the app's fixed webview origins; room APIs keep their
+previous origin policy. Email links carry the one-time proof in the fragment of
+`https://queue.thepropervolume.com/app/?account=1`. Keep this public app path deployed with
+matching link redemption. On iPhone and Android, users can paste the link into
+Booth or verify in the browser and return to Booth to sign in with a password.

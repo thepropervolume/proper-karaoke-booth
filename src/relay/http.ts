@@ -13,15 +13,18 @@ import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { searchMobileCatalog } from './mobile-catalog';
 import { version as appVersion } from '../../package.json';
 import { InternetSingerScreens, SCREEN_FRAME_BYTES } from './singer-screen';
+import type { MobileAccounts } from './mobile-accounts';
 
 export type RelayOwner = { id: string; tokenSha256: string };
 type Options = { publicOrigin: string; screenOrigin?: string; owners: readonly RelayOwner[]; broker: RelayBroker; staticHandler: SingerStaticHandler;
   trustProxy?: boolean; rateNow?: () => number; bodyTimeoutMs?: number; onFailure?: () => void; isReady?: () => boolean;
-  mobileEnabled?: boolean; mobileCatalog?: typeof searchMobileCatalog };
+  mobileEnabled?: boolean; mobileCatalog?: typeof searchMobileCatalog; mobileAccounts?: MobileAccounts };
 const POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const HOST_ROUTE = /^\/v1\/relay\/host\/(open|poll|reply|close|screen)$/;
 const GUEST_ROUTE = /^\/v1\/relay\/rooms\/([^/]+)\/([^/]+)\/guest\/([a-z-]+)$/;
 const LOOKUP_ROUTE = /^\/v1\/relay\/lookup\/([a-z0-9-]+)$/;
+const MOBILE_ACCOUNT_ROUTE = /^\/v1\/mobile\/account\/(status|lookup|register|login|session|logout|link|link\/redeem)$/;
+const NATIVE_ACCOUNT_ORIGINS = new Set(['capacitor://localhost', 'https://localhost']);
 const SCREEN_ROUTE = /^\/([a-z0-9-]+)\/screen(?:\/(frame))?$/;
 const SCREEN_PAGE = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Singer display</title><style>html,body{margin:0;height:100%;background:#000;color:white;font:18px system-ui}img{width:100%;height:100%;object-fit:contain}p{position:fixed;inset:40% 1rem auto;text-align:center}</style><img alt="Live singer display" hidden><p>Waiting for the singer display. Audio plays at the venue.</p><script src="/v1/screen-viewer.js" defer></script></html>';
 const SCREEN_JS = `(()=>{const img=document.querySelector('img'),notice=document.querySelector('p'),key='tpv-screen:'+location.pathname;let secret=location.hash.slice(1);history.replaceState(null,'',location.pathname);try{if(secret)sessionStorage.setItem(key,secret);else secret=sessionStorage.getItem(key)||''}catch{}if(!/^[A-Za-z0-9_-]{43}$/.test(secret)){notice.textContent='Use the complete singer-screen link from your host.';return}const viewer=crypto.randomUUID();let old='';async function update(){try{const r=await fetch(location.pathname+'/frame',{headers:{Authorization:'Bearer '+secret,'X-TPV-Screen-Viewer':viewer},cache:'no-store',credentials:'omit',mode:'same-origin',redirect:'error',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(3000)});if(!r.ok)throw Error();const blob=await r.blob();if(blob.type!=='image/jpeg')throw Error();const next=URL.createObjectURL(blob);img.src=next;img.hidden=false;notice.hidden=true;if(old)URL.revokeObjectURL(old);old=next}catch{img.hidden=true;notice.hidden=false;if(old){URL.revokeObjectURL(old);old=''}}finally{setTimeout(update,1000)}}update()})();`;
@@ -116,7 +119,11 @@ export function createQueueRelayHandler(options: Options) {
       const viewerHost = !!screenOrigin && requestHost === screenOrigin.host;
       if (headerCount(request, 'host') !== 1 || requestHost !== origin.host && !viewerHost || !request.url ||
           request.url.length > 2048 || !request.url.startsWith('/') || request.url.startsWith('//') || /[?#%\\\x00-\x20\x7f]/.test(request.url)) throw new HttpError(400, 'INVALID_REQUEST');
-      if (headerCount(request, 'origin') > 1 || request.headers.origin !== undefined && request.headers.origin !== (viewerHost ? screenOrigin!.origin : origin.origin)) throw new HttpError(403, 'ORIGIN_DENIED');
+      const accountRoute = !viewerHost && MOBILE_ACCOUNT_ROUTE.exec(request.url);
+      const sourceOrigin = request.headers.origin;
+      const nativeAccount = !!(accountRoute && sourceOrigin && NATIVE_ACCOUNT_ORIGINS.has(sourceOrigin));
+      if (headerCount(request, 'origin') > 1 || sourceOrigin !== undefined && !nativeAccount && sourceOrigin !== (viewerHost ? screenOrigin!.origin : origin.origin))
+        throw new HttpError(403, 'ORIGIN_DENIED');
       if (viewerHost && (request.method !== 'GET' || request.url !== '/v1/screen-viewer.js' && !SCREEN_ROUTE.test(request.url))) throw new HttpError(404, 'NOT_FOUND');
       let client = request.socket.remoteAddress ?? 'unknown';
       if (options.trustProxy) {
@@ -126,6 +133,32 @@ export function createQueueRelayHandler(options: Options) {
       }
       if (!limits.take('global', 12_000) || !limits.take('ip:' + client, 6_000)) throw new HttpError(429, 'RATE_LIMITED');
       const path = request.url;
+      if (accountRoute) {
+        const action = accountRoute[1];
+        if (nativeAccount) {
+          response.setHeader('Access-Control-Allow-Origin', sourceOrigin!);
+          response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+          response.setHeader('Vary', 'Origin');
+        }
+        if (request.method === 'OPTIONS' && nativeAccount) {
+          response.writeHead(204, { 'Cache-Control': 'no-store' }).end();
+          return;
+        }
+        if (action === 'status' && request.method === 'GET') {
+          respond(response, 200, { enabled: !!options.mobileAccounts });
+          return;
+        }
+        if (!options.mobileAccounts) throw new HttpError(503, 'ACCOUNT_UNAVAILABLE');
+        if (request.method === 'POST' && !nativeAccount && sourceOrigin !== origin.origin) throw new HttpError(403, 'ORIGIN_REQUIRED');
+        const method = request.method ?? '';
+        const token = bearer(request);
+        const input = method === 'POST' ? await readJson(request, 4096, bodyTimeout) : undefined;
+        if (controller.signal.aborted) return;
+        const result = await options.mobileAccounts.handle(action, method, input, token, client, (key, limit, period) => limits.take(key, limit, period));
+        respond(response, result.status, result.body);
+        return;
+      }
       if (request.method === 'GET') {
         if (path === '/v1/screen-viewer.js') {
           const bytes = Buffer.from(SCREEN_JS);
