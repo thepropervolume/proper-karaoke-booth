@@ -1,31 +1,29 @@
 # TPV Karaoke Mobile Singer Guide
 
-The mobile workspace opens to **Library**. Browse and save songs on your own, then join a desktop host’s room when you are ready to request a song. The same workspace is built for the [mobile web app](https://queue.thepropervolume.com/app/), iOS, and Android. Full Host is paused while the mobile singer experience takes priority.
+Booth for iPhone, Android, and the [mobile web app](https://queue.thepropervolume.com/app/) helps you find songs, join a host’s room, and follow the show. The desktop host handles playback, approval, and rotation.
 
-## Browse and Save Songs
+## First launch and accounts
 
-1. Open **Library** and enter at least two characters of an artist or title. Karaoke Nerds is selected by default. Tap **More Karaoke Nerds Results** to see the next page of matches from the shared catalog snapshot.
-2. Turn catalogs on or off under **Profile → Browse Sources**. Karaoke Nerds, KaraFun’s public song list, and the Party Tyme Pro public songbook support browsing without an account. Party Tyme Pro’s listings may differ from what a host can queue using Party Tyme Consumer.
-3. Tap **☆** beside a recording to save it to your personal **Starred Songs** playlist. Tap **★** to remove it. Open **Playlists** to see the list. For other collections, tap **Save to Playlist**, pick or name a playlist, and choose **Save Song**. Playback is on the host.
+Choose **Continue as Guest** or **Sign In / Create Account**. Guests can browse, save tracks, and join rooms with a display name. In **Account**, you can sign in later without losing the playlists on this device.
 
-Joining a room sets the next Browse Mode defaults to the available public counterparts of the host’s reported sources. You can change those defaults after leaving. Catalog search requires an internet connection. Saved playlists and profile fields are available without a room.
+Enter your email address. If you already have a Booth account, enter your password. **Email me a sign-in link** and **Forgot password?** send optional links. To create an account, choose a display name and a password of at least 12 characters, then confirm the email address. On your phone, you can open the link in your browser or copy its full address and choose **Use a link I already have** in Booth. Account verification asks you to re-enter the password you chose. Your Booth account is separate from your karaoke service subscriptions. Playlists still live on this device.
 
-## Set Up Your Profile
+## Discover a room
 
-Open **Profile**, enter a display name and, optionally, an email, and choose **Save Profile**. Your display name can fill the join form. The email and playlists stay on this device, in the app or browser profile where you saved them. Clearing that app’s or site’s data removes them. A room still uses temporary guest access, and the host receives the name you submit when joining.
+- **Nearby.** In **Rooms**, choose your host from the suggestions. Native builds use local-network discovery where available. Rooms on the same public connection can also appear, so check that the room belongs to your host.
+- **Room code or invitation.** Paste the internet invitation or enter the code, choose a display name, and join. Booth remembers the last room for your next visit. Restarting the app requires a new join.
+- **LAN-only invitation.** Connect to the host's Wi-Fi and open its trusted local HTTPS link in your device browser.
 
-Your starred playlist uses your profile name. If you first star a song while in a room, Booth can use the name you joined with to name your list. The standalone room page keeps its own browser-local starred list for each join name.
+## Search and Playlists
 
-## Join a Host
+Open **Search** and enter at least two characters of a song title or artist. Karaoke Nerds is selected by default outside a room. Public KaraFun and Party Tyme Pro listings can be enabled in **Account**. Joined search uses the host's available sources and their room policies. Where offered, **Load More Songs** continues through the catalog. Public Party Tyme Pro listings can differ from a host's Party Tyme Consumer results.
 
-- **Nearby room.** Open **Room**, choose a suggestion, check that it belongs to your host, and tap **Join Room**. Native Android and iOS builds use DNS-SD when local-network access is available. A shared internet connection can also suggest rooms. A suggestion requires your confirmation, and results can include a room at a different venue on the same public connection.
-- **Internet room.** In **Room**, paste the invitation link or enter the room code at the end of the host’s `queue.thepropervolume.com` address. Add your display name and tap **Join Room**. The app remembers the last room code for reuse. Restarting the app requires you to join again.
-- **LAN-only room.** Connect to the host’s Wi-Fi, paste the trusted local HTTPS invitation, and choose **Open Local Invitation**. The invitation opens in the browser. Its certificate needs to be trusted by your device. If discovery is unavailable, ask the host for the exact invitation or room code.
+Star a recording to save it to **Starred Songs**, or choose **Save to Playlist** to keep it in a named list. **Playlists** holds both. A playlist's **Find in Room** searches for a version your host can queue. Leaving a room keeps your saved songs.
 
-## Request a Song in a Room
+## Queue and Now Playing
 
-Search by artist or title in **Library**. Results come from the host’s library and currently enabled, supported providers. On a desktop host running 0.10.13 or later, tap **Load More Songs** to continue through matches from the shared Karaoke Nerds catalog. The host’s song rules still apply. Choose **Queue** on the exact version you want. The host controls approval, playback and rotation. From a saved playlist, **Find in Room** searches by title so you can choose an available recording before queueing.
+Queue the exact version from your search results. **Queue** shows your request statuses and lets you withdraw eligible requests. Compatible desktop hosts also share the room's current singer, upcoming tracks, and playback timing when available. Tap **Now Playing** to follow the host's performance. Older hosts can still admit singers and accept requests, and will show only your requests when room-wide details are unavailable.
 
-Open **Room** to check your requests, withdraw eligible requests, or use the attendance, missing-song, applause, and photo actions the host makes available. Use **Reconnect** when the room is still open after an interruption. **Leave Room** returns you to catalog browsing and keeps your playlists. If the host closes the room, the app returns to browsing and asks for a live invitation when you want to queue again.
+Room actions such as applause, attendance, unavailable-song requests, and photo submission depend on what the host enables. If the connection drops, reconnect while the room is open. **Leave Room** returns to public catalog browsing.
 
-Browse sources may have different coverage from subscribed desktop providers. The mobile workspace uses the host’s access for joined searches. Physical iPhone and Android checks, venue network rehearsal, and signed store releases are tracked in [mobile requirements and status](mobile-requirements.md).
+See [mobile requirements](mobile-requirements.md) for version and device test coverage.
