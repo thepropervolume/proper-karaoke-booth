@@ -2,7 +2,7 @@
 
 **Design draft for iPhone and Android.** The singer app discovers and joins a host’s room, finds songs, sends requests, and saves playlists. It can browse supported catalogs and save songs outside a room. Kiosk mode opens a host-selected room and offers only guest entry.
 
-The visual system follows [The Proper Volume brand guide](https://thepropervolume.com/brand-guide/) with Nunito Sans, Night and Day surfaces, cyan actions, purple graphic fields, warm cream, and limited pink accents. The Proper Volume wordmark appears on launch and Welcome, and the Booth mark identifies the Account and Room screens.
+The visual system follows [The Proper Volume brand guide](https://thepropervolume.com/brand-guide/) with Nunito Sans, Night and Day surfaces, cyan actions, purple graphic fields, warm cream, and limited pink accents. The offset TPV wordmark is reserved for launch. The Booth microphone mark appears on Welcome, kiosk entry, Account, and Rooms.
 
 ## Screens
 
@@ -15,7 +15,7 @@ The visual system follows [The Proper Volume brand guide](https://thepropervolum
 
 ## Onboarding
 
-The branded system launch leads to **Continue as Guest** and **Sign In / Create Account**. After a valid email is entered, an existing account gets a password prompt with **Email me a sign-in link** and **Forgot password?** as secondary choices. A new email gets **Create Account** with a display name and password. The kiosk has a guest-only entry and a **Done** button that resets the singer’s session while retaining the host room and submitted requests.
+The launch screen adapts the [website’s opening view](https://thepropervolume.com/) with its centered offset wordmark, navy field, and stage haze in a static composition. Welcome follows with **Continue as Guest** and **Sign In / Create Account**. After a valid email is entered, an existing account gets a password prompt with **Email me a sign-in link** and **Forgot password?** as secondary choices. A new email gets **Create Account** with a display name and password. The kiosk has a guest-only entry and a **Done** button that resets the singer’s session while retaining the host room and submitted requests.
 
 Prototype only. Use `ben@example.com` with `Demo-B00th!` for the returning-account path and any other example address for account creation. The prototype processes its sample data in memory, with no real email, sign-in, download, or room connection.
 
@@ -24,7 +24,8 @@ Prototype only. Use `ben@example.com` with `Demo-B00th!` for the returning-accou
 Generate standalone HTML from the block below. Replace the asset placeholders with data URIs as follows:
 
 - `@@FONT@@` · the [website’s Nunito Sans Latin variable font](https://thepropervolume.com/assets/fonts/nunito-sans-latin.woff2)
-- `@@WORDMARK@@` and `@@DAY_WORDMARK@@` · the website’s supplied [Night](https://thepropervolume.com/assets/images/logo-purple-blue.svg) and [Day](https://thepropervolume.com/assets/images/logo-day.svg) wordmarks
+- `@@LAUNCH_PROPER@@` and `@@LAUNCH_VOLUME@@` · the homepage’s [purple block](https://thepropervolume.com/assets/images/logo-block-proper-purple.svg) and [cyan block](https://thepropervolume.com/assets/images/logo-block-volume-blue.svg)
+- `@@LAUNCH_FOG@@` · the homepage’s [stage haze texture](https://thepropervolume.com/assets/images/fog-wisps.png)
 - `@@MARK@@` · `assets/branding/mobile/adaptive-foreground.png` in Booth
 - `@@ROOM_PHOTO@@` and `@@STAGE_PHOTO@@` · the TPV homepage’s [group photo](https://thepropervolume.com/api/photo/upload-8e0d11fc6db02a296980017bbfb2c7f4) and [Katie on stage](https://thepropervolume.com/api/photo/upload-4cb5f3a428d19ad7a809828ae8135c42) photos
 
@@ -54,10 +55,9 @@ button svg{flex:none}
 .studio[data-theme=day]{--bg:#fdfef8;--surface:#f3f2e9;--raised:#eae9e3;--ink:#1c1a18;--muted:#625e58;--fine:#d4d2c9;--accent:#1765a6;--focus:#3a82ca;--on-accent:#fff;--pop:#c30068;--live:#157654;--shadow:#231c1226}
 .studio{max-width:1390px;margin:auto;padding:36px 42px 42px}
 .mast{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding-bottom:26px;border-bottom:1px solid #283449}
-.head-id{display:flex;align-items:center;gap:16px}
-.head-id .word{width:160px;flex:none}
 .mast h1{font-size:clamp(24px,3vw,40px);margin:0;line-height:1.06;letter-spacing:-.04em}
 .mast p{color:#b9c2d0;font-size:12px;font-weight:800;margin:5px 0 0}
+.mast .project-name{color:#8bdcff;letter-spacing:.1em;text-transform:uppercase;margin:0 0 8px}
 .tools{display:flex;gap:7px;flex-wrap:wrap}
 .tool{background:#111827;border:1px solid #2a3548;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:850;min-height:36px;white-space:nowrap}
 .tool[aria-pressed=true]{background:#0eb7ff;color:#06111f;border-color:#0eb7ff}
@@ -95,7 +95,6 @@ h2,h3,p{margin:0}
 .phone p{font-size:14px;line-height:1.35;color:var(--muted)}
 .small{font-size:12px;color:var(--muted);line-height:1.25}
 .meta{font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.word{display:block;height:auto}
 .brand-small{width:33px;height:33px;object-fit:contain}
 .quiet{color:var(--muted)}
 .stack{display:grid;gap:10px}
@@ -186,20 +185,26 @@ input::placeholder{color:var(--muted);opacity:.85}
 .player-actions{display:flex;gap:8px}
 .player-actions .action{flex:1}
 .nextline{margin-top:10px;padding:10px 0 0;border-top:1px solid var(--fine)}
-.launch,.welcome{flex:1;min-height:100%;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:12px;text-align:center}
-.launch .word,.welcome .word{width:184px}
-.welcome .mark{width:84px;height:84px;object-fit:contain;margin-bottom:3px}
+.welcome{flex:1;min-height:100%;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:12px;text-align:center}
+.welcome .mark{width:124px;height:124px;object-fit:contain;margin-bottom:3px}
 .welcome h2{font-size:37px}
 .welcome .stack{width:100%;margin-top:34px}
-.phone:has(.launch){background:#090e18;color:#f4f2e9}
+.phone:has(.launch){background:#090e18;color:#f4f2e9;color-scheme:dark}
+.phone:has(.launch) .content{padding:0}
 .phone:has(.launch) .home{background:transparent}
-.word-day{display:none}
-[data-theme=day] .phone:not(:has(.launch)) .word-night{display:none}
-[data-theme=day] .phone:not(:has(.launch)) .word-day{display:block}
-.launch p{color:#d2ddeb;font-size:14px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.launch{position:absolute;inset:0;display:grid;place-items:center;isolation:isolate;background:
+  radial-gradient(ellipse at 29% 45%,#0eb7ff0b,transparent 55%),
+  radial-gradient(ellipse at 79% 58%,#601ce914,transparent 57%),
+  conic-gradient(from 170deg at 9% 3%,transparent 0deg,#8878f60e 144deg,transparent 176deg),
+  conic-gradient(from 154deg at 90% 1%,transparent 0deg,#80d5ff10 31deg,transparent 64deg),
+  #090e18}
+.launch::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.42;background:url("@@LAUNCH_FOG@@") 50% 103%/150% auto no-repeat}
+.launch-logo{position:relative;width:78%;max-width:440px;aspect-ratio:675.75/225}
+.launch-logo img{display:block;position:absolute;height:auto}
+.launch-proper{top:0;left:0;width:51.25%;z-index:1}
+.launch-volume{top:22.07%;right:0;width:52.70%}
 .auth h2{font-size:32px;margin:8px 0}
 .auth>.icon-btn{margin-bottom:12px}
-.auth .word{width:160px;margin:3px 0 22px}
 .auth p{margin:0 0 12px}
 .form{display:grid;gap:11px}
 .form .action{width:100%}
@@ -216,13 +221,13 @@ input::placeholder{color:var(--muted);opacity:.85}
 .toast{position:absolute;bottom:78px;left:12px;right:12px;z-index:7;background:var(--accent);color:var(--on-accent);border-radius:8px;padding:9px 12px;font-size:12px;font-weight:900;box-shadow:0 3px 16px var(--shadow)}
 @media(max-width:1040px){.studio{padding:27px 24px}.prototype{gap:23px}.notes{font-size:13px}.board{gap:17px}.board .phone{height:710px}}
 @media(max-width:845px){.mast{align-items:start;flex-direction:column}.board{grid-template-columns:repeat(2,minmax(0,1fr))}.prototype{grid-template-columns:minmax(136px,184px) minmax(0,393px);justify-content:center}.notes{display:none}}
-@media(max-width:570px){.studio{padding:14px 10px 16px}.mast{gap:10px;padding-bottom:12px}.head-id{gap:7px}.mast h1{font-size:23px}.mast p{font-size:10px}.tools{gap:4px}.tool{padding:6px 8px;font-size:10px;min-height:33px}.prototype{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:11px}.rail{max-width:none;display:flex;overflow:auto;gap:3px;scrollbar-width:none}.rail h2{display:none}.jump{width:auto;min-height:35px;white-space:nowrap;padding:0 8px;font-size:12px}.rail .tool{margin:0}.board{grid-template-columns:1fr}.phone{width:100%;max-width:393px;margin:0 auto;height:min(732px,calc(100svh - 130px));min-height:530px}}
+@media(max-width:570px){.studio{padding:14px 10px 16px}.mast{gap:10px;padding-bottom:12px}.mast h1{font-size:23px}.mast p{font-size:10px}.tools{gap:4px}.tool{padding:6px 8px;font-size:10px;min-height:33px}.prototype{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:11px}.rail{max-width:none;display:flex;overflow:auto;gap:3px;scrollbar-width:none}.rail h2{display:none}.jump{width:auto;min-height:35px;white-space:nowrap;padding:0 8px;font-size:12px}.rail .tool{margin:0}.board{grid-template-columns:1fr}.phone{width:100%;max-width:393px;margin:0 auto;height:min(732px,calc(100svh - 130px));min-height:530px}}
 </style>
 </head>
 <body>
 <main id="studio" class="studio" data-theme="night" data-platform="ios">
   <header class="mast">
-    <div class="head-id"><img class="word" src="@@WORDMARK@@" alt="The Proper Volume"><div><h1>Karaoke Booth</h1><p>Mobile design · Singer app</p></div></div>
+    <div><p class="project-name">The Proper Volume</p><h1>Karaoke Booth</h1><p>Mobile design · Singer app</p></div>
     <div class="tools" aria-label="Mockup controls">
       <button class="tool" data-mode="prototype" aria-pressed="true">Try the app</button>
       <button class="tool" data-mode="screens" aria-pressed="false">App screens</button>
@@ -272,7 +277,6 @@ const icons = {
   shield:'<path d="M12 2 4 6v5c0 5 3 8 8 11 5-3 8-6 8-11V6zM9 12l2 2 4-4"/>'
 };
 const i = key => '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+icons[key]+'</svg>';
-const word = '<img class="word word-night" src="@@WORDMARK@@" alt="The Proper Volume"><img class="word word-day" src="@@DAY_WORDMARK@@" alt="The Proper Volume">';
 const mark = size => '<img class="'+size+'" src="@@MARK@@" alt="">';
 const tracks = [
   {id:'amateur',title:'Amateur',artist:'Nada Surf',source:'Karaoke Nerds',duration:'3:55',cover:'a'},
@@ -308,7 +312,7 @@ const descriptions={
   account:['Account','Manage your profile, sign in, and choose an appearance. Guests keep their playlists on the device.'],
   lists:['Playlists','Open Starred Songs or a named playlist in one tap.'],
   playing:['Now Playing','See the host’s current song, singer, progress, and who’s next.'],
-  launch:['Launch Screen','The system shows The Proper Volume wordmark while Booth opens.'],
+  launch:['Launch Screen','The Proper Volume’s homepage wordmark and stage lighting appear while Booth opens.'],
   welcome:['Welcome','Continue as a guest or sign in.'],
   email:['Email Entry','Enter an email to start.'],
   auth:['Returning Account','A returning account gets a password prompt and an optional email link.'],
@@ -397,7 +401,7 @@ const playingScreen=ctx=>{
     '</div><div class="nextline"><div class="meta">Up Next</div><div class="row"><span class="rank">01</span>'+copy(initialQueue[0].track.title,initialQueue[0].singer)+
     iconButton('chev','Open Queue','data-view="queue"','bare')+'</div></div>';
 };
-const welcomeScreen=kiosk=>'<div class="welcome">'+mark('mark')+word+'<h2>'+(kiosk?'Request a Song':'Karaoke Booth')+
+const welcomeScreen=kiosk=>'<div class="welcome">'+mark('mark')+'<h2>'+(kiosk?'Request a Song':'Karaoke Booth')+
   '</h2><p>'+(kiosk?showName:'Find a song. Take the mic.')+'</p><div class="stack">'+action('Continue as Guest',kiosk?'data-do="join"':'data-view="rooms"')+
   (kiosk?'':action('Sign In / Create Account','data-view="auth"','secondary'))+'</div></div>';
 const authExtras=ctx=>ctx.authKind==='existing'?
@@ -405,7 +409,7 @@ const authExtras=ctx=>ctx.authKind==='existing'?
   '<button type="button" class="text" data-do="recover">Forgot password?</button>'+action(i('mail')+' Email me a sign-in link','data-do="email-link"','secondary'):
   ctx.authKind==='new'?'<label>Display name<input name="signup-name" autocomplete="nickname" maxlength="60" placeholder="Name the host should call" required></label>'+
   '<label>Create a password<input type="password" name="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters" required></label><button class="action">Create Account</button>':'';
-const authScreen=ctx=>'<div class="auth">'+iconButton('back','Back','data-do="auth-back"')+word+
+const authScreen=ctx=>'<div class="auth">'+iconButton('back','Back','data-do="auth-back"')+
   '<h2 data-auth-title>'+(ctx.authKind==='new'?'Create Account':'Sign In')+'</h2><p data-auth-copy>'+authCopy(ctx.authKind)+'</p>'+
   '<form class="form" data-form="auth"><label>Email address<input name="email" aria-label="Email address" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" value="'+escapeHtml(ctx.email)+'" required></label>'+
   '<div class="form" data-auth-extras>'+authExtras(ctx)+'</div><div class="hint" role="status"></div></form></div>';
@@ -416,7 +420,8 @@ function authCopy(kind){
 }
 const screenTemplates={
   rooms:roomScreen,search:searchScreen,queue:queueScreen,account:accountScreen,lists:listScreen,list:listDetail,playing:playingScreen,
-  launch:()=>'<div class="launch">'+word+'<p>Karaoke Booth</p></div>',welcome:()=>welcomeScreen(false),kiosk:()=>welcomeScreen(true),email:authScreen,auth:authScreen,signup:authScreen
+  launch:()=>'<div class="launch"><div class="launch-logo" role="img" aria-label="The Proper Volume"><img class="launch-proper" src="@@LAUNCH_PROPER@@" alt=""><img class="launch-volume" src="@@LAUNCH_VOLUME@@" alt=""></div></div>',
+  welcome:()=>welcomeScreen(false),kiosk:()=>welcomeScreen(true),email:authScreen,auth:authScreen,signup:authScreen
 };
 const tabs=['rooms','search','queue','lists','account','list'];
 const demoJoined=['Friday Night Karaoke','Friday-Night','friday-night'];
