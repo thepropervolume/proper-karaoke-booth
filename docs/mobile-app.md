@@ -27,3 +27,7 @@ Queue the exact version from your search results. **Queue** shows your request s
 Room actions such as applause, attendance, unavailable-song requests, and photo submission depend on what the host enables. If the connection drops, reconnect while the room is open. **Leave Room** returns to public catalog browsing.
 
 See [mobile requirements](mobile-requirements.md) for version and device test coverage.
+
+## Update the web app
+
+A reopened web app checks for the current Booth interface when online. If a browser or Home Screen shortcut still shows an older screen, [open a fresh copy](https://queue.thepropervolume.com/app/?fresh=1). This keeps your local profile and playlists. For the installed iPhone beta, use **TestFlight → Karaoke Booth** to check which build you have.
