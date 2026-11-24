@@ -7,7 +7,7 @@ export class MobileHttpError extends Error {
 /** Native HTTP is restricted to our queue authority; it is not a general URL proxy. */
 export const mobileFetch: typeof fetch = async (input, init = {}) => {
   const value = input instanceof Request ? input.url : String(input), url = new URL(value, MOBILE_ORIGIN);
-  if (url.origin !== MOBILE_ORIGIN || !/^\/v1\/(?:mobile\/(?:hosts|catalog|nearby)|relay\/(?:lookup\/[a-z0-9-]+|host\/(?:open|poll|reply|close)|rooms\/[a-f0-9-]+\/[a-f0-9-]+\/guest\/[a-z-]+))$/.test(url.pathname) || url.search || url.hash) throw new Error('Invalid mobile service address.');
+  if (url.origin !== MOBILE_ORIGIN || !/^\/v1\/(?:mobile\/(?:hosts|catalog|nearby|account\/(?:status|lookup|register|login|session|logout|link(?:\/redeem)?))|relay\/(?:lookup\/[a-z0-9-]+|host\/(?:open|poll|reply|close)|rooms\/[a-f0-9-]+\/[a-f0-9-]+\/guest\/[a-z-]+))$/.test(url.pathname) || url.search || url.hash) throw new Error('Invalid mobile service address.');
   if (!Capacitor.isNativePlatform()) return await fetch(url.href, { ...init, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' });
   if (init.signal?.aborted) throw new Error('Request cancelled.');
   const headers = Object.fromEntries(new Headers(init.headers));
