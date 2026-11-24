@@ -89,6 +89,119 @@ verify_archive() {
     fail 'The archive does not have a valid signature for the configured Apple team.'
 }
 
+cleanup_upload() {
+  if [[ -n "$tpv_installed_profile" ]]; then
+    rm -f -- "$tpv_installed_profile" || true
+  fi
+  if [[ -n "$tpv_signing_keychain" ]]; then
+    if [[ "${#tpv_prior_keychains[@]}" -gt 0 ]]; then
+      security list-keychains -d user -s "${tpv_prior_keychains[@]}" >/dev/null 2>&1 || true
+    fi
+    security delete-keychain "$tpv_signing_keychain" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$tpv_testflight_scratch"
+}
+
+install_distribution_signing() {
+  local keychain_password pkcs12_password listed
+  local keychain="$scratch/distribution.keychain-db"
+  local profile_directory="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+
+  # Keep the original order, including keychain paths with spaces.
+  security list-keychains -d user >"$scratch/keychains.txt" 2>"$scratch/keychain.log" ||
+    fail 'The runner keychain search list could not be read.'
+  while IFS= read -r listed; do
+    [[ "$listed" =~ ^[[:space:]]*\"(/[^\"[:cntrl:]]+)\"[[:space:]]*$ ]] ||
+      fail 'The runner keychain search list was not recognized.'
+    tpv_prior_keychains+=("${BASH_REMATCH[1]}")
+  done <"$scratch/keychains.txt"
+  [[ "${#tpv_prior_keychains[@]}" -gt 0 ]] ||
+    fail 'The runner did not have a restorable keychain search list.'
+
+  keychain_password="$(openssl rand -hex 32 2>"$scratch/keychain.log")" &&
+    pkcs12_password="$(openssl rand -hex 32 2>>"$scratch/keychain.log")" &&
+    openssl x509 -inform DER -in "$scratch/distribution.cer" -out "$scratch/distribution.pem" \
+      >>"$scratch/keychain.log" 2>&1 &&
+    openssl pkcs12 -export -inkey "$scratch/signing.key" -in "$scratch/distribution.pem" \
+      -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+      -out "$scratch/signing.p12" -passout "pass:$pkcs12_password" >>"$scratch/keychain.log" 2>&1 ||
+    fail 'The temporary distribution signing package could not be prepared.'
+
+  tpv_signing_keychain="$keychain"
+  {
+    security create-keychain -p "$keychain_password" "$keychain" &&
+      security set-keychain-settings -lut 43200 "$keychain" &&
+      security unlock-keychain -p "$keychain_password" "$keychain" &&
+      security import "$scratch/signing.p12" -P "$pkcs12_password" -f pkcs12 -k "$keychain" \
+        -T /usr/bin/codesign &&
+      security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" &&
+      security list-keychains -d user -s "$keychain" "${tpv_prior_keychains[@]}"
+  } >>"$scratch/keychain.log" 2>&1 ||
+    fail 'The temporary keychain could not be prepared for code signing.'
+  unset keychain_password pkcs12_password
+
+  # Compare the leaf certificate fingerprint with the valid identity in the temporary keychain.
+  manual_identity="$(openssl x509 -inform DER -in "$scratch/distribution.cer" -noout -fingerprint -sha1 \
+    2>>"$scratch/keychain.log")" ||
+    fail 'The distribution certificate fingerprint could not be read.'
+  manual_identity="${manual_identity#*=}"
+  manual_identity="${manual_identity//:/}"
+  if [[ ! "$manual_identity" =~ ^[A-F0-9]{40}$ ]] ||
+    ! security find-identity -v -p codesigning "$keychain" >"$scratch/identities.txt" 2>>"$scratch/keychain.log" ||
+    ! grep -Fq -- "$manual_identity" "$scratch/identities.txt"; then
+    fail 'The runner does not trust the temporary distribution certificate or its signing key is missing.'
+  fi
+
+  local profile_path="$profile_directory/$manual_profile_uuid.mobileprovision"
+  mkdir -p -- "$profile_directory" >>"$scratch/keychain.log" 2>&1 ||
+    fail 'The Xcode provisioning profile directory could not be prepared.'
+  [[ ! -e "$profile_path" && ! -L "$profile_path" ]] ||
+    fail 'A profile with the new UUID is already installed.'
+  # noclobber prevents accidental replacement of an existing profile.
+  (
+    set -o noclobber
+    exec 3>"$profile_path" || exit 1
+    if ! cat "$scratch/booth.mobileprovision" >&3; then
+      rm -f -- "$profile_path"
+      exit 1
+    fi
+  ) 2>>"$scratch/keychain.log" || fail 'The temporary distribution profile could not be installed.'
+  tpv_installed_profile="$profile_path"
+}
+
+prepare_distribution_signing() {
+  [[ "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,19}$ &&
+     "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,5}$ ]] ||
+    fail 'The temporary distribution signing assets need a valid GitHub run identity.'
+  manual_profile_name="Booth TestFlight CI $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+  # The RSA private key is generated on this runner and stays in private scratch.
+  openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=Booth TestFlight CI' \
+    -keyout "$scratch/signing.key" -out "$scratch/signing.csr" >"$scratch/request.log" 2>&1 ||
+    fail 'A temporary distribution certificate request could not be created.'
+  node scripts/provision-testflight.mjs create "$scratch" "$auth_key" "$key_id" \
+    "$issuer_id" "$APPLE_TEAM_ID" "$manual_profile_name" ||
+    fail 'Apple could not provision a distribution certificate and profile for this run.'
+  manual_profile_uuid="$(node -p 'require(process.argv[1]).profileUuid' "$scratch/provisioning.json" \
+    2>>"$scratch/request.log")" ||
+    fail 'The temporary provisioning profile identity could not be read.'
+  [[ "$manual_profile_uuid" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] ||
+    fail 'The temporary provisioning profile UUID is invalid.'
+  install_distribution_signing
+}
+
+verify_distribution_archive() {
+  local app_bundle="$archive/Products/Applications/App.app"
+  # Verify that the actual Xcode archive embeds the selected profile and signing leaf.
+  {
+    security cms -D -i "$app_bundle/embedded.mobileprovision" -o "$scratch/archive-profile.plist" &&
+      [[ "$(plutil -extract UUID raw -o - "$scratch/archive-profile.plist")" == "$manual_profile_uuid" ]] &&
+      (cd "$scratch" && codesign --display --extract-certificates "$app_bundle") &&
+      cmp -s "$scratch/codesign0" "$scratch/distribution.cer"
+  } >"$scratch/archive-signing-assets.log" 2>&1 ||
+    fail 'The archive did not use the validated distribution profile and signing certificate.'
+}
+
 upload() {
   [[ "${APPLE_TEAM_ID:-}" =~ ^[A-Z0-9]{10}$ && "${ASC_KEY_ID:-}" =~ ^[A-Z0-9]{10}$ &&
      "${ASC_ISSUER_ID:-}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ &&
@@ -106,9 +219,12 @@ upload() {
   runner_temp="$(cd -P "$RUNNER_TEMP" && pwd)"
   umask 077
   scratch="$(mktemp -d "$runner_temp/tpv-testflight.XXXXXXXX")"
-  # Retain only the path to this private scratch directory for the exit trap.
+  # Store transient runner paths for the exit trap, which runs outside upload's local scope.
   tpv_testflight_scratch="$scratch"
-  trap 'rm -rf -- "$tpv_testflight_scratch"' EXIT
+  tpv_signing_keychain=''
+  tpv_installed_profile=''
+  tpv_prior_keychains=()
+  trap cleanup_upload EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
@@ -128,25 +244,50 @@ upload() {
   done
   local apple_auth=(-allowProvisioningUpdates -authenticationKeyPath "$auth_key"
     -authenticationKeyID "$key_id" -authenticationKeyIssuerID "$issuer_id")
-  xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App -configuration Release \
-    -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath "$scratch/build" \
-    -clonedSourcePackagesDirPath "$RUNNER_TEMP/tpv-testflight-swift" -disableAutomaticPackageResolution \
-    -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates "${apple_auth[@]}" \
-    "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" "CURRENT_PROJECT_VERSION=$TPV_TESTFLIGHT_BUILD_NUMBER" \
-    CODE_SIGN_STYLE=Automatic archive >"$scratch/archive.log" 2>&1 || {
+  local archive_args=(-project mobile/ios/App/App.xcodeproj -scheme App -configuration Release
+    -destination 'generic/platform=iOS'
+    -clonedSourcePackagesDirPath "$RUNNER_TEMP/tpv-testflight-swift" -disableAutomaticPackageResolution
+    -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates
+    "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" "CURRENT_PROJECT_VERSION=$TPV_TESTFLIGHT_BUILD_NUMBER")
+  local signing_style=automatic manual_profile_name='' manual_profile_uuid='' manual_identity=''
+  if ! xcodebuild "${archive_args[@]}" -archivePath "$archive" -derivedDataPath "$scratch/build" \
+    "${apple_auth[@]}" archive >"$scratch/archive.log" 2>&1; then
     report_xcode_failure archive "$scratch/archive.log"
-    fail 'Xcode could not sign the archive.'
-  }
+    # Complete signing without a development device only when Xcode reports that specific hurdle.
+    grep -Eiq -- 'no devices (are registered|registered|available)|has no devices|there are no devices' \
+      "$scratch/archive.log" &&
+      grep -Eiq -- 'no profiles for|iphoneos.*provisioning profile.*not found|requires a provisioning profile' \
+        "$scratch/archive.log" || fail 'Xcode could not sign the archive.'
+    printf '%s\n' 'Trying an App Store distribution profile for this internal TestFlight archive.'
+    prepare_distribution_signing
+    signing_style=manual
+    archive="$scratch/BoothDistribution.xcarchive"
+    xcodebuild "${archive_args[@]}" -archivePath "$archive" -derivedDataPath "$scratch/build-distribution" \
+      TPV_TESTFLIGHT_SIGN_STYLE=Manual "TPV_TESTFLIGHT_SIGN_IDENTITY=$manual_identity" \
+      "TPV_TESTFLIGHT_PROFILE_NAME=$manual_profile_name" archive >"$scratch/archive-distribution.log" 2>&1 || {
+      report_xcode_failure archive "$scratch/archive-distribution.log"
+      fail 'Xcode could not sign the archive with the temporary distribution profile.'
+    }
+    verify_distribution_archive
+  fi
   verify_archive "$archive"
 
   plutil -create xml1 "$export_options"
   plutil -insert method -string app-store-connect "$export_options"
   plutil -insert destination -string upload "$export_options"
-  plutil -insert signingStyle -string automatic "$export_options"
+  plutil -insert signingStyle -string "$signing_style" "$export_options"
   plutil -insert teamID -string "$APPLE_TEAM_ID" "$export_options"
   plutil -insert manageAppVersionAndBuildNumber -bool NO "$export_options"
   plutil -insert uploadSymbols -bool YES "$export_options"
   plutil -insert testFlightInternalTestingOnly -bool YES "$export_options"
+  if [[ "$signing_style" == manual ]]; then
+    {
+      plutil -insert signingCertificate -string "$manual_identity" "$export_options" &&
+        /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$export_options" &&
+        /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.thepropervolume.karaoke string $manual_profile_uuid" "$export_options"
+    } >"$scratch/export-options.log" 2>&1 ||
+      fail 'The manual TestFlight export could not be configured.'
+  fi
 
   xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$export_options" \
     -exportPath "$scratch/export" "${apple_auth[@]}" >"$scratch/upload.log" 2>&1 || {
