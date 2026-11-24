@@ -3,6 +3,7 @@ import { isLocalRecordingKey, isRecordingKey, type LocalRecordingKey, type Recor
 
 export const GUEST_CATALOG_HEADER = 'x-tpv-guest-catalog';
 export const GUEST_CATALOG_WITH_SOURCES = 'sources';
+export const GUEST_ROTATION_HEADER = 'x-tpv-guest-rotation';
 
 export function isGuestSource(value: unknown): value is SourceId {
   return typeof value === 'string' && (SOURCE_IDS as readonly string[]).includes(value);

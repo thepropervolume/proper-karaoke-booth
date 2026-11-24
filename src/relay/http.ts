@@ -7,7 +7,7 @@ import type { SingerStaticHandler } from '../main/remote-static';
 import { RelayBroker } from './broker';
 import { RelayError } from './store';
 import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGuestRequest, parseHostOpen, parseRoomIdentity, projectGuestResponse } from './protocol';
-import { GUEST_CATALOG_HEADER, GUEST_CATALOG_WITH_SOURCES } from '../domain/guest-sources';
+import { GUEST_CATALOG_HEADER, GUEST_CATALOG_WITH_SOURCES, GUEST_ROTATION_HEADER } from '../domain/guest-sources';
 import { MobileHostAccess, NearbyRooms } from './mobile-access';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
 import { searchMobileCatalog } from './mobile-catalog';
@@ -259,11 +259,12 @@ export function createQueueRelayHandler(options: Options) {
       if (!parsed) throw new HttpError(400, 'INVALID_GUEST_REQUEST');
       if (controller.signal.aborted) return;
       const result = await options.broker.invoke({ roomId: guest[1], generation: guest[2] }, parsed, controller.signal);
-      // Earlier native apps strictly validate the original catalog shape.
-      // Only a client that advertises support receives the additive source fields.
+      // Earlier native apps strictly validate the fields they negotiated.
+      const includeSources = request.headers[GUEST_CATALOG_HEADER] === GUEST_CATALOG_WITH_SOURCES;
+      const includeRotation = request.headers[GUEST_ROTATION_HEADER] === '1';
       if (result.status === 200 && (parsed.operation === 'snapshot' || parsed.operation === 'catalog') &&
-          request.headers[GUEST_CATALOG_HEADER] !== GUEST_CATALOG_WITH_SOURCES) {
-        const legacy = projectGuestResponse(parsed.operation, result.status, result.body, false);
+          (!includeSources || !includeRotation)) {
+        const legacy = projectGuestResponse(parsed.operation, result.status, result.body, includeSources, includeRotation);
         if (!legacy) throw new HttpError(503, 'UNAVAILABLE');
         respond(response, legacy.status, legacy.body); return;
       }

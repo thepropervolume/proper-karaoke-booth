@@ -4,6 +4,7 @@ import { isGuestRecordingId, isGuestSource, isGuestSourceList } from '../domain/
 import type { SourceId } from '../domain/settings';
 import type { RecordingKey } from '../domain/song-rating';
 import type { GuestSnapshot, Song } from './client';
+import { projectGuestStage } from '../domain/guest-stage';
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const fields = (value: Record<string, unknown>, required: string[], optional: string[] = []) =>
@@ -47,7 +48,7 @@ export function parseGuestCatalog(value: unknown, offset: number, limit: number)
 }
 
 export function parseGuestSnapshot(value: unknown): GuestSnapshot {
-  if (!record(value) || !fields(value, ['showId', 'hostEpoch', 'revision', 'singerId', 'singerName', 'catalog', 'catalogNextOffset', 'requests'], ['unavailableUntilMs', 'serverNowMs', 'requestsTruncated', 'applauseEnabled', 'applauseCredits', 'points', 'photoEnabled', 'sources']) ||
+  if (!record(value) || !fields(value, ['showId', 'hostEpoch', 'revision', 'singerId', 'singerName', 'catalog', 'catalogNextOffset', 'requests'], ['unavailableUntilMs', 'serverNowMs', 'requestsTruncated', 'applauseEnabled', 'applauseCredits', 'points', 'photoEnabled', 'sources', 'stage']) ||
       !id(value.showId) || !id(value.hostEpoch) || !integer(value.revision) || !id(value.singerId) || !text(value.singerName, 100) ||
       value.unavailableUntilMs !== undefined && !integer(value.unavailableUntilMs) || value.serverNowMs !== undefined && !integer(value.serverNowMs) ||
       value.requestsTruncated !== undefined && typeof value.requestsTruncated !== 'boolean' ||
@@ -66,8 +67,10 @@ export function parseGuestSnapshot(value: unknown): GuestSnapshot {
     seen.add(request.id); requests.push({ id: request.id, versionId: request.versionId, status: request.status as RequestStatus,
       ...(metadata ? { title: request.title as string, artist: request.artist as string } : {}) });
   }
+  const stage = value.stage === undefined ? undefined : projectGuestStage(value.stage);
+  if (stage === null) return invalid();
   return { showId: value.showId, hostEpoch: value.hostEpoch, revision: value.revision, singerId: value.singerId, singerName: value.singerName,
-    catalog: catalog.items, catalogNextOffset: catalog.nextOffset, requests,
+    catalog: catalog.items, catalogNextOffset: catalog.nextOffset, requests, ...(stage ? { stage } : {}),
     ...(value.unavailableUntilMs !== undefined ? { unavailableUntilMs: value.unavailableUntilMs as number } : {}),
     ...(value.serverNowMs !== undefined ? { serverNowMs: value.serverNowMs as number } : {}),
     ...(value.requestsTruncated !== undefined ? { requestsTruncated: value.requestsTruncated as boolean } : {}),

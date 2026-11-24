@@ -4,7 +4,7 @@ import { KJ_PICKS_ID, type HistoryEntry } from '../domain/collections';
 import type { PlaylistDestination } from '../domain/playlist-transfer';
 import type { ShowState } from '../domain';
 import { Collections } from './collections';
-import { RemoteQueue, type RemoteApplause, type RemotePhoto, type RemoteQueueSettings } from './remote-queue';
+import { RemoteQueue, type RemoteApplause, type RemotePhoto, type RemoteQueueSettings, type RemoteStageTelemetry } from './remote-queue';
 import type { RemoteCatalog } from './remote-catalog';
 import { migrateShowSchema } from './schema-migrations';
 import { openHostShowDatabase } from './show-upgrade';
@@ -132,7 +132,7 @@ export class Store<T> {
   /** Same SQLite connection as host writes; creates no network listener. */
   openRemoteQueue(this: Store<ShowState>, settings: () => RemoteQueueSettings,
     installCommitted: (state: ShowState) => void, now: () => number = Date.now, onAuthorityFailure: () => void = () => {},
-    onApplause?: RemoteApplause, onPhoto?: RemotePhoto, remoteCatalog?: RemoteCatalog): RemoteQueue {
+    onApplause?: RemoteApplause, onPhoto?: RemotePhoto, remoteCatalog?: RemoteCatalog, stageTelemetry?: RemoteStageTelemetry): RemoteQueue {
     this.assertRemoteAuthority();
     if (this.remoteQueueOpened) throw new Error('Remote queue authority is already open.');
     const failAuthority = () => {
@@ -159,7 +159,7 @@ export class Store<T> {
         failAuthority();
         throw new Error('Show authority needs recovery. Restart the application before making further changes.');
       }
-    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority, onApplause, onPhoto, remoteCatalog);
+    }, now, (cleanup?: boolean) => { if (cleanup) this.assertAuthority(); else this.assertRemoteAuthority(); }, failAuthority, onApplause, onPhoto, remoteCatalog, stageTelemetry);
     this.remoteQueueOpened = true;
     return queue;
   }

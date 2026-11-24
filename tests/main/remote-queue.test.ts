@@ -379,3 +379,34 @@ test('a held remote singer cannot return or replace the hold through the authent
     assert.equal(service.snapshot(guest.session).unavailableUntilMs, SINGER_ON_HOLD);
   } finally { s.db.close(); }
 });
+
+test('guest stage uses the host rotation and current-generation telemetry without exposing private request identities', () => {
+  const s = setup();
+  try {
+    let telemetryGeneration = 'generation-1';
+    const service = new RemoteQueue(s.db, () => DEFAULT_SETTINGS, () => {}, () => 1000, undefined, undefined, undefined, undefined, undefined,
+      () => ({ timeline: { generation: telemetryGeneration, position: 75.5, duration: 240, seekable: true, seeking: false },
+        preparingVersionIds: new Set(['version-future']) }));
+    const invite = service.createInvitation(5000);
+    const a = service.join(invite, 'join-id-0001', secret(), 'Alice', 0);
+    const b = service.join(invite, 'join-id-0002', secret(), 'Bob', 1);
+    const state = s.read();
+    state.versions.push({ id: 'version-future', title: 'Next', artist: 'Artist', rating: 'clean' });
+    state.requests.push(
+      { id: 'now-request', singerId: b.singerId, versionId: 'version-clean', status: 'playing', round: 1, order: 1 },
+      { id: 'hidden-request', singerId: b.singerId, versionId: 'version-hidden', status: 'accepted', round: 1, order: 2 },
+      { id: 'guest-request', singerId: a.singerId, versionId: 'version-future', status: 'staged', round: 1, order: 3 },
+    );
+    state.playback = { requestId: 'now-request', generationId: 'generation-1', status: 'playing' };
+    s.db.prepare('UPDATE show_state SET value=?').run(JSON.stringify(state));
+    const stage = service.snapshot(a.session).stage;
+    assert.deepEqual(stage?.nowPlaying, { title: 'Clean', artist: 'Artist', singer: 'Bob', status: 'playing', versionId: 'version-clean',
+      source: 'local', timing: { position: 75.5, duration: 240 } });
+    assert.deepEqual(stage?.queue, [{ title: 'Next', artist: 'Artist', singer: 'Alice', status: 'preparing', position: 1, ownRequestId: 'guest-request' }]);
+    assert.equal(service.snapshot(b.session).stage?.queue[0].ownRequestId, undefined);
+    assert.doesNotMatch(JSON.stringify(stage), /now-request|hidden-request|generation-1/);
+    telemetryGeneration = 'old-generation';
+    assert.equal(service.snapshot(a.session).stage?.nowPlaying?.timing, undefined);
+    assert.throws(() => service.snapshot(secret()));
+  } finally { s.db.close(); }
+});

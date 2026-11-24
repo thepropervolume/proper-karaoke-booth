@@ -169,3 +169,24 @@ test('catalog search remains authenticated, bounded, and strictly scoped', () =>
   assert.equal(parseGuestRequest('catalog',{offset:0,limit:50,query:'song'}),null);
   assert.equal(parseGuestRequest('catalog',{offset:0,limit:50,query:'song',path:'/private'},secret),null);
 });
+
+test('guest stage projection strips private metadata and tolerates legacy negotiation', () => {
+  const ownRequestId = snapshot.requests[0].id;
+  const stage = {
+    nowPlaying: { title: 'Song on stage', artist: 'Artist', singer: 'Public Singer', versionId: song.id, status: 'playing',
+      timing: { position: 90, duration: 240 } },
+    queue: [{ title: 'Next song', artist: 'Artist', singer: 'Singer', position: 1, status: 'preparing', ownRequestId }],
+    queueTruncated: false,
+  };
+  const result = projectGuestResponse('snapshot', 200, { ...snapshot, stage: {
+    ...stage, image: 'private-image', nowPlaying: { ...stage.nowPlaying, email: 'private@example.com', timing: { ...stage.nowPlaying.timing, generation: 'private-generation' } },
+    queue: [{ ...stage.queue[0], session: secret, singerId: 'private-id' }],
+  } });
+  assert.deepEqual(result, { status: 200, body: { ...snapshot, stage } });
+  assert.deepEqual(parseGuestSnapshot(result?.body).stage, stage);
+  assert.deepEqual(projectGuestResponse('snapshot', 200, { ...snapshot, stage }, true, false), { status: 200, body: snapshot });
+  assert.equal(projectGuestResponse('snapshot', 200, { ...snapshot, stage: { ...stage, queue: [{ ...stage.queue[0], position: 2 }] } }), null);
+  assert.equal(projectGuestResponse('snapshot', 200, { ...snapshot,
+    stage: { ...stage, nowPlaying: { ...stage.nowPlaying, timing: { position: 999, duration: 240 } } } }), null);
+  assert.equal(projectGuestResponse('snapshot', 200, { ...snapshot, stage: { ...stage, queue: Array(31).fill(stage.queue[0]) } }), null);
+});

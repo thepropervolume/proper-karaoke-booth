@@ -1,6 +1,7 @@
 /** Bounded relay DTOs. No host control, file path, or provider credential belongs on this wire. */
 import { isGuestRecordingId, isGuestSource, isGuestSourceList } from '../domain/guest-sources';
 import { MAX_PHOTO_BODY_BYTES, MAX_PHOTO_DATA_URL, validPhotoDataUrl } from '../domain/photo';
+import { projectGuestStage } from '../domain/guest-stage';
 import type { Song } from '../remote/client';
 export const RELAY_OPERATIONS = ['admission', 'join', 'resume', 'snapshot', 'catalog', 'outcome', 'request', 'withdraw', 'availability', 'missing-request', 'applause', 'photo'] as const;
 export type RelayOperation = typeof RELAY_OPERATIONS[number];
@@ -147,7 +148,7 @@ function outcome(input: unknown): Record<string, unknown> | null {
 }
 
 /** Strip all unapproved fields. Exceptions are generic and never forward raw Error messages. */
-export function projectGuestResponse(op: unknown, status: unknown, input: unknown, includeSources = true): GuestResponse | null {
+export function projectGuestResponse(op: unknown, status: unknown, input: unknown, includeSources = true, includeRotation = true): GuestResponse | null {
   try {
     if (!operation(op) || !boundedJson(input, MAX_GUEST_RESPONSE_BYTES)) return null;
     if (status === 400) return { status: 400, body: { error: 'Request could not be completed.' } };
@@ -191,8 +192,10 @@ export function projectGuestResponse(op: unknown, status: unknown, input: unknow
           ids.add(request.id); requests.push({ id: request.id, versionId: request.versionId, status: request.status,
             ...(includeSources && metadata ? { title: request.title, artist: request.artist } : {}) });
         }
+        const stage = includeRotation && input.stage !== undefined ? projectGuestStage(input.stage) : undefined;
+        if (stage === null) return null;
         body = { showId: input.showId, hostEpoch: input.hostEpoch, revision: input.revision, singerId: input.singerId, singerName: input.singerName,
-          catalog, catalogNextOffset: input.catalogNextOffset, requests,
+          catalog, catalogNextOffset: input.catalogNextOffset, requests, ...(stage ? { stage } : {}),
           ...(input.unavailableUntilMs === undefined ? {} : { unavailableUntilMs: input.unavailableUntilMs }),
           ...(input.serverNowMs === undefined ? {} : { serverNowMs: input.serverNowMs }),
           ...(input.requestsTruncated === undefined ? {} : { requestsTruncated: input.requestsTruncated }),

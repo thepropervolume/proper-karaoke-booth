@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IonIcon } from '@ionic/react';
-import { albumsOutline, libraryOutline, peopleOutline, personCircleOutline } from 'ionicons/icons';
+import { albumsOutline, arrowBackOutline, chevronDownOutline, chevronForwardOutline, closeOutline, ellipsisHorizontal,
+  listOutline, musicalNotesOutline, personCircleOutline, addOutline, radioOutline, searchOutline, starOutline,
+  sunnyOutline } from 'ionicons/icons';
 import { version as appVersion } from '../../package.json';
 import type { SourceId } from '../domain/settings';
 import { SingerClient, type GuestView, type Song } from '../remote/client';
@@ -9,20 +11,44 @@ import { mobileFetch } from './api';
 import { BROWSE_LABELS, BROWSE_SOURCES, browseCatalog, chooseBrowseSources, type BrowseSong, type BrowseSource } from './browse-catalog';
 import { discoverRooms, roomSlug, type DiscoveredRoom } from './discovery';
 import { SingerRoomActions, SingerRequests } from './SingerRoomActions';
-import { SaveToSingerPlaylist, SingerPlaylistsPanel, SingerProfilePanel, SingerStarButton, useSingerProfile } from './SingerProfilePanel';
-import type { SingerPlaylistRecording } from './singer-profile';
+import { PlaylistDetails, SaveToSingerPlaylist, SingerStarButton, useSingerProfile } from './SingerProfilePanel';
+import { starredPlaylist, type SingerPlaylistRecording } from './singer-profile';
+import { SingerSheet } from './SingerSheet';
 import '@fontsource/nunito-sans/latin-400.css';
 import '@fontsource/nunito-sans/latin-700.css';
+import '@fontsource/nunito-sans/latin-800.css';
+import '@fontsource/nunito-sans/latin-900.css';
 import './mobile.css';
 
 const tabs = [
-  { id: 'library', label: 'Library', icon: libraryOutline },
-  { id: 'room', label: 'Room', icon: peopleOutline },
+  { id: 'room', label: 'Rooms', icon: radioOutline },
+  { id: 'library', label: 'Search', icon: searchOutline },
+  { id: 'queue', label: 'Queue', icon: listOutline },
   { id: 'playlists', label: 'Playlists', icon: albumsOutline },
-  { id: 'profile', label: 'Profile', icon: personCircleOutline },
+  { id: 'profile', label: 'Account', icon: personCircleOutline },
 ] as const;
 type Tab = typeof tabs[number]['id'];
-const titles: Record<Tab, string> = { library: 'Song Library', room: 'Karaoke Room', playlists: 'Playlists', profile: 'Profile & Settings' };
+type Screen = Tab | 'playing';
+const titles: Record<Screen, string> = { library: 'Search', room: 'Rooms', queue: 'Queue', playlists: 'Playlists', profile: 'Account', playing: 'Now Playing' };
+type WorkspaceProps = {
+  account?: { name: string; email: string } | null;
+  onSignIn?: () => void;
+  onSignOut?: () => void | Promise<void>;
+  kioskRoom?: string;
+  onKioskDone?: () => void;
+};
+type Sheet =
+  | { kind: 'song'; song: Song; browseSong?: BrowseSong }
+  | { kind: 'join'; slug: string; label: string }
+  | { kind: 'playlist' }
+  | { kind: 'name' };
+const themeKey = 'tpv-mobile-theme';
+const boothMark = new URL('../../assets/branding/mobile/adaptive-foreground.png', import.meta.url).href;
+const elapsed = (seconds: number) => {
+  const whole = Math.floor(seconds);
+  return Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
+};
+
 const sourceNames: Record<SourceId, string> = { ...BROWSE_LABELS, local: 'Host Library', partytyme: 'Party Tyme', youtube: 'YouTube', sunfly: 'Sunfly', stingray: 'Stingray' };
 const sourceKey = 'tpv-mobile-browse-sources-v1';
 const roomKey = 'tpv-mobile-last-room';
@@ -94,14 +120,27 @@ function useBrowseResults(sources: BrowseSource[], query: string, active: boolea
   return { pages, more, retry: () => setRetry(value => value + 1) };
 }
 
-export function SingerWorkspace() {
+export function SingerWorkspace({ account, onSignIn, onSignOut, kioskRoom, onKioskDone }: WorkspaceProps = {}) {
   const store = useSingerProfile();
-  const [tab, setTab] = useState<Tab>('library');
+  const [tab, setTab] = useState<Screen>('room');
+  const [returnFromPlayer, setReturnFromPlayer] = useState<Tab>('queue');
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [sheetValue, setSheetValue] = useState('');
+  const [sheetError, setSheetError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [playlist, setPlaylist] = useState<string | null>(null);
+  const [theme, setTheme] = useState(() => {
+    const saved = savedValue(themeKey);
+    return saved === 'day' || saved === 'system' ? saved : 'night';
+  });
+  const searchBox = useRef<HTMLInputElement>(null), roomBox = useRef<HTMLInputElement>(null);
+  const kiosk = roomSlug(kioskRoom ?? '');
   const [query, setQuery] = useState('');
   const [sources, setSources] = useState(loadSources);
   const [sourceFilter, setSourceFilter] = useState<SourceId | 'all'>('all');
   const [lastRoom, setLastRoom] = useState(() => roomSlug(savedValue(roomKey) ?? '') ?? '');
   const [roomInput, setRoomInput] = useState(() => roomSlug(new URLSearchParams(location.search).get('room') ?? '') ?? '');
+  const [roomName, setRoomName] = useState('');
   const [name, setName] = useState<string | null>(null);
   const [nearby, setNearby] = useState<DiscoveredRoom[]>([]);
   const [room, setRoom] = useState<CurrentRoom | null>(null);
@@ -112,12 +151,13 @@ export function SingerWorkspace() {
   const requestNames = useRef(new Map<string, Song>());
   const joined = !!room && !!guest?.joined;
   const snapshot = guest?.snapshot, singerId = snapshot?.singerId;
-  const connectName = name ?? store.profile.displayName;
+  const connectName = name ?? (store.profile.displayName || account?.name || '');
   const browse = useBrowseResults(sources, query.trim(), !joined);
 
-  useEffect(() => { workspace.current?.scrollTo(0, 0); }, [tab]);
+  useEffect(() => { document.documentElement.dataset.mobileTheme = theme; }, [theme]);
+  useEffect(() => { workspace.current?.scrollTo(0, 0); }, [tab, playlist]);
   useEffect(() => {
-    if (joined) { setNearby([]); return; }
+    if (joined || kiosk) { setNearby([]); return; }
     const controller = new AbortController();
     const scan = () => void discoverRooms(controller.signal).then(found => {
       if (!controller.signal.aborted) setNearby(found);
@@ -125,7 +165,7 @@ export function SingerWorkspace() {
     scan();
     const timer = setInterval(scan, 30_000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [joined]);
+  }, [joined, kiosk]);
 
   useEffect(() => {
     if (!room || !singerId || !query.trim()) return;
@@ -133,10 +173,10 @@ export function SingerWorkspace() {
   // Different room identities must start a fresh search; ordinary queue revisions are handled by the singer client.
   }, [room, singerId]);
   useEffect(() => {
-    if (!room || !joined || tab !== 'room') return;
+    if (!room || !joined) return;
     const timer = setInterval(() => {
       if (!document.hidden) void room.client.refresh(view => updateRoom(room.number, view));
-    }, 15_000);
+    }, tab === 'playing' ? 5_000 : tab === 'queue' ? 10_000 : 15_000);
     return () => clearInterval(timer);
   }, [room, joined, tab]);
 
@@ -165,42 +205,64 @@ export function SingerWorkspace() {
     setNotice(message);
   }
 
-  function chooseRoom(slug: string) {
-    setTab('room');
-    setRoomInput(slug);
+  function changeTab(value: Screen) {
+    if (value === 'playing' && tab !== 'playing') setReturnFromPlayer(tab);
+    if (value === 'playlists' && tab !== 'playlists') setPlaylist(null);
+    setTab(value);
     setNotice('');
+    setGuest(previous => previous?.message && !previous.uncertain ? { ...previous, message: '' } : previous);
   }
 
-  async function join() {
-    const slug = roomSlug(roomInput);
-    if (connecting || joined) return;
+  function openSheet(next: Sheet, value = '') {
+    setSheetError('');
+    setSheetValue(value);
+    setSheet(next);
+  }
+
+  function chooseRoom(value: string, label?: string) {
+    const slug = roomSlug(value);
     if (!slug) { setNotice('Enter the room code or invitation link from your host.'); return; }
-    if (!connectName.trim()) { setNotice('Enter a display name for the room.'); return; }
+    if (room?.slug !== slug) closeRoom();
+    setNotice('');
+    openSheet({ kind: 'join', slug, label: label || slug }, kiosk && !guest?.joinUncertain ? '' : connectName);
+  }
+
+  async function join(slug: string, label: string, displayName: string) {
+    if (connecting || joined) return;
+    const value = displayName.trim();
+    if (!value) { setSheetError('Enter a display name for the room.'); return; }
     const number = room?.slug === slug ? room.number : ++connection.current;
+    setName(value);
     setConnecting(true);
     setNotice('');
+    setSheetError('');
     try {
       let target = room?.slug === slug ? room : null;
       if (!target) {
         const live = await lookupInternetSingerRoom(slug, mobileFetch);
         if (connection.current !== number) return;
         if (!live.online) throw new Error('The host is offline. Try again when the room is open.');
-        const client = new SingerClient(internetGuestTransport(live, { fetch: mobileFetch, onEnded: () => {
+        const client = new SingerClient(internetGuestTransport(live, { fetch: mobileFetch, rotation: true, onEnded: () => {
           if (connection.current === number) closeRoom('This room ended. You can still browse and save songs.');
         } }), '');
         target = { slug, client, number, id: live.roomId };
         requestNames.current.clear();
         setRoom(target);
       }
-      await target.client.join(connectName, view => updateRoom(number, view));
-      if (connection.current === number && target.client.state().joined) {
-        setLastRoom(slug);
-        saveValue(roomKey, slug);
-        if (store.ready && !store.profile.displayName) void store.saveIdentity(connectName, store.profile.email).catch(() => {});
+      await target.client.join(value, view => updateRoom(number, view));
+      if (connection.current !== number) return;
+      if (target.client.state().joined) {
+        setRoomName(label);
+        setSheet(null);
+        if (!kiosk) {
+          setLastRoom(slug);
+          saveValue(roomKey, slug);
+          if (store.ready && !store.profile.displayName) void store.saveIdentity(value, store.profile.email).catch(() => {});
+        }
         setTab('library');
-      }
+      } else setSheetError(target.client.state().message);
     } catch (error) {
-      if (connection.current === number) setNotice(error instanceof Error ? error.message : 'Could not connect to this room.');
+      if (connection.current === number) setSheetError(error instanceof Error ? error.message : 'Could not connect to this room.');
     } finally {
       if (connection.current === number) setConnecting(false);
     }
@@ -224,126 +286,329 @@ export function SingerWorkspace() {
     };
   }
 
-  function songRow(song: Song, available: boolean, browseSong?: BrowseSong) {
+  function songRow(song: Song, browseSong?: BrowseSong) {
     const source = song.source;
     const label = browseSong ? BROWSE_LABELS[browseSong.source] : source ? sourceNames[source] : 'Host Library';
-    const recording = saveRecording(song, browseSong);
-    return <li className={'mobile-song singer-song source-' + (source ?? 'local')} key={label + ':' + song.id}>
-      <div className="singer-song-heading">
-        <div><strong>{song.title}</strong><span>{song.artist || 'Unknown artist'}</span><small>{label}{browseSong?.brand ? ' · ' + browseSong.brand : ''}</small></div>
-        {available && room && <button className="mobile-primary" type="button" disabled={guest?.busy || guest?.uncertain}
-          aria-label={'Queue ' + song.title} onClick={() => void room.client.request(song.id, view => updateRoom(room.number, view))}>Queue</button>}
-      </div>
-      <div className="singer-inline-actions">
-        <SingerStarButton store={store} recording={recording} displayName={snapshot?.singerName} />
-        <SaveToSingerPlaylist store={store} recording={recording} />
-      </div>
+    const select = () => openSheet({ kind: 'song', song, browseSong });
+    return <li className="singer-result-row" key={label + ':' + song.id}>
+      <button type="button" className="singer-song-link" onClick={select}>
+        <SongArtwork source={source} />
+        <span className="singer-copy"><strong>{song.title}</strong>
+          <small>{song.artist || 'Unknown artist'} · {label}{browseSong?.brand ? ' · ' + browseSong.brand : ''}</small></span>
+      </button>
+      <button type="button" className="singer-icon-button singer-icon-quiet" aria-label={'Options for ' + song.title} onClick={select}>
+        <IonIcon icon={ellipsisHorizontal} aria-hidden="true" />
+      </button>
     </li>;
   }
 
+  function dismissSheet() {
+    if (connecting || saving) return;
+    setSheet(null);
+  }
+
+  async function saveSheet() {
+    const value = sheetValue.trim();
+    if (!value || !sheet) return;
+    setSaving(true);
+    setSheetError('');
+    try {
+      if (sheet.kind === 'name') {
+        await store.saveIdentity(value, store.profile.email);
+        setName(value);
+      } else if (sheet.kind === 'playlist') await store.createPlaylist(value);
+      setSheet(null);
+    } catch (error) { setSheetError(error instanceof Error ? error.message : 'Could not save the change.'); }
+    finally { setSaving(false); }
+  }
+
+  function finishKiosk() {
+    closeRoom();
+    setName(null);
+    setQuery('');
+    setSheet(null);
+    setTab('room');
+    onKioskDone?.();
+  }
+
   const manualLan = lanLink(roomInput);
-  const roomStatus = joined ? room.slug : connecting ? 'Connecting…' : 'Browse Mode';
   const listener = (view: GuestView) => { if (room) updateRoom(room.number, view); };
   const availableSources: SourceId[] = joined ? snapshot?.sources ?? [] : sources;
   const activeFilter = sourceFilter !== 'all' && availableSources.includes(sourceFilter) ? sourceFilter : 'all';
   const liveSongs = guest?.songs.filter(song =>
-    (!snapshot?.sources || !song.source || snapshot.sources.includes(song.source)) && (activeFilter === 'all' || song.source === activeFilter)) ?? [];
+    (!snapshot?.sources || !song.source || snapshot.sources.includes(song.source)) &&
+    (activeFilter === 'all' || song.source === activeFilter)) ?? [];
+  const stage = snapshot?.stage;
+  const rotation = stage?.queue ?? [];
+  const playing = stage?.nowPlaying;
+  const turn = rotation.find(entry => entry.ownRequestId);
+  const next = rotation[0];
+  const firstNearby = nearby[0];
+  const currentPlaylist = store.profile.playlists.find(value => value.id === playlist);
+  const stars = starredPlaylist(store.profile);
+  const collections = store.profile.playlists.filter(value => value.kind !== 'starred');
+  const accountName = connectName || 'Guest';
+  const heading = tab === 'playlists' && currentPlaylist ? currentPlaylist.name : titles[tab];
+  const label = roomName || room?.slug || 'Your Room';
+
   return <div className="mobile-app singer-workspace" data-mode="singer">
-    <header className="mobile-header">
-      <span className="mobile-title"><img src="./icon-192.png" alt="" /><strong>TPV Karaoke</strong></span>
-      <span className="mobile-version">{appVersion}</span>
-      <button type="button" className="singer-room-badge" onClick={() => setTab('room')}>{roomStatus}</button>
-    </header>
-    <main className="mobile-host-main singer-workspace-main" ref={workspace}>
-      <h1>{titles[tab]}</h1>
+    <main className="singer-workspace-main" ref={workspace}>
+      <header className="singer-screen-heading">
+        {tab === 'playing'
+          ? <button type="button" className="singer-icon-button" aria-label="Close Now Playing" onClick={() => changeTab(returnFromPlayer)}><IonIcon icon={chevronDownOutline} aria-hidden="true" /></button>
+          : tab === 'playlists' && currentPlaylist
+            ? <button type="button" className="singer-icon-button" aria-label="Back to Playlists" onClick={() => setPlaylist(null)}><IonIcon icon={arrowBackOutline} aria-hidden="true" /></button>
+            : null}
+        <h1 className={tab === 'playing' ? 'singer-player-label' : undefined}>{heading}</h1>
+        {(tab === 'room' && !kiosk || tab === 'profile') && <img src={boothMark} alt="" />}
+        {tab === 'library' && joined && <span className="singer-badge singer-badge-live">In Room</span>}
+        {tab === 'queue' && joined && <span className="singer-badge singer-badge-live">Live</span>}
+        {tab === 'playlists' && !currentPlaylist && <button type="button" className="singer-icon-button" aria-label="New playlist" disabled={!store.ready}
+          onClick={() => openSheet({ kind: 'playlist' })}><IonIcon icon={addOutline} aria-hidden="true" /></button>}
+        {kiosk && joined && <button type="button" onClick={finishKiosk}>Done</button>}
+      </header>
       {notice && <p role="status" className="singer-workspace-status">{notice}</p>}
-      {guest?.message && <p role="status" className="singer-workspace-status">{guest.message}</p>}
-      {tab === 'library' && <section>
-        <label className="mobile-search">Search Songs<input type="search" placeholder="Artist or song title" maxLength={200}
-          value={query} onChange={event => search(event.currentTarget.value)} /></label>
-        {availableSources.length > 1 && <label className="singer-source-filter">Filter by source
-          <select value={activeFilter} onChange={event => {
-            const value = event.currentTarget.value;
-            setSourceFilter(availableSources.find(source => source === value) ?? 'all');
-          }}>
-            <option value="all">All Sources</option>
-            {availableSources.map(source => <option key={source} value={source}>
-              {source === 'partytyme' && !joined ? BROWSE_LABELS.partytyme : sourceNames[source]}
-            </option>)}
-          </select>
-        </label>}
-        {joined ? <>
-          <p className="mobile-quiet">{snapshot?.sources ? snapshot.sources.map(source => sourceNames[source]).join(' · ') || 'The host has no enabled sources.' : 'Searching the room’s library'}</p>
-          {guest.searching && <p role="status">Searching the room…</p>}
-          {liveSongs.length > 0 && <ul className="mobile-songs">{liveSongs.map(song => songRow(song, true))}</ul>}
-          {!guest.searching && liveSongs.length === 0 && <p>No matching songs in this room.</p>}
-          {guest.nextOffset !== null && <button type="button" disabled={guest.busy} onClick={() => void room.client.more(listener)}>Load More Songs</button>}
-        </> : <>
-          {nearby.length > 0 && <button className="mobile-primary" type="button" onClick={() => setTab('room')}>Nearby Karaoke Rooms</button>}
-          <p className="mobile-quiet">Save songs for later. Join a room when you’re ready to queue.</p>
-          {sources.length === 0 && <p>Choose a catalog in <button type="button" onClick={() => setTab('profile')}>Profile &amp; Settings</button>.</p>}
-          {query.trim().length < 2 && sources.length > 0 && <p className="mobile-quiet">{sources.map(source => BROWSE_LABELS[source]).join(' · ')}</p>}
-          {query.trim().length >= 2 && sources.filter(source => activeFilter === 'all' || source === activeFilter).map(source => {
-            const page = browse.pages[source];
-            return <section className="singer-catalog-group" key={source} aria-label={BROWSE_LABELS[source]}>
-              <h2>{BROWSE_LABELS[source]}</h2>
-              {!page && <p role="status">Searching…</p>}
-              {page?.items.length ? <ul className="mobile-songs">{page.items.map(song => songRow(song, false, song))}</ul> : null}
-              {page?.status === 'ready' && !page.items.length && <p>No matching songs.</p>}
-              {page?.status === 'error' && <p role="status">Catalog unavailable. <button type="button" onClick={browse.retry}>{page.next ? 'Restart Search' : 'Try Again'}</button></p>}
-              {page?.next && page.status !== 'error' && <button type="button" disabled={page.status === 'loading'} onClick={() => browse.more(source)}>
-                {page.status === 'loading' ? 'Loading…' : 'More Karaoke Nerds Results'}
-              </button>}
-            </section>;
-          })}
-        </>}
-      </section>}
+      {guest?.message && !sheet && <p role="status" className="singer-workspace-status">{guest.message}</p>}
+
       {tab === 'room' && <section>
-        {joined ? <>
-          <p>Joined as <strong>{snapshot?.singerName ?? connectName}</strong>.</p>
+        <div className="singer-room-hero">
+          {(joined || firstNearby) && <span className="singer-badge singer-badge-live">{joined ? 'Connected' : 'Nearby · Live'}</span>}
+          <div><h2>{joined ? label : (kiosk || firstNearby?.name || 'Find Your Room')}</h2>
+            <p>{joined ? 'Joined as ' + (snapshot?.singerName || connectName) : firstNearby ? 'Available to join' : 'Find the show you want to sing in.'}</p>
+            <button type="button" className="mobile-primary" disabled={connecting} onClick={() => {
+              if (joined) changeTab('queue');
+              else if (kiosk || firstNearby) chooseRoom(kiosk ?? firstNearby!.slug, firstNearby?.name);
+              else roomBox.current?.focus();
+            }}>{joined ? 'Open Queue' : kiosk ? 'Continue as Guest' : firstNearby ? 'Join Room' : 'Enter Room Code'}</button>
+          </div>
+        </div>
+        {joined && room && guest ? <>
+          <h2 className="singer-subheading">Room Options</h2>
           <div className="singer-inline-actions">
             <button disabled={guest.busy} type="button" onClick={() => void room.client.refresh(listener)}>Refresh</button>
             <button disabled={guest.busy} type="button" onClick={() => void room.client.reconnect(listener)}>Reconnect</button>
             <button type="button" onClick={() => closeRoom('You left this room. Your playlists and catalog choices are saved.')}>Leave Room</button>
           </div>
-          <SingerRequests client={room.client} view={guest} listen={listener} names={requestNames.current} />
           <SingerRoomActions client={room.client} view={guest} listen={listener} />
-        </> : <>
-          <form onSubmit={event => { event.preventDefault(); void join(); }}>
-            <label>Room code or invitation link<input value={roomInput} maxLength={512} placeholder="your-hosts-room" autoCapitalize="none" autoCorrect="off"
-              autoComplete="off" required disabled={connecting} onChange={event => { setRoomInput(event.currentTarget.value); if (room) closeRoom(); }} /></label>
-            {!manualLan && <>
-              <label>Display name<input autoComplete="nickname" maxLength={100} value={connectName} required disabled={connecting || guest?.joinUncertain}
-                onChange={event => setName(event.currentTarget.value)} /></label>
-              <button className="mobile-primary" disabled={connecting}>{connecting ? 'Connecting…' : guest?.joinUncertain ? 'Retry Joining' : 'Join Room'}</button>
-            </>}
+        </> : !kiosk && <>
+          <h2 className="singer-subheading">Join With a Code</h2>
+          <form className="singer-room-code" onSubmit={event => { event.preventDefault(); chooseRoom(roomInput); }}>
+            <input aria-label="Room code or invitation link" ref={roomBox} value={roomInput} maxLength={512}
+              placeholder="Room code or invitation link" autoCapitalize="none" autoCorrect="off" autoComplete="off" required disabled={connecting}
+              onChange={event => { setRoomInput(event.currentTarget.value); if (room) closeRoom(); }} />
+            {!manualLan && <button className="mobile-primary" type="submit" disabled={connecting}>Go</button>}
           </form>
           {manualLan && <p><a href={manualLan} target="_blank" rel="noopener noreferrer">Open Local Invitation</a> on the host’s Wi-Fi.</p>}
-          {nearby.length > 0 && <section className="singer-catalog-group"><h2>Nearby Rooms</h2>
-            {nearby.map(found => <button key={found.instance} className="singer-nearby-option" type="button" disabled={connecting} onClick={() => chooseRoom(found.slug)}>{found.name}</button>)}
+          {nearby.length > 1 && <section><h2 className="singer-subheading">More Nearby Rooms</h2>
+            {nearby.slice(1).map(found => <ListLink key={found.instance} icon={radioOutline} title={found.name}
+              subtitle="Nearby" onClick={() => chooseRoom(found.slug, found.name)} />)}
           </section>}
-          {lastRoom && <section className="singer-catalog-group"><h2>Last Room</h2>
-            <button type="button" disabled={connecting} onClick={() => chooseRoom(lastRoom)}>{lastRoom}</button>
+          {lastRoom && <section><h2 className="singer-subheading">Recently Joined</h2>
+            <ListLink icon={radioOutline} title={lastRoom} onClick={() => chooseRoom(lastRoom)} />
           </section>}
         </>}
       </section>}
-      {tab === 'playlists' && <SingerPlaylistsPanel store={store} renderRecordingAction={recording => joined &&
-        <button type="button" onClick={() => { search(recording.title.slice(0, 200)); setTab('library'); }}>Find in Room</button>} />}
-      {tab === 'profile' && <>
-        <SingerProfilePanel store={store} />
-        <fieldset className="singer-sources"><legend>Browse Sources</legend>
-          {joined ? <p className="mobile-quiet">The host chooses the sources available in this room.</p> :
-            BROWSE_SOURCES.map(source => <label key={source}>
+
+      {tab === 'library' && <section>
+        <div className="singer-search-field">
+          <IonIcon icon={searchOutline} aria-hidden="true" />
+          <input aria-label="Search songs" ref={searchBox} type="search" placeholder="Song or artist" maxLength={200} value={query}
+            onChange={event => search(event.currentTarget.value)} />
+          {query && <button type="button" className="singer-icon-button singer-icon-quiet" aria-label="Clear search"
+            onClick={() => { search(''); searchBox.current?.focus(); }}><IonIcon icon={closeOutline} aria-hidden="true" /></button>}
+        </div>
+        {availableSources.length > 1 && <div className="singer-source-chips" role="group" aria-label="Filter by source">
+          <button type="button" aria-pressed={activeFilter === 'all'} onClick={() => setSourceFilter('all')}>All</button>
+          {availableSources.map(source => <button type="button" key={source} aria-pressed={activeFilter === source}
+            onClick={() => setSourceFilter(source)}>{source === 'partytyme' && !joined ? BROWSE_LABELS.partytyme : sourceNames[source]}</button>)}
+        </div>}
+        {joined ? <>
+          {guest.searching ? <p role="status">Searching the room…</p> : liveSongs.length > 0
+            ? <p className="singer-result-count">{liveSongs.length} {liveSongs.length === 1 ? 'result' : 'results'}</p>
+            : <p>No matching songs in this room.</p>}
+          {liveSongs.length > 0 && <ul className="singer-result-list">{liveSongs.map(song => songRow(song))}</ul>}
+          {guest.nextOffset !== null && <button type="button" disabled={guest.busy} onClick={() => void room.client.more(listener)}>Load More Songs</button>}
+        </> : <>
+          {sources.length === 0 && <p>Choose a catalog in <button type="button" onClick={() => changeTab('profile')}>Account</button>.</p>}
+          {query.trim().length < 2 && sources.length > 0 && <p className="mobile-quiet">Search by title or artist. Join a room to request a song.</p>}
+          {query.trim().length >= 2 && sources.filter(source => activeFilter === 'all' || source === activeFilter).map(source => {
+            const page = browse.pages[source];
+            return <section className="singer-catalog-group" key={source} aria-label={BROWSE_LABELS[source]}>
+              {sources.length > 1 && activeFilter === 'all' && <h2>{BROWSE_LABELS[source]}</h2>}
+              {!page && <p role="status">Searching…</p>}
+              {page?.items.length ? <ul className="singer-result-list">{page.items.map(song => songRow(song, song))}</ul> : null}
+              {page?.status === 'ready' && !page.items.length && <p>No matching songs.</p>}
+              {page?.status === 'error' && <p role="status">Catalog unavailable. <button type="button" onClick={browse.retry}>{page.next ? 'Restart Search' : 'Try Again'}</button></p>}
+              {page?.next && page.status !== 'error' && <button type="button" disabled={page.status === 'loading'} onClick={() => browse.more(source)}>
+                {page.status === 'loading' ? 'Loading…' : 'More ' + BROWSE_LABELS[source] + ' Results'}
+              </button>}
+            </section>;
+          })}
+        </>}
+      </section>}
+
+      {tab === 'queue' && <section>
+        {joined && room && guest ? <>
+          <p className="mobile-quiet">{label}</p>
+          {stage && <>
+            <h2 className="singer-subheading">Now Playing</h2>
+            {playing ? <NowButton title={playing.title} detail={playing.singer || (playing.status === 'paused' ? 'Paused' : 'Playing')}
+              source={playing.source} onClick={() => changeTab('playing')} /> : <p className="mobile-quiet">The stage is between songs.</p>}
+            {turn && <div className="singer-queue-turn"><strong>Your turn · #{turn.position}</strong><p>{turn.title} · {turn.status === 'preparing' ? 'Preparing' : 'Queued'}</p></div>}
+            <h2 className="singer-subheading">Coming Up</h2>
+            {rotation.length > 0 ? <ol className="singer-result-list">
+              {rotation.map(row => <li className="singer-queue-row" key={row.position}>
+                <span className="singer-queue-position">{String(row.position).padStart(2, '0')}</span>
+                <div className="singer-copy"><strong>{row.title}</strong><small>{row.singer || row.artist}</small></div>
+                <span className={'singer-badge' + (row.ownRequestId ? ' singer-badge-mine' : '')}>{row.status === 'preparing' ? 'Preparing' : row.position === 1 ? 'Up Next' : 'Queued'}</span>
+              </li>)}
+            </ol> : <p className="mobile-quiet">No songs are queued yet.</p>}
+            {stage.queueTruncated && <p className="mobile-quiet">Showing the next {rotation.length} requests.</p>}
+          </>}
+          {!stage && <p className="mobile-quiet">This host shares your requests. Live room rotation requires a compatible host and relay.</p>}
+          <SingerRequests client={room.client} view={guest} listen={listener} names={requestNames.current} />
+        </> : <><p className="mobile-quiet">Join a room to see the queue and request songs.</p>
+          <button className="mobile-primary" type="button" onClick={() => changeTab('room')}>Find a Room</button></>}
+      </section>}
+
+      {tab === 'playing' && <section>
+        {playing && joined && room && guest ? <>
+          <p className="singer-playing-room">{label}</p>
+          <div className="singer-stage-art">
+            <span className={'singer-badge' + (playing.status === 'playing' ? ' singer-badge-live' : '')}>{playing.status === 'paused' ? 'Paused' : 'On Stage'}</span>
+          </div>
+          <h2 className="singer-playing-title">{playing.title}</h2>
+          <p className="mobile-quiet">{[playing.artist, playing.singer ? 'Sung by ' + playing.singer : ''].filter(Boolean).join(' · ')}</p>
+          {playing.timing && <div className="singer-playing-timing">
+            <progress aria-label="Song progress" value={playing.timing.position} max={playing.timing.duration} />
+            <span>{elapsed(playing.timing.position)}</span><span>{elapsed(playing.timing.duration)}</span>
+          </div>}
+          <div className="singer-inline-actions singer-playing-actions">
+            {snapshot?.applauseEnabled && <button type="button" className="mobile-primary"
+              disabled={guest.busy || guest.uncertain || (snapshot.applauseCredits ?? 3) === 0}
+              onClick={() => void room.client.applaud(listener)}>Applaud ({snapshot.applauseCredits ?? 3})</button>}
+            <SingerStarButton store={store} recording={{ title: playing.title, artist: playing.artist, source: playing.source,
+              recordingKey: playing.recordingId, id: playing.versionId, roomId: room.id }} displayName={snapshot?.singerName} showLabel />
+          </div>
+          {next && <section><h2 className="singer-subheading">Up Next</h2>
+            <ListLink icon={listOutline} title={next.title} subtitle={next.singer || next.artist} onClick={() => changeTab('queue')} />
+          </section>}
+        </> : <p className="mobile-quiet">No song is playing right now.</p>}
+      </section>}
+
+      {tab === 'playlists' && (currentPlaylist
+        ? <section className="mobile-singer-playlists">
+          <p className="mobile-quiet">{currentPlaylist.recordings.length} {currentPlaylist.recordings.length === 1 ? 'song' : 'songs'}</p>
+          <PlaylistDetails key={currentPlaylist.id} playlist={currentPlaylist} store={store} renderRecordingAction={recording => joined &&
+            <button type="button" onClick={() => { search(recording.title.slice(0, 200)); changeTab('library'); }}>Find in Room</button>} />
+        </section>
+        : <section>
+          <button className="singer-playlist-hero" type="button" disabled={!stars} onClick={() => stars && setPlaylist(stars.id)}>
+            <IonIcon icon={starOutline} aria-hidden="true" /><span><strong>Starred Songs</strong><small>{stars?.recordings.length ?? 0} {stars?.recordings.length === 1 ? 'song' : 'songs'}</small></span>
+          </button>
+          <h2 className="singer-subheading">My Playlists</h2>
+          {collections.map(item => <ListLink key={item.id} icon={musicalNotesOutline} title={item.name}
+            subtitle={item.recordings.length + (item.recordings.length === 1 ? ' song' : ' songs')} onClick={() => setPlaylist(item.id)} />)}
+          {store.ready && !collections.length && <p className="mobile-quiet">Save songs from search or create a playlist.</p>}
+          {store.storageError && <p role="alert">{store.storageError}</p>}
+        </section>)}
+
+      {tab === 'profile' && <section>
+        <div className="singer-account-card">
+          <span className="singer-avatar" aria-hidden="true">{accountName.split(/\s+/).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase()}</span>
+          <div className="singer-copy"><strong>{accountName}</strong><small>{account?.email ?? 'Guest profile'}</small></div>
+        </div>
+        {!account && onSignIn && <button type="button" className="mobile-primary singer-full-action" onClick={onSignIn}>Sign In / Create Account</button>}
+        <h2 className="singer-subheading">Profile &amp; Settings</h2>
+        <ListLink icon={personCircleOutline} title="Display Name" subtitle="Shown to hosts"
+          onClick={() => openSheet({ kind: 'name' }, connectName)} disabled={!store.ready} />
+        <details><summary><IonIcon icon={sunnyOutline} aria-hidden="true" /> Appearance</summary>
+          <label>Theme<select value={theme} onChange={event => {
+            const value = event.currentTarget.value;
+            if (value === 'day' || value === 'night' || value === 'system') { setTheme(value); saveValue(themeKey, value); }
+          }}><option value="system">Match Device</option><option value="day">Day</option><option value="night">Night</option></select></label>
+        </details>
+        <ListLink icon={albumsOutline} title="Playlists" subtitle="Saved on this device" onClick={() => changeTab('playlists')} />
+        <details><summary>Browse Sources</summary>
+          {joined ? <p className="mobile-quiet">The host chooses the sources in this room.</p> :
+            BROWSE_SOURCES.map(source => <label className="mobile-check" key={source}>
               <input type="checkbox" checked={sources.includes(source)} onChange={event => setSource(source, event.currentTarget.checked)} />{BROWSE_LABELS[source]}
             </label>)}
-          <p className="mobile-quiet">Browse public catalogs without a provider account. Party Tyme Pro listings may differ from a host’s Party Tyme catalog.</p>
-        </fieldset>
-      </>}
+        </details>
+        {account && onSignOut && <button type="button" className="singer-full-action" onClick={() => void onSignOut()}>Sign Out</button>}
+        {store.storageError && <p role="alert">{store.storageError}</p>}
+        <p className="singer-version-label">The Proper Volume Karaoke Booth <span className="mobile-version">{appVersion}</span></p>
+      </section>}
     </main>
-    <nav className="mobile-tabs" aria-label="Singer workspace">
-      {tabs.map(item => <button key={item.id} type="button" aria-current={item.id === tab ? 'page' : undefined} onClick={() => setTab(item.id)}>
-        <IonIcon icon={item.icon} aria-hidden="true" /><span>{item.label}</span>
-      </button>)}
-    </nav>
+
+    {!kiosk && tab !== 'playing' && <footer className="singer-workspace-dock">
+      {playing && tab !== 'queue' && <NowButton title={playing.title}
+        detail={[playing.status === 'paused' ? 'Paused' : 'Live', playing.singer].filter(Boolean).join(' · ')}
+        source={playing.source} onClick={() => changeTab('playing')} compact />}
+      <nav className="mobile-tabs" aria-label="Singer workspace">
+        {tabs.map(item => <button key={item.id} type="button" aria-current={item.id === tab ? 'page' : undefined} onClick={() => changeTab(item.id)}>
+          <IonIcon icon={item.icon} aria-hidden="true" /><span>{item.label}</span>
+        </button>)}
+      </nav>
+    </footer>}
+
+    {sheet && <SingerSheet title={sheet.kind === 'song' ? sheet.song.title : sheet.kind === 'join' ? 'Join Room'
+      : sheet.kind === 'playlist' ? 'New Playlist' : 'Display Name'} dismiss={dismissSheet} busy={connecting || saving}>
+      {sheet.kind === 'song' ? <>
+        <p>{[sheet.song.artist, sheet.song.source ? sourceNames[sheet.song.source] : 'Host Library'].filter(Boolean).join(' · ')}</p>
+        {joined && room && guest && guest.songs.some(song => song.id === sheet.song.id) ?
+          <button type="button" className="mobile-primary singer-full-action" disabled={guest.busy || guest.uncertain}
+            onClick={() => {
+              setSheet(null);
+              if (!kiosk) changeTab('queue');
+              void room.client.request(sheet.song.id, listener);
+            }}>Add to Queue</button> :
+          <button type="button" className="singer-full-action" onClick={() => { setSheet(null); changeTab('room'); }}>Join a Room to Queue</button>}
+        {!kiosk && <div className="singer-inline-actions singer-sheet-song-actions">
+          <SingerStarButton store={store} recording={saveRecording(sheet.song, sheet.browseSong)} displayName={snapshot?.singerName} />
+          <SaveToSingerPlaylist store={store} recording={saveRecording(sheet.song, sheet.browseSong)} />
+        </div>}
+      </> : <form onSubmit={event => {
+        event.preventDefault();
+        if (sheet.kind === 'join') void join(sheet.slug, sheet.label, sheetValue);
+        else void saveSheet();
+      }}>
+        {sheet.kind === 'join' && <p className="mobile-quiet">{sheet.label}</p>}
+        <label>{sheet.kind === 'playlist' ? 'Playlist name' : 'Display name'}
+          <input value={sheetValue} maxLength={100} autoComplete={sheet.kind === 'playlist' || kiosk ? 'off' : 'nickname'} required
+            disabled={connecting || saving || (sheet.kind === 'join' && guest?.joinUncertain)}
+            onChange={event => setSheetValue(event.currentTarget.value)} />
+        </label>
+        <button type="submit" className="mobile-primary singer-full-action" disabled={connecting || saving || !sheetValue.trim()}>{sheet.kind === 'join'
+          ? connecting ? 'Connecting…' : guest?.joinUncertain ? 'Retry Joining' : 'Join Room' : 'Save'}</button>
+        {sheetError && <p role="alert">{sheetError}</p>}
+      </form>}
+    </SingerSheet>}
   </div>;
+}
+
+function SongArtwork({ source }: { source?: SourceId }) {
+  return <span aria-hidden="true" className={'singer-artwork source-' + (source ?? 'local')}>
+    <IonIcon icon={musicalNotesOutline} />
+  </span>;
+}
+
+function ListLink({ icon, title, subtitle, onClick, disabled }: {
+  icon: string; title: string; subtitle?: string; onClick: () => void; disabled?: boolean;
+}) {
+  return <button className="singer-list-link" type="button" onClick={onClick} disabled={disabled}>
+    <span className="singer-list-icon"><IonIcon icon={icon} aria-hidden="true" /></span>
+    <span className="singer-copy"><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
+    <IonIcon icon={chevronForwardOutline} aria-hidden="true" />
+  </button>;
+}
+
+function NowButton({ title, detail, source, compact, onClick }: {
+  title: string; detail: string; source?: SourceId; compact?: boolean; onClick: () => void;
+}) {
+  return <button type="button" className={'singer-now-button' + (compact ? ' singer-now-mini' : '')}
+    aria-label={compact ? 'Open Now Playing' : 'Now Playing: ' + title}
+    onClick={onClick}>
+    <SongArtwork source={source} /><span className="singer-copy"><strong>{title}</strong><small>{detail}</small></span><IonIcon icon={radioOutline} aria-hidden="true" />
+  </button>;
 }

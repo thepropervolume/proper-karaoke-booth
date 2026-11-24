@@ -2,7 +2,7 @@ import { matchesCatalogQuery, validCatalogQuery } from '../domain/guest-catalog-
 /** Transport-independent, single-authority guest boundary. It opens no listener. */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { applyCommand, isVersionAllowed, visibleVersions, type Outcome, type ShowState } from '../domain';
+import { applyCommand, isVersionAllowed, orderedFuture, visibleVersions, type Outcome, type ShowState, type SongRequest, type Version } from '../domain';
 import { normalizeMissingRequest } from '../domain/missing-request';
 import type { Settings, SourceId } from '../domain/settings';
 import { compileSongBlacklist } from '../domain/song-blacklist';
@@ -14,6 +14,8 @@ import { recordingKeyFor } from '../domain/song-rating';
 import { songSearchIdentity } from '../domain/song-identity';
 import { guestCatalogSong, RemoteCatalog, type GuestCatalogCandidate } from './remote-catalog';
 import type { Song } from '../remote/client';
+import { guestStageText, MAX_GUEST_ROTATION, projectGuestStage } from '../domain/guest-stage';
+import type { PlaybackTimelineState } from '../domain/playback-timeline';
 
 type Guest = { id: string; singerId: string; showId: string };
 type Receipt = { fingerprint: string; outcome: string };
@@ -24,6 +26,7 @@ export type RemoteApplause = (singerId: string, eventId: string, showId: string,
   stillAuthorized: () => boolean) => Promise<Outcome>;
 export type RemotePhoto = (singerId: string, eventId: string, showId: string, hostEpoch: string, expectedRevision: number,
   dataUrl: string, stillAuthorized: () => boolean) => Promise<Outcome>;
+export type RemoteStageTelemetry = () => { timeline: PlaybackTimelineState; preparingVersionIds: ReadonlySet<string> };
 const secret = () => randomBytes(32).toString('base64url');
 const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 const validSecret = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
@@ -62,7 +65,8 @@ export class RemoteQueue {
     private readonly onCommitted: (state: ShowState) => void, private readonly now: () => number = Date.now,
     private readonly assertAuthority: (cleanup?: boolean) => void = () => {},
     private readonly onUncertainCommit: () => void = () => {},
-    private readonly onApplause?: RemoteApplause, private readonly onPhoto?: RemotePhoto, private readonly remoteCatalog?: RemoteCatalog) {
+    private readonly onApplause?: RemoteApplause, private readonly onPhoto?: RemotePhoto, private readonly remoteCatalog?: RemoteCatalog,
+    private readonly stageTelemetry?: RemoteStageTelemetry) {
     db.exec(`CREATE TABLE IF NOT EXISTS remote_invitations (token_hash TEXT PRIMARY KEY, show_id TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_guests (id TEXT PRIMARY KEY, singer_id TEXT NOT NULL, show_id TEXT NOT NULL, resume_hash TEXT NOT NULL UNIQUE, resume_expires INTEGER NOT NULL, join_id TEXT NOT NULL UNIQUE, join_name TEXT NOT NULL, join_revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS remote_invitation_scopes (token_hash TEXT PRIMARY KEY, scope_id TEXT NOT NULL);
@@ -245,7 +249,9 @@ export class RemoteQueue {
     const selected = [...active, ...recent.slice(0, MAX_SNAPSHOT_REQUESTS - active.length)].sort((a, b) => a.index - b.index);
     const account = state.points?.accounts.find(item => item.singerId === guest.singerId);
     const preferences = this.settings();
+    const stage = this.stageTelemetry ? this.guestStage(state, preferences, visible, guest.singerId) : null;
     return { showId: state.showId, hostEpoch: state.hostEpoch, revision: state.revision, singerId: guest.singerId, singerName,
+      ...(stage ? { stage } : {}),
       unavailableUntilMs: state.singers.find(s => s.id === guest.singerId)?.unavailableUntilMs ?? 0, serverNowMs: this.now(),
       catalog: catalog.items, catalogNextOffset: catalog.nextOffset,
       ...(this.remoteCatalog ? { sources: this.remoteCatalog.sources() } : {}),
@@ -260,6 +266,40 @@ export class RemoteQueue {
       ...(this.onPhoto ? { photoEnabled: true } : {}),
       ...(this.onApplause ? { applauseEnabled: preferences.applauseEnabled !== false, applauseCredits: account?.credits ?? 3,
         ...(preferences.pointsEnabled !== false ? { points: account?.points ?? 0 } : {}) } : {}) };
+  }
+  private guestStage(state: ShowState, settings: RemoteQueueSettings, visible: Map<string, Version>, ownSingerId: string) {
+    const telemetry = this.stageTelemetry?.();
+    const names = new Map(state.singers.map(singer => [singer.id, singer.name]));
+    const describe = (request: SongRequest) => {
+      const version = visible.get(request.versionId);
+      if (!version || !sourceIsVisible(version, settings.sourceVisibility) ||
+          !guestStageText(version.title, 500) || !guestStageText(version.artist, 500, true)) return null;
+      const singer = [request.singerId, request.coSingerId].flatMap(id => {
+        const name = id ? names.get(id) : undefined;
+        return guestStageText(name, 100) ? [name] : [];
+      }).join(' & ');
+      return { version, title: version.title, artist: version.artist, singer };
+    };
+    const all = orderedFuture(state, settings.rotationMode, this.now()).flatMap(request => {
+      const song = describe(request);
+      return song ? [{ title: song.title, artist: song.artist, singer: song.singer,
+        status: telemetry?.preparingVersionIds.has(request.versionId) ? 'preparing' : 'queued',
+        ...(request.singerId === ownSingerId && guestStageText(request.id, 500) ? { ownRequestId: request.id } : {}) }] : [];
+    });
+    const request = state.requests.find(row => row.id === state.playback?.requestId);
+    const current = request && describe(request);
+    const timeline = telemetry?.timeline;
+    const playing = current && state.playback && /^[A-Za-z0-9_-]{8,128}$/.test(current.version.id) ? {
+      title: current.title, artist: current.artist, singer: current.singer, versionId: current.version.id, status: state.playback.status,
+      source: sourceForVersion(current.version),
+      recordingId: recordingKeyFor(current.version.source) ?? undefined,
+      ...(timeline && timeline.generation === state.playback.generationId && !timeline.seeking && timeline.duration > 0 && timeline.duration <= 86400 ? {
+        timing: { position: timeline.position, duration: timeline.duration }
+      } : {})
+    } : null;
+    return projectGuestStage({ nowPlaying: playing,
+      queue: all.slice(0, MAX_GUEST_ROTATION).map((row, index) => ({ ...row, position: index + 1 })),
+      queueTruncated: all.length > MAX_GUEST_ROTATION });
   }
   private catalogVersions(state: ShowState, query: string, settings: RemoteQueueSettings, sources?: Set<SourceId>) {
     return visibleVersions(state, settings).filter(version => sourceIsVisible(version, settings.sourceVisibility) &&

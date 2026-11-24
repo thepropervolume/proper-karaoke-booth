@@ -1571,7 +1571,12 @@ else {
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); installShowState(committed); syncQueuedDownloads(); broadcast(); };
     remoteAuthority = new RemoteAuthorityCoordinator(store, () => settings, installCommitted,
       (singerId, commandId, showId, hostEpoch, revision, authorized) => requestApplause({ role: 'singer', id: singerId }, commandId, showId, hostEpoch, revision, authorized),
-      requestPhoto, new RemoteCatalog(guestProviderCatalog, Date.now));
+      requestPhoto, new RemoteCatalog(guestProviderCatalog, Date.now), () => {
+        const downloads = queuedDownloads.snapshot();
+        return { timeline: playbackTimeline.snapshot(), preparingVersionIds: new Set([
+          ...downloads.pendingVersionIds, ...(downloads.activeVersionId ? [downloads.activeVersionId] : []),
+        ]) };
+      });
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
       publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
       screenFrame: () => { const frame = singerFrames.current; if (!frame) return null; const image = nativeImage.createFromBuffer(frame.jpeg); if (image.isEmpty()) return null;

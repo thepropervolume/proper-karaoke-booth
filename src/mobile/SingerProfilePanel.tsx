@@ -77,7 +77,7 @@ export function SingerProfilePanel({ store }: { store: SingerProfileStore }) {
   </section>;
 }
 
-function PlaylistDetails({ playlist, store, renderRecordingAction }: {
+export function PlaylistDetails({ playlist, store, renderRecordingAction }: {
   playlist: SingerPlaylist;
   store: SingerProfileStore;
   renderRecordingAction?: (recording: SingerPlaylistRecording) => React.ReactNode;
@@ -159,8 +159,8 @@ export function SaveToSingerPlaylist({ store, recording }: { store: SingerProfil
   </div>;
 }
 
-export function SingerStarButton({ store, recording, displayName }: {
-  store: SingerProfileStore; recording: SingerPlaylistRecording; displayName?: string;
+export function SingerStarButton({ store, recording, displayName, showLabel }: {
+  store: SingerProfileStore; recording: SingerPlaylistRecording; displayName?: string; showLabel?: boolean;
 }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
@@ -180,7 +180,7 @@ export function SingerStarButton({ store, recording, displayName }: {
     <button type="button" className="singer-song-star" aria-label={label} aria-pressed={selected}
       title={selected ? label : `Save to ${playlist?.name ?? starredPlaylistName(store.profile.displayName || displayName || '')}`}
       disabled={!store.ready || working} onClick={() => void toggle()}>
-      <span aria-hidden="true">{selected ? '★' : '☆'}</span>
+      <span aria-hidden="true">{selected ? '★' : '☆'}</span>{showLabel && <span aria-hidden="true"> {selected ? 'Starred' : 'Save'}</span>}
     </button>
     {error && <span role="alert">{error}</span>}
   </>;

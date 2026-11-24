@@ -2,10 +2,12 @@ import type { Outcome, RequestStatus } from '../domain';
 import type { SourceId } from '../domain/settings';
 import { SINGER_ON_HOLD } from '../domain/singer-availability';
 import type { RecordingKey } from '../domain/song-rating';
+import type { GuestStage } from '../domain/guest-stage';
 
 export type Song = { id: string; title: string; artist: string; source?: SourceId; recordingId?: RecordingKey };
 export type GuestSnapshot = { showId: string; hostEpoch: string; revision: number; singerId: string; singerName: string;
   unavailableUntilMs?: number; serverNowMs?: number; applauseEnabled?: boolean; applauseCredits?: number; points?: number; photoEnabled?: boolean; sources?: SourceId[]; catalog: Song[]; catalogNextOffset: number | null; requestsTruncated?: boolean;
+  stage?: GuestStage;
   requests: { id: string; versionId: string; status: RequestStatus; title?: string; artist?: string }[] };
 export type GuestTransport = {
   admission(invitation: string): Promise<{ showId: string; hostEpoch: string; revision: number }>;

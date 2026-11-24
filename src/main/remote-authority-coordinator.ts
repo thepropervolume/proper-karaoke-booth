@@ -1,6 +1,6 @@
 /** One lazily constructed show authority shared by all trusted remote transports. */
 import type { ShowState } from '../domain';
-import type { RemoteQueue, RemoteApplause, RemotePhoto, RemoteQueueSettings } from './remote-queue';
+import type { RemoteQueue, RemoteApplause, RemotePhoto, RemoteQueueSettings, RemoteStageTelemetry } from './remote-queue';
 import type { RemoteCatalog } from './remote-catalog';
 import type { Store } from './store';
 
@@ -13,7 +13,8 @@ export class RemoteAuthorityCoordinator {
     private readonly installCommitted: (state: ShowState) => void,
     private readonly onApplause?: RemoteApplause,
     private readonly onPhoto?: RemotePhoto,
-    private readonly remoteCatalog?: RemoteCatalog) {}
+    private readonly remoteCatalog?: RemoteCatalog,
+    private readonly stageTelemetry?: RemoteStageTelemetry) {}
 
   private notify(callback: () => void): void {
     try {
@@ -32,7 +33,7 @@ export class RemoteAuthorityCoordinator {
         // Store has latched the write gate before any callback can reenter.
         this.failed = true;
         for (const callback of [...this.failures]) this.notify(callback);
-    }, this.onApplause, this.onPhoto, this.remoteCatalog);
+    }, this.onApplause, this.onPhoto, this.remoteCatalog, this.stageTelemetry);
     return this.queue;
   }
   /** Failure callbacks must synchronously deny their transport before starting cleanup. */

@@ -45,7 +45,7 @@ const server = createServer((request, response) => {
   const asset = new URL(request.url ?? '/', origin).pathname;
   const path = resolve(staticRoot, asset === '/app/' ? 'index.html' : asset.replace(/^\/app\//, ''));
   if (!path.startsWith(staticRoot + sep)) { response.writeHead(404); response.end(); return; }
-  const mime: Record<string, string> = { html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png', woff2: 'font/woff2' };
+  const mime: Record<string, string> = { html: 'text/html', js: 'text/javascript', css: 'text/css', png: 'image/png', webp: 'image/webp', woff2: 'font/woff2' };
   void readFile(path).then(bytes => {
     response.writeHead(200, { 'Content-Security-Policy': csp, 'Content-Type': mime[path.split('.').at(-1)!] ?? 'application/octet-stream' });
     response.end(bytes);
@@ -73,6 +73,7 @@ const authority = new MobileRoomAuthority(show);
 const opened = await hostPost('open', { slug, openId: crypto.randomUUID() });
 const room = { roomId: opened.roomId, generation: opened.generation };
 const stopPolling = new AbortController();
+let announceStage = true;
 const browser = await chromium.launch({ executablePath: process.env.TPV_CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
 const errors: string[] = [], checks: string[] = [];
 const polling = (async () => {
@@ -82,7 +83,23 @@ const polling = (async () => {
       const responses = (batch.requests as InternetGuestCall[]).map(call => {
         const reply = authority.dispatch(call);
         if (reply.status === 200 && reply.body && (call.operation === 'catalog' || call.operation === 'snapshot')) {
-          if (call.operation === 'snapshot') reply.body.sources = ['karaokenerds', 'karafun'];
+          if (call.operation === 'snapshot') {
+            reply.body.sources = ['karaokenerds', 'karafun'];
+            if (announceStage) {
+              const snapshot = reply.body;
+              const current = show.state();
+              reply.body.stage = {
+                nowPlaying: { title: 'Rehearsal Song', artist: 'Oasis', singer: 'House Singer', versionId: 'youtube_RoomTest001',
+                  status: 'playing', source: 'karaokenerds', timing: { position: 75, duration: 240 } },
+                queue: current.queue.filter(entry => entry.status === 'accepted').slice(0, 30).map((entry, index) => {
+                  const song = current.songs.find(item => item.id === entry.songId)!;
+                  return { title: song.title, artist: song.artist, singer: entry.singer, position: index + 1, status: 'queued',
+                    ...(entry.singerId === snapshot.singerId ? { ownRequestId: entry.id } : {}) };
+                }),
+                queueTruncated: false,
+              };
+            }
+          }
           const field = call.operation === 'snapshot' ? 'catalog' : 'items';
           if (Array.isArray(reply.body[field])) reply.body[field] = reply.body[field].map(song => ({
             ...song, source: 'karaokenerds', recordingId: 'youtube:' + song.id.slice('youtube_'.length),
@@ -106,11 +123,14 @@ try {
   const singer = await context.newPage();
   singer.on('pageerror', error => errors.push(error.message));
   await singer.goto(origin + '/app/');
-  assert.equal(await singer.locator('.mobile-version').innerText(), version);
+  const exactButton = (name: string) => singer.getByRole('button', { name, exact: true });
+  await exactButton('Continue as Guest').click();
+  await singer.getByRole('heading', { name: 'Rooms', exact: true }).waitFor();
   const nav = singer.getByRole('navigation', { name: 'Singer workspace' });
   const tab = (name: string) => nav.getByRole('button', { name, exact: true }).click();
-  assert.equal(await nav.getByRole('button').count(), 4);
+  assert.equal(await nav.getByRole('button').count(), 5);
   assert.equal(await singer.getByRole('button', { name: /Full Host/ }).count(), 0);
+  await tab('Search');
   for (const [width, height] of [[320, 640], [390, 844], [1024, 768]]) {
     await singer.setViewportSize({ width, height });
     const search = await singer.getByRole('searchbox').boundingBox(), footer = await nav.boundingBox();
@@ -118,54 +138,87 @@ try {
     assert.ok(await singer.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   }
   await singer.setViewportSize({ width: 390, height: 844 });
-  checks.push('Library first, four destinations, fits small phones and tablet, no mobile host controls.');
+  checks.push('Five workspace destinations, fits small phones and tablet, no mobile host controls.');
+  const songOptions = (title: string) => exactButton('Options for ' + title);
   await singer.getByRole('searchbox').fill('Oasis');
   await singer.getByText('Wonderwall', { exact: true }).waitFor();
-  await singer.getByRole('button', { name: 'More Karaoke Nerds Results' }).click();
+  await exactButton('More Karaoke Nerds Results').click();
   await singer.getByText('Second Catalog Page', { exact: true }).waitFor();
-  assert.equal(await singer.getByRole('button', { name: 'Queue Wonderwall' }).count(), 0);
-  await singer.getByRole('button', { name: /Save.*Wonderwall/ }).click();
+  await songOptions('Wonderwall').click();
+  await exactButton('Join a Room to Queue').waitFor();
+  assert.equal(await exactButton('Add to Queue').count(), 0);
+  await exactButton('Save to Playlist for Wonderwall').click();
   await singer.getByLabel('New playlist name').fill('At the Show');
-  await singer.getByRole('button', { name: 'Save Song' }).click();
+  await exactButton('Save Song').click();
   await singer.getByText('Song saved.', { exact: true }).waitFor();
+  await exactButton('Close').click();
   checks.push('Disconnected Karaoke Nerds search pages, and results save without playback or a queue action.');
-  await tab('Profile');
-  await singer.getByLabel('Display name').fill('Alex');
-  await singer.getByLabel('Email (optional)').fill('alex@example.test');
-  await singer.getByRole('button', { name: 'Save Profile' }).click();
-  await singer.getByText('Profile saved.').waitFor();
+  await tab('Account');
+  assert.equal(await singer.locator('.mobile-version').innerText(), version);
+  await singer.getByRole('button', { name: /Display Name/ }).click();
+  await singer.getByRole('textbox', { name: 'Display name', exact: true }).fill('Alex');
+  await exactButton('Save').click();
+  await singer.getByText('Alex', { exact: true }).waitFor();
+  await singer.getByText('Browse Sources', { exact: true }).click();
   await singer.getByLabel('KaraFun', { exact: true }).check();
   await singer.getByLabel('Party Tyme Pro', { exact: true }).check();
-  await tab('Library');
+  await tab('Search');
   await singer.getByText('KaraFun Recording').waitFor();
   await singer.getByText('Party Tyme Pro Recording').waitFor();
-  const sourceFilter = singer.getByLabel('Filter by source');
-  await sourceFilter.selectOption('partytyme');
+  await exactButton('Party Tyme Pro').click();
   assert.equal(await singer.getByText('Wonderwall', { exact: true }).count(), 0);
-  await sourceFilter.selectOption('all');
+  await exactButton('All').click();
   await singer.screenshot({ path: resolve(evidence, 'browse.png') });
   checks.push('Public paid-provider metadata is searchable with no sign-in, and the device stores a profile.');
-  await singer.getByRole('button', { name: 'Nearby Karaoke Rooms' }).click();
-  await singer.getByRole('button', { name: slug }).click();
-  assert.equal(await singer.getByLabel('Display name').inputValue(), 'Alex');
-  await singer.getByRole('button', { name: 'Join Room', exact: true }).click();
-  await singer.getByRole('button', { name: 'Queue Wonderwall', exact: true }).waitFor();
+
+  await tab('Rooms');
+  await exactButton('Join Room').click();
+  assert.equal(await singer.getByRole('textbox', { name: 'Display name', exact: true }).inputValue(), 'Alex');
+  await singer.getByRole('dialog').getByRole('button', { name: 'Join Room', exact: true }).click();
+  await songOptions('Wonderwall').waitFor();
   assert.equal(await singer.getByText('Party Tyme Pro Recording').count(), 0);
-  const roomLaterResult = singer.getByRole('button', { name: 'Queue Room Match 54', exact: true });
+  const roomLaterResult = songOptions('Room Match 54');
   assert.equal(await roomLaterResult.count(), 0);
-  await singer.getByRole('button', { name: 'Load More Songs', exact: true }).click();
+  await exactButton('Load More Songs').click();
   await roomLaterResult.waitFor();
-  await singer.getByRole('button', { name: 'Star Wonderwall', exact: true }).click();
+  await songOptions('Wonderwall').click();
+  await exactButton('Star Wonderwall').click();
   await singer.getByRole('button', { name: 'Remove Wonderwall from starred songs', pressed: true }).waitFor();
   assert.equal(show.state().queue.length, 0);
-  await singer.getByRole('button', { name: 'Queue Wonderwall' }).click();
+  await exactButton('Add to Queue').click();
   await singer.getByText('Request received.', { exact: true }).waitFor();
   assert.equal(show.state().queue.length, 1);
-  await singer.screenshot({ path: resolve(evidence, 'connected.png') });
-  await tab('Room');
-  await singer.getByText('Queued', { exact: true }).waitFor();
-  await singer.getByRole('button', { name: 'Withdraw' }).click();
+  await singer.getByText('Your turn · #1', { exact: true }).waitFor();
+  await singer.screenshot({ path: resolve(evidence, 'queue.png') });
+  const stagePhoto = singer.waitForResponse(response => /playing-photo-.*\.webp$/.test(response.url()) && response.ok());
+  await exactButton('Now Playing: Rehearsal Song').click();
+  await stagePhoto;
+  const background = await singer.locator('.singer-stage-art').evaluate(async element => {
+    const match = /url\("([^"]+)"\)/.exec(getComputedStyle(element).backgroundImage);
+    if (!match) return false;
+    const artwork = new Image();
+    artwork.src = match[1];
+    await artwork.decode();
+    return artwork.naturalWidth > 0;
+  });
+  assert.ok(background, 'Now Playing photo should be rendered from the bundled asset.');
+  await singer.getByRole('heading', { name: 'Rehearsal Song' }).waitFor();
+  assert.equal(await singer.getByRole('progressbar', { name: 'Song progress' }).getAttribute('value'), '75');
+  assert.equal(await singer.getByText('Oasis · Sung by House Singer').count(), 1);
+  await singer.screenshot({ path: resolve(evidence, 'playing.png') });
+  await exactButton('Close Now Playing').click();
+  await exactButton('Withdraw').click();
   await singer.getByText('Request withdrawn.', { exact: true }).waitFor();
+  assert.equal(await singer.getByText('Your turn · #1', { exact: true }).count(), 0);
+  announceStage = false;
+  await tab('Rooms');
+  await exactButton('Refresh').click();
+  await tab('Queue');
+  await singer.getByText(/Live room rotation requires a compatible/).waitFor();
+  await tab('Search');
+  assert.equal(await exactButton('KaraFun').count(), 1);
+  checks.push('Updated room relays project the live queue and host timeline; older hosts retain request management and connected sources.');
+
   const roomPage = await context.newPage();
   roomPage.on('pageerror', error => errors.push(error.message));
   await roomPage.goto(origin + '/' + slug);
@@ -177,29 +230,29 @@ try {
   await roomPage.getByText("Browser Guest's Starred Songs (1)", { exact: true }).waitFor();
   assert.deepEqual(show.state().queue, requestsBeforeStar);
   await roomPage.close();
-  await singer.getByRole('button', { name: 'Leave Room' }).click();
-  await tab('Library');
+
+  await tab('Rooms');
+  await exactButton('Leave Room').click();
+  await tab('Search');
   await singer.getByText('KaraFun Recording').waitFor();
   assert.equal(await singer.getByText('Party Tyme Pro Recording').count(), 0);
   checks.push('Nearby suggestion requires explicit join, match 56 is available after loading more, real relay requests reach the host, and leaving inherits room sources.');
   await singer.reload();
   await tab('Playlists');
-  await singer.getByText("Alex's Starred Songs (1)", { exact: true }).waitFor();
-  assert.equal(await singer.getByText("Browser Guest's Starred Songs (1)", { exact: true }).count(), 0);
-  const savedPlaylist = singer.locator('details').filter({ has: singer.getByText('At the Show (1)', { exact: true }) });
-  await savedPlaylist.locator('summary').click();
-  await savedPlaylist.getByText('Wonderwall', { exact: true }).waitFor();
-  await tab('Room');
+  await singer.getByRole('button', { name: 'Starred Songs 1 song', exact: true }).waitFor();
+  await singer.getByRole('button', { name: 'At the Show 1 song' }).click();
+  await singer.getByText('Wonderwall', { exact: true }).waitFor();
+  await tab('Rooms');
   await singer.getByLabel('Room code or invitation link').fill(origin + '/' + slug);
-  assert.equal(await singer.getByLabel('Display name').inputValue(), 'Alex');
-  await singer.getByRole('button', { name: 'Join Room', exact: true }).click();
-  await singer.getByRole('button', { name: 'Queue Wonderwall' }).waitFor();
-  assert.equal(await singer.getByText('alex@example.test', { exact: true }).count(), 0);
-  await tab('Room');
+  await exactButton('Go').click();
+  assert.equal(await singer.getByRole('textbox', { name: 'Display name', exact: true }).inputValue(), 'Alex');
+  await singer.getByRole('dialog').getByRole('button', { name: 'Join Room', exact: true }).click();
+  await songOptions('Wonderwall').waitFor();
+  await tab('Rooms');
   stopPolling.abort();
   await polling;
   await hostPost('close', room);
-  await singer.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await exactButton('Refresh').click();
   await singer.getByText(/This room ended/).waitFor();
   checks.push('Mobile and browser guests star songs without queueing. Starred playlists are scoped to the singer and persist across reload.');
   checks.push('Profile and playlists survive reload, a manual HTTPS room link works, and closed rooms return to browse mode.');
