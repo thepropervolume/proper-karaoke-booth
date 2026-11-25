@@ -60,6 +60,16 @@ jobs:
           test -n "$(plutil -extract NSLocalNetworkUsageDescription raw -o - "$APP_BUNDLE/Info.plist")"
           test "$(plutil -extract NSBonjourServices.0 raw -o - "$APP_BUNDLE/Info.plist")" = '_tpv-karaoke._tcp'
           test -f "$APP_BUNDLE/Assets.car"
+          test "$(plutil -extract NSSupportsLiveActivities raw -o - "$APP_BUNDLE/Info.plist")" = 'true'
+          widget="$APP_BUNDLE/PlugIns/RoomLiveActivity.appex"
+          test -f "$widget/Info.plist"
+          test ! -e "$widget/embedded.mobileprovision"
+          xcrun lipo -verify_arch arm64 "$widget/RoomLiveActivity"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$widget/Info.plist")" = 'com.thepropervolume.karaoke.liveactivity'
+          test "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$widget/Info.plist")" = 'com.apple.widgetkit-extension'
+          for key in CFBundleVersion CFBundleShortVersionString; do
+            test "$(plutil -extract "$key" raw -o - "$widget/Info.plist")" = "$(plutil -extract "$key" raw -o - "$APP_BUNDLE/Info.plist")"
+          done
           node --input-type=module <<'NODE'
           import { readFile, readdir } from 'node:fs/promises';
           import { join } from 'node:path';

@@ -6,6 +6,8 @@
     <string>Find karaoke hosts on your Wi-Fi and offer to join their room. You choose whether to join.</string>
     <key>NSBonjourServices</key>
     <array><string>_tpv-karaoke._tcp</string></array>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

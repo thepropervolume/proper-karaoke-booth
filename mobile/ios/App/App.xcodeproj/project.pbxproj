@@ -17,7 +17,40 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A07600000000000000000001 /* TPVRoomDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07600000000000000000002 /* TPVRoomDiscovery.swift */; };
+		A07601000000000000000001 /* TPVRoomActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0760100000000000000000B /* TPVRoomActivityAttributes.swift */; };
+		A07601000000000000000002 /* TPVLiveActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0760100000000000000000C /* TPVLiveActivityPlugin.swift */; };
+		A07601000000000000000003 /* TPVRoomActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0760100000000000000000B /* TPVRoomActivityAttributes.swift */; };
+		A07601000000000000000004 /* TPVRoomLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0760100000000000000000D /* TPVRoomLiveActivity.swift */; };
+		A07601000000000000000005 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A07601000000000000000010 /* ActivityKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		A07601000000000000000006 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A07601000000000000000010 /* ActivityKit.framework */; };
+		A07601000000000000000007 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A07601000000000000000011 /* SwiftUI.framework */; };
+		A07601000000000000000008 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A07601000000000000000012 /* WidgetKit.framework */; };
+		A07601000000000000000009 /* RoomLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A0760100000000000000000F /* RoomLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A07601000000000000000020 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A07601000000000000000019;
+			remoteInfo = RoomLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A0760100000000000000001A /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A07601000000000000000009 /* RoomLiveActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -32,6 +65,14 @@
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		A07600000000000000000002 /* TPVRoomDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TPVRoomDiscovery.swift; sourceTree = "<group>"; };
+		A0760100000000000000000B /* TPVRoomActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TPVRoomActivityAttributes.swift; sourceTree = "<group>"; };
+		A0760100000000000000000C /* TPVLiveActivityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TPVLiveActivityPlugin.swift; sourceTree = "<group>"; };
+		A0760100000000000000000D /* TPVRoomLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TPVRoomLiveActivity.swift; sourceTree = "<group>"; };
+		A0760100000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A0760100000000000000000F /* RoomLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RoomLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A07601000000000000000010 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = SDKROOT; };
+		A07601000000000000000011 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		A07601000000000000000012 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -40,6 +81,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				A07601000000000000000005 /* ActivityKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A07601000000000000000017 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A07601000000000000000006 /* ActivityKit.framework in Frameworks */,
+				A07601000000000000000007 /* SwiftUI.framework in Frameworks */,
+				A07601000000000000000008 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -51,6 +103,8 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				A07601000000000000000013 /* RoomLiveActivity */,
+				A07601000000000000000014 /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -59,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				A0760100000000000000000F /* RoomLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -68,6 +123,8 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				A07600000000000000000002 /* TPVRoomDiscovery.swift */,
+				A0760100000000000000000B /* TPVRoomActivityAttributes.swift */,
+				A0760100000000000000000C /* TPVLiveActivityPlugin.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -80,6 +137,25 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		A07601000000000000000013 /* RoomLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				A0760100000000000000000D /* TPVRoomLiveActivity.swift */,
+				A0760100000000000000000E /* Info.plist */,
+			);
+			path = RoomLiveActivity;
+			sourceTree = "<group>";
+		};
+		A07601000000000000000014 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A07601000000000000000010 /* ActivityKit.framework */,
+				A07601000000000000000011 /* SwiftUI.framework */,
+				A07601000000000000000012 /* WidgetKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -90,10 +166,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				A0760100000000000000001A /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A0760100000000000000001F /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -102,6 +180,23 @@
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A07601000000000000000019 /* RoomLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A0760100000000000000001D /* Build configuration list for PBXNativeTarget "RoomLiveActivity" */;
+			buildPhases = (
+				A07601000000000000000016 /* Sources */,
+				A07601000000000000000017 /* Frameworks */,
+				A07601000000000000000018 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RoomLiveActivity;
+			productName = RoomLiveActivity;
+			productReference = A0760100000000000000000F /* RoomLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -136,6 +231,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				A07601000000000000000019 /* RoomLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -154,6 +250,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A07601000000000000000018 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -164,10 +267,29 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A07600000000000000000001 /* TPVRoomDiscovery.swift in Sources */,
+				A07601000000000000000001 /* TPVRoomActivityAttributes.swift in Sources */,
+				A07601000000000000000002 /* TPVLiveActivityPlugin.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A07601000000000000000016 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A07601000000000000000003 /* TPVRoomActivityAttributes.swift in Sources */,
+				A07601000000000000000004 /* TPVRoomLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A0760100000000000000001F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A07601000000000000000019 /* RoomLiveActivity */;
+			targetProxy = A07601000000000000000020 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -221,6 +343,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 23;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -239,6 +362,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 0.10.19;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -278,6 +402,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 23;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -290,6 +415,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 0.10.19;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -304,14 +430,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.10.19;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.thepropervolume.karaoke;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -327,18 +451,62 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "$(TPV_TESTFLIGHT_SIGN_IDENTITY)";
 				CODE_SIGN_STYLE = "$(TPV_TESTFLIGHT_SIGN_STYLE)";
-				CURRENT_PROJECT_VERSION = 23;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.10.19;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thepropervolume.karaoke;
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "$(TPV_TESTFLIGHT_PROFILE_NAME)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TPV_TESTFLIGHT_SIGN_IDENTITY = "iPhone Developer";
+				TPV_TESTFLIGHT_SIGN_STYLE = Automatic;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A0760100000000000000001B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RoomLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.thepropervolume.karaoke.liveactivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A0760100000000000000001C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "$(TPV_TESTFLIGHT_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(TPV_TESTFLIGHT_SIGN_STYLE)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RoomLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.thepropervolume.karaoke.liveactivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "$(TPV_TESTFLIGHT_WIDGET_PROFILE_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 				TPV_TESTFLIGHT_SIGN_IDENTITY = "iPhone Developer";
 				TPV_TESTFLIGHT_SIGN_STYLE = Automatic;
@@ -363,6 +531,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A0760100000000000000001D /* Build configuration list for PBXNativeTarget "RoomLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0760100000000000000001B /* Debug */,
+				A0760100000000000000001C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

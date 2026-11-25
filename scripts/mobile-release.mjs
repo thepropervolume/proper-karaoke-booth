@@ -37,7 +37,9 @@ if (operation === 'check-source' || operation === 'check-store-pair') {
     const iosIds = [...iosConfig.matchAll(/\bPRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);/g)].map(match => match[1].trim());
     assert.deepEqual(capacitorIds, [appId], 'Capacitor app ID does not match the store identity.');
     assert.deepEqual(androidIds, [appId], 'Android application ID does not match the store identity.');
-    assert.deepEqual(iosIds, [appId, appId], 'iOS bundle ID does not match the store identity.');
+      const extensionId = appId + '.liveactivity';
+      assert.deepEqual(iosIds.sort(), [appId, appId, extensionId, extensionId],
+        'The iOS app and Live Activity extension bundle IDs do not match their store identities.');
     const androidCodes = [...androidConfig.matchAll(/\bversionCode\s+(\d+)\s*$/gm)].map(match => match[1]);
     const iosBuilds = [...iosConfig.matchAll(/\bCURRENT_PROJECT_VERSION\s*=\s*([^;]+);/g)].map(match => match[1].trim());
     assert.ok(androidCodes.length === 1 && /^[1-9]\d*$/.test(androidCodes[0]), 'Android needs a positive version code.');

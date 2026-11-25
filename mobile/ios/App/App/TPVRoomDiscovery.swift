@@ -72,5 +72,8 @@ public class TPVRoomDiscoveryPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrow
 }
 
 class TPVBridgeViewController: CAPBridgeViewController {
-    override func capacitorDidLoad() { bridge?.registerPluginInstance(TPVRoomDiscoveryPlugin()) }
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(TPVRoomDiscoveryPlugin())
+        bridge?.registerPluginInstance(TPVLiveActivityPlugin())
+    }
 }

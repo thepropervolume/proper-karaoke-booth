@@ -8,8 +8,9 @@ import { verifyMobilePlatform } from '../../scripts/release-artifacts.mjs';
 import { releaseNotesForCommit } from '../../scripts/github-release.mjs';
 
 const appId = 'com.thepropervolume.karaoke';
+const widgetId = appId + '.liveactivity';
 
-async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds = [14, 14] } = {}) {
+async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds = [14, 14], iosWidgetId = widgetId } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'tpv-mobile-release-'));
   await mkdir(join(dir, 'scripts')); await mkdir(join(dir, 'mobile')); await mkdir(join(dir, 'src'));
   await cp(resolve('scripts/mobile-release.mjs'), join(dir, 'scripts/mobile-release.mjs'));
@@ -24,6 +25,7 @@ async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds
   await writeFile(join(dir, 'mobile/android/app/build.gradle'), 'applicationId "' + androidId + '"\nversionCode 1001\nversionName "' + androidVersion + '"\n');
   await mkdir(join(dir, 'mobile/ios/App/App.xcodeproj'), { recursive: true });
   const iosConfig = iosBuilds.map(build => 'MARKETING_VERSION = 0.10.1;\nPRODUCT_BUNDLE_IDENTIFIER = ' + appId + ';\nCURRENT_PROJECT_VERSION = ' + build + ';\n');
+  iosConfig.push(...Array(2).fill('PRODUCT_BUNDLE_IDENTIFIER = ' + iosWidgetId + ';\n'));
   await writeFile(join(dir, 'mobile/ios/App/App.xcodeproj/project.pbxproj'), iosConfig.join(''));
   await writeFile(join(dir, 'src/example.txt'), 'reviewed code');
   execFileSync('git', ['init', '-q', dir]);
@@ -50,6 +52,7 @@ test('store preflight rejects platform version, package identity, and iOS build-
     [{ androidVersion: '0.10.2' }, /Android package version does not match/],
     [{ androidId: 'com.example.wrong' }, /Android application ID does not match/],
     [{ iosBuilds: [14, 15] }, /Both iOS configurations need the same positive build number/],
+    [{ iosWidgetId: 'com.example.wrong' }, /Live Activity extension bundle IDs/],
   ];
   for (const [options, message] of cases) {
     const { dir, run } = await fixture(options);
