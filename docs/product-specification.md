@@ -148,11 +148,13 @@ The host queue shows approximate waits only during valid, actively playing, auto
 
 **Experimental, implemented in the current source:** Hosts can enable applause in Audio Controls and singer points in Queue Management; both default to on. The host's applause button has no credit limit. Six owner-supplied applause recordings, approximately 4 to 11.2 seconds long, cycle in order and mix with playback; each plays for its full duration, and up to three can play at once. Singer participants begin with three applause credits and gain one after completing a song, up to five. Singers cannot applaud their own performance. A failed playback does not spend a credit. The host and authenticated room singers can trigger applause; output routing and sound levels still need physical-device rehearsal.
 
+**Desktop applause cue:** After audio starts and the host authority commits the applause receipt, the singer screen shows a single badge for about 2.4 seconds. Another accepted clap refreshes the badge. Reduce Motion keeps the badge static. The ordinary singer-screen capture carries the cue to the host preview and enabled mirrors. Cue delivery is independent of audio playback and score persistence.
+
 Points are show-scoped. For each performance, the first three applauses give each performer 10, 15 and 25 points, then 5 each; each different applauder after the first adds 5. If all eligible participating singers present at the start applaud at least once, each performer gets another 50 immediately; performers are excluded, the host is not required, and there must be at least one eligible listener. The four distinct applauders example awards 70 points before the optional all-participants bonus. A singer applauding another person's performance earns 8, then 4, then 2 points for their first three applauses of that performance. Applause outside active playback uses a credit but earns no performance points.
 
 Queueing an assigned song earns 12 points, plus 6 if nobody else completed that song during this show and 18 if host history shows it has never been queued or sung; unknown history does not earn the 18-point bonus. A duet earns each assigned performer 14 more points. The host can mark a song as a duet in metadata. A singer's accepted missing-song suggestion earns 10 points, and a photo accepted for display earns 24. No points are awarded when points are disabled. Assigned singers, track identity and stored history determine the applicable bonuses; an unassigned request does not have a singer to score until assigned.
 
-Authenticated room singers can select a JPEG or PNG and send it to the desktop singer display. The browser reduces it to a bounded JPEG, and the screen displays one transient photo at a time for about ten seconds. The score is recorded only after display acknowledgement. The show database stores the score without the photo. An occupied or unavailable display rejects the submission. LAN, relay, audio routing and real-device behavior remain subject to end-to-end and deployment verification.
+Authenticated room singers can select a JPEG or PNG and send it to the desktop singer display. Booth can reveal the physical singer window to show one photo for about ten seconds. Enabled preview and screen mirrors can capture it. Desktop casting currently goes straight to the display. The score is recorded after the renderer acknowledges decoding and adding the image. SQLite keeps the points and receipt, including a digest. Image bytes are transient. See the [desktop room media and moderation contract](desktop-room-media.md) for proposed reviews, retained photos and verified identities.
 
 **Available:** a host can leave the singer empty, add or select a singer, submit a song and remove eligible requests. Host/staff queue commands may use null; only host may assign or clear an eligible request. Null requests create no Singer and do not acquire remote ownership. New requests are automatically approved by default; switching to host moderation affects new requests and does not silently approve existing pending ones. In Requests the host can accept or reject pending requests and view recent terminal request history. The separate missing-song form saves singer, title and optional artist to a local review table; the host may mark it Pending, Reviewing, Fulfilled or Declined. Saving a missing-song request does not add a recording or create a rotation turn.
 
@@ -631,12 +633,13 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "id": "O01",
   "title": "Singer display",
   "status": "Current",
-  "description": "Custom booth identity and scrolling announcement overlay a viewport-fitted singer screen.",
+  "description": "A viewport-fitted singer screen with booth branding, a scrolling announcement and a brief applause cue.",
   "layout": "display",
   "display_title": "THE PROPER VOLUME",
   "display_subtitle": "Your host booth name · Logo size 50vw",
+  "display_cue": "Applause",
   "display_next": "Coming up: Casey / Jordan · Scrolling banner at top or bottom",
-  "detail": "Hidden renderer supplies preview before opening this screen. Logo 10–85vw, banner expiry and optional restart persistence are settings. Native completed primary lyrics are pink; source video/CDG stays unchanged. Physical hot-plug remains unverified."
+  "detail": "The hidden singer renderer supplies the preview. Booth can show a brief upper-left Applause badge after an accepted clap. Reduce Motion keeps the badge static. Logo size and announcement expiry are configurable."
 }
 ```
 
