@@ -4,7 +4,8 @@ import { APPEARANCE_FONTS } from '../domain/appearance-font';
 import { ACCENT_COLORS, type Settings } from '../domain/settings';
 import { KARAOKE_PAIR_IMPORT_LABEL } from '../domain/shortcuts';
 
-export type ApplicationMenuAction = AppAction | 'documentation' | 'showHostWindow';
+export const BOOTH_PRODUCT_NAME = 'The Proper Volume Karaoke Booth';
+export type ApplicationMenuAction = AppAction | 'documentation' | 'about' | 'whatsNew' | 'showHostWindow';
 
 export type WorkspaceMenuContext = {
   busy: boolean;
@@ -25,9 +26,10 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
   context = INITIAL_WORKSPACE_MENU_CONTEXT, singerDisplayVisible = false): MenuItemConstructorOptions[] {
   const fileEnabled = !context.busy && !context.modal;
   const preferences: MenuItemConstructorOptions = { label: 'Preferences…', click: () => dispatch('preferences') };
+  const about: MenuItemConstructorOptions = { label: 'About', enabled: !context.modal, click: () => dispatch('about') };
   const result: MenuItemConstructorOptions[] = [];
   if (platform === 'darwin') result.push({ label: 'The Proper Volume Karaoke', submenu: [
-    { role: 'about' }, { type: 'separator' }, preferences, { type: 'separator' }, { role: 'services' },
+    { ...about, label: `About ${BOOTH_PRODUCT_NAME}` }, { type: 'separator' }, preferences, { type: 'separator' }, { role: 'services' },
     { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
   ] });
   result.push({ label: 'File', submenu: [
@@ -84,7 +86,10 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
     { label: 'Documentation', click: () => dispatch('documentation') },
     { label: 'Keyboard Shortcuts', click: () => dispatch('keybindings') },
     { type: 'separator' },
+    { label: "What's New", click: () => dispatch('whatsNew') },
     { label: 'Check for Updates', enabled: !context.modal, click: () => dispatch('checkDesktopUpdate') },
+    { type: 'separator' },
+    about,
   ] });
   return result;
 }

@@ -4,6 +4,8 @@ Use these guides to set up Booth, run a show and help singers join. The desktop 
 
 Start with the [Installation Guide](installation.md) for supported packages and CLI setup.
 
+Choose **Help → About** to see the product name, running version and publisher. **Help → What's New** opens the latest release notes in your browser.
+
 ## Run a Show
 
 - [Host Workspace](host-workspace.md) covers setup, the library, playlists, preferences, and the singer display.

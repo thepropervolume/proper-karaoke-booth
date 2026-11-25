@@ -22,11 +22,18 @@ const { realpathSync } = require('node:fs');
 app.setPath('userData', process.env.TPV_MENU_QA_PROFILE);
 app.setAppPath(process.env.TPV_MENU_QA_REPO);
 if (realpathSync(app.getPath('userData')) !== realpathSync(process.env.TPV_MENU_QA_PROFILE)) throw Error('Unsafe menu QA profile.');
-globalThis.menuQa = { dialogs: [], external: [] };
+globalThis.menuQa = { dialogs: [], external: [], about: [] };
 globalThis.fetch = async () => new Response('QA offline', { status: 503 });
 shell.openExternal = async (url) => { menuQa.external.push(url); };
 dialog.showOpenDialog = async (window, options) => { menuQa.dialogs.push(options.title); return { canceled: true, filePaths: [] }; };
-dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
+dialog.showMessageBox = async (window, options) => {
+  if (options?.title?.startsWith('About ')) {
+    menuQa.about.push({ title: options.title, name: options.message, detail: options.detail, buttons: options.buttons,
+      iconEmpty: options.icon.isEmpty(), parent: window.webContents.getURL() });
+    await new Promise(resolve => { menuQa.dismissAbout = resolve; });
+  }
+  return { response: 0, checkboxChecked: false };
+};
 require(process.env.TPV_MENU_QA_ENTRY);`);
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('TPV_') && key !== 'ELECTRON_RUN_AS_NODE'));
 Object.assign(env, { TPV_MENU_QA_PROFILE: profile, TPV_MENU_QA_REPO: repo, TPV_MENU_QA_ENTRY: join(repo, 'dist/main/index.cjs'),
@@ -118,8 +125,25 @@ try {
   assert.deepEqual(app.windows().filter(page => page.url().includes('/help/index.html')), [help]);
   assert.equal(await help.getByRole('heading', { name: 'Queue Management', exact: true }).isVisible(), true);
   assert.deepEqual(await app.evaluate(() => globalThis.menuQa.external), []);
+  phase = 'About and release notes';
+  await click(['Help', 'About']);
+  await check(() => !!globalThis.menuQa.dismissAbout);
+  await click(['Help', 'About']);
+  const aboutDialogs = await app.evaluate(() => globalThis.menuQa.about);
+  assert.equal(aboutDialogs.length, 1);
+  const { title, name, detail, buttons, iconEmpty, parent } = aboutDialogs[0];
+  const version = await host.evaluate(() => window.tpv.getAppVersion());
+  assert.equal(title, 'About The Proper Volume Karaoke Booth');
+  assert.equal(name, 'The Proper Volume Karaoke Booth');
+  assert.equal(detail, `Version ${version}\nPublished by The Proper Volume`);
+  assert.deepEqual(buttons, ['OK']);
+  assert.equal(iconEmpty, false);
+  assert.match(parent, /\/renderer\/index\.html$/);
+  await app.evaluate(() => { globalThis.menuQa.dismissAbout(); });
+  await click(['Help', "What's New"]);
+  assert.deepEqual(await app.evaluate(() => globalThis.menuQa.external), ['https://release.thepropervolume.com/booth/latest/RELEASE_NOTES.md']);
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback, null);
-  console.log('Native File, Edit, font, separate host/singer fullscreen, F11 and offline Help menu passed.');
+  console.log('Native File, Edit, font, separate host/singer fullscreen, F11, offline Help, About and What’s New passed.');
 } catch (error) {
   const child = app?.process();
   console.error(`Menu rehearsal failed during ${phase}. Electron exit status: ${child?.exitCode ?? child?.signalCode ?? 'unavailable'}.`);

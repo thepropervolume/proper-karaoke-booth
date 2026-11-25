@@ -4,6 +4,8 @@ Use **File** to import videos, folders, and paired lyric files or to back up and
 
 ## App Updates
 
+**Help → About** shows the running Booth version. **Help → What's New** opens the latest published release notes in your browser.
+
 In **Edit → Preferences → Updates**, set **Available Updates Mechanism** and click **Save**. **Notify me on startup** is the default and offers the release page when a newer version is available. **Download Only** saves the verified package for later. Use **Show Download** to find it. **Download and Install** prepares the package and applies it after a normal quit, when the show and rooms are saved and closed. **Do Nothing** turns off automatic checks. **Check Now** is available for a manual check in any mode.
 
 The Windows setup, macOS PKG, and Linux Debian package open with the system installer and can require approval. A writable AppImage updates in place after quit. The portable Windows ZIP can be downloaded from Preferences for manual extraction.

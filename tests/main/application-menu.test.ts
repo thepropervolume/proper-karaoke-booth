@@ -21,7 +21,7 @@ test('native menus route desktop actions and mark saved View selections', () => 
     ['Edit', ['Find Song', 'Preferences…']],
     ['Playback', ['Play / Pause', 'Stop', 'Restart Current Song', 'Skip Song…', 'Rewind 10 Seconds', 'Forward 10 Seconds']],
     ['Window', ['Show Host Window', 'Toggle Host Full Screen', 'Open Singer Display', 'Toggle Singer Display Full Screen']],
-    ['Help', ['Documentation', 'Keyboard Shortcuts', 'Check for Updates']],
+    ['Help', ['Documentation', 'Keyboard Shortcuts', "What's New", 'Check for Updates', 'About']],
   ] as const) {
     for (const label of labels) {
       const item = named(children(named(menu, top)), label);
@@ -32,7 +32,7 @@ test('native menus route desktop actions and mark saved View selections', () => 
   }
   assert.deepEqual(actions, ['importVideo', 'importDirectory', 'importCdg', 'backupShow', 'restoreShow', 'search', 'preferences',
     'playPause', 'stop', 'previous', 'skip', 'seekBackward', 'seekForward', 'showHostWindow', 'toggleHostFullscreen',
-    'singerDisplay', 'toggleFullscreen', 'documentation', 'keybindings', 'checkDesktopUpdate']);
+    'singerDisplay', 'toggleFullscreen', 'documentation', 'keybindings', 'whatsNew', 'checkDesktopUpdate', 'about']);
 
   const view = children(named(menu, 'View'));
   for (const [submenu, selection, action] of [
@@ -60,6 +60,7 @@ test('native menus respect the picker, modal, transport and singer window availa
   assert.equal(item('Window', 'Toggle Singer Display Full Screen').enabled, false);
   assert.notEqual(item('Window', 'Toggle Host Full Screen').enabled, false);
   assert.equal(item('Help', 'Check for Updates').enabled, false);
+  assert.equal(item('Help', 'About').enabled, false);
 
   const indexing = applicationMenu(DEFAULT_SETTINGS, () => {}, 'linux', { ...INITIAL_WORKSPACE_MENU_CONTEXT, videoImportBlocked: true });
   const file = children(named(indexing, 'File'));
@@ -70,8 +71,12 @@ test('native menus respect the picker, modal, transport and singer window availa
 });
 
 test('macOS keeps app-menu Preferences and puts native Quit there once', () => {
-  const menu = applicationMenu(DEFAULT_SETTINGS, () => {}, 'darwin');
+  const actions: ApplicationMenuAction[] = [];
+  const menu = applicationMenu(DEFAULT_SETTINGS, action => actions.push(action), 'darwin');
   assert.equal(named(children(menu[0]), 'Preferences…').label, 'Preferences…');
   assert.equal(named(children(named(menu, 'Edit')), 'Preferences…').label, 'Preferences…');
   assert.equal(menu.flatMap(children).filter(item => item.role === 'quit').length, 1);
+  named(children(menu[0]), 'About The Proper Volume Karaoke Booth').click?.(null as never, null as never, null as never);
+  named(children(named(menu, 'Help')), 'About').click?.(null as never, null as never, null as never);
+  assert.deepEqual(actions, ['about', 'about']);
 });

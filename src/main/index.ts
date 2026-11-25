@@ -1,7 +1,7 @@
 import { MobileRoomBeacon } from './mobile-room-beacon';
 // Application composition root: the host owns durable state; renderers ask for
 // actions and report playback facts. Provider credentials and media paths stay here.
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, type MessageBoxOptions } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { unlink, readFile, lstat, open } from 'node:fs/promises';
@@ -26,7 +26,7 @@ import { saveWithDiscoveryRevision } from './source-settings';
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, type Shortcuts } from '../domain/shortcuts';
 import { readShortcuts, writeShortcuts } from './shortcuts';
 import type { AppAction } from '../domain/app-action';
-import { applicationMenu, INITIAL_WORKSPACE_MENU_CONTEXT, type ApplicationMenuAction, type WorkspaceMenuContext } from './application-menu';
+import { applicationMenu, BOOTH_PRODUCT_NAME, INITIAL_WORKSPACE_MENU_CONTEXT, type ApplicationMenuAction, type WorkspaceMenuContext } from './application-menu';
 import { openDocumentationWindow } from './documentation-window';
 import { LocalControlServer } from '../control/server';
 import { projectControlQueue, type ControlQueueEnvelope } from '../control/queue';
@@ -581,8 +581,9 @@ let remoteAuthority: RemoteAuthorityCoordinator | null = null;
 let internetQueue: InternetQueueClient | null = null;
 const preload = join(__dirname, '../preload/index.cjs');
 const uiRoot = join(__dirname, '../ui/src');
-const applicationIcon = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'assets'),
-  'branding', process.platform === 'win32' ? 'app.ico' : 'app.png');
+const brandingDirectory = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'assets'), 'branding');
+const applicationIcon = join(brandingDirectory, process.platform === 'win32' ? 'app.ico' : 'app.png');
+const boothReleasePage = 'https://release.thepropervolume.com/booth/';
 
 function senderIsHost(id: number): boolean { return !!host && !host.isDestroyed() && host.webContents.id === id; }
 function senderIsDisplay(id: number): boolean { return !!display && !display.isDestroyed() && display.webContents.id === id; }
@@ -786,12 +787,38 @@ async function checkForStartupUpdate(window: BrowserWindow): Promise<void> {
   if (result.phase !== 'available' || settings.desktopUpdateMode !== 'notify' || shuttingDown || window.isDestroyed()) return;
   const answer = await dialog.showMessageBox(window, { type: 'info', title: 'Booth Update Available',
     message: `Booth ${result.version} is available.`, buttons: ['View Release', 'Later'], defaultId: 1, cancelId: 1, noLink: true });
-  if (answer.response === 0 && !shuttingDown) await shell.openExternal('https://release.thepropervolume.com/booth/');
+  if (answer.response === 0 && !shuttingDown) await shell.openExternal(boothReleasePage);
+}
+let aboutOpen = false;
+async function showBoothAbout(): Promise<void> {
+  if (aboutOpen) return;
+  aboutOpen = true;
+  try {
+    const icon = nativeImage.createFromPath(join(brandingDirectory, 'app.png')).resize({ width: 64, height: 64 });
+    const options: MessageBoxOptions = {
+      type: 'none', title: `About ${BOOTH_PRODUCT_NAME}`, message: BOOTH_PRODUCT_NAME,
+      detail: `Version ${app.getVersion()}\nPublished by The Proper Volume`,
+      buttons: ['OK'], noLink: true, icon,
+    };
+    const owner = showHostWindow();
+    await (owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options));
+  } finally {
+    aboutOpen = false;
+  }
 }
 let hostFullscreen: DisplayFullscreen | null = null;
 function dispatchApplicationMenuAction(action: ApplicationMenuAction): void {
   if (shuttingDown) return;
   if (action === 'documentation') { openDocumentationWindow(host); return; }
+  if (action === 'about') {
+    void showBoothAbout().catch(() => dialog.showErrorBox('About Booth unavailable', 'Booth could not open the About dialog.'));
+    return;
+  }
+  if (action === 'whatsNew') {
+    void shell.openExternal(new URL('latest/RELEASE_NOTES.md', boothReleasePage).href)
+      .catch(() => dialog.showErrorBox('Release notes unavailable', 'Booth could not open the release notes in your browser.'));
+    return;
+  }
   if (action === 'showHostWindow') { showHostWindow(); return; }
   if (action === 'toggleHostFullscreen') { if (showHostWindow()) hostFullscreen?.toggle(); return; }
   dispatchHostAction(action);
