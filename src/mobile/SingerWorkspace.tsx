@@ -21,6 +21,7 @@ import { SingerNotificationSettings, useSingerNotifications } from './SingerNoti
 import { SingerLiveActivitySetting, useSingerLiveActivity } from './SingerLiveActivity';
 import { SingerApplause, useSingerApplause } from './SingerApplause';
 import { SingerProfileDetailsEditor } from './SingerProfileDetailsEditor';
+import type { SignedInAccount } from './account';
 import '@fontsource/nunito-sans/latin-400.css';
 import '@fontsource/nunito-sans/latin-700.css';
 import '@fontsource/nunito-sans/latin-800.css';
@@ -38,7 +39,7 @@ type Tab = typeof tabs[number]['id'];
 type Screen = Tab | 'playing';
 const titles: Record<Screen, string> = { library: 'Search', room: 'Rooms', queue: 'Queue', playlists: 'Playlists', profile: 'Account', playing: 'Now Playing' };
 type WorkspaceProps = {
-  account?: { name: string; email: string } | null;
+  accountSession?: SignedInAccount | null;
   onSignIn?: () => void;
   onSignOut?: () => void | Promise<void>;
   kioskRoom?: string;
@@ -127,7 +128,8 @@ function useBrowseResults(sources: BrowseSource[], query: string, active: boolea
   return { pages, more, retry: () => setRetry(value => value + 1) };
 }
 
-export function SingerWorkspace({ account, onSignIn, onSignOut, kioskRoom, onKioskDone }: WorkspaceProps = {}) {
+export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom, onKioskDone }: WorkspaceProps = {}) {
+  const account = accountSession?.account;
   const store = useSingerProfile();
   const [tab, setTab] = useState<Screen>('room');
   const [returnFromPlayer, setReturnFromPlayer] = useState<Tab>('queue');
@@ -538,7 +540,7 @@ export function SingerWorkspace({ account, onSignIn, onSignOut, kioskRoom, onKio
         </div>
         {!account && onSignIn && <IonButton type="button" className="singer-ion-action" expand="block" shape="round" onClick={onSignIn}>Sign In / Create Account</IonButton>}
         <h2 className="singer-subheading">Profile &amp; Settings</h2>
-        {account && <SingerProfileDetailsEditor email={account.email} />}
+        {accountSession && <SingerProfileDetailsEditor key={accountSession.token} token={accountSession.token} />}
         <details><summary>Notifications</summary>
           <SingerNotificationSettings controller={notifications} />
           <SingerLiveActivitySetting controller={lockScreen} />

@@ -74,14 +74,14 @@ export function MobileApp() {
 
   function handleSignOut() {
     const token = session?.token ?? knownSessionToken();
-    rememberSessionToken(null);
+    if (knownSessionToken() === token) rememberSessionToken(null);
     setSession(null);
     if (token) void signOut(token).catch(() => {});
   }
 
   return <>
     {entered && <div className="intro-hidden" hidden={showAccount} inert={showAccount}>
-      <SingerWorkspace account={session?.account ?? null} onSignIn={() => setShowAccount(true)} onSignOut={handleSignOut} />
+      <SingerWorkspace accountSession={session} onSignIn={() => setShowAccount(true)} onSignOut={handleSignOut} />
     </div>}
     {showAccount
       ? <AccountAccess key={linkUsed ? undefined : link} initialLink={linkUsed ? undefined : link} onBack={exitAccount} onGuest={enter} onSignedIn={signedIn} />
