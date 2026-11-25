@@ -6,9 +6,11 @@ If the host puts you on hold, your queued songs stay in rotation and you become 
 
 When your host enables applause, tap **Applause** to play a clap sound. You begin with three credits and regain one whenever you complete a song, up to five. You cannot applaud yourself. Your available credits and, when enabled, points appear in your room. A failed sound does not use a credit. The six recorded claps play in order and vary in length; up to three can overlap.
 
+The desktop singer screen shows a brief **Applause** badge when Booth accepts a clap, including claps from a room guest.
+
 Earn points for queueing songs, singing duets, applauding other performers, suggesting a missing song and sending a photo. Singers also earn points when others applaud their performances. Your host can turn the points system off.
 
-To share a photo, choose **Share a photo**, select a JPEG or PNG, and tap **Send to singer display**. A mobile host gets up to 45 seconds to review and approve it. If approved, it appears for about ten seconds and can earn points. If another photo is being reviewed or displayed, or the display is unavailable, try again later. Photos are reduced for transmission and stay out of the host's show database. Share only pictures you want everyone at the venue to see.
+To share a photo, choose **Share a photo**, select a JPEG or PNG, and tap **Send to singer display**. With a desktop host, a successful photo appears immediately for about ten seconds and can earn points. It may also appear in enabled singer-screen mirrors. If the display is unavailable or showing another photo, try again later. Booth reduces photos for transmission and keeps them out of the host’s show database.
 
 Your host can hide sources from the singer catalog. Songs you already requested stay in your queue; an unavailable source cannot be used for a new request. An old result may remain visible until the page refreshes, normally within 15 seconds.
 

@@ -272,6 +272,11 @@ contextBridge.exposeInMainWorld('tpvDisplay', {
     ipcRenderer.on('display:applause', listener);
     return () => ipcRenderer.removeListener('display:applause', listener);
   },
+  onApplauseCommitted: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('display:applause-committed', listener);
+    return () => ipcRenderer.removeListener('display:applause-committed', listener);
+  },
   onBumperCommand: (callback: (request: unknown) => void) => {
     const listener = (_event: unknown, request: unknown) => callback(request);
     ipcRenderer.on('display:bumper-command', listener);

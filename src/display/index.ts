@@ -2,6 +2,7 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, matchesShortcut, type ShortcutActi
 import { AudioOutputRouter } from './audio-output';
 import { createBumperPlayer, type BumperRequest } from './bumper-player';
 import { createApplausePlayer, type ApplauseRequest } from './applause-player';
+import { createApplauseOverlay } from './applause-overlay';
 import { createPhotoOverlay } from './photo-overlay';
 import { mediaFailure, playFailure, type MediaFailure } from './media-error';
 import { KaraFunPlayer, type KaraFunPlayerEvent, type KaraFunStemSource } from './karafun-player';
@@ -15,7 +16,7 @@ type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: Kar
 type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
 const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
 type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number; fontFamily?: AppearanceFont };
-declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; applauseResult?(value: unknown): void; onApplause?(callback: (request: ApplauseRequest) => void): () => void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
+declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; applauseResult?(value: unknown): void; onApplause?(callback: (request: ApplauseRequest) => void): () => void; onApplauseCommitted?(callback: () => void): () => void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 let failedVideo: HTMLVideoElement | null = null;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
@@ -126,6 +127,12 @@ window.tpvDisplay.onApplause?.(request => {
   if (!applausePlayer) { window.tpvDisplay.applauseResult?.({ id: request.id, ok: false, error: 'Applause recordings are unavailable.' }); return; }
   void applausePlayer.play(request).then(result => window.tpvDisplay.applauseResult?.(result));
 });
+const applauseOverlay = createApplauseOverlay(document.querySelector('#applause-overlay'));
+const stopApplauseEvents = window.tpvDisplay.onApplauseCommitted?.(applauseOverlay.show);
+window.addEventListener('beforeunload', () => {
+  stopApplauseEvents?.();
+  applauseOverlay.clear();
+});
 const photoDisplay = window.tpvDisplay as typeof window.tpvDisplay & { onPhoto?: (callback: (request: { id: string; dataUrl: string }) => void) => () => void; photoResult?: (value: unknown) => void };
 const photoOverlay = createPhotoOverlay(result => photoDisplay.photoResult?.(result));
 photoDisplay.onPhoto?.(request => photoOverlay.show(request));
@@ -167,6 +174,7 @@ function reportOutputFailure(generation: string, message: string): void {
 }
 navigator.mediaDevices?.addEventListener('devicechange', () => {
   applausePlayer?.stop();
+  applauseOverlay.clear();
   bumperPlayer.muteForOutputChange();
   window.tpvDisplay.bumperDeviceChange();
   if (!current) return;

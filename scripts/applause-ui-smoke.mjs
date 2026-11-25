@@ -98,18 +98,56 @@ try {
   assert.equal(started.ok, true, JSON.stringify(started));
   await waitForHostCondition(host, async () => (await window.tpv.getTimeline()).position > 0.15);
   const baseline = await host.evaluate(() => window.tpv.getState());
+  const singer = app.windows().find(page => /\/display\/index\.html$/.test(page.url()));
+  assert.ok(singer);
+  const badge = singer.locator('#applause-overlay .applause-badge');
+  await singer.emulateMedia({ reducedMotion: 'no-preference' });
+  await singer.evaluate(() => {
+    window.applauseCueCount = 0;
+    const target = document.querySelector('#applause-overlay');
+    new MutationObserver(changes => {
+      for (const change of changes) window.applauseCueCount += change.addedNodes.length;
+    }).observe(target, { childList: true });
+  });
+  assert.equal(await badge.count(), 0);
   await host.getByRole('button', { name: 'Applause', exact: true }).click();
+  await badge.waitFor();
+  assert.equal(await badge.innerText(), '👏 Applause');
+  assert.equal(await badge.evaluate(element => getComputedStyle(element).animationName), 'applause-enter');
+  const sample = await singer.locator('#applause-overlay').evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return { x: (rect.right - 6) / innerWidth, y: (rect.top + rect.height / 2) / innerHeight };
+  });
+  await waitForHostCondition(host, async ({ x, y }) => {
+    const frame = await window.tpv.singerScreens.preview();
+    if (!frame) return false;
+    const image = new Image();
+    image.src = frame.image;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, Math.floor(x * image.naturalWidth), Math.floor(y * image.naturalHeight), 1, 1, 0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return r >= 15 && r < 50 && g < 35 && b >= 25 && b < 85;
+  }, sample, { timeout: 2200 });
   await waitForHostCondition(host, async () => (await window.tpv.getState()).points.accounts.find(row => row.singerId === 'qa-lead').points === 60);
+  await singer.emulateMedia({ reducedMotion: 'reduce' });
   const results = await host.evaluate(async () => Promise.all([
     window.tpv.applause.trigger(), window.tpv.applause.trigger(), window.tpv.applause.trigger(),
   ]));
   assert.equal(results.filter(result => result.ok).length, 2, JSON.stringify(results));
   assert.match(results.find(result => !result.ok).error, /Three applause/);
+  await singer.waitForFunction(() => window.applauseCueCount >= 3);
+  assert.equal(await singer.evaluate(() => window.applauseCueCount), 3, 'Only accepted applauses should show a cue.');
+  assert.equal(await badge.count(), 1, 'Rapid applause replaces the previous cue.');
+  assert.equal(await badge.evaluate(element => getComputedStyle(element).animationName), 'none');
   const after = await host.evaluate(() => window.tpv.getState());
   assert.equal(after.playback.generationId, baseline.playback.generationId);
   assert.equal(account(after).points, 100);
   assert.equal(after.points.accounts.find(row => row.singerId === 'qa-partner').points, 64);
   assert.equal(account(after).credits, 3);
+  await badge.waitFor({ state: 'detached' });
   // Wait for the first three real recordings to finish, then exercise all six
   // in the actual file:// singer renderer, including the eleven-second clip.
   await new Promise(resolve => setTimeout(resolve, 9800));
@@ -128,7 +166,17 @@ try {
   assert.equal(account(restored).points, 115);
   assert.equal(restored.points.accounts.find(row => row.singerId === 'qa-partner').points, 79);
   assert.equal(account(restored).credits, 3);
-  console.log('PASS: all six supplied applause recordings decoded and played, maximum three overlapping, duet awards and scores retained after restart. Synthetic video; audio muted.');
+  await host.evaluate(() => window.tpv.saveSettings({ applauseEnabled: false }));
+  assert.equal((await host.evaluate(() => window.tpv.applause.trigger())).ok, false);
+  await host.evaluate(() => window.tpv.saveSettings({ applauseEnabled: true }));
+  assert.equal((await host.evaluate(() => window.tpv.applause.trigger())).ok, true);
+  const hiddenDisplay = app.windows().find(page => /\/display\/index\.html$/.test(page.url()));
+  assert.ok(hiddenDisplay);
+  await hiddenDisplay.locator('.applause-badge').waitFor();
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
+    .find(window => window.webContents.getURL().includes('/display/')).isVisible()), false);
+  assert.equal(account(await host.evaluate(() => window.tpv.getState())).points, 115);
+  console.log('PASS: all six recordings played over synthetic video. Applause cues reached captured preview, respected reduced motion, expired, coalesced, and followed the audio limit. Paused restart kept the display hidden and awards intact. Audio muted.');
 } finally {
   if (app) await app.close().catch(() => {});
   const actual = await realpath(temporary);

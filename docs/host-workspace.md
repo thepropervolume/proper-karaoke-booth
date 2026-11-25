@@ -12,9 +12,11 @@ The Windows setup, macOS PKG, and Linux Debian package open with the system inst
 
 Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles the six supplied clap recordings, playing each for its full duration, with at most three at once; the host has unlimited applause. Recordings range from approximately 4 to 11.2 seconds, so the longest takes more than eight seconds to finish. Check the chosen output and levels on your actual sound system before a show.
 
+An accepted clap shows a brief **Applause** badge in the upper-left of the singer display and in its captured preview. Close-together claps refresh the same badge. Booth shows it without motion when the system’s Reduce Motion preference is on.
+
 Singers start with three applause credits, gain one for a completed song and can hold at most five. The Singers workspace shows their points and credits. Assigned singers earn points from song requests, duet participation and applause; room singers can also earn points for missing-song suggestions and sending a photo to the singer screen. The full rules and eligibility are in the product specification. Mark duets in the song's metadata so the correct duet bonus can be awarded.
 
-Room singers can send one JPEG or PNG photo at a time. A mobile Full Host reviews the image before it appears on the singer screen. Photos stay in memory. See the [mobile guide](mobile-app.md) for approval and discard controls.
+Room singers can send one JPEG or PNG photo at a time. With a desktop host, Booth can reveal the singer window and display the photo immediately for about ten seconds. Enabled singer-screen mirrors can capture it too. Booth keeps the image in memory and saves the points and a submission receipt in the show database.
 
 ## Choose Search Sources
 
