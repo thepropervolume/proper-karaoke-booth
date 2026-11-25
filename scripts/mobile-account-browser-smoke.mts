@@ -76,7 +76,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin + '/app/');
   const button = (name: string) => page.getByRole('button', { name, exact: true });
-  const accountTab = () => page.getByRole('navigation', { name: 'Singer workspace' }).getByRole('button', { name: 'Account', exact: true }).click();
+  const accountTab = () => page.getByRole('navigation', { name: 'Singer workspace' }).getByRole('tab', { name: 'Account', exact: true }).click();
   await button('Sign In / Create Account').click();
   assert.equal(await page.getByLabel('Password', { exact: true }).count(), 0);
   await page.getByLabel('Email address').fill(existing.email);

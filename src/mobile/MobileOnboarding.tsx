@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { IonIcon } from '@ionic/react';
+import { IonButton, IonIcon } from '@ionic/react';
 import { chevronBackOutline, mailOutline } from 'ionicons/icons';
 import { MobileHttpError } from './api';
 import {
@@ -20,8 +20,8 @@ export function Welcome({ onGuest, onSignIn }: { onGuest: () => void; onSignIn: 
       <p>Find a song. Take the mic.</p>
     </div>
     <div className="intro-actions">
-      <button className="intro-primary" type="button" onClick={onGuest}>Continue as Guest</button>
-      <button className="intro-secondary" type="button" onClick={onSignIn}>Sign In / Create Account</button>
+      <IonButton shape="round" className="intro-primary" type="button" onClick={onGuest}>Continue as Guest</IonButton>
+      <IonButton shape="round" className="intro-secondary" type="button" onClick={onSignIn}>Sign In / Create Account</IonButton>
     </div>
   </main>;
 }
@@ -135,7 +135,7 @@ export function AccountAccess({ onBack, onGuest, onSignedIn, initialLink }: {
 
   const heading = linkMode ? linkPassword === 'reset' ? 'Reset Password' : linkPassword === 'verify' ? 'Confirm Your Account' : 'Use an Email Link' : step === 'new' ? 'Create Account' : 'Sign In';
   return <main className="intro-shell intro-auth" aria-labelledby="auth-heading">
-    <button className="intro-back" type="button" aria-label="Back" disabled={busy} onClick={() => {
+    <IonButton shape="round" className="intro-back" type="button" aria-label="Back" disabled={busy} onClick={() => {
       if (!linkMode) onBack();
       else {
         setLinkMode(false);
@@ -143,7 +143,7 @@ export function AccountAccess({ onBack, onGuest, onSignedIn, initialLink }: {
         setLink('');
         setMessage('');
       }
-    }}><IonIcon icon={chevronBackOutline} aria-hidden="true" /></button>
+    }}><IonIcon icon={chevronBackOutline} aria-hidden="true" /></IonButton>
     <h1 id="auth-heading">{heading}</h1>
     <p>{linkMode ? 'Paste the link from your Booth email.' : step === 'new' ? 'Choose a display name and password.' :
       step === 'existing' ? 'Welcome back. Enter your password to continue.' : 'Use the email address for your Booth account.'}</p>
@@ -152,32 +152,32 @@ export function AccountAccess({ onBack, onGuest, onSignedIn, initialLink }: {
         <label>Email link<input type="text" name="link" value={link} required maxLength={512} spellCheck={false}
           autoCapitalize="none" autoComplete="off" onChange={event => setLink(event.target.value)} /></label>
         {linkPassword && <label>{linkPassword === 'reset' ? 'New password' : 'Your Booth password'}<input type="password" name="password" required minLength={12} maxLength={128} autoComplete={linkPassword === 'reset' ? 'new-password' : 'current-password'} /></label>}
-        <button className="intro-primary" type="submit" disabled={busy}>{linkPassword === 'reset' ? 'Set New Password' : 'Continue'}</button>
+        <IonButton shape="round" className="intro-primary" type="submit" disabled={busy}>{linkPassword === 'reset' ? 'Set New Password' : 'Continue'}</IonButton>
       </> : <>
         <label>Email address<input ref={emailField} name="email" value={email} type="email" inputMode="email"
           autoComplete="email" autoCapitalize="none" placeholder="you@example.com" maxLength={254} required disabled={busy}
           onChange={event => { setEmail(event.target.value); setStep('input'); setMessage(''); }} /></label>
         {step === 'lookup' && <p role="status">Checking email…</p>}
-        {step === 'error' && <button className="intro-secondary" type="button" onClick={() => { setMessage(''); setRetry(value => value + 1); }}>Try Again</button>}
+        {step === 'error' && <IonButton shape="round" className="intro-secondary" type="button" onClick={() => { setMessage(''); setRetry(value => value + 1); }}>Try Again</IonButton>}
         {(step === 'new' || step === 'existing') && <>
           {step === 'new' && <label>Display name<input name="name" maxLength={60} autoComplete="nickname" required /></label>}
           <label>{step === 'new' ? 'Create a password' : 'Password'}<input key={step} name="password" type="password" required
             minLength={step === 'new' ? 12 : undefined} maxLength={128}
             placeholder={step === 'new' ? 'At least 12 characters' : undefined}
             autoComplete={step === 'new' ? 'new-password' : 'current-password'} /></label>
-          <button className="intro-primary" type="submit" disabled={busy}>{step === 'new' ? 'Create Account' : 'Sign In'}</button>
+          <IonButton shape="round" className="intro-primary" type="submit" disabled={busy}>{step === 'new' ? 'Create Account' : 'Sign In'}</IonButton>
         </>}
       </>}
     </form>
     <div className="intro-actions">
       {!linkMode && step === 'existing' && <>
-        <button className="intro-link" type="button" disabled={busy} onClick={() => sendLink('reset')}>Forgot password?</button>
-        <button className="intro-secondary" type="button" disabled={busy} onClick={() => sendLink('signin')}>
+        <IonButton fill="clear" shape="round" className="intro-link" type="button" disabled={busy} onClick={() => sendLink('reset')}>Forgot password?</IonButton>
+        <IonButton shape="round" className="intro-secondary" type="button" disabled={busy} onClick={() => sendLink('signin')}>
           <IonIcon icon={mailOutline} aria-hidden="true" /> Email me a sign-in link
-        </button>
+        </IonButton>
       </>}
-      {!linkMode && <button className="intro-link" type="button" disabled={busy} onClick={() => { setMessage(''); setLinkMode(true); }}>Use a link I already have</button>}
-      <button className="intro-link" type="button" disabled={busy} onClick={onGuest}>Continue as Guest</button>
+      {!linkMode && <IonButton fill="clear" shape="round" className="intro-link" type="button" disabled={busy} onClick={() => { setMessage(''); setLinkMode(true); }}>Use a link I already have</IonButton>}
+      <IonButton fill="clear" shape="round" className="intro-link" type="button" disabled={busy} onClick={onGuest}>Continue as Guest</IonButton>
     </div>
     {message && <p className="intro-status" role="status">{message}</p>}
   </main>;

@@ -127,8 +127,12 @@ try {
   await exactButton('Continue as Guest').click();
   await singer.getByRole('heading', { name: 'Rooms', exact: true }).waitFor();
   const nav = singer.getByRole('navigation', { name: 'Singer workspace' });
-  const tab = (name: string) => nav.getByRole('button', { name, exact: true }).click();
-  assert.equal(await nav.getByRole('button').count(), 5);
+  const tab = async (name: string) => {
+    await nav.getByRole('tab', { name, exact: true }).click();
+    await nav.getByRole('tab', { name, exact: true, selected: true }).waitFor();
+  };
+  await nav.getByRole('tab', { name: 'Rooms', exact: true, selected: true }).waitFor();
+  assert.equal(await nav.getByRole('tab').count(), 5);
   assert.equal(await singer.getByRole('button', { name: /Full Host/ }).count(), 0);
   await tab('Search');
   for (const [width, height] of [[320, 640], [390, 844], [1024, 768]]) {
@@ -141,6 +145,10 @@ try {
   checks.push('Five workspace destinations, fits small phones and tablet, no mobile host controls.');
   const songOptions = (title: string) => exactButton('Options for ' + title);
   await singer.getByRole('searchbox').fill('Oasis');
+  const searchBounds = await singer.getByRole('searchbox').boundingBox();
+  const clearBounds = await singer.getByRole('button', { name: 'reset', exact: true }).boundingBox();
+  assert.ok(searchBounds && clearBounds && clearBounds.y >= searchBounds.y &&
+    clearBounds.y + clearBounds.height <= searchBounds.y + searchBounds.height, 'Search clear control stays inside the field under deployment CSP.');
   await singer.getByText('Wonderwall', { exact: true }).waitFor();
   await exactButton('More Karaoke Nerds Results').click();
   await singer.getByText('Second Catalog Page', { exact: true }).waitFor();
@@ -174,7 +182,8 @@ try {
   await tab('Rooms');
   await exactButton('Join Room').click();
   assert.equal(await singer.getByRole('textbox', { name: 'Display name', exact: true }).inputValue(), 'Alex');
-  await singer.getByRole('dialog').getByRole('button', { name: 'Join Room', exact: true }).click();
+  await singer.getByRole('dialog', { name: 'Join Room', exact: true }).waitFor();
+  await singer.locator('ion-modal.singer-sheet').getByRole('button', { name: 'Join Room', exact: true }).click();
   await songOptions('Wonderwall').waitFor();
   assert.equal(await singer.getByText('Party Tyme Pro Recording').count(), 0);
   const roomLaterResult = songOptions('Room Match 54');
@@ -205,6 +214,12 @@ try {
   await singer.getByRole('heading', { name: 'Rehearsal Song' }).waitFor();
   assert.equal(await singer.getByRole('progressbar', { name: 'Song progress' }).getAttribute('value'), '75');
   assert.equal(await singer.getByText('Oasis · Sung by House Singer').count(), 1);
+  assert.equal(await singer.getByRole('slider').count(), 0);
+  assert.equal(await exactButton('Play').count(), 0);
+  await exactButton('Save to Playlist for Rehearsal Song').click();
+  await singer.getByRole('combobox').selectOption({ label: 'At the Show' });
+  await exactButton('Save Song').click();
+  await singer.getByText('Song saved.', { exact: true }).waitFor();
   await singer.screenshot({ path: resolve(evidence, 'playing.png') });
   await exactButton('Close Now Playing').click();
   await exactButton('Withdraw').click();
@@ -240,13 +255,15 @@ try {
   await singer.reload();
   await tab('Playlists');
   await singer.getByRole('button', { name: 'Starred Songs 1 song', exact: true }).waitFor();
-  await singer.getByRole('button', { name: 'At the Show 1 song' }).click();
+  await singer.getByRole('button', { name: 'At the Show 2 songs' }).click();
   await singer.getByText('Wonderwall', { exact: true }).waitFor();
+  await singer.getByText('Rehearsal Song', { exact: true }).waitFor();
   await tab('Rooms');
   await singer.getByLabel('Room code or invitation link').fill(origin + '/' + slug);
   await exactButton('Go').click();
   assert.equal(await singer.getByRole('textbox', { name: 'Display name', exact: true }).inputValue(), 'Alex');
-  await singer.getByRole('dialog').getByRole('button', { name: 'Join Room', exact: true }).click();
+  await singer.getByRole('dialog', { name: 'Join Room', exact: true }).waitFor();
+  await singer.locator('ion-modal.singer-sheet').getByRole('button', { name: 'Join Room', exact: true }).click();
   await songOptions('Wonderwall').waitFor();
   await tab('Rooms');
   stopPolling.abort();

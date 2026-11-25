@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { IonButton } from '@ionic/react';
 import { SINGER_ON_HOLD } from '../domain/singer-availability';
 import type { GuestView, SingerClient, Song } from '../remote/client';
 import { prepareGuestPhoto } from '../remote/photo';
@@ -34,9 +35,6 @@ export function SingerRoomActions({ client, view, listen }: Props) {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [away, setAway] = useState(5);
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoError, setPhotoError] = useState('');
-  const [photoBusy, setPhotoBusy] = useState(false);
   const snapshot = view.snapshot;
   if (!snapshot) return null;
   const locked = view.busy || view.uncertain;
@@ -64,7 +62,17 @@ export function SingerRoomActions({ client, view, listen }: Props) {
         <button type="submit" disabled={locked}>Send Suggestion</button>
       </form>
     </details>
-    {snapshot.photoEnabled && <details><summary>Share a Photo</summary>
+    <SingerPhotoSubmission client={client} view={view} listen={listen} />
+  </div>;
+}
+
+export function SingerPhotoSubmission({ client, view, listen }: Props) {
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoError, setPhotoError] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  if (!view.snapshot?.photoEnabled) return null;
+  const locked = view.busy || view.uncertain;
+  return <details><summary>Send a Photo to the Screen</summary>
       <form onSubmit={event => {
         event.preventDefault();
         if (!photo || photoBusy) return;
@@ -75,9 +83,8 @@ export function SingerRoomActions({ client, view, listen }: Props) {
           .finally(() => setPhotoBusy(false));
       }}>
         <label>JPEG or PNG<input type="file" accept="image/jpeg,image/png" onChange={event => setPhoto(event.currentTarget.files?.[0] ?? null)} /></label>
-        <button type="submit" disabled={locked || photoBusy || !photo}>{photoBusy ? 'Preparing…' : 'Send Photo'}</button>
+        <IonButton type="submit" shape="round" disabled={locked || photoBusy || !photo}>{photoBusy ? 'Preparing…' : 'Send Photo'}</IonButton>
         {photoError && <p role="alert">{photoError}</p>}
       </form>
-    </details>}
-  </div>;
+    </details>;
 }

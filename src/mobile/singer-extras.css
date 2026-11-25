@@ -1,0 +1,35 @@
+.singer-invite-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.singer-invite-actions p, .singer-invite-manual { flex-basis: 100%; }
+.singer-invite-manual textarea { display: block; width: 100%; margin-top: .45rem; padding: .5rem; }
+.singer-history { margin-top: 1.5rem; }
+.singer-history h2 { display: flex; align-items: center; gap: .45rem; }
+.singer-history .singer-result-row { padding: .75rem 0; }
+.singer-profile-details { padding-block: .8rem; }
+.singer-profile-details form { margin: .7rem 0; display: grid; gap: .75rem; }
+.singer-profile-details label { display: grid; gap: .35rem; min-width: 0; }
+.singer-profile-details input { width: 100%; min-width: 0; }
+.singer-profile-photo { display: flex; align-items: center; gap: .75rem; }
+.singer-profile-photo img { object-fit: cover; border-radius: 50%; flex: none; }
+.singer-profile-photo ion-icon { font-size: 3rem; flex: none; color: var(--muted); }
+.singer-live-setting { margin: .75rem 0; }
+.singer-applause { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.singer-applause span {
+  position: absolute;
+  bottom: 6%;
+  font-size: clamp(1.7rem, 5vw, 3rem);
+  left: 12%;
+  opacity: 0;
+  animation: singer-clap-rise 1.9s ease-in-out forwards;
+}
+.singer-applause span:nth-child(2) { left: 38%; animation-delay: .22s; }
+.singer-applause span:nth-child(3) { left: 68%; animation-delay: .42s; }
+@keyframes singer-clap-rise {
+  0% { opacity: 0; transform: translate(-.5rem, 0) rotate(-14deg); }
+  20% { opacity: .94; }
+  54% { transform: translate(1.3rem, -3.4rem) rotate(13deg); }
+  100% { opacity: 0; transform: translate(.2rem, -7rem) rotate(-8deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .singer-applause span:first-child { animation: none; opacity: .95; }
+  .singer-applause span:not(:first-child) { display: none; }
+}

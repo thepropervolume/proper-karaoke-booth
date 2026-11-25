@@ -1,7 +1,7 @@
 import { MAX_PHOTO_BYTES } from '../domain/photo';
 
 /** Decode a selected file in the browser and remove its metadata by re-encoding. */
-export async function prepareGuestPhoto(file: File): Promise<string> {
+export async function prepareGuestPhoto(file: File, { maxDimension = 1280, maxBytes = MAX_PHOTO_BYTES } = {}): Promise<string> {
   if (!['image/jpeg', 'image/png'].includes(file.type) || file.size <= 0 || file.size > 12 * 1024 * 1024)
     throw new Error('Choose a JPEG or PNG smaller than 12 MB.');
   const url = URL.createObjectURL(file);
@@ -14,7 +14,7 @@ export async function prepareGuestPhoto(file: File): Promise<string> {
     });
     if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 40_000_000)
       throw new Error('The selected image is too large.');
-    const scale = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight));
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -26,7 +26,7 @@ export async function prepareGuestPhoto(file: File): Promise<string> {
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     for (const quality of [0.85, 0.7, 0.5, 0.3]) {
       const data = canvas.toDataURL('image/jpeg', quality);
-      if (data.startsWith('data:image/jpeg;base64,') && (data.length - 23) * 3 / 4 <= MAX_PHOTO_BYTES) return data;
+      if (data.startsWith('data:image/jpeg;base64,') && (data.length - 23) * 3 / 4 <= maxBytes) return data;
     }
     throw new Error('The image could not be reduced enough. Choose another image.');
   } finally {

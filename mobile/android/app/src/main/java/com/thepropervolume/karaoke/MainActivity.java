@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override public void onCreate(Bundle savedInstanceState) {
         SplashScreen.installSplashScreen(this);
         registerPlugin(TPVRoomDiscoveryPlugin.class);
+        registerPlugin(TPVLiveActivityPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
