@@ -25,7 +25,7 @@ The relay handles only a fixed, bounded set of singer operations. There is no ar
 
 ## Developer verification
 
-After building the app and creating a synthetic MP4 fixture, run `node --import tsx scripts/internet-session-smoke.mjs . <synthetic-mp4>`. The rehearsal uses disposable Electron and Chromium profiles, generated test credentials and the actual relay HTTP handler/broker/store on loopback. Its in-memory SQLite lease store is a test fixture. Public relay URLs are intercepted only within these test processes; it neither contacts the public service nor uses a real host credential.
+Run `npm run build` and `npm run build:mobile`, then run `node --import tsx scripts/internet-session-smoke.mjs . <synthetic-mp4>` with a synthetic MP4 at least 30 seconds long. The rehearsal runs the mobile web app in Chromium, opens an internet room in Electron and confirms that a mobile clap reaches the desktop singer screen during a performance. It also checks credits and points. The browsers and the loopback relay use disposable profiles, generated credentials and an in-memory lease store. The fixture intercepts public relay URLs.
 
 The Windows rehearsal passed Start/custom address/Copy/End, browser joining and requests, withdrawal, availability, missing-song requests, no autoplay, ended-generation rejection and app shutdown. This does not establish public-network or production-database operation. Focused tests also cover private-file permissions, malformed success responses, uncertain delivery, original receipt recovery and independent local-network access; the POSIX filesystem-permission test requires Linux or macOS and is skipped on Windows.
 
