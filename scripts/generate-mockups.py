@@ -87,6 +87,8 @@ def load(path: Path) -> tuple[dict, list[dict], str]:
         elif item['layout'] == 'display':
             if not all(isinstance(item.get(key), str) for key in ('display_title', 'display_subtitle', 'display_next')):
                 raise ValueError(f"Screen {item['id']} must define display labels.")
+            if 'display_cue' in item and not isinstance(item['display_cue'], str):
+                raise ValueError(f"Screen {item['id']} needs a text display cue.")
         else:
             if not all(isinstance(item.get(key), str) for key in ('heading', 'side_heading', 'footer_heading')) or not all(isinstance(item.get(key), list) and all(isinstance(row, str) for row in item[key]) for key in ('rows', 'side_rows', 'footer_rows')):
                 raise ValueError(f"Screen {item['id']} must define its headings and rows.")
@@ -347,6 +349,10 @@ def display(c, item, p, product):
     x, y, w, h = 115, 140, 1066, 463
     rect(c, x, y, w, h, '#05080d', 8)
     line(c, product.upper(), x + 32, y + h - 39, 'TPVBold', 13, '#dce8f4')
+    if cue := item.get('display_cue'):
+        rect(c, x + 27, y + h - 95, 152, 33, '#8560f4', 5)
+        rect(c, x + 28, y + h - 94, 150, 31, '#19102d', 4)
+        line(c, cue, x + 40, y + h - 83, 'TPVBold', 13, '#fffff3', 125)
     line(c, item['display_title'], x + 270, y + 235, 'TPVBold', 35, '#f5fbff', 620)
     line(c, item['display_subtitle'], x + 357, y + 196, size=17, fill='#afc0d2', max_width=500)
     rect(c, x + 28, y + 22, w - 56, 47, '#142233', 7)
