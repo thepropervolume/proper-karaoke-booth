@@ -1,0 +1,31 @@
+#applause-overlay {
+  position: absolute;
+  z-index: 4;
+  inset-inline-start: clamp(.75rem, 2vw, 1.75rem);
+  inset-block-start: max(3.5rem, 12vh);
+  pointer-events: none;
+}
+
+body:has(#booth-banner:not([hidden])[data-position=top]) #applause-overlay {
+  inset-block-start: max(7rem, 16vh);
+}
+
+.applause-badge {
+  padding: .45em .7em;
+  border: 1px solid #8560f4;
+  border-radius: .35em;
+  background: #19102d;
+  color: #fffff3;
+  font-size: clamp(.8rem, 2vw, 1.2rem);
+  font-weight: 800;
+  box-shadow: 0 2px 12px #0009;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .applause-badge { animation: applause-enter 220ms ease-out both; }
+
+  @keyframes applause-enter {
+    from { opacity: 0; transform: translateX(-.45em) scale(.96); }
+    to { opacity: 1; transform: none; }
+  }
+}

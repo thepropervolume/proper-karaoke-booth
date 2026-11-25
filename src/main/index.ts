@@ -1047,6 +1047,11 @@ function requestApplause(actor: Actor, commandId: string, showId: string, hostEp
       receipt.fingerprint = originalReceipt.fingerprint;
       store.save(result.state);
       installShowState(result.state);
+      // Only a committed applause can announce itself on the singer screen.
+      if (display && !display.isDestroyed() && displayReady) {
+        try { display.webContents.send('display:applause-committed'); }
+        catch { /* The committed result survives a display closing. */ }
+      }
       try { broadcast(); } catch { /* Committed applause remains recorded. */ }
       return result.outcome;
     } catch (error) {
