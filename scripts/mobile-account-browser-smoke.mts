@@ -27,6 +27,7 @@ try {
   const errors: string[] = [];
   const calls: string[] = [];
   let active = existing;
+  const profiles = new Map<string, { pronouns: string; bio: string; avatar: string | null }>();
   await context.route(origin + '/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -58,6 +59,15 @@ try {
         active = input.token === verifyToken ? { email: newEmail, name: 'New Singer' } : existing;
         return respond(200, { account: active, token: sessionToken });
       }
+      if (operation === 'profile') {
+        assert.equal(request.headers().authorization, 'Bearer ' + sessionToken);
+        if (request.method() === 'POST') {
+          assert.deepEqual(Object.keys(input).sort(), ['avatar', 'bio', 'pronouns']);
+          assert.match(input.avatar, /^data:image\/jpeg;base64,/);
+          profiles.set(active.email, input);
+        }
+        return respond(200, { profile: profiles.get(active.email) ?? { pronouns: '', bio: '', avatar: null } });
+      }
       if (operation === 'session' || operation === 'logout') {
         assert.equal(request.headers().authorization, 'Bearer ' + sessionToken);
         return respond(200, operation === 'session' ? { account: active } : {});
@@ -85,9 +95,25 @@ try {
   await accountTab();
   await page.getByText(existing.email, { exact: true }).waitFor();
 
+  await page.getByText('Singing Profile', { exact: true }).click();
+  await page.getByLabel('Pronouns').fill('they/them');
+  await page.getByLabel('Bio', { exact: true }).fill('I like a duet.');
+  await page.getByLabel('Profile photo', { exact: true }).setInputFiles({
+    name: 'profile.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRuoAAAAASUVORK5CYII=', 'base64'),
+  });
+  await page.getByRole('img', { name: 'Your profile photo' }).waitFor();
+  await button('Save Singing Profile').click();
+  await page.getByText('Profile saved.', { exact: true }).waitFor();
+  assert.equal(profiles.get(existing.email)?.pronouns, 'they/them');
+
   await page.reload();
   await accountTab();
   await page.getByText(existing.email, { exact: true }).waitFor();
+  await page.getByText('Singing Profile', { exact: true }).click();
+  await page.getByRole('img', { name: 'Your profile photo' }).waitFor();
+  assert.equal(await page.getByLabel('Bio', { exact: true }).inputValue(), 'I like a duet.');
   await button('Sign Out').click();
   await button('Sign In / Create Account').click();
   await page.getByLabel('Email address').fill(newEmail);
@@ -119,5 +145,5 @@ try {
   await page.getByText(existing.email, { exact: true }).waitFor();
   assert(calls.includes('session') && calls.includes('logout') && calls.includes('register') && calls.includes('link'));
   assert.deepEqual(errors, []);
-  console.log('Mobile account smoke passed password, verification, reset, email-link sign-in, persistence, and sign-out.');
+  console.log('Mobile account smoke passed password, verification, reset, email-link sign-in, profile photo persistence, and sign-out.');
 } finally { await browser.close(); }

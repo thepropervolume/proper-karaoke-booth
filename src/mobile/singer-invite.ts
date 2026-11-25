@@ -4,7 +4,7 @@ import { MOBILE_ORIGIN } from './api';
 
 const nativeShare = registerPlugin<{ share(options: { title: string; text: string; url: string; dialogTitle: string }): Promise<unknown> }>('Share');
 const nativeBrowser = registerPlugin<{ open(options: { url: string }): Promise<void> }>('Browser');
-export const CUSTOM_REQUEST_URL = 'https://thepropervolume.com/song-request/';
+export const CUSTOM_REQUEST_URL = 'https://thepropervolume.com/song-request/#request-form';
 
 /** Generate an ordinary public join invitation. The slug is the only room data shared. */
 export function singerInvite(slug: string, name: string) {

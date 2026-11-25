@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { IonToggle } from '@ionic/react';
 import type { GuestNowPlaying } from '../domain/guest-stage';
 import { clearNativeLiveActivity, getNativeLiveActivityStatus, updateNativeLiveActivity, type NativeLiveActivityStatus } from './native-live-activity';
@@ -44,7 +45,8 @@ export function SingerLiveActivitySetting({ controller }: { controller: ReturnTy
     <IonToggle checked={enabled} disabled={status !== 'available' && !enabled}
       onIonChange={event => setEnabled(event.detail.checked)}>Now Playing on Lock Screen</IonToggle>
     <p className="mobile-quiet">{status === 'unsupported' ? 'Lock-screen status isn’t available in this build.' :
-      status === 'blocked' ? 'Allow Booth notifications in your device settings to show room status.' :
+      status === 'blocked' ? Capacitor.getPlatform() === 'ios' ? 'Allow Live Activities for Booth in Settings to show room status.' :
+      'Allow Booth notifications in your device settings to show room status.' :
         'See the host’s current song. Status expires when Booth stops receiving room updates.'}</p>
   </div>;
 }

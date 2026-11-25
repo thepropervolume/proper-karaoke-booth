@@ -191,6 +191,14 @@ temporary verification and session tokens. Account links expire after 30 minutes
 and work once; sessions expire after 30 days. Password reset revokes old sessions
 and outstanding account links. Lookups, sign-in attempts and mail are rate limited.
 
+The 0.10.19 candidate adds the private profile endpoint and the
+`booth_account_profiles` table. For an existing database, apply the reviewed
+`booth-accounts.sql` to `tpv_booth_accounts` with an administrator connection
+before starting the new relay. Table creation is idempotent. Verify that the
+existing schema-scoped runtime grant covers the new table. Keep the existing
+secrets and take a private backup before upgrading. Check that an authenticated
+session can read and update only its own profile.
+
 One-time setup on Linode III:
 
 1. Keep the existing relay secrets and install the reviewed `booth-accounts.sql`
