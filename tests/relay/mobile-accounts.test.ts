@@ -6,9 +6,12 @@ import { test } from 'node:test';
 import { RelayBroker } from '../../src/relay/broker';
 import { RelayRateLimits, startQueueRelayService } from '../../src/relay/http';
 import { MobileAccounts, type AccountLink, type AccountSession, type AccountStore, type BoothAccount } from '../../src/relay/mobile-accounts';
+import type { SingerProfileDetails } from '../../src/domain/singer-profile-details';
 import { RelayStore } from '../../src/relay/store';
 
 class MemoryAccounts implements AccountStore {
+  profileDetails?: AccountStore['profileDetails'];
+  saveProfileDetails?: AccountStore['saveProfileDetails'];
   constructor(private readonly accounts = new Map<string, BoothAccount>(), private readonly links = new Map<string, AccountLink>(),
     private readonly sessions = new Map<string, AccountSession & { email: string }>()) {}
 
@@ -137,4 +140,27 @@ test('account HTTP routes allow exact native origins without widening the room o
     for (const denied of ['https://localhost.evil.test', 'http://localhost', 'null', undefined])
       assert.equal((await call('/v1/mobile/account/lookup', 'POST', denied)).status, 403);
   } finally { await relay.stop(); }
+});
+test('extended profile reads and photo updates require the owning authenticated account', async () => {
+  const who = { id: 92, name: 'Singer', email: 'singer@example.test', passwordHash: 'fixture' };
+  const token = 'a'.repeat(43);
+  const rows = new Map<number, SingerProfileDetails>();
+  const store = new MemoryAccounts();
+  store.session = async digest => digest === createHash('sha256').update(token).digest('hex') ? who : null;
+  store.profileDetails = async id => rows.get(id) ?? null;
+  store.saveProfileDetails = async (id, details) => { rows.set(id, details); };
+  const service = new MobileAccounts(store, async () => { throw new Error('No mail expected'); });
+  const call = (method: string, body?: unknown, bearer?: string) => service.handle('profile', method, body, bearer, 'loopback', () => true);
+  assert.equal((await call('GET')).status, 401);
+  assert.equal((await call('POST', { pronouns: 'they/them', bio: '', avatar: null })).status, 401);
+  assert.deepEqual((await call('GET', undefined, token)).body, { profile: { pronouns: '', bio: '', avatar: null } });
+  assert.equal((await call('POST', { pronouns: '', bio: 'x'.repeat(161), avatar: null }, token)).status, 400);
+  assert.equal((await call('POST', { pronouns: '', bio: '', avatar: 'https://example.test/image.svg' }, token)).status, 400);
+  const profile = { pronouns: 'they/them', bio: 'Karaoke regular', avatar: 'data:image/jpeg;base64,/9j/2Q==' };
+  assert.deepEqual((await call('POST', { ...profile, accountId: 15 }, token)).body, { profile });
+  assert.deepEqual((await call('GET', undefined, token)).body, { profile });
+  assert.equal(rows.size, 1);
+  assert.deepEqual(rows.get(who.id), profile);
+  assert.equal((await call('POST', { ...profile, avatar: null }, token)).status, 200);
+  assert.equal(rows.get(who.id)?.avatar, null);
 });

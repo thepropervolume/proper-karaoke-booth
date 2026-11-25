@@ -10,6 +10,7 @@ import { isRelaySecret, isRelaySlug, isRelayUuid, MAX_HOST_REPLY_BYTES, parseGue
 import { GUEST_CATALOG_HEADER, GUEST_CATALOG_WITH_SOURCES, GUEST_ROTATION_HEADER } from '../domain/guest-sources';
 import { MobileHostAccess, NearbyRooms } from './mobile-access';
 import { MAX_PHOTO_BODY_BYTES } from '../domain/photo';
+import { MAX_PROFILE_DETAILS_BODY } from '../domain/singer-profile-details';
 import { searchMobileCatalog } from './mobile-catalog';
 import { version as appVersion } from '../../package.json';
 import { InternetSingerScreens, SCREEN_FRAME_BYTES } from './singer-screen';
@@ -23,7 +24,7 @@ const POLICY = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; for
 const HOST_ROUTE = /^\/v1\/relay\/host\/(open|poll|reply|close|screen)$/;
 const GUEST_ROUTE = /^\/v1\/relay\/rooms\/([^/]+)\/([^/]+)\/guest\/([a-z-]+)$/;
 const LOOKUP_ROUTE = /^\/v1\/relay\/lookup\/([a-z0-9-]+)$/;
-const MOBILE_ACCOUNT_ROUTE = /^\/v1\/mobile\/account\/(status|lookup|register|login|session|logout|link|link\/redeem)$/;
+const MOBILE_ACCOUNT_ROUTE = /^\/v1\/mobile\/account\/(status|lookup|register|login|session|logout|profile|link|link\/redeem)$/;
 const NATIVE_ACCOUNT_ORIGINS = new Set(['capacitor://localhost', 'https://localhost']);
 const SCREEN_ROUTE = /^\/([a-z0-9-]+)\/screen(?:\/(frame))?$/;
 const SCREEN_PAGE = '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Singer display</title><style>html,body{margin:0;height:100%;background:#000;color:white;font:18px system-ui}img{width:100%;height:100%;object-fit:contain}p{position:fixed;inset:40% 1rem auto;text-align:center}</style><img alt="Live singer display" hidden><p>Waiting for the singer display. Audio plays at the venue.</p><script src="/v1/screen-viewer.js" defer></script></html>';
@@ -153,7 +154,8 @@ export function createQueueRelayHandler(options: Options) {
         if (request.method === 'POST' && !nativeAccount && sourceOrigin !== origin.origin) throw new HttpError(403, 'ORIGIN_REQUIRED');
         const method = request.method ?? '';
         const token = bearer(request);
-        const input = method === 'POST' ? await readJson(request, 4096, bodyTimeout) : undefined;
+        if (action === 'profile' && !token) throw new HttpError(401, 'UNAUTHORIZED');
+        const input = method === 'POST' ? await readJson(request, action === 'profile' ? MAX_PROFILE_DETAILS_BODY : 4096, bodyTimeout) : undefined;
         if (controller.signal.aborted) return;
         const result = await options.mobileAccounts.handle(action, method, input, token, client, (key, limit, period) => limits.take(key, limit, period));
         respond(response, result.status, result.body);

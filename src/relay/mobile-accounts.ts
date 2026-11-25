@@ -1,5 +1,7 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 
+import { EMPTY_SINGER_PROFILE, parseSingerProfileDetails, type SingerProfileDetails } from '../domain/singer-profile-details';
+
 const MINUTE = 60_000;
 const LINK_LIFETIME = 30 * MINUTE;
 const SESSION_LIFETIME = 30 * 24 * 60 * MINUTE;
@@ -11,6 +13,8 @@ export type AccountLink = { email: string; type: 'register' | 'signin' | 'reset'
   passwordHash: string | null; accountId: number | null; expires: number };
 export type AccountSession = { tokenHash: string; expires: number };
 export interface AccountStore {
+  profileDetails?(accountId: number): Promise<SingerProfileDetails | null>;
+  saveProfileDetails?(accountId: number, details: SingerProfileDetails): Promise<void>;
   account(email: string): Promise<BoothAccount | null>;
   session(tokenHash: string, now: number): Promise<BoothAccount | null>;
   addSession(account: BoothAccount, session: AccountSession, now: number): Promise<boolean>;
@@ -74,6 +78,18 @@ export class MobileAccounts {
   constructor(private readonly store: AccountStore, private readonly mail: AccountMailer, private readonly now = Date.now) {}
 
   async handle(action: string, method: string, body: unknown, bearer: string | undefined, ip: string, take: Take): Promise<Reply> {
+    if (action === 'profile') {
+      if (method !== 'GET' && method !== 'POST') return fault(405, 'METHOD_NOT_ALLOWED');
+      if (!take('booth-profile:' + method + ':' + ip, method === 'POST' ? 12 : 80)) return fault(429, 'RATE_LIMITED');
+      const account = bearer && await this.store.session(hash(bearer), this.now());
+      if (!account) return fault(401, 'UNAUTHORIZED');
+      if (!this.store.profileDetails || !this.store.saveProfileDetails) return fault(503, 'PROFILE_UNAVAILABLE');
+      if (method === 'GET') return reply(200, { profile: await this.store.profileDetails(account.id) ?? EMPTY_SINGER_PROFILE });
+      const details = parseSingerProfileDetails(body);
+      if (!details) return fault(400, 'INVALID_PROFILE');
+      await this.store.saveProfileDetails(account.id, details);
+      return reply(200, { profile: details });
+    }
     if (action === 'session' && method === 'GET') {
       if (!take('booth-session:' + ip, 120)) return fault(429, 'RATE_LIMITED');
       const account = bearer && await this.store.session(hash(bearer), this.now());

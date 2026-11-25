@@ -1,4 +1,5 @@
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { SingerProfileDetails } from '../domain/singer-profile-details';
 import type { AccountLink, AccountSession, AccountStore, BoothAccount } from './mobile-accounts';
 
 type AccountRow = RowDataPacket & BoothAccount;
@@ -13,6 +14,19 @@ export class MySqlMobileAccountStore implements AccountStore {
     await this.pool.execute(`SELECT ${ACCOUNT_COLUMNS} FROM booth_accounts a LIMIT 0`);
     await this.pool.execute(`SELECT ${LINK_COLUMNS},token_hash FROM booth_account_links LIMIT 0`);
     await this.pool.execute('SELECT token_hash,account_id,expires_at FROM booth_account_sessions LIMIT 0');
+  }
+
+  async profileDetails(accountId: number): Promise<SingerProfileDetails | null> {
+    const [rows] = await this.pool.execute<(RowDataPacket & SingerProfileDetails)[]>(
+      'SELECT pronouns,bio,avatar FROM booth_account_profiles WHERE account_id=?', [accountId]);
+    const row = rows[0];
+    return row ? { pronouns: row.pronouns, bio: row.bio, avatar: row.avatar } : null;
+  }
+
+  async saveProfileDetails(accountId: number, details: SingerProfileDetails): Promise<void> {
+    await this.pool.execute(`INSERT INTO booth_account_profiles (account_id,pronouns,bio,avatar) VALUES (?,?,?,?)
+      ON DUPLICATE KEY UPDATE pronouns=?,bio=?,avatar=?`,
+      [accountId, details.pronouns, details.bio, details.avatar, details.pronouns, details.bio, details.avatar]);
   }
 
   async account(email: string): Promise<BoothAccount | null> {

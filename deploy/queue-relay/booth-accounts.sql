@@ -26,4 +26,11 @@ CREATE TABLE IF NOT EXISTS booth_account_sessions (
     expires_at BIGINT UNSIGNED NOT NULL,
     INDEX booth_session_expiry (expires_at),
     FOREIGN KEY (account_id) REFERENCES booth_accounts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;-- Optional profile fields are owner-scoped and removed with the account.
+CREATE TABLE IF NOT EXISTS booth_account_profiles (
+    account_id INT UNSIGNED NOT NULL PRIMARY KEY,
+    pronouns VARCHAR(32) NOT NULL,
+    bio VARCHAR(160) NOT NULL,
+    avatar MEDIUMTEXT CHARACTER SET ascii COLLATE ascii_bin,
+    FOREIGN KEY (account_id) REFERENCES booth_accounts(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
