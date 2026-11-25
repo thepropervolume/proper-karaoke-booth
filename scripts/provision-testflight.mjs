@@ -92,14 +92,15 @@ async function readScratchFile(scratch, input, maxBytes) {
   return readFile(file);
 }
 
-function validateCertificate(data, signingKey, teamId) {
-  check(data?.attributes?.certificateType === 'DISTRIBUTION',
+function validateCertificate(data, teamId, { signingKey, expectedCertificate }) {
+  check(data?.attributes?.certificateType === 'DISTRIBUTION' && data.attributes.activated !== false,
     'Apple did not return an Apple Distribution certificate.');
   const certificate = decodeBase64(data.attributes.certificateContent, 32 * 1024,
     'Apple did not return a valid distribution certificate.');
   try {
     const x509 = new X509Certificate(certificate);
-    check(x509.raw.equals(certificate) && x509.checkPrivateKey(signingKey) &&
+    check(x509.raw.equals(certificate) &&
+      (signingKey ? x509.checkPrivateKey(signingKey) : certificate.equals(expectedCertificate)) &&
       x509.subject.split('\n').includes('OU=' + teamId) &&
       x509.subject.split('\n').some(field => field.startsWith('CN=Apple Distribution:')) &&
       x509.issuer.split('\n').includes('CN=Apple Worldwide Developer Relations Certification Authority') &&
@@ -110,6 +111,17 @@ function validateCertificate(data, signingKey, teamId) {
     throw new ProvisioningError('Apple did not return a valid distribution certificate.');
   }
   return certificate;
+}
+
+export function exactIosBundleResource(data, identifier) {
+  check(Array.isArray(data), 'Apple did not return a usable App ID response.');
+  // An identifier query can return neighboring (for example extension) records.
+  // Select a unique exact iOS-capable identity before requesting any profile.
+  const matches = data.filter(bundle => bundle?.attributes?.identifier === identifier &&
+    ['IOS', 'UNIVERSAL'].includes(bundle.attributes.platform));
+  check(matches.length > 0, 'The selected Apple team does not expose the exact iOS App ID ' + identifier + '.');
+  check(matches.length === 1, 'Apple returned more than one exact iOS App ID for ' + identifier + '.');
+  return validId(matches[0], 'bundleIds');
 }
 
 async function inspectProfile(profilePath, scratch) {
@@ -139,18 +151,19 @@ async function inspectProfile(profilePath, scratch) {
   }
 }
 
-export async function createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName },
+export async function createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName, reusableCertificateId },
   { fetcher = fetch, inspect = inspectProfile } = {}) {
   check(typeof scratch === 'string' && isAbsolute(scratch) && typeof authKey === 'string' &&
     teamPattern.test(keyId ?? '') && uuidPattern.test(issuerId ?? '') && teamPattern.test(teamId ?? '') &&
     profileNamePattern.test(profileName ?? '') &&
     (widgetProfileName === undefined || typeof widgetProfileName === 'string' &&
-      profileNamePattern.test(widgetProfileName) && widgetProfileName !== profileName),
+      profileNamePattern.test(widgetProfileName) && widgetProfileName !== profileName) &&
+    (reusableCertificateId === undefined || typeof reusableCertificateId === 'string' && idPattern.test(reusableCertificateId)),
   'Invalid Booth TestFlight provisioning arguments.');
   const config = { certificateId: null, profileId: null };
   const createdProfiles = [];
   const outputs = [];
-  let auth;
+  let auth, issuedCertificateId;
   try {
     const scratchPath = await realpath(scratch);
     check((await lstat(scratchPath)).isDirectory(), 'A private runner directory is required.');
@@ -158,38 +171,44 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
     check(key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1',
       'The App Store Connect team API key was not a valid ES256 key.');
     auth = { key, keyId, issuerId };
-    const signingKey = createPrivateKey(await readScratchFile(scratchPath, 'signing.key', 8192));
-    check(signingKey.asymmetricKeyType === 'rsa' && signingKey.asymmetricKeyDetails?.modulusLength === 2048,
-      'The runner must create a new RSA-2048 distribution signing key.');
-    const csr = (await readScratchFile(scratchPath, 'signing.csr', 8192)).toString('ascii');
-    check(/^-----BEGIN CERTIFICATE REQUEST-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE REQUEST-----\r?\n?$/.test(csr),
-      'The runner did not produce a valid certificate signing request.');
     const profiles = [{ id: iosAppId, name: profileName, file: 'booth.mobileprovision', fields: ['profileId', 'profileName', 'profileUuid'] }];
     if (widgetProfileName) profiles.push({ id: iosLiveActivityId, name: widgetProfileName, file: 'widget.mobileprovision',
       fields: ['widgetProfileId', 'widgetProfileName', 'widgetProfileUuid'] });
     // Verify registration before creating a certificate or any provisioning profiles.
     for (const target of profiles) {
       const bundles = await apiRequest(fetcher, auth, 'GET', '/v1/bundleIds?filter[identifier]=' + target.id);
-      check(Array.isArray(bundles?.data) && bundles.data.length === 1 &&
-        bundles.data[0]?.attributes?.identifier === target.id &&
-        ['IOS', 'UNIVERSAL'].includes(bundles.data[0].attributes.platform),
-      'The selected Apple team does not have the registered App ID ' + target.id + '.');
-      target.resourceId = validId(bundles.data[0], 'bundleIds');
+      target.resourceId = exactIosBundleResource(bundles?.data, target.id);
     }
     check(new Set(profiles.map(target => target.resourceId)).size === profiles.length,
       'The Apple App IDs must have distinct resource identities.');
 
-    // The previous internal beta keeps its signing certificate. Apple decides whether it can issue one more.
-    const existing = await apiRequest(fetcher, auth, 'GET',
-      '/v1/certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=2');
-    check(Array.isArray(existing?.data) && existing.data.length < 2,
-      'Two distribution certificates are already listed. Use a reusable signing identity for further uploads.');
-
-    const cert = await apiRequest(fetcher, auth, 'POST', '/v1/certificates', {
-      data: { type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', csrContent: csr } }
-    });
-    config.certificateId = validId(cert?.data, 'certificates');
-    const certificate = validateCertificate(cert.data, signingKey, teamId);
+    let certificate;
+    if (reusableCertificateId) {
+      const expectedCertificate = await readScratchFile(scratchPath, 'provided-distribution.cer', 32 * 1024);
+      const cert = await apiRequest(fetcher, auth, 'GET', '/v1/certificates/' + reusableCertificateId);
+      check(validId(cert?.data, 'certificates') === reusableCertificateId,
+        'Apple did not return the configured reusable signing certificate.');
+      certificate = validateCertificate(cert.data, teamId, { expectedCertificate });
+      config.certificateId = reusableCertificateId;
+    } else {
+      const signingKey = createPrivateKey(await readScratchFile(scratchPath, 'signing.key', 8192));
+      check(signingKey.asymmetricKeyType === 'rsa' && signingKey.asymmetricKeyDetails?.modulusLength === 2048,
+        'The runner must create a new RSA-2048 distribution signing key.');
+      const csr = (await readScratchFile(scratchPath, 'signing.csr', 8192)).toString('ascii');
+      check(/^-----BEGIN CERTIFICATE REQUEST-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE REQUEST-----\r?\n?$/.test(csr),
+        'The runner did not produce a valid certificate signing request.');
+      // Leave a slot for a reusable signing identity without revoking previous certificates.
+      const existing = await apiRequest(fetcher, auth, 'GET',
+        '/v1/certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=2');
+      check(Array.isArray(existing?.data) && existing.data.length < 2,
+        'Two distribution certificates are already listed. Use a reusable signing identity for further uploads.');
+      const cert = await apiRequest(fetcher, auth, 'POST', '/v1/certificates', {
+        data: { type: 'certificates', attributes: { certificateType: 'DISTRIBUTION', csrContent: csr } }
+      });
+      issuedCertificateId = validId(cert?.data, 'certificates');
+      certificate = validateCertificate(cert.data, teamId, { signingKey });
+      config.certificateId = issuedCertificateId;
+    }
     const writeOutput = async (name, bytes) => {
       const output = join(scratchPath, name);
       await writeFile(output, bytes, { mode: 0o600, flag: 'wx' });
@@ -241,8 +260,8 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
         catch { cleanupFailed = true; }
       }
     }
-    if (auth && config.certificateId) {
-      try { await apiRequest(fetcher, auth, 'DELETE', '/v1/certificates/' + config.certificateId); }
+    if (auth && issuedCertificateId) {
+      try { await apiRequest(fetcher, auth, 'DELETE', '/v1/certificates/' + issuedCertificateId); }
       catch { cleanupFailed = true; }
     }
     if (cleanupFailed) {
@@ -255,10 +274,16 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    const [, , operation, scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName, ...remaining] = process.argv;
+    const [, , operation, scratch, authKey, keyId, issuerId, teamId, profileName, ...remaining] = process.argv;
+    const widgetProfileName = remaining[0] && remaining[0] !== '--certificate-id' ? remaining.shift() : undefined;
+    let reusableCertificateId;
+    if (remaining.length === 2 && remaining[0] === '--certificate-id') {
+      remaining.shift();
+      reusableCertificateId = remaining.shift();
+    }
     check(process.platform === 'darwin' && operation === 'create' && remaining.length === 0,
       'Run Booth provisioning with the create command on the protected macOS runner.');
-    await createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName });
+    await createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName, reusableCertificateId });
     console.log('Prepared and verified the Booth App Store signing files.');
   } catch (error) {
     console.error(error instanceof ProvisioningError ? error.message : 'Booth App Store provisioning failed.');

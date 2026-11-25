@@ -124,8 +124,8 @@ cleanup_upload() {
   rm -rf -- "$tpv_testflight_scratch"
 }
 
-install_distribution_signing() {
-  local keychain_password pkcs12_password listed
+install_distribution_identity() {
+  local certificate="$1" keychain_password pkcs12_password listed
   local keychain="$scratch/distribution.keychain-db"
 
   # Keep the original order, including keychain paths with spaces.
@@ -140,13 +140,18 @@ install_distribution_signing() {
     fail 'The runner did not have a restorable keychain search list.'
 
   keychain_password="$(openssl rand -hex 32 2>"$scratch/keychain.log")" &&
+    [[ -n "$keychain_password" ]] || fail 'The temporary signing keychain password could not be prepared.'
+  if [[ -n "$reusable_certificate_id" ]]; then
+    pkcs12_password="$supplied_p12_password"
+  else
     pkcs12_password="$(openssl rand -hex 32 2>>"$scratch/keychain.log")" &&
-    openssl x509 -inform DER -in "$scratch/distribution.cer" -out "$scratch/distribution.pem" \
-      >>"$scratch/keychain.log" 2>&1 &&
-    openssl pkcs12 -export -inkey "$scratch/signing.key" -in "$scratch/distribution.pem" \
-      -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
-      -out "$scratch/signing.p12" -passout "pass:$pkcs12_password" >>"$scratch/keychain.log" 2>&1 ||
-    fail 'The temporary distribution signing package could not be prepared.'
+      openssl x509 -inform DER -in "$certificate" -out "$scratch/distribution.pem" \
+        >>"$scratch/keychain.log" 2>&1 &&
+      openssl pkcs12 -export -inkey "$scratch/signing.key" -in "$scratch/distribution.pem" \
+        -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
+        -out "$scratch/signing.p12" -passout "pass:$pkcs12_password" >>"$scratch/keychain.log" 2>&1 ||
+      fail 'The temporary distribution signing package could not be prepared.'
+  fi
 
   tpv_signing_keychain="$keychain"
   {
@@ -162,7 +167,7 @@ install_distribution_signing() {
   unset keychain_password pkcs12_password
 
   # Compare the leaf certificate fingerprint with the valid identity in the temporary keychain.
-  manual_identity="$(openssl x509 -inform DER -in "$scratch/distribution.cer" -noout -fingerprint -sha1 \
+  manual_identity="$(openssl x509 -inform DER -in "$certificate" -noout -fingerprint -sha1 \
     2>>"$scratch/keychain.log")" ||
     fail 'The distribution certificate fingerprint could not be read.'
   manual_identity="${manual_identity#*=}"
@@ -172,7 +177,9 @@ install_distribution_signing() {
     ! grep -Fq -- "$manual_identity" "$scratch/identities.txt"; then
     fail 'The runner does not trust the temporary distribution certificate or its signing key is missing.'
   fi
+}
 
+install_distribution_profiles() {
   local profile_directory="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
   mkdir -p -- "$profile_directory" >>"$scratch/keychain.log" 2>&1 ||
     fail 'The Xcode provisioning profile directory could not be prepared.'
@@ -201,6 +208,25 @@ install_distribution_profile() {
   ) 2>>"$scratch/keychain.log" || fail 'The temporary distribution profile could not be installed.'
 }
 
+prepare_reusable_signing_package() {
+  # Do not send the protected PKCS#12 or password to the Apple API.
+  printf '%s' "$supplied_p12" | node --input-type=commonjs -e '
+const { readFileSync, writeFileSync } = require("node:fs");
+const input = readFileSync(0, "utf8");
+const bytes = Buffer.from(input, "base64");
+if (bytes.length < 512 || bytes.length > 24 * 1024 || bytes.toString("base64") !== input) process.exit(1);
+writeFileSync(process.argv[1], bytes, { mode: 0o600, flag: "wx" });
+' "$scratch/signing.p12" >"$scratch/reusable.log" 2>&1 ||
+    fail 'The reusable PKCS#12 must be canonical Base64 in the protected environment.'
+  unset supplied_p12
+  printf '%s\n' "$supplied_p12_password" | openssl pkcs12 -in "$scratch/signing.p12" -clcerts -nokeys -passin stdin \
+    -out "$scratch/provided-distribution.pem" >>"$scratch/reusable.log" 2>&1 &&
+    [[ "$(grep -c '^-----BEGIN CERTIFICATE-----$' "$scratch/provided-distribution.pem")" == 1 ]] &&
+    openssl x509 -in "$scratch/provided-distribution.pem" -outform DER \
+      -out "$scratch/provided-distribution.cer" >>"$scratch/reusable.log" 2>&1 ||
+    fail 'The reusable PKCS#12 must contain exactly one readable signing certificate.'
+}
+
 prepare_distribution_signing() {
   [[ "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,19}$ &&
      "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,5}$ ]] ||
@@ -212,12 +238,18 @@ prepare_distribution_signing() {
     provisioning_args+=("$manual_widget_profile_name")
   fi
 
-  # The RSA private key is generated on this runner and stays in private scratch.
-  openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=Booth TestFlight CI' \
-    -keyout "$scratch/signing.key" -out "$scratch/signing.csr" >"$scratch/request.log" 2>&1 ||
-    fail 'A temporary distribution certificate request could not be created.'
+  if [[ -n "$reusable_certificate_id" ]]; then
+    prepare_reusable_signing_package
+    install_distribution_identity "$scratch/provided-distribution.cer"
+    provisioning_args+=(--certificate-id "$reusable_certificate_id")
+  else
+    # A bootstrap private key exists only in this runner’s private scratch.
+    openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=Booth TestFlight CI' \
+      -keyout "$scratch/signing.key" -out "$scratch/signing.csr" >"$scratch/request.log" 2>&1 ||
+      fail 'A temporary distribution certificate request could not be created.'
+  fi
   node scripts/provision-testflight.mjs "${provisioning_args[@]}" ||
-    fail 'Apple could not provision a distribution certificate and all required profiles for this run.'
+    fail 'Apple could not verify distribution signing and provision all required profiles for this run.'
   manual_profile_uuid="$(node -p 'require(process.argv[1]).profileUuid' "$scratch/provisioning.json" \
     2>>"$scratch/request.log")" ||
     fail 'The temporary provisioning profile identity could not be read.'
@@ -230,7 +262,11 @@ prepare_distribution_signing() {
        "$manual_widget_profile_uuid" != "$manual_profile_uuid" ]] ||
       fail 'The WidgetKit extension needs a distinct provisioning profile UUID.'
   fi
-  install_distribution_signing
+  if [[ -z "$reusable_certificate_id" ]]; then
+    install_distribution_identity "$scratch/distribution.cer"
+  fi
+  install_distribution_profiles
+  unset supplied_p12_password
 }
 
 verify_distribution_bundle() {
@@ -266,6 +302,15 @@ upload() {
   # environment before invoking Node, Xcode or any other helper process.
   local supplied_p8="$ASC_PRIVATE_KEY" key_id="$ASC_KEY_ID" issuer_id="$ASC_ISSUER_ID"
   unset ASC_PRIVATE_KEY ASC_KEY_ID ASC_ISSUER_ID
+  local supplied_p12="${TPV_DISTRIBUTION_P12_BASE64:-}" supplied_p12_password="${TPV_DISTRIBUTION_P12_PASSWORD:-}"
+  local reusable_certificate_id="${TPV_DISTRIBUTION_CERTIFICATE_ID:-}"
+  unset TPV_DISTRIBUTION_P12_BASE64 TPV_DISTRIBUTION_P12_PASSWORD TPV_DISTRIBUTION_CERTIFICATE_ID
+  if [[ -n "$supplied_p12" || -n "$supplied_p12_password" || -n "$reusable_certificate_id" ]]; then
+    [[ -n "$supplied_p12" && "${#supplied_p12}" -le 32768 &&
+       "$supplied_p12_password" =~ ^[A-Za-z0-9_-]{16,128}$ &&
+       "$reusable_certificate_id" =~ ^[A-Za-z0-9-]{1,72}$ ]] ||
+      fail 'Configure all three reusable distribution credentials in the protected TestFlight environment.'
+  fi
 
   local version runner_temp scratch widget_expected
   version="$(node -p "require('./package.json').version")"
@@ -313,7 +358,10 @@ NODE
     "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" "CURRENT_PROJECT_VERSION=$TPV_TESTFLIGHT_BUILD_NUMBER")
   local signing_style=automatic manual_profile_name='' manual_profile_uuid='' manual_identity=''
   local manual_widget_profile_name='' manual_widget_profile_uuid=''
-  if ! xcodebuild "${archive_args[@]}" -archivePath "$archive" -derivedDataPath "$scratch/build" \
+  if [[ -n "$reusable_certificate_id" ]]; then
+    printf '%s\n' 'Using the protected reusable App Store distribution identity for this internal TestFlight archive.'
+    signing_style=manual
+  elif ! xcodebuild "${archive_args[@]}" -archivePath "$archive" -derivedDataPath "$scratch/build" \
     "${apple_auth[@]}" archive >"$scratch/archive.log" 2>&1; then
     report_xcode_failure archive "$scratch/archive.log"
     # Complete signing without a development device only when Xcode reports that specific hurdle.
@@ -322,8 +370,10 @@ NODE
       grep -Eiq -- 'no profiles for|iphoneos.*provisioning profile.*not found|requires a provisioning profile' \
         "$scratch/archive.log" || fail 'Xcode could not sign the archive.'
     printf '%s\n' 'Trying manual App Store distribution signing for this internal TestFlight archive.'
-    prepare_distribution_signing
     signing_style=manual
+  fi
+  if [[ "$signing_style" == manual ]]; then
+    prepare_distribution_signing
     archive="$scratch/BoothDistribution.xcarchive"
     local manual_args=(TPV_TESTFLIGHT_SIGN_STYLE=Manual "TPV_TESTFLIGHT_SIGN_IDENTITY=$manual_identity"
       "TPV_TESTFLIGHT_PROFILE_NAME=$manual_profile_name")
@@ -375,7 +425,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 case "${1:-}" in
   verify) verify_source ;;
   upload)
-    (unset ASC_PRIVATE_KEY ASC_KEY_ID ASC_ISSUER_ID; verify_source)
+    (unset ASC_PRIVATE_KEY ASC_KEY_ID ASC_ISSUER_ID
+     unset TPV_DISTRIBUTION_P12_BASE64 TPV_DISTRIBUTION_P12_PASSWORD TPV_DISTRIBUTION_CERTIFICATE_ID
+     verify_source)
     upload
     ;;
   *) fail 'Use verify or upload.' ;;

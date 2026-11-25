@@ -40,18 +40,38 @@ its own App ID and App Store provisioning profile under the same team as
 the app’s project values.
 
 The protected TestFlight workflow detects the extension in the reviewed Xcode
-project. Its manual fallback requires the extension’s registered App ID, then
-requests two distinct `IOS_APP_STORE` profiles for the same runner-generated
-Apple Distribution identity. It passes the second profile name to Xcode as
+project. Manual signing requires the extension’s registered App ID and
+uses two distinct `IOS_APP_STORE` profiles for the same Apple Distribution
+identity. It passes the second profile name to Xcode as
 `TPV_TESTFLIGHT_WIDGET_PROFILE_NAME`, alongside the app’s
 `TPV_TESTFLIGHT_PROFILE_NAME`. The workflow verifies the embedded profiles and
 signing certificates in both bundles and maps the extension’s distinct UUID to
 `com.thepropervolume.karaoke.liveactivity` in `provisioningProfiles`.
 
-The private provisioning helper’s optional final input is the second profile
-name, after the app’s profile name. The workflow supplies
-`Booth TestFlight CI <run-id>-<attempt> Live Activity`. No extra dispatch input
-or GitHub secret is needed. A build without the extension uses a single
-profile. The same certificate quota guard applies to both paths. Provisioning
-and signing are separate from the unsigned check.
+The workflow supplies the extension profile name
+`Booth TestFlight CI <run-id>-<attempt> Live Activity` after the app’s
+profile name. A build without the extension uses one profile. Provisioning and
+signing are separate from the unsigned check.
+
+For reusable signing, configure all three secrets in the protected
+`testflight` GitHub environment. Keep the identity and password in approved
+private storage for future builds.
+
+- `TPV_DISTRIBUTION_P12_BASE64` is the canonical single-line Base64 of the
+  password-protected PKCS#12 with one Apple Distribution certificate and its
+  private key. Use the macOS-compatible PKCS#12 encryption settings
+  `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1` when exporting
+  with OpenSSL.
+- `TPV_DISTRIBUTION_P12_PASSWORD` is the PKCS#12 password, 16–128 characters
+  using ASCII letters, digits, underscores, or hyphens.
+- `TPV_DISTRIBUTION_CERTIFICATE_ID` is the exact `data.id` from the Apple
+  Certificates API. It differs from the certificate serial number or SHA-1
+  fingerprint.
+
+The runner checks the PKCS#12 locally and confirms its certificate matches the
+existing Apple certificate before requesting profiles. It keeps the certificate
+in Apple’s account and removes the temporary local signing files when the job
+exits. If all three secrets are absent, the existing automatic signing attempt
+and the bounded single-use certificate fallback apply. Incomplete reusable
+credentials stop the upload.
 [Apple’s App Store profile instructions](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile/)

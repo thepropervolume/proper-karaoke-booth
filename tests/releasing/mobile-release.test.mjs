@@ -6,9 +6,21 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { verifyMobilePlatform } from '../../scripts/release-artifacts.mjs';
 import { releaseNotesForCommit } from '../../scripts/github-release.mjs';
+import { exactIosBundleResource } from '../../scripts/provision-testflight.mjs';
 
 const appId = 'com.thepropervolume.karaoke';
 const widgetId = appId + '.liveactivity';
+
+test('TestFlight provisioning selects a unique exact iOS App ID from neighboring records', () => {
+  const record = (id, identifier, platform = 'IOS') => ({ type: 'bundleIds', id, attributes: { identifier, platform } });
+  const app = record('app-resource', appId, 'UNIVERSAL');
+  const widget = record('widget-resource', widgetId);
+  const mac = record('mac-resource', appId, 'MAC_OS');
+  assert.equal(exactIosBundleResource([widget, mac, app], appId), app.id);
+  assert.equal(exactIosBundleResource([widget, mac, app], widgetId), widget.id);
+  assert.throws(() => exactIosBundleResource([widget, mac], appId), /does not expose the exact iOS App ID/);
+  assert.throws(() => exactIosBundleResource([app, record('second-resource', appId)], appId), /more than one exact iOS App ID/);
+});
 
 async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds = [14, 14], iosWidgetId = widgetId,
   includeWidgetProduct = iosWidgetId !== null } = {}) {

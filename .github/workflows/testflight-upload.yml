@@ -53,4 +53,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          TPV_DISTRIBUTION_P12_BASE64: ${{ secrets.TPV_DISTRIBUTION_P12_BASE64 }}
+          TPV_DISTRIBUTION_P12_PASSWORD: ${{ secrets.TPV_DISTRIBUTION_P12_PASSWORD }}
+          TPV_DISTRIBUTION_CERTIFICATE_ID: ${{ secrets.TPV_DISTRIBUTION_CERTIFICATE_ID }}
         run: bash scripts/upload-testflight.sh upload
