@@ -1010,6 +1010,7 @@ async function ensureSingerDisplayReady(showVisible = true): Promise<void> {
 
 // Serialize credit checks through audio acknowledgement. Concurrent claps can
 // still overlap after they start, while the same singer cannot spend a credit twice.
+let stageApplause: { id: string; atMs: number; generation: string } | undefined;
 let applauseTurn: Promise<void> = Promise.resolve();
 const applauseInFlight = new Map<string, { fingerprint: string; work: Promise<Outcome> }>();
 function requestApplause(actor: Actor, commandId: string, showId: string, hostEpoch: string, expectedRevision: number,
@@ -1047,6 +1048,7 @@ function requestApplause(actor: Actor, commandId: string, showId: string, hostEp
       receipt.fingerprint = originalReceipt.fingerprint;
       store.save(result.state);
       installShowState(result.state);
+      if (generation) stageApplause = { id: randomUUID(), atMs: Date.now(), generation };
       try { broadcast(); } catch { /* Committed applause remains recorded. */ }
       return result.outcome;
     } catch (error) {
@@ -1573,7 +1575,7 @@ else {
       (singerId, commandId, showId, hostEpoch, revision, authorized) => requestApplause({ role: 'singer', id: singerId }, commandId, showId, hostEpoch, revision, authorized),
       requestPhoto, new RemoteCatalog(guestProviderCatalog, Date.now), () => {
         const downloads = queuedDownloads.snapshot();
-        return { timeline: playbackTimeline.snapshot(), preparingVersionIds: new Set([
+        return { timeline: playbackTimeline.snapshot(), applause: stageApplause, preparingVersionIds: new Set([
           ...downloads.pendingVersionIds, ...(downloads.activeVersionId ? [downloads.activeVersionId] : []),
         ]) };
       });

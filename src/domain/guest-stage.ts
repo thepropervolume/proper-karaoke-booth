@@ -3,6 +3,7 @@ import type { RecordingKey } from './song-rating';
 import { isGuestRecordingId, isGuestSource } from './guest-sources';
 
 export const MAX_GUEST_ROTATION = 30;
+export const MAX_GUEST_FULFILLMENTS = 20;
 
 export type GuestRotationEntry = {
   title: string;
@@ -22,7 +23,11 @@ export type GuestNowPlaying = {
   recordingId?: RecordingKey;
   timing?: { position: number; duration: number };
 };
-export type GuestStage = { nowPlaying: GuestNowPlaying | null; queue: GuestRotationEntry[]; queueTruncated: boolean };
+export type GuestSongFulfillment = { id: string; title: string };
+export type GuestApplause = { id: string; atMs: number };
+export const GUEST_APPLAUSE_WINDOW_MS = 6500;
+export type GuestStage = { applause?: GuestApplause; nowPlaying: GuestNowPlaying | null; queue: GuestRotationEntry[]; queueTruncated: boolean;
+  fulfilledSuggestions?: GuestSongFulfillment[] };
 
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 export const guestStageText = (value: unknown, max: number, empty = false): value is string =>
@@ -61,5 +66,21 @@ export function projectGuestStage(value: unknown): GuestStage | null {
     queue.push({ ...details, position: row.position, status: row.status,
       ...(row.ownRequestId === undefined ? {} : { ownRequestId: row.ownRequestId }) });
   }
-  return { nowPlaying, queue, queueTruncated: value.queueTruncated };
+  let fulfilledSuggestions: GuestSongFulfillment[] | undefined;
+  if (value.fulfilledSuggestions !== undefined) {
+    if (!Array.isArray(value.fulfilledSuggestions) || value.fulfilledSuggestions.length > MAX_GUEST_FULFILLMENTS) return null;
+    const seen = new Set<string>();
+    fulfilledSuggestions = [];
+    for (const suggestion of value.fulfilledSuggestions) {
+      if (!object(suggestion) || !guestStageText(suggestion.id, 100) || seen.has(suggestion.id) ||
+          !guestStageText(suggestion.title, 200)) return null;
+      seen.add(suggestion.id);
+      fulfilledSuggestions.push({ id: suggestion.id, title: suggestion.title });
+    }
+  }
+  const pulse = value.applause;
+  const applause = object(pulse) && typeof pulse.id === 'string' && /^[a-f0-9-]{36}$/.test(pulse.id) &&
+    typeof pulse.atMs === 'number' && Number.isSafeInteger(pulse.atMs) && pulse.atMs > 0
+    ? { id: pulse.id, atMs: pulse.atMs } : undefined;
+  return { nowPlaying, queue, queueTruncated: value.queueTruncated, ...(applause ? { applause } : {}), ...(fulfilledSuggestions ? { fulfilledSuggestions } : {}) };
 }
