@@ -14,6 +14,7 @@ export class MySqlMobileAccountStore implements AccountStore {
     await this.pool.execute(`SELECT ${ACCOUNT_COLUMNS} FROM booth_accounts a LIMIT 0`);
     await this.pool.execute(`SELECT ${LINK_COLUMNS},token_hash FROM booth_account_links LIMIT 0`);
     await this.pool.execute('SELECT token_hash,account_id,expires_at FROM booth_account_sessions LIMIT 0');
+    await this.pool.execute('SELECT account_id,pronouns,bio,avatar FROM booth_account_profiles LIMIT 0');
   }
 
   async profileDetails(accountId: number): Promise<SingerProfileDetails | null> {

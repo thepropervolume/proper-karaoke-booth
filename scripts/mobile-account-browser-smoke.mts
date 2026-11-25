@@ -95,6 +95,8 @@ try {
   await accountTab();
   await page.getByText(existing.email, { exact: true }).waitFor();
 
+  // Simulate another browser tab replacing the persistent token before this editor opens.
+  await page.evaluate(() => localStorage.setItem('tpv-mobile-account-session', 'b'.repeat(43)));
   await page.getByText('Singing Profile', { exact: true }).click();
   await page.getByLabel('Pronouns').fill('they/them');
   await page.getByLabel('Bio', { exact: true }).fill('I like a duet.');
@@ -107,6 +109,8 @@ try {
   await button('Save Singing Profile').click();
   await page.getByText('Profile saved.', { exact: true }).waitFor();
   assert.equal(profiles.get(existing.email)?.pronouns, 'they/them');
+  assert.equal(await page.evaluate(() => Object.values(localStorage).some(value => value.includes('I like a duet.'))), false);
+  await page.evaluate(token => localStorage.setItem('tpv-mobile-account-session', token), sessionToken);
 
   await page.reload();
   await accountTab();

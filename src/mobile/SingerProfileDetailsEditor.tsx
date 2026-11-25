@@ -3,21 +3,9 @@ import { IonButton, IonIcon } from '@ionic/react';
 import { personCircleOutline } from 'ionicons/icons';
 import { EMPTY_SINGER_PROFILE, MAX_PROFILE_AVATAR_BYTES, parseSingerProfileDetails, type SingerProfileDetails } from '../domain/singer-profile-details';
 import { prepareGuestPhoto } from '../remote/photo';
-import { knownSessionToken } from './account';
 import { mobileJson } from './api';
 
 const profilePath = '/v1/mobile/account/profile';
-const keyFor = (email: string) => 'tpv-singer-details-v1:' + email.trim().toLowerCase();
-
-function loadCached(email: string): SingerProfileDetails {
-  try { return parseSingerProfileDetails(JSON.parse(localStorage.getItem(keyFor(email)) ?? 'null')) ?? EMPTY_SINGER_PROFILE; }
-  catch { return EMPTY_SINGER_PROFILE; }
-}
-
-function cache(email: string, profile: SingerProfileDetails) {
-  try { localStorage.setItem(keyFor(email), JSON.stringify(profile)); }
-  catch { /* Account settings remain usable without browser storage. */ }
-}
 
 function fromServer(result: unknown) {
   const profile = parseSingerProfileDetails((result as { profile?: unknown } | null)?.profile);
@@ -25,12 +13,8 @@ function fromServer(result: unknown) {
   return profile;
 }
 
-export function SingerProfileDetailsEditor({ email }: { email: string }) {
-  return <ProfileEditor key={email.trim().toLowerCase()} email={email} />;
-}
-
-function ProfileEditor({ email }: {email: string}) {
-  const [draft, setDraft] = useState<SingerProfileDetails>(() => loadCached(email));
+export function SingerProfileDetailsEditor({ token }: { token: string }) {
+  const [draft, setDraft] = useState<SingerProfileDetails>(EMPTY_SINGER_PROFILE);
   const [ready, setReady] = useState(false);
   const [edited, setEdited] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,24 +22,18 @@ function ProfileEditor({ email }: {email: string}) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    const token = knownSessionToken();
-    if (!token) {
-      setMessage('Sign in again to update your singing profile.');
-      return;
-    }
     const controller = new AbortController();
     void mobileJson(profilePath, undefined, { token, signal: controller.signal }).then(result => {
       if (controller.signal.aborted) return;
       const profile = fromServer(result);
       setDraft(profile);
-      cache(email, profile);
       setReady(true);
       setMessage('');
     }).catch(() => {
       if (!controller.signal.aborted) setMessage('Your profile service is unavailable. Try again.');
     });
     return () => controller.abort();
-  }, [email, attempt]);
+  }, [token, attempt]);
 
   async function selectPhoto(file: File) {
     setBusy(true);
@@ -71,15 +49,12 @@ function ProfileEditor({ email }: {email: string}) {
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    const token = knownSessionToken();
-    if (!token || busy || !ready) return;
+    if (busy || !ready) return;
     setBusy(true);
     setMessage('');
     try {
       const profile = fromServer(await mobileJson(profilePath, draft, { token }));
-      if (token !== knownSessionToken()) return;
       setDraft(profile);
-      cache(email, profile);
       setEdited(false);
       setMessage('Profile saved.');
     } catch { setMessage('Couldn’t save your profile. Try again.'); }
