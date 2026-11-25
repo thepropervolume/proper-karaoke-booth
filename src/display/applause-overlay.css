@@ -3,6 +3,7 @@
   z-index: 4;
   inset-inline-start: clamp(.75rem, 2vw, 1.75rem);
   inset-block-start: max(3.5rem, 12vh);
+  inline-size: max-content;
   pointer-events: none;
 }
 
@@ -23,6 +24,29 @@ body:has(#booth-banner:not([hidden])[data-position=top]) #applause-overlay {
 
 @media (prefers-reduced-motion: no-preference) {
   .applause-badge { animation: applause-enter 220ms ease-out both; }
+
+  .applause-badge::before,
+  .applause-badge::after {
+    position: absolute;
+    inset-block-start: clamp(5rem, 25vh, 15rem);
+    color: #fffff3;
+    content: '👏' / '';
+    font-size: clamp(2rem, 4vw, 4rem);
+    opacity: 0;
+    animation: applause-sway 1.95s ease-in-out both;
+  }
+
+  .applause-badge::after {
+    inset-block-start: clamp(7rem, 49vh, 25rem);
+    animation-delay: .2s;
+  }
+
+  @keyframes applause-sway {
+    0% { opacity: 0; transform: translate(2vw, 5vh) rotate(-15deg); }
+    18% { opacity: .92; }
+    55% { transform: translate(42vw, -6vh) rotate(15deg); }
+    100% { opacity: 0; transform: translate(77vw, -15vh) rotate(-8deg); }
+  }
 
   @keyframes applause-enter {
     from { opacity: 0; transform: translateX(-.45em) scale(.96); }

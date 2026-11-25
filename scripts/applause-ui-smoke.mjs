@@ -114,6 +114,7 @@ try {
   await badge.waitFor();
   assert.equal(await badge.innerText(), '👏 Applause');
   assert.equal(await badge.evaluate(element => getComputedStyle(element).animationName), 'applause-enter');
+  assert.equal(await badge.evaluate(element => getComputedStyle(element, '::before').animationName), 'applause-sway');
   const sample = await singer.locator('#applause-overlay').evaluate(element => {
     const rect = element.getBoundingClientRect();
     return { x: (rect.right - 6) / innerWidth, y: (rect.top + rect.height / 2) / innerHeight };
@@ -142,6 +143,7 @@ try {
   assert.equal(await singer.evaluate(() => window.applauseCueCount), 3, 'Only accepted applauses should show a cue.');
   assert.equal(await badge.count(), 1, 'Rapid applause replaces the previous cue.');
   assert.equal(await badge.evaluate(element => getComputedStyle(element).animationName), 'none');
+  assert.equal(await badge.evaluate(element => getComputedStyle(element, '::before').content), 'none');
   const after = await host.evaluate(() => window.tpv.getState());
   assert.equal(after.playback.generationId, baseline.playback.generationId);
   assert.equal(account(after).points, 100);
