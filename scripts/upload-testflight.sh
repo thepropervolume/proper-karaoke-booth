@@ -87,11 +87,33 @@ verify_archive() {
     codesign --display --verbose=4 "$app_bundle" >>"$scratch/signature.log" 2>&1 &&
     grep -Fxq "TeamIdentifier=$APPLE_TEAM_ID" "$scratch/signature.log" ||
     fail 'The archive does not have a valid signature for the configured Apple team.'
+
+  local widget="$app_bundle/PlugIns/RoomLiveActivity.appex"
+  if [[ "$widget_expected" == yes ]]; then
+    local widget_plist="$widget/Info.plist"
+    [[ -f "$widget_plist" && -f "$widget/RoomLiveActivity" &&
+       "$(plutil -extract CFBundleIdentifier raw -o - "$widget_plist")" == com.thepropervolume.karaoke.liveactivity &&
+       "$(plutil -extract CFBundleShortVersionString raw -o - "$widget_plist")" == "$version" &&
+       "$(plutil -extract CFBundleVersion raw -o - "$widget_plist")" == "$TPV_TESTFLIGHT_BUILD_NUMBER" &&
+       "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw -o - "$widget_plist")" == com.apple.widgetkit-extension ]] ||
+      fail 'The signed archive is missing the expected WidgetKit extension or its matching version.'
+    xcrun lipo -verify_arch arm64 "$widget/RoomLiveActivity" >"$scratch/widget-architecture.log" 2>&1 &&
+      xcrun vtool -show-build "$widget/RoomLiveActivity" >>"$scratch/widget-architecture.log" 2>&1 &&
+      grep -Eq '^[[:space:]]*platform[[:space:]]+(IOS|2)[[:space:]]*$' "$scratch/widget-architecture.log" &&
+      codesign --display --verbose=4 "$widget" >"$scratch/widget-signature.log" 2>&1 &&
+      grep -Fxq "TeamIdentifier=$APPLE_TEAM_ID" "$scratch/widget-signature.log" ||
+      fail 'The WidgetKit extension must be an arm64 iPhoneOS product signed by the configured Apple team.'
+  elif [[ -e "$widget" || -L "$widget" ]]; then
+    fail 'The signed archive unexpectedly includes the Live Activity extension.'
+  fi
 }
 
 cleanup_upload() {
   if [[ -n "$tpv_installed_profile" ]]; then
     rm -f -- "$tpv_installed_profile" || true
+  fi
+  if [[ -n "$tpv_installed_widget_profile" ]]; then
+    rm -f -- "$tpv_installed_widget_profile" || true
   fi
   if [[ -n "$tpv_signing_keychain" ]]; then
     if [[ "${#tpv_prior_keychains[@]}" -gt 0 ]]; then
@@ -105,7 +127,6 @@ cleanup_upload() {
 install_distribution_signing() {
   local keychain_password pkcs12_password listed
   local keychain="$scratch/distribution.keychain-db"
-  local profile_directory="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
   # Keep the original order, including keychain paths with spaces.
   security list-keychains -d user >"$scratch/keychains.txt" 2>"$scratch/keychain.log" ||
@@ -152,21 +173,32 @@ install_distribution_signing() {
     fail 'The runner does not trust the temporary distribution certificate or its signing key is missing.'
   fi
 
-  local profile_path="$profile_directory/$manual_profile_uuid.mobileprovision"
+  local profile_directory="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
   mkdir -p -- "$profile_directory" >>"$scratch/keychain.log" 2>&1 ||
     fail 'The Xcode provisioning profile directory could not be prepared.'
+  local app_path="$profile_directory/$manual_profile_uuid.mobileprovision"
+  install_distribution_profile "$scratch/booth.mobileprovision" "$app_path"
+  tpv_installed_profile="$app_path"
+  if [[ "$widget_expected" == yes ]]; then
+    local widget_path="$profile_directory/$manual_widget_profile_uuid.mobileprovision"
+    install_distribution_profile "$scratch/widget.mobileprovision" "$widget_path"
+    tpv_installed_widget_profile="$widget_path"
+  fi
+}
+
+install_distribution_profile() {
+  local profile="$1" profile_path="$2"
   [[ ! -e "$profile_path" && ! -L "$profile_path" ]] ||
     fail 'A profile with the new UUID is already installed.'
   # noclobber prevents accidental replacement of an existing profile.
   (
     set -o noclobber
     exec 3>"$profile_path" || exit 1
-    if ! cat "$scratch/booth.mobileprovision" >&3; then
+    if ! cat "$profile" >&3; then
       rm -f -- "$profile_path"
       exit 1
     fi
   ) 2>>"$scratch/keychain.log" || fail 'The temporary distribution profile could not be installed.'
-  tpv_installed_profile="$profile_path"
 }
 
 prepare_distribution_signing() {
@@ -174,32 +206,54 @@ prepare_distribution_signing() {
      "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,5}$ ]] ||
     fail 'The temporary distribution signing assets need a valid GitHub run identity.'
   manual_profile_name="Booth TestFlight CI $GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+  local provisioning_args=(create "$scratch" "$auth_key" "$key_id" "$issuer_id" "$APPLE_TEAM_ID" "$manual_profile_name")
+  if [[ "$widget_expected" == yes ]]; then
+    manual_widget_profile_name="$manual_profile_name Live Activity"
+    provisioning_args+=("$manual_widget_profile_name")
+  fi
 
   # The RSA private key is generated on this runner and stays in private scratch.
   openssl req -new -newkey rsa:2048 -nodes -sha256 -subj '/CN=Booth TestFlight CI' \
     -keyout "$scratch/signing.key" -out "$scratch/signing.csr" >"$scratch/request.log" 2>&1 ||
     fail 'A temporary distribution certificate request could not be created.'
-  node scripts/provision-testflight.mjs create "$scratch" "$auth_key" "$key_id" \
-    "$issuer_id" "$APPLE_TEAM_ID" "$manual_profile_name" ||
-    fail 'Apple could not provision a distribution certificate and profile for this run.'
+  node scripts/provision-testflight.mjs "${provisioning_args[@]}" ||
+    fail 'Apple could not provision a distribution certificate and all required profiles for this run.'
   manual_profile_uuid="$(node -p 'require(process.argv[1]).profileUuid' "$scratch/provisioning.json" \
     2>>"$scratch/request.log")" ||
     fail 'The temporary provisioning profile identity could not be read.'
   [[ "$manual_profile_uuid" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] ||
     fail 'The temporary provisioning profile UUID is invalid.'
+  if [[ "$widget_expected" == yes ]]; then
+    manual_widget_profile_uuid="$(node -p 'require(process.argv[1]).widgetProfileUuid' "$scratch/provisioning.json" \
+      2>>"$scratch/request.log")" || fail 'The WidgetKit provisioning profile identity could not be read.'
+    [[ "$manual_widget_profile_uuid" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ &&
+       "$manual_widget_profile_uuid" != "$manual_profile_uuid" ]] ||
+      fail 'The WidgetKit extension needs a distinct provisioning profile UUID.'
+  fi
   install_distribution_signing
+}
+
+verify_distribution_bundle() {
+  local bundle="$1" bundle_id="$2" expected_uuid="$3" verified_path="$4"
+  # Inspect the actual Xcode archive using private, separate paths for the two signing leaves.
+  mkdir -- "$verified_path" || fail 'Private distribution verification storage is unavailable.'
+  {
+    security cms -D -i "$bundle/embedded.mobileprovision" -o "$verified_path/profile.plist" &&
+      [[ "$(plutil -extract UUID raw -o - "$verified_path/profile.plist")" == "$expected_uuid" &&
+         "$(plutil -extract Entitlements.application-identifier raw -o - "$verified_path/profile.plist")" == "$APPLE_TEAM_ID.$bundle_id" ]] &&
+      (cd "$verified_path" && codesign --display --extract-certificates "$bundle") &&
+      cmp -s "$verified_path/codesign0" "$scratch/distribution.cer"
+  } >"$verified_path/signing-assets.log" 2>&1 ||
+    fail 'The archive did not use the validated distribution profile and signing certificate.'
 }
 
 verify_distribution_archive() {
   local app_bundle="$archive/Products/Applications/App.app"
-  # Verify that the actual Xcode archive embeds the selected profile and signing leaf.
-  {
-    security cms -D -i "$app_bundle/embedded.mobileprovision" -o "$scratch/archive-profile.plist" &&
-      [[ "$(plutil -extract UUID raw -o - "$scratch/archive-profile.plist")" == "$manual_profile_uuid" ]] &&
-      (cd "$scratch" && codesign --display --extract-certificates "$app_bundle") &&
-      cmp -s "$scratch/codesign0" "$scratch/distribution.cer"
-  } >"$scratch/archive-signing-assets.log" 2>&1 ||
-    fail 'The archive did not use the validated distribution profile and signing certificate.'
+  verify_distribution_bundle "$app_bundle" com.thepropervolume.karaoke "$manual_profile_uuid" "$scratch/verify-app"
+  if [[ "$widget_expected" == yes ]]; then
+    verify_distribution_bundle "$app_bundle/PlugIns/RoomLiveActivity.appex" com.thepropervolume.karaoke.liveactivity \
+      "$manual_widget_profile_uuid" "$scratch/verify-widget"
+  fi
 }
 
 upload() {
@@ -213,8 +267,15 @@ upload() {
   local supplied_p8="$ASC_PRIVATE_KEY" key_id="$ASC_KEY_ID" issuer_id="$ASC_ISSUER_ID"
   unset ASC_PRIVATE_KEY ASC_KEY_ID ASC_ISSUER_ID
 
-  local version runner_temp scratch
+  local version runner_temp scratch widget_expected
   version="$(node -p "require('./package.json').version")"
+  widget_expected="$(node --input-type=module <<'NODE'
+import { readFileSync } from 'node:fs';
+import { iosLiveActivityId, iosReleaseTargets } from './scripts/ios-release-targets.mjs';
+const project = readFileSync('mobile/ios/App/App.xcodeproj/project.pbxproj', 'utf8');
+console.log(iosReleaseTargets(project).includes(iosLiveActivityId) ? 'yes' : 'no');
+NODE
+)"
   [[ -n "${RUNNER_TEMP:-}" && "${RUNNER_TEMP:-}" == /* ]] || fail 'A private runner temp directory is required.'
   runner_temp="$(cd -P "$RUNNER_TEMP" && pwd)"
   umask 077
@@ -223,6 +284,7 @@ upload() {
   tpv_testflight_scratch="$scratch"
   tpv_signing_keychain=''
   tpv_installed_profile=''
+  tpv_installed_widget_profile=''
   tpv_prior_keychains=()
   trap cleanup_upload EXIT
   trap 'exit 130' INT
@@ -250,6 +312,7 @@ upload() {
     -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates
     "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" "CURRENT_PROJECT_VERSION=$TPV_TESTFLIGHT_BUILD_NUMBER")
   local signing_style=automatic manual_profile_name='' manual_profile_uuid='' manual_identity=''
+  local manual_widget_profile_name='' manual_widget_profile_uuid=''
   if ! xcodebuild "${archive_args[@]}" -archivePath "$archive" -derivedDataPath "$scratch/build" \
     "${apple_auth[@]}" archive >"$scratch/archive.log" 2>&1; then
     report_xcode_failure archive "$scratch/archive.log"
@@ -258,13 +321,17 @@ upload() {
       "$scratch/archive.log" &&
       grep -Eiq -- 'no profiles for|iphoneos.*provisioning profile.*not found|requires a provisioning profile' \
         "$scratch/archive.log" || fail 'Xcode could not sign the archive.'
-    printf '%s\n' 'Trying an App Store distribution profile for this internal TestFlight archive.'
+    printf '%s\n' 'Trying manual App Store distribution signing for this internal TestFlight archive.'
     prepare_distribution_signing
     signing_style=manual
     archive="$scratch/BoothDistribution.xcarchive"
-    xcodebuild "${archive_args[@]}" -archivePath "$archive" -derivedDataPath "$scratch/build-distribution" \
-      TPV_TESTFLIGHT_SIGN_STYLE=Manual "TPV_TESTFLIGHT_SIGN_IDENTITY=$manual_identity" \
-      "TPV_TESTFLIGHT_PROFILE_NAME=$manual_profile_name" archive >"$scratch/archive-distribution.log" 2>&1 || {
+    local manual_args=(TPV_TESTFLIGHT_SIGN_STYLE=Manual "TPV_TESTFLIGHT_SIGN_IDENTITY=$manual_identity"
+      "TPV_TESTFLIGHT_PROFILE_NAME=$manual_profile_name")
+    if [[ "$widget_expected" == yes ]]; then
+      manual_args+=("TPV_TESTFLIGHT_WIDGET_PROFILE_NAME=$manual_widget_profile_name")
+    fi
+    xcodebuild "${archive_args[@]}" "${manual_args[@]}" -archivePath "$archive" \
+      -derivedDataPath "$scratch/build-distribution" archive >"$scratch/archive-distribution.log" 2>&1 || {
       report_xcode_failure archive "$scratch/archive-distribution.log"
       fail 'Xcode could not sign the archive with the temporary distribution profile.'
     }
@@ -287,6 +354,11 @@ upload() {
         /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.thepropervolume.karaoke string $manual_profile_uuid" "$export_options"
     } >"$scratch/export-options.log" 2>&1 ||
       fail 'The manual TestFlight export could not be configured.'
+    if [[ "$widget_expected" == yes ]]; then
+      /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.thepropervolume.karaoke.liveactivity string $manual_widget_profile_uuid" \
+        "$export_options" >>"$scratch/export-options.log" 2>&1 ||
+        fail 'The manual TestFlight export is missing the WidgetKit provisioning profile.'
+    fi
   fi
 
   xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$export_options" \

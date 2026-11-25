@@ -10,10 +10,12 @@ import { releaseNotesForCommit } from '../../scripts/github-release.mjs';
 const appId = 'com.thepropervolume.karaoke';
 const widgetId = appId + '.liveactivity';
 
-async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds = [14, 14], iosWidgetId = widgetId } = {}) {
+async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds = [14, 14], iosWidgetId = widgetId,
+  includeWidgetProduct = iosWidgetId !== null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'tpv-mobile-release-'));
   await mkdir(join(dir, 'scripts')); await mkdir(join(dir, 'mobile')); await mkdir(join(dir, 'src'));
   await cp(resolve('scripts/mobile-release.mjs'), join(dir, 'scripts/mobile-release.mjs'));
+  await cp(resolve('scripts/ios-release-targets.mjs'), join(dir, 'scripts/ios-release-targets.mjs'));
   await cp(resolve('scripts/release-artifacts.mjs'), join(dir, 'scripts/release-artifacts.mjs'));
   await writeFile(join(dir, '.gitignore'), 'release/\nmobile/android/app/build/\n');
   await writeFile(join(dir, 'package.json'), '{"version":"0.10.1"}\n');
@@ -25,7 +27,8 @@ async function fixture({ androidId = appId, androidVersion = '0.10.1', iosBuilds
   await writeFile(join(dir, 'mobile/android/app/build.gradle'), 'applicationId "' + androidId + '"\nversionCode 1001\nversionName "' + androidVersion + '"\n');
   await mkdir(join(dir, 'mobile/ios/App/App.xcodeproj'), { recursive: true });
   const iosConfig = iosBuilds.map(build => 'MARKETING_VERSION = 0.10.1;\nPRODUCT_BUNDLE_IDENTIFIER = ' + appId + ';\nCURRENT_PROJECT_VERSION = ' + build + ';\n');
-  iosConfig.push(...Array(2).fill('PRODUCT_BUNDLE_IDENTIFIER = ' + iosWidgetId + ';\n'));
+  if (iosWidgetId) iosConfig.push(...Array(2).fill('PRODUCT_BUNDLE_IDENTIFIER = ' + iosWidgetId + ';\n'));
+  if (includeWidgetProduct) iosConfig.push('path = RoomLiveActivity.appex;\n');
   await writeFile(join(dir, 'mobile/ios/App/App.xcodeproj/project.pbxproj'), iosConfig.join(''));
   await writeFile(join(dir, 'src/example.txt'), 'reviewed code');
   execFileSync('git', ['init', '-q', dir]);
@@ -47,12 +50,22 @@ test('store preflight checks one version and commit with separate platform build
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('store preflight also accepts the source layout without a WidgetKit extension', async () => {
+  const { dir, run } = await fixture({ iosWidgetId: null });
+  try {
+    const result = run('check-store-pair');
+    assert.equal(result.status, 0, result.stderr);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('store preflight rejects platform version, package identity, and iOS build-setting drift', async () => {
   const cases = [
     [{ androidVersion: '0.10.2' }, /Android package version does not match/],
     [{ androidId: 'com.example.wrong' }, /Android application ID does not match/],
     [{ iosBuilds: [14, 15] }, /Both iOS configurations need the same positive build number/],
     [{ iosWidgetId: 'com.example.wrong' }, /Live Activity extension bundle IDs/],
+    [{ iosWidgetId: null, includeWidgetProduct: true }, /Live Activity extension bundle IDs/],
+    [{ includeWidgetProduct: false }, /Live Activity extension bundle IDs/],
   ];
   for (const [options, message] of cases) {
     const { dir, run } = await fixture(options);

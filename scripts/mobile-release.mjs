@@ -6,6 +6,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fileRecord, mobileInstallerNames, releaseVersion } from './release-artifacts.mjs';
+import { iosAppId, iosReleaseTargets } from './ios-release-targets.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -30,16 +31,13 @@ if (operation === 'check-source' || operation === 'check-store-pair') {
   assert.equal(platform, undefined);
   assert.equal(git('status', '--porcelain', '--untracked-files=normal'), '', 'Build from a clean checkout.');
   if (operation === 'check-store-pair') {
-    const appId = 'com.thepropervolume.karaoke';
+    const appId = iosAppId;
     const capacitorConfig = await readFile(join(repo, 'mobile/capacitor.config.ts'), 'utf8');
     const capacitorIds = [...capacitorConfig.matchAll(/\bappId\s*:\s*['"]([^'"]+)['"]/g)].map(match => match[1]);
     const androidIds = [...androidConfig.matchAll(/\bapplicationId\s+"([^"]+)"/g)].map(match => match[1]);
-    const iosIds = [...iosConfig.matchAll(/\bPRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);/g)].map(match => match[1].trim());
     assert.deepEqual(capacitorIds, [appId], 'Capacitor app ID does not match the store identity.');
     assert.deepEqual(androidIds, [appId], 'Android application ID does not match the store identity.');
-      const extensionId = appId + '.liveactivity';
-      assert.deepEqual(iosIds.sort(), [appId, appId, extensionId, extensionId],
-        'The iOS app and Live Activity extension bundle IDs do not match their store identities.');
+    iosReleaseTargets(iosConfig);
     const androidCodes = [...androidConfig.matchAll(/\bversionCode\s+(\d+)\s*$/gm)].map(match => match[1]);
     const iosBuilds = [...iosConfig.matchAll(/\bCURRENT_PROJECT_VERSION\s*=\s*([^;]+);/g)].map(match => match[1].trim());
     assert.ok(androidCodes.length === 1 && /^[1-9]\d*$/.test(androidCodes[0]), 'Android needs a positive version code.');

@@ -4,9 +4,9 @@ import { lstat, readFile, realpath, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { iosAppId, iosLiveActivityId } from './ios-release-targets.mjs';
 
 const appleOrigin = 'https://api.appstoreconnect.apple.com';
-const bundleId = 'com.thepropervolume.karaoke';
 const idPattern = /^[A-Za-z0-9-]{1,72}$/;
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const teamPattern = /^[A-Z0-9]{10}$/;
@@ -139,12 +139,16 @@ async function inspectProfile(profilePath, scratch) {
   }
 }
 
-export async function createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName },
+export async function createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName },
   { fetcher = fetch, inspect = inspectProfile } = {}) {
   check(typeof scratch === 'string' && isAbsolute(scratch) && typeof authKey === 'string' &&
     teamPattern.test(keyId ?? '') && uuidPattern.test(issuerId ?? '') && teamPattern.test(teamId ?? '') &&
-    profileNamePattern.test(profileName ?? ''), 'Invalid Booth TestFlight provisioning arguments.');
+    profileNamePattern.test(profileName ?? '') &&
+    (widgetProfileName === undefined || typeof widgetProfileName === 'string' &&
+      profileNamePattern.test(widgetProfileName) && widgetProfileName !== profileName),
+  'Invalid Booth TestFlight provisioning arguments.');
   const config = { certificateId: null, profileId: null };
+  const createdProfiles = [];
   const outputs = [];
   let auth;
   try {
@@ -160,12 +164,20 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
     const csr = (await readScratchFile(scratchPath, 'signing.csr', 8192)).toString('ascii');
     check(/^-----BEGIN CERTIFICATE REQUEST-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE REQUEST-----\r?\n?$/.test(csr),
       'The runner did not produce a valid certificate signing request.');
-    const bundles = await apiRequest(fetcher, auth, 'GET', '/v1/bundleIds?filter[identifier]=' + bundleId);
-    check(Array.isArray(bundles?.data) && bundles.data.length === 1 &&
-      bundles.data[0]?.attributes?.identifier === bundleId &&
-      ['IOS', 'UNIVERSAL'].includes(bundles.data[0].attributes.platform),
-      'The selected Apple team does not have one matching iOS Booth App ID.');
-    const bundleResourceId = validId(bundles.data[0], 'bundleIds');
+    const profiles = [{ id: iosAppId, name: profileName, file: 'booth.mobileprovision', fields: ['profileId', 'profileName', 'profileUuid'] }];
+    if (widgetProfileName) profiles.push({ id: iosLiveActivityId, name: widgetProfileName, file: 'widget.mobileprovision',
+      fields: ['widgetProfileId', 'widgetProfileName', 'widgetProfileUuid'] });
+    // Verify registration before creating a certificate or any provisioning profiles.
+    for (const target of profiles) {
+      const bundles = await apiRequest(fetcher, auth, 'GET', '/v1/bundleIds?filter[identifier]=' + target.id);
+      check(Array.isArray(bundles?.data) && bundles.data.length === 1 &&
+        bundles.data[0]?.attributes?.identifier === target.id &&
+        ['IOS', 'UNIVERSAL'].includes(bundles.data[0].attributes.platform),
+      'The selected Apple team does not have the registered App ID ' + target.id + '.');
+      target.resourceId = validId(bundles.data[0], 'bundleIds');
+    }
+    check(new Set(profiles.map(target => target.resourceId)).size === profiles.length,
+      'The Apple App IDs must have distinct resource identities.');
 
     // The previous internal beta keeps its signing certificate. Apple decides whether it can issue one more.
     const existing = await apiRequest(fetcher, auth, 'GET',
@@ -178,46 +190,56 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
     });
     config.certificateId = validId(cert?.data, 'certificates');
     const certificate = validateCertificate(cert.data, signingKey, teamId);
-    const profile = await apiRequest(fetcher, auth, 'POST', '/v1/profiles', {
-      data: {
-        type: 'profiles', attributes: { name: profileName, profileType: 'IOS_APP_STORE' },
-        relationships: {
-          bundleId: { data: { type: 'bundleIds', id: bundleResourceId } },
-          certificates: { data: [{ type: 'certificates', id: config.certificateId }] }
-        }
-      }
-    });
-    config.profileId = validId(profile?.data, 'profiles');
-    const attributes = profile.data.attributes;
-    check(attributes?.profileType === 'IOS_APP_STORE' && attributes.name === profileName &&
-      attributes.profileState === 'ACTIVE' && uuidPattern.test(attributes.uuid ?? ''),
-      'Apple did not return the requested active App Store profile.');
-    const profileBytes = decodeBase64(attributes.profileContent, 1024 * 1024,
-      'Apple did not return valid provisioning profile data.');
     const writeOutput = async (name, bytes) => {
       const output = join(scratchPath, name);
       await writeFile(output, bytes, { mode: 0o600, flag: 'wx' });
       outputs.push(output);
       return output;
     };
-    const profileFile = await writeOutput('booth.mobileprovision', profileBytes);
-    const verified = await inspect(profileFile, scratchPath);
-    check(verified.uuid?.toLowerCase() === attributes.uuid.toLowerCase() &&
-      verified.name === profileName && verified.team === teamId && verified.platform === 'iOS' &&
-      verified.appId === teamId + '.' + bundleId && verified.allowsDebugging === 'false' &&
-      verified.device === null && verified.allDevices !== 'true' &&
-      verified.certificate === certificate.toString('base64'),
-      'The App Store profile does not match the Booth app, distribution certificate, or Apple team.');
+    const profileUuids = new Set();
+    for (const target of profiles) {
+      const profile = await apiRequest(fetcher, auth, 'POST', '/v1/profiles', {
+        data: {
+          type: 'profiles', attributes: { name: target.name, profileType: 'IOS_APP_STORE' },
+          relationships: {
+            bundleId: { data: { type: 'bundleIds', id: target.resourceId } },
+            certificates: { data: [{ type: 'certificates', id: config.certificateId }] }
+          }
+        }
+      });
+      const id = validId(profile?.data, 'profiles');
+      check(!createdProfiles.includes(id), 'Apple returned a repeated provisioning profile identity.');
+      createdProfiles.push(id);
+      const attributes = profile.data.attributes;
+      check(attributes?.profileType === 'IOS_APP_STORE' && attributes.name === target.name &&
+        attributes.profileState === 'ACTIVE' && uuidPattern.test(attributes.uuid ?? ''),
+      'Apple did not return the requested active App Store profile.');
+      const profileFile = await writeOutput(target.file, decodeBase64(attributes.profileContent, 1024 * 1024,
+        'Apple did not return valid provisioning profile data.'));
+      const verified = await inspect(profileFile, scratchPath);
+      const uuid = verified.uuid?.toLowerCase();
+      check(uuid === attributes.uuid.toLowerCase() && !profileUuids.has(uuid) &&
+        verified.name === target.name && verified.team === teamId && verified.platform === 'iOS' &&
+        verified.appId === teamId + '.' + target.id && verified.allowsDebugging === 'false' &&
+        verified.device === null && verified.allDevices !== 'true' &&
+        verified.certificate === certificate.toString('base64'),
+      'An App Store profile does not match its bundle, distribution certificate, or Apple team.');
+      profileUuids.add(uuid);
+      const [idField, nameField, uuidField] = target.fields;
+      config[idField] = id;
+      config[nameField] = target.name;
+      config[uuidField] = verified.uuid;
+    }
     await writeOutput('distribution.cer', certificate);
-    await writeOutput('provisioning.json', JSON.stringify({
-      ...config, profileName, profileUuid: verified.uuid
-    }) + '\n');
+    await writeOutput('provisioning.json', JSON.stringify(config) + '\n');
   } catch (error) {
     await Promise.allSettled(outputs.map(output => unlink(output)));
     let cleanupFailed = false;
-    if (auth && config.profileId) {
-      try { await apiRequest(fetcher, auth, 'DELETE', '/v1/profiles/' + config.profileId); }
-      catch { cleanupFailed = true; }
+    if (auth) {
+      for (const id of createdProfiles.reverse()) {
+        try { await apiRequest(fetcher, auth, 'DELETE', '/v1/profiles/' + id); }
+        catch { cleanupFailed = true; }
+      }
     }
     if (auth && config.certificateId) {
       try { await apiRequest(fetcher, auth, 'DELETE', '/v1/certificates/' + config.certificateId); }
@@ -233,10 +255,10 @@ export async function createProvisioning({ scratch, authKey, keyId, issuerId, te
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    const [, , operation, scratch, authKey, keyId, issuerId, teamId, profileName, ...remaining] = process.argv;
+    const [, , operation, scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName, ...remaining] = process.argv;
     check(process.platform === 'darwin' && operation === 'create' && remaining.length === 0,
       'Run Booth provisioning with the create command on the protected macOS runner.');
-    await createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName });
+    await createProvisioning({ scratch, authKey, keyId, issuerId, teamId, profileName, widgetProfileName });
     console.log('Prepared and verified the Booth App Store signing files.');
   } catch (error) {
     console.error(error instanceof ProvisioningError ? error.message : 'Booth App Store provisioning failed.');

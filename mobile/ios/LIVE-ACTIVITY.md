@@ -39,10 +39,19 @@ its own App ID and App Store provisioning profile under the same team as
 `com.thepropervolume.karaoke`. The extension’s build and marketing versions inherit
 the app’s project values.
 
-With manual signing, use the same Apple Distribution identity for both targets.
-Set `TPV_TESTFLIGHT_WIDGET_PROFILE_NAME` for the extension in addition to the app’s
-`TPV_TESTFLIGHT_PROFILE_NAME` and include both bundle IDs and profile UUIDs in the
-archive export options. The current single-profile TestFlight fallback must be
-extended for the second profile before distributing this patch. Provisioning and
-signing are separate from the unsigned check.
+The protected TestFlight workflow detects the extension in the reviewed Xcode
+project. Its manual fallback requires the extension’s registered App ID, then
+requests two distinct `IOS_APP_STORE` profiles for the same runner-generated
+Apple Distribution identity. It passes the second profile name to Xcode as
+`TPV_TESTFLIGHT_WIDGET_PROFILE_NAME`, alongside the app’s
+`TPV_TESTFLIGHT_PROFILE_NAME`. The workflow verifies the embedded profiles and
+signing certificates in both bundles and maps the extension’s distinct UUID to
+`com.thepropervolume.karaoke.liveactivity` in `provisioningProfiles`.
+
+The private provisioning helper’s optional final input is the second profile
+name, after the app’s profile name. The workflow supplies
+`Booth TestFlight CI <run-id>-<attempt> Live Activity`. No extra dispatch input
+or GitHub secret is needed. A build without the extension uses a single
+profile. The same certificate quota guard applies to both paths. Provisioning
+and signing are separate from the unsigned check.
 [Apple’s App Store profile instructions](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile/)
