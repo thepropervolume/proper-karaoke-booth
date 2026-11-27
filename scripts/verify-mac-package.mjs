@@ -92,7 +92,7 @@ const inspect = async (app, architecture) => {
   payload.executable = await hash(executable);
   payload['control/cli.cjs'] = await hash(join(resources, 'control', 'cli.cjs'));
   assert.ok((await stat(join(resources, 'control', 'cli.cjs'))).size > 0);
-  for (const resource of config.extraResources.filter(value => value.to === 'branding' || value.to === 'backdrops')) {
+  for (const resource of config.extraResources.filter(value => ['branding', 'backdrops', 'bumpers'].includes(value.to))) {
     for (const filename of resource.filter) {
       await matchSource(join(resources, resource.to, filename), join(repo, resource.from, filename), `${resource.to}/${filename}`);
     }

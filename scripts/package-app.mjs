@@ -74,6 +74,7 @@ try {
   const installedElectron = JSON.parse(await readFile(join(repo, 'node_modules/electron/package.json'), 'utf8')).version;
   await mkdir(join(stage, 'dist'), { recursive: true });
   await cp(join(repo, 'assets/backdrops'), join(stage, 'assets/backdrops'), { recursive: true, errorOnExist: true, force: false });
+  await cp(join(repo, 'assets/audio/bumpers'), join(stage, 'assets/audio/bumpers'), { recursive: true, errorOnExist: true, force: false });
   await cp(join(repo, 'assets/branding'), join(stage, 'assets/branding'), { recursive: true, errorOnExist: true, force: false });
   await cp(join(repo, 'assets/cli'), join(stage, 'assets/cli'), { recursive: true, errorOnExist: true, force: false });
   const unixCli = join(stage, 'assets/cli/tpv-karaoke');

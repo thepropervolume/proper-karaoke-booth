@@ -28,12 +28,16 @@ export class BumperController {
   isOutputAvailable(): boolean { return this.outputAvailable; }
 
   /** Explicit host action. Never begins after output loss or while karaoke is active. */
-  start(trackId?: string): Promise<boolean> {
+  start(trackId?: string, replacePlaying = false): Promise<boolean> {
     if (this.disposed || this.karaokeActive || !this.outputAvailable) return Promise.resolve(false);
     if (trackId && !this.tracks().some(track => track.id === trackId)) return Promise.resolve(false);
     this.wanted = true;
     return this.enqueue(async () => {
-      if (this.snapshot.status !== 'stopped') return true;
+      if (this.snapshot.status !== 'stopped') {
+        if (!replacePlaying || this.snapshot.trackId === trackId) return true;
+        if (!this.wanted || !this.outputAvailable || this.karaokeActive || this.disposed) return false;
+        await this.stopNow();
+      }
       return this.playNext(null, trackId);
     });
   }

@@ -1633,7 +1633,8 @@ else {
   }
   try {
     bumperCatalog = new BumperCatalog(join(app.getPath('userData'), 'bumper-tracks.json'));
-    builtInBumpers = builtInBumperTracks(join(app.getPath('userData'), 'bumper-builtins'));
+    const bundledZen = app.isPackaged ? join(process.resourcesPath, 'bumpers', 'Zen.ogg') : join(app.getAppPath(), 'assets', 'audio', 'bumpers', 'Zen.ogg');
+    builtInBumpers = builtInBumperTracks(join(app.getPath('userData'), 'bumper-builtins'), bundledZen);
     bumperOutput = new BumperDisplayOutput(request => {
       if (!display || display.isDestroyed() || !displayReady) throw new Error('Open the singer display first.');
       display.webContents.send('display:bumper-command', request);
@@ -2253,7 +2254,7 @@ else {
     return youtubeAudioGate.startBumper(async () => {
       bumperError = '';
       await bumper!.setOutputAvailable(true);
-      if (!await bumper!.start(id)) throw new Error('Could not start bumper music.');
+      if (!await bumper!.start(id, true)) throw new Error('Could not start bumper music.');
       publishBumper(); return bumperInfo();
     });
   });

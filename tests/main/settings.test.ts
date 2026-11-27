@@ -77,10 +77,32 @@ test('automatic bumper migrates old defaults and a subsequent deliberate opt-out
     const path = join(directory, 'settings.json');
     writeFileSync(path, JSON.stringify({ appearance: 'day' }));
     const old = readSettings(path);
-    assert.equal(old.autoBumper, true); assert.equal(old.autoBumperTrackId, 'builtin-ambient');
+    assert.equal(old.autoBumper, true); assert.equal(old.autoBumperTrackId, 'builtin-zen');
     writeSettings(path, { ...old, autoBumper: true, autoBumperTrackId: 'custom-track-id' });
     assert.equal(readSettings(path).autoBumper, true); assert.equal(readSettings(path).autoBumperTrackId, 'custom-track-id');
     writeSettings(path, { ...readSettings(path), autoBumper: false, bumperOnLaunch: false });
     assert.equal(readSettings(path).autoBumper, false); assert.equal(readSettings(path).bumperOnLaunch, false);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('the Zen default migrates only the old enabled built-in default', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-zen-settings-'));
+  const path = join(directory, 'settings.json');
+  try {
+    for (const [input, expected] of [
+      [{ settingsVersion: 2, autoBumperTrackId: 'builtin-ambient' }, 'builtin-zen'],
+      [{ settingsVersion: 2, includeBuiltInBumpers: false, autoBumperTrackId: 'builtin-ambient' }, 'builtin-ambient'],
+      [{ settingsVersion: 2, autoBumperTrackId: 'custom-track-id' }, 'custom-track-id'],
+      [{ settingsVersion: 2, autoBumperTrackId: 'builtin-sunset' }, 'builtin-sunset'],
+      [{ settingsVersion: 3, autoBumperTrackId: 'builtin-ambient' }, 'builtin-ambient'],
+    ] as const) {
+      writeFileSync(path, JSON.stringify(input));
+      const read = readSettings(path);
+      assert.equal(read.autoBumperTrackId, expected);
+      assert.equal(read.settingsVersion, 3);
+      assert.equal(read.includeBuiltInBumpers, 'includeBuiltInBumpers' in input ? input.includeBuiltInBumpers : true);
+      writeSettings(path, read);
+      assert.equal(readSettings(path).autoBumperTrackId, expected);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

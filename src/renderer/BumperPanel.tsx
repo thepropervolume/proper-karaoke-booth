@@ -38,7 +38,7 @@ export function BumperControls({ autoBumper, autoBumperTrackId, includeBuiltIn, 
     <Tooltip text="Music fills the gap after a song and stops before the next performance. The singer window can stay closed. Stop cancels automatic song advancement; output loss needs a manual restart after choosing a working device."><button type="button" className="help-button" aria-label="Bumper playback help">?</button></Tooltip>
     {autoBumper && !info.outputReady && <p role="status">Bumper audio is not ready. Check the output device.</p>}
     {autoBumper && !tracks.some(track => track.id === autoBumperTrackId) && <p role="alert">The automatic bumper track is unavailable. Add a track or choose another.</p>}
-    <BumperPanel {...info} tracks={tracks}
+    <BumperPanel {...info} tracks={tracks} preferred={autoBumperTrackId}
       add={async () => { setInfo(await window.tpv.addBumpers()); }}
       remove={async id => { setInfo(await window.tpv.removeBumper(id)); }}
       start={async id => { setInfo(await window.tpv.startBumper(id)); }}
@@ -46,31 +46,31 @@ export function BumperControls({ autoBumper, autoBumperTrackId, includeBuiltIn, 
   </>;
 }
 
-export function BumperPanel({ tracks, status, outputReady, karaokeActive, add, remove, start, stop }: {
-  tracks: BumperTrackInfo[]; status: BumperStatus; outputReady: boolean; karaokeActive: boolean;
+function BumperPanel({ tracks, preferred, status, outputReady, karaokeActive, add, remove, start, stop }: {
+  tracks: BumperTrackInfo[]; preferred: string; status: BumperStatus; outputReady: boolean; karaokeActive: boolean;
   add: () => Promise<void>; remove: (id: string) => Promise<void>;
   start: (id: string) => Promise<void>; stop: () => Promise<void>;
 }) {
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(preferred);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { if (!tracks.some(track => track.id === selected)) setSelected(tracks[0]?.id ?? ''); }, [tracks, selected]);
+  useEffect(() => { setSelected(preferred); }, [preferred]);
+  const previewId = tracks.some(track => track.id === selected) ? selected : tracks[0]?.id ?? '';
   const run = async (action: () => Promise<void>) => {
     setBusy(true); setError('');
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
   };
-  const item = tracks.find(track => track.id === selected);
+  const item = tracks.find(track => track.id === previewId);
   const customCount = tracks.filter(track => !track.builtIn).length;
   return <section aria-label="Bumper music" className="bumper-panel">
-    <h3>Bumper Music</h3>
     {!outputReady && <p className="muted">Choose a working audio output to play bumper music.</p>}
     {karaokeActive && <p className="muted">Bumper music is unavailable while a performance is active or paused.</p>}
-    <label>Start with <select value={selected} onChange={event => setSelected(event.target.value)} disabled={busy || status.status !== 'stopped'}>
+    <label>Start with <select value={previewId} onChange={event => setSelected(event.target.value)} disabled={busy || status.status === 'starting'}>
       {tracks.map(track => <option key={track.id} value={track.id}>{track.name}{track.builtIn ? ' (built in)' : ''}</option>)}
     </select></label>
     <div className="bumper-panel__actions">
-      <button type="button" disabled={busy || !selected || !outputReady || karaokeActive || status.status !== 'stopped'} onClick={() => void run(() => start(selected))}>Play bumper</button>
+      <button type="button" disabled={busy || !previewId || !outputReady || karaokeActive || status.status === 'starting' || status.trackId === previewId} onClick={() => void run(() => start(previewId))}>Play bumper</button>
       <button type="button" disabled={busy || status.status === 'stopped'} onClick={() => void run(stop)}>Stop bumper</button>
       <button type="button" disabled={busy || customCount >= 5} onClick={() => void run(add)}>Add audio ({customCount}/5)</button>
       <button type="button" disabled={busy || !item || item.builtIn} onClick={() => item && void run(() => remove(item.id))}>Remove selected</button>

@@ -31,7 +31,7 @@ test('settings have validated defaults and reject malformed or misspelled values
   assert.equal(parseSettings({ pointsEnabled: false }).pointsEnabled, false);
   assert.throws(() => parseSettings({ applauseEnabled: 'false' }), /applause or points/);
   assert.throws(() => parseSettings({ pointsEnabled: null }), /applause or points/);
-  assert.equal(parseSettings({}).autoBumperTrackId, 'builtin-ambient');
+  assert.equal(parseSettings({}).autoBumperTrackId, 'builtin-zen');
   assert.equal(parseSettings({ autoBumper: true, autoBumperTrackId: 'chosen-track' }).autoBumperTrackId, 'chosen-track');
   for (const invalid of [{ autoBumper: 'yes' }, { autoBumperTrackId: '' }, { autoBumperTrackId: 'x'.repeat(129) }]) assert.throws(() => parseSettings(invalid));
   assert.equal(parseSettings({}).maxFutureRequestsPerSinger, 3);

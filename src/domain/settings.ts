@@ -5,6 +5,7 @@ import { parseArtistBlacklist, parseSongBlacklist, type BlacklistedSong } from '
 import { parseYouTubeChannels, type YouTubeSearchMode } from './youtube-search';
 import { isAppearanceFont, type AppearanceFont } from './appearance-font';
 import { isDesktopUpdateMode, type DesktopUpdateMode } from './desktop-update-preference';
+import { DEFAULT_BUMPER_TRACK, LEGACY_DEFAULT_BUMPER_TRACK } from './bumper-settings';
 export type Theme = 'night' | 'day' | 'system';
 export type AccentColor = 'blue' | 'pink' | 'purple';
 export const ACCENT_COLORS: readonly AccentColor[] = ['blue', 'pink', 'purple'];
@@ -14,7 +15,7 @@ export function nextAccentColor(current: AccentColor): AccentColor {
 export type RotationMode = 'singer' | 'fifo';
 export type Layout = 'standard' | 'rotation' | 'library';
 export type LyricBackdrop = 'default' | 'none' | 'custom';
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 export type PlaybackAutomationSettings = { settingsVersion: number; autoAdvance: boolean; bumperOnLaunch: boolean; bumperFadeMs: number };
 export type SingerBrandingSettings = { boothName: string; displayLogoSize: number; bannerEnabled: boolean; bannerText: string; bannerPosition: 'top' | 'bottom'; bannerExpiresAt: string; bannerOnLaunch: boolean };
 export const SOURCE_IDS = ['local', 'karaokenerds', 'youtube', 'karafun', 'partytyme', 'sunfly', 'stingray'] as const;
@@ -25,7 +26,7 @@ const DEFAULT_AUTOMATION_SETTINGS: PlaybackAutomationSettings = { settingsVersio
 const DEFAULT_SINGER_BRANDING: SingerBrandingSettings = { boothName: 'The Proper Volume Karaoke', displayLogoSize: 50, bannerEnabled: false, bannerText: '', bannerPosition: 'bottom', bannerExpiresAt: '', bannerOnLaunch: false };
 export type Settings = { libraryResultFields: LibraryResultField[]; desktopUpdateMode: DesktopUpdateMode; includeBuiltInBumpers: boolean; mobileRoomDiscovery: boolean; applauseEnabled: boolean; pointsEnabled: boolean; sourceVisibility: SourceVisibility; fontFamily: AppearanceFont } & HostLayoutSettings & PlaybackAutomationSettings & SingerBrandingSettings & { appearance: Theme; accentColor: AccentColor; autoApprove: boolean; localControlEnabled: boolean; localQueueControlEnabled: boolean; rotationMode: RotationMode; maxFutureRequestsPerSinger: number; layout: Layout; metadataFormat: MetadataFormat; metadataTemplates: string[]; masterVolume: number; audioOutputId: string; autoBumper: boolean; autoBumperTrackId: string; showNextSingers: boolean; showDisplayLogo: boolean; singerDisplayFullscreen: boolean; lyricBackdrop: LyricBackdrop; lyricBackdropFile: string; pauseIntervalSeconds: number; karaokeNerdsCacheDirectory: string; ytDlpExecutable: string; providerCatalogEnabled: boolean; providerCatalogProfiles: Record<ProviderCatalogId, string>; sharedCatalogEnabled: boolean; sharedCatalogConfigFile: string; ratingProfileConfigFile: string; khostBridgeConfigFile: string; karaokeNerdsAutoCache: boolean; karaokeNerdsBrands: string[]; karaokeNerdsArtists: string[]; songBlacklist: BlacklistedSong[]; artistBlacklist: string[]; youtubeSearchEnabled: boolean; youtubeSearchMode: YouTubeSearchMode; youtubeApprovedChannels: string[]; youtubeBlockedChannels: string[] };
 
-export const DEFAULT_SETTINGS: Settings = { libraryResultFields: [...DEFAULT_LIBRARY_RESULT_FIELDS], desktopUpdateMode: 'notify', includeBuiltInBumpers: true, mobileRoomDiscovery: true, applauseEnabled: true, pointsEnabled: true, sourceVisibility: { ...DEFAULT_SOURCE_VISIBILITY }, ...DEFAULT_HOST_LAYOUT, ...DEFAULT_AUTOMATION_SETTINGS, ...DEFAULT_SINGER_BRANDING, appearance: 'system', accentColor: 'blue', fontFamily: 'default', autoApprove: true, localControlEnabled: false, localQueueControlEnabled: false, rotationMode: 'singer', maxFutureRequestsPerSinger: 3, layout: 'standard', metadataFormat: 'artist-title', metadataTemplates: [], masterVolume: 1, audioOutputId: '', autoBumper: true, autoBumperTrackId: 'builtin-ambient', showNextSingers: false, showDisplayLogo: true, singerDisplayFullscreen: false, lyricBackdrop: 'default', lyricBackdropFile: '', pauseIntervalSeconds: 0, karaokeNerdsCacheDirectory: '', ytDlpExecutable: '', providerCatalogEnabled: true, providerCatalogProfiles: { karafun: '', partytyme: '', sunfly: '', stingray: '' }, sharedCatalogEnabled: true, sharedCatalogConfigFile: '', ratingProfileConfigFile: '', khostBridgeConfigFile: '', karaokeNerdsAutoCache: false, karaokeNerdsBrands: [], karaokeNerdsArtists: [], songBlacklist: [], artistBlacklist: [], youtubeSearchEnabled: true, youtubeSearchMode: 'karaoke-channels', youtubeApprovedChannels: [], youtubeBlockedChannels: [] };
+export const DEFAULT_SETTINGS: Settings = { libraryResultFields: [...DEFAULT_LIBRARY_RESULT_FIELDS], desktopUpdateMode: 'notify', includeBuiltInBumpers: true, mobileRoomDiscovery: true, applauseEnabled: true, pointsEnabled: true, sourceVisibility: { ...DEFAULT_SOURCE_VISIBILITY }, ...DEFAULT_HOST_LAYOUT, ...DEFAULT_AUTOMATION_SETTINGS, ...DEFAULT_SINGER_BRANDING, appearance: 'system', accentColor: 'blue', fontFamily: 'default', autoApprove: true, localControlEnabled: false, localQueueControlEnabled: false, rotationMode: 'singer', maxFutureRequestsPerSinger: 3, layout: 'standard', metadataFormat: 'artist-title', metadataTemplates: [], masterVolume: 1, audioOutputId: '', autoBumper: true, autoBumperTrackId: DEFAULT_BUMPER_TRACK, showNextSingers: false, showDisplayLogo: true, singerDisplayFullscreen: false, lyricBackdrop: 'default', lyricBackdropFile: '', pauseIntervalSeconds: 0, karaokeNerdsCacheDirectory: '', ytDlpExecutable: '', providerCatalogEnabled: true, providerCatalogProfiles: { karafun: '', partytyme: '', sunfly: '', stingray: '' }, sharedCatalogEnabled: true, sharedCatalogConfigFile: '', ratingProfileConfigFile: '', khostBridgeConfigFile: '', karaokeNerdsAutoCache: false, karaokeNerdsBrands: [], karaokeNerdsArtists: [], songBlacklist: [], artistBlacklist: [], youtubeSearchEnabled: true, youtubeSearchMode: 'karaoke-channels', youtubeApprovedChannels: [], youtubeBlockedChannels: [] };
 
 function validateCacheSelections(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.length > 500) throw new Error(`Invalid Karaoke Nerds ${label} list.`);
@@ -43,13 +44,15 @@ function validateCacheSelections(value: unknown, label: string): string[] {
 export function parseSettings(value: unknown): Settings {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Settings must be a JSON object.');
   const original = value as Record<string, unknown>;
-  if (original.settingsVersion !== undefined && original.settingsVersion !== 1 && original.settingsVersion !== SETTINGS_VERSION)
+  if (original.settingsVersion !== undefined && original.settingsVersion !== 1 && original.settingsVersion !== 2 && original.settingsVersion !== SETTINGS_VERSION)
     throw new Error('Unsupported settings version. Use the settings file created by this application version.');
   // Earlier releases wrote the old opt-in default into every file. Adopt the
   // requested automatic interlude behavior once; subsequent opt-outs persist.
-  const input: Record<string, unknown> = original.settingsVersion === undefined || original.settingsVersion === 1
-    ? { ...original, settingsVersion: SETTINGS_VERSION, ...(original.autoBumper === false ? { autoBumper: true } : {}) }
-    : original;
+  const input: Record<string, unknown> = { ...original, settingsVersion: SETTINGS_VERSION };
+  if ((original.settingsVersion === undefined || original.settingsVersion === 1) && original.autoBumper === false) input.autoBumper = true;
+  // Earlier files saved the same value for inherited and manually chosen Soft Ambient.
+  if (original.settingsVersion !== SETTINGS_VERSION && original.includeBuiltInBumpers !== false &&
+      original.autoBumperTrackId === LEGACY_DEFAULT_BUMPER_TRACK) input.autoBumperTrackId = DEFAULT_BUMPER_TRACK;
   const unknown = Object.keys(input).filter(key => !Object.hasOwn(DEFAULT_SETTINGS, key));
   if (unknown.length) throw new Error(`Unknown settings: ${unknown.join(', ')}`);
   const merged = { ...DEFAULT_SETTINGS, ...input };

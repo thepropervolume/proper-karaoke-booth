@@ -11,6 +11,7 @@ export default {
   extraResources: [
     { from: 'dist/control/cli.cjs', to: 'control/cli.cjs' },
     { from: 'assets/backdrops', to: 'backdrops', filter: ['tpv-karaoke-v3.mp4', 'README.md'] },
+    { from: 'assets/audio/bumpers', to: 'bumpers', filter: ['Zen.ogg', 'README.md'] },
     { from: 'assets/branding', to: 'branding', filter: ['app.ico', 'app.png', 'icon-dark.svg', 'icon-light.svg', 'logo-dark.svg', 'logo-light.svg', 'wordmark-dark.svg', 'wordmark-light.svg', 'logo-dark.png', 'logo-light.png', 'wordmark-dark.png', 'wordmark-light.png', 'LICENSE-Lobster.txt', 'README.md'] },
   ],
   extraFiles: [
