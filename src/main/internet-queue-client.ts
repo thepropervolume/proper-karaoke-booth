@@ -256,7 +256,7 @@ export class InternetQueueClient {
     if (this.scope && this.state === 'online') { try { guests = this.scope.guests().map(({ singerId, name }) => ({ singerId, name })); } catch {} }
     return { available: !this.disposed, state: this.state, suggestedSlug: this.suggestedSlug, slug: this.slug,
       joinUrl: this.state === 'online' ? this.currentRoom?.publicUrl ?? null : null, guests, message: this.message,
-      canImportConnection: process.platform !== 'win32' && this.state === 'stopped',
+      canImportConnection: !this.disposed && process.platform !== 'win32' && this.state === 'stopped',
       screenActive: !!this.screen, screenUrl: this.screen?.ready && this.state === 'online' && this.currentRoom ? `${this.screen.viewerOrigin}/${this.currentRoom.slug}/screen#${this.screen.secret}` : null };
   }
   get screenSharing(): boolean { return !!this.screen; }

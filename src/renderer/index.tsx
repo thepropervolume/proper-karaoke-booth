@@ -56,6 +56,7 @@ import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { SongResults } from './SongResults';
 import { unifiedSongResults, type SongResult, type SongResultProvider } from './unified-song-results';
+import { djCodeForLibraryResult } from './library-song-code';
 import { LIBRARY_RESULT_FIELDS, type LibraryResultField, type LibraryResultMetadata, type LibraryResultSort } from '../domain/library-result-fields';
 import { LibrarySourceFilter } from './LibrarySourceFilter';
 import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-streaming-search';
@@ -820,7 +821,8 @@ function App() {
             {providerSearch.failed && <Tooltip text="Some service catalogs could not be reached. Try again or check Sources."><span tabIndex={0}>Some sources unavailable ⓘ</span></Tooltip>}
           </div>
           <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId} missingMedia={missingLocalMedia}
-            columns={settings.libraryResultFields} filenames={libraryFilenames} readMetadata={window.tpv.getLibraryMetadata} metadataRevision={filenameRefresh}
+            columns={settings.libraryResultFields} filenames={libraryFilenames} readMetadata={window.tpv.getLibraryMetadata}
+            metadataRevision={JSON.stringify([filenameRefresh, settings.metadataFormat, settings.metadataTemplates])} resolveCode={djCodeForLibraryResult}
             sort={librarySort} onSort={setLibrarySort} savingColumns={savingLibraryFields} onColumnsChange={fields => void saveLibraryFields(fields)}
             emptyMessage={libraryBrowsing || revealedLibraryId ? 'No matching songs.' : 'Search for a song or choose sources to browse.'}
             onQueue={row => { if (busy || missingLocalMedia.has(row.id)) return; if (row.catalogOnly) { setNotice('Playback is not connected for this service.'); return; } setQueueVersion(row); }}

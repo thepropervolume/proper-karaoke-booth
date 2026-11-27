@@ -40,6 +40,8 @@ Set **Preferences → Queue & Rooms → Queue Management → Automatically play 
 
 ## Search the Library
 
+The **DJ Code** column prefers the local file's `CATALOGNUMBER` tag. Booth reads that tag from MP4 and MP3 containers using FFprobe. The fallback is the current filename template's DJ Code and track number, then the details recorded at import. Remote codes combine a provider or creator prefix with the available recording identifier. For example, current codes include `KFUN` for KaraFun, `PT` for Party Tyme, `SF` for Sunfly and `SR` for Stingray. Karaoke Nerds matches use the creator's prefix when supplied and use the video ID when the feed has no release number.
+
 The search-results area is the main workspace, with larger readable song rows and brief status text. A global search field above Workspace in the sidebar remains available from Library, Playlists, Sources and host-only areas. Ctrl/Cmd+F or the assigned search shortcut returns to Library and focuses it. The search box has one visible outer focus ring; the input does not draw a second inner glow. Details belong in immediate (?) tooltips rather than long repeated instructions. Informational notices clear after eight seconds; errors remain until dismissed.
 
 See [installation](installation.md) for available packages and [release acceptance](release-acceptance.md) for platform and hardware checks.

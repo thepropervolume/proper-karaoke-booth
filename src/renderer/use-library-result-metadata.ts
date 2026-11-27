@@ -5,7 +5,7 @@ export type LibraryMetadataReader = (ids: string[]) => Promise<Record<string, Li
 const batchSize = 32;
 const empty = new Map<string, LibraryResultMetadata>();
 
-export function useLibraryResultMetadata(ids: readonly string[], revision: number, read: LibraryMetadataReader) {
+export function useLibraryResultMetadata(ids: readonly string[], revision: string, read: LibraryMetadataReader) {
   const cache = useRef({ revision, values: empty });
   const [snapshot, setSnapshot] = useState(cache.current);
   const [loading, setLoading] = useState(false);

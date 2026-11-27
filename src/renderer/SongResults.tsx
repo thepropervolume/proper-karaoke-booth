@@ -30,7 +30,7 @@ function resultValue(field: LibraryResultField, row: SongResult, file: string | 
     case 'artist': return row.artist;
     case 'source': return row.channelName || RESULT_PROVIDER_LABELS[row.resultProvider];
     case 'duration': return row.durationSeconds ?? metadata?.durationSeconds;
-    case 'code': return row.resultProvider === 'youtube' ? '' : resolveCode(row, metadata);
+    case 'code': return resolveCode(row, metadata);
     case 'bpm': return row.resultProvider === 'youtube' ? '' : row.bpm ?? metadata?.bpm;
     case 'key': return row.resultProvider === 'youtube' ? '' : row.musicalKey ?? metadata?.musicalKey ?? '';
     case 'date': return row.dateAdded ?? metadata?.dateAdded;
@@ -53,7 +53,7 @@ export function SongResults({ rows, selected, onSelect, onQueue, onContext, star
   listRef: React.RefObject<HTMLDivElement | null>;
   columns: readonly LibraryResultField[]; filenames: Readonly<Record<string, string>>;
   readMetadata: LibraryMetadataReader;
-  metadataRevision: number; missingMedia?: ReadonlySet<string>;
+  metadataRevision: string; missingMedia?: ReadonlySet<string>;
   resolveCode?: CodeResolver;
   sort: LibraryResultSort; onSort(value: LibraryResultSort): void;
   savingColumns: boolean; onColumnsChange(value: readonly LibraryResultField[]): void; emptyMessage: string;
