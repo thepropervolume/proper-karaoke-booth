@@ -98,7 +98,7 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 **Available in 0.10.3:** Sources → Show in Search has separate switches for Imported / Local, Karaoke Nerds, YouTube, KaraFun, Party Tyme, Sunfly and Stingray. All default on, including for older settings files. Disabling a source suppresses its new host discovery and its saved recordings in the host and remote singer catalogs; stale guest requests for it are rejected. Existing queued, staged and playing songs, downloads and account sessions are preserved. A singer page can show a cached row until its next 15-second refresh; the authority rejects new requests for a disabled source immediately. Disabling YouTube does not disable Karaoke Nerds downloads. Older saved unbranded Karaoke Nerds records lack an origin marker and may appear as YouTube; newly added unbranded Karaoke Nerds tracks retain their origin. Existing YouTube identities are not silently reclassified when reused.
 
-**Available:** Preferences is an icon-opened dialog with expandable Shared Karaoke Nerds Catalog, Song Ratings, Appearance, Song and Artist Blacklist, YouTube Search, Library Settings, Karaoke Services, Video Downloads & Karaoke Nerds Cache, Queue Management, Remote Queueing, Audio Controls, Singer Display, Keyboard Shortcuts, Local API and CLI, and Configuration Files sections. The video-download section selects a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
+**Available:** Preferences has eight collapsible categories: Appearance, Library & Sources, Queue & Rooms, Audio & Display, Keyboard Shortcuts, Updates, Local API and CLI, and Configuration Files. Search by keyword or phrase. Filtering opens matching topics and preserves unsaved values. Clearing the search restores the prior category view. Library & Sources includes the metadata, provider, download/cache, blacklist and rating controls. The video-download settings select a permanent base directory and optional yt-dlp executable. Approved queued YouTube recordings dispatch a serial permanent download to this folder; adding a metadata-only library entry does not start a download; automatic brand/artist batch preferences remain planned. Workspace layouts are Standard, Wider singer rotation and Wide song library. Preferences use validated `settings.json`; a link reveals it in the file manager and shows the full path in a tooltip. Missing known fields get defaults; unknown or invalid fields are rejected. A separate `keybindings.json` lists the registered application, playback, display, library, appearance, layout and queue actions. The wide Keyboard Shortcuts preferences section supports multiple bindings, keyboard capture, conflict detection, unassigned actions, immediate saved reset and a link to edit the JSON. Defaults include Ctrl/Cmd+F search, Spacebar Play/Pause, Ctrl/Cmd/Alt+Comma preferences, Ctrl/Cmd+Slash or F1 Keyboard Shortcuts, F/Shift+F player-only fullscreen, and queue-only Delete. Settings sections reopen on repeated navigation without discarding other draft values. Bare printable custom shortcuts do not steal text entry. The executable launcher flags `--settings` and `--keybindings` target the active instance or launch a stopped instance at that section. Preferences saves and volume/menu changes use validated partial patches merged against the latest serialized authority settings.
 
 **Available in the 0.4.2 development build:** Karaoke Services controls `providerCatalogEnabled`, which defaults to true. `providerCatalogProfiles` stores `karafun`, `partytyme`, `sunfly` and `stingray` path entries with empty defaults, never credential values. KaraFun/Party Tyme public catalog search needs no account profile. The 0.4.3 development build also uses public Sunfly Store search when its developer-profile path is empty. Sources uses a native file picker for optional provider-issued Sunfly access or required Stingray access; website email/password files and KaraFun Business tokens are not developer catalog profiles. Credentials are read in the main process and are not entered into or returned to the renderer or singer clients. Sources labels public/developer modes. Use Public Store Search clears only the Sunfly profile selection, retaining its file; Remove Profile Selection does the same for Stingray. An invalid explicitly selected Sunfly profile is an error, never an automatic public fallback.
 
@@ -184,7 +184,7 @@ Authenticated singers may withdraw their own pending or queued request, includin
 
 The singer video is bounded to the full window viewport (maximum 100vh/100vw) with aspect ratio preserved and no vertical scrolling. Landscape, 4:3 and portrait sources use letterboxing/pillarboxing as needed. Branding, caption and next-singer information overlay the viewport instead of adding height. The separate embedded preview uses its own bounded layout and retains visible native controls.
 
-**Experimental in 0.7.0:** launch bumper and between-song bumper default on with separate preferences. The system default output is accepted and the hidden singer renderer needs no visible window. Three original themes and up to five custom audio files are available. Fade-in defaults to 1000 ms, configurable 500–1700 ms, follows global volume and cancels before stop/output loss. Between-song music requires the old generation silence acknowledgement; karaoke start/resume waits for bumper-stop acknowledgement. A positive gap plays music until the next turn is ready; zero avoids filler flash. Stop/Pause/error/output-loss cancel delayed karaoke; settings/recovery alone never starts it. Retired player callbacks cannot affect a new generation. Physical audible routing remains an acceptance gate.
+**Bumper music:** launch and between-song bumper default on under **Audio & Display**. The automatic track defaults to the supplied **Zen** recording. Three original themes use distinct pad, keys and lounge arrangements. Up to five custom audio files are available. Selecting another track in the preview waits for the old track to stop before switching. The system default output is accepted and the hidden singer renderer needs no visible window. Fade-in defaults to 1000 ms, configurable 500–1700 ms, follows global volume and cancels before stop/output loss. Between-song music requires the old generation silence acknowledgement; karaoke start/resume waits for bumper-stop acknowledgement. A positive gap plays music until the next turn is ready; zero avoids filler flash. Stop/Pause/error/output-loss cancel delayed karaoke; settings/recovery alone never starts it. Retired player callbacks cannot affect a new generation. Physical audible routing remains an acceptance gate.
 
 **Available:** the bottom timeline shows elapsed/remaining time, supports dragging or keyboard scrubbing and ten-second rewind/forward. Seeking preserves play/pause state and saves acknowledged positions; stale-generation events are rejected. It supports local MP4s, converted CDG, downloaded YouTube videos and the native KaraFun audio clock. Previous restarts the current generation from zero and resumes a paused performance without consuming a turn. Per-range verified file handles reject observed source replacement and pause the same performance with a recovery path. Real-hardware synchronization and recovery remain unverified.
 
@@ -657,34 +657,32 @@ Maintain the accepted desktop structure: a host workspace and persistent player,
   "description": "Grouped, collapsible preferences keep essential show controls in the workspace.",
   "layout": "settings",
   "navigation": [
-    "Shared Catalog",
     "Appearance",
-    "Queue Management",
-    "Library Settings",
-    "Karaoke Services",
-    "Video Downloads & Karaoke Nerds Cache",
-    "Remote Queueing",
-    "Audio Controls",
-    "Singer Display",
+    "Library & Sources",
+    "Queue & Rooms",
+    "Audio & Display",
     "Keyboard Shortcuts",
+    "Updates",
     "Local API and CLI",
     "Configuration Files"
   ],
-  "selected_navigation": "Audio Controls",
-  "heading": "Audio Controls",
+  "selected_navigation": "Audio & Display",
+  "heading": "Audio & Display",
+  "toolbar": "Search preferences",
   "rows": [
     "Output Device | Explicit device or system default",
     "Pause Interval | 2 seconds · Automatic next on",
     "Bumper on launch | Enabled",
     "Bumper between songs | Enabled",
     "Fade-in | 1000 ms · Range 500–1700",
+    "Automatic track | Zen",
     "Built-in tracks | Optional · Up to 5 custom files"
   ],
   "side_heading": "Other groups",
   "side_rows": [
     "Appearance | Theme, accent, font, layout, preview",
-    "Queue | Rotation, approval, singer limit",
-    "Karaoke Services | Choose which sources to search",
+    "Queue & Rooms | Rotation, approval, singer limit, remote access",
+    "Library & Sources | Search sources, metadata, downloads and settings",
     "Singer Display | Booth name, logo size, banner"
   ],
   "footer_heading": "Preferences",

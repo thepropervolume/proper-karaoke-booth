@@ -51,7 +51,11 @@ const untilApp = (predicate, arg) => waitForHostCondition(app, predicate, arg, {
 const launch = async flag => {
   app = await electron.launch({ executablePath, args: [...baseArgs, flag], cwd: repo, env, timeout: 30000 });
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
-  host = await app.firstWindow(); host.on('pageerror', error => pageErrors.push(error.message));
+  host = undefined;
+  await untilApp(({ BrowserWindow }) => BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('/renderer/')));
+  host = app.windows().find(window => window.url().includes('/renderer/'));
+  assert.ok(host, 'Host renderer did not open.');
+  host.on('pageerror', error => pageErrors.push(error.message));
   await untilHost(async () => !!window.tpv?.saveShortcuts && (await window.tpv.getState()).playback === null);
   return host;
 };
@@ -113,6 +117,24 @@ try {
   assert.equal((await host.evaluate(() => window.tpv.getState())).versions.length, 0);
   assert.ok((await preferences().boundingBox()).width >= 800, 'Desktop settings should use the wider overlay.');
   assert.ok(await preferences().locator('summary').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize) >= 20));
+  assert.equal(await preferences().locator('.settings-groups > details').count(), 8);
+  const preferenceSearch = preferences().getByRole('searchbox', { name: 'Search preferences' });
+  await preferenceSearch.fill('filename templates');
+  const draftTemplates = preferences().getByLabel('Filename and folder templates, one per line');
+  const priorTemplateValue = await draftTemplates.inputValue();
+  await draftTemplates.fill('${Artist}/${Title}');
+  await preferenceSearch.fill('  PAUSE interval seconds ');
+  await preferences().getByLabel('Pause Interval (seconds)').waitFor();
+  assert.deepEqual(await preferences().locator('.settings-groups > details:visible > summary').allTextContents(), ['Audio & Display']);
+  assert.equal(await draftTemplates.isVisible(), false);
+  await preferenceSearch.fill('no setting matches this exact phrase');
+  await preferences().getByText('No preferences match your search.').waitFor();
+  await preferenceSearch.fill('');
+  assert.equal(await draftTemplates.isVisible(), false);
+  await preferences().locator('summary').filter({ hasText: /^Library & Sources$/ }).click();
+  assert.equal(await draftTemplates.inputValue(), '${Artist}/${Title}');
+  await draftTemplates.fill(priorTemplateValue);
+  await preferences().locator('summary').filter({ hasText: /^Library & Sources$/ }).click();
   await closePreferences();
 
   // Requested defaults open settings/help from a normal focused host window.
@@ -222,7 +244,7 @@ try {
   await clickMenu(['File', 'Back up show…']);
   await untilApp(() => globalThis.workspaceQa.dialogs.some(value => value.kind === 'save' && value.title === 'Back up show to a new file'));
   await clickMenu(['View', 'Appearance', 'Appearance Settings…']); await requireSection('appearance');
-  await preferences().locator('summary').filter({ hasText: /^Audio Controls$/ }).click();
+  await preferences().locator('summary').filter({ hasText: /^Audio & Display$/ }).click();
   await preferences().getByLabel('Pause Interval (seconds)').fill('3');
   await clickMenu(['View', 'Choose Accent Color', 'Pink']);
   await untilHost(async () => (await window.tpv.getSettings()).settings.accentColor === 'pink');
@@ -241,7 +263,7 @@ try {
   // The exact six filename templates previously rejected by Save Preferences.
   const templates = ['${DJ Code}-${Track Number} - ${Artist} - ${Title}', '${Artist}/${Artist} - ${Title}', '${Artist}/${Title}', '${Artist}/${Track Number}.${Title}', '${Track Number}.${Artist} - ${Title}', '${Artist}/${Track Number} - ${Artist} - ${Title}'];
   await host.keyboard.press('Control+,'); await preferences().waitFor();
-  await preferences().locator('summary').filter({ hasText: /^Library Settings$/ }).click();
+  await preferences().locator('summary').filter({ hasText: /^Library & Sources$/ }).click();
   await preferences().getByLabel('Filename and folder templates, one per line').fill(templates.join('\n'));
   await preferences().getByRole('button', { name: 'Save preferences', exact: true }).click(); await preferences().waitFor({ state: 'hidden' });
   assert.deepEqual((await host.evaluate(() => window.tpv.getSettings())).settings.metadataTemplates, templates);

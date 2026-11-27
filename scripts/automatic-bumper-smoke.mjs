@@ -111,7 +111,7 @@ try {
   assert.equal(custom.length, 1);
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
   const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true });
-  await preferences.locator('summary').filter({ hasText: /^Audio Controls$/ }).click();
+  await preferences.locator('summary').filter({ hasText: /^Audio & Display$/ }).click();
   await preferences.getByRole('checkbox', { name: 'Include built-in bumper tracks' }).uncheck();
   const trackPicker = preferences.getByLabel('Automatic bumper track');
   assert.deepEqual(await trackPicker.locator('option').evaluateAll(options => options.map(option => option.value)), [custom[0].id]);

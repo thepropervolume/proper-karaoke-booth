@@ -5,7 +5,7 @@ Source development **0.7.0** provides an opt-in, read-only visual mirror from th
 ## Start and Stop
 
 1. Connect the host and viewing devices to the venue network.
-2. Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. You can also turn sharing on under **Preferences → Singer Display**. Starting with 0.10.16 on Windows, a saved setting remembers the port and preference, and you start sharing again in **Remote Sessions** after each launch.
+2. Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. You can also turn sharing on under **Preferences → Audio & Display → Singer Display**. Starting with 0.10.16 on Windows, a saved setting remembers the port and preference, and you start sharing again in **Remote Sessions** after each launch.
 3. Copy one of the displayed numeric addresses to each viewing browser, for example `http://192.168.1.20:4051`.
 4. The hidden singer renderer already supplies the interlude or current performance. Opening a visible singer window is optional. Browsers wait/reconnect if its renderer is unavailable; preview never creates another player or starts karaoke.
 5. Use **Stop Singer-Screen Sharing** to close the listener. Stopping sharing does not stop the singer performance. The local host preview can continue independently.

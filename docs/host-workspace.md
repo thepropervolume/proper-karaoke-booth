@@ -1,6 +1,6 @@
 # Host Workspace
 
-Use **File** to import videos, folders, and paired lyric files or to back up and restore your show. Open **Edit → Preferences** for settings. **View** changes the appearance, accent color, font, and layout. **Playback** exposes transport controls, including restart and 10-second seek actions. Use **Window** to control full screen separately for the host and singer display. **Help → Documentation** opens the [offline guides](help.md).
+Use **File** to import videos, folders, and paired lyric files or to back up and restore your show. Open **Edit → Preferences** and type a term like `bumper music` or `screen port` to jump to the controls. Clearing the search restores the previous view and preserves changes you have entered. **View** changes the appearance, accent color, font, and layout. **Playback** exposes transport controls, including restart and 10-second seek actions. Use **Window** to control full screen separately for the host and singer display. **Help → Documentation** opens the [offline guides](help.md).
 
 ## App Updates
 
@@ -12,7 +12,7 @@ The Windows setup, macOS PKG, and Linux Debian package open with the system inst
 
 ## Applause and Singer Points
 
-Preferences → Audio Controls has **Enable applause**, and Queue Management has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles the six supplied clap recordings, playing each for its full duration, with at most three at once; the host has unlimited applause. Recordings range from approximately 4 to 11.2 seconds, so the longest takes more than eight seconds to finish. Check the chosen output and levels on your actual sound system before a show.
+**Audio & Display → Audio Controls** has **Enable applause**, and **Queue & Rooms → Queue Management** has **Enable singer points**. Both start enabled. Use the applause button beside the transport controls whenever you want to play a clap sound over the current audio. The app cycles the six supplied clap recordings, playing each for its full duration, with at most three at once; the host has unlimited applause. Recordings range from approximately 4 to 11.2 seconds, so the longest takes more than eight seconds to finish. Check the chosen output and levels on your actual sound system before a show.
 
 An accepted clap shows a brief **Applause** badge in the upper-left of the singer display and in its captured preview. Close-together claps refresh the same badge. Booth shows it without motion when the system’s Reduce Motion preference is on.
 
@@ -36,7 +36,7 @@ Enable the Local API separately when you want to use authenticated control comma
 
 Queued YouTube, KaraFun and Party Tyme songs that are still being prepared are shaded and show a status. When a song's turn arrives before its media is ready, the next ready song plays and the waiting request is reconsidered after it finishes. This repeats until the waiting song is ready. If every eligible song is still preparing, an automatically advancing show waits for one to become ready. Right-click a failed request and choose **Retry song preparation**.
 
-Set **Preferences → Queue Management → Automatically play next song** and **Preferences → Audio Controls → Pause Interval** to control the transition and gap. The interval ranges from 0 to 300 seconds. Starting a show still requires the host to press Play.
+Set **Preferences → Queue & Rooms → Queue Management → Automatically play the next song** and **Preferences → Audio & Display → Audio Controls → Pause Interval** to control the transition and gap. The interval ranges from 0 to 300 seconds. Starting a show still requires the host to press Play.
 
 ## Search the Library
 
@@ -78,7 +78,7 @@ Choose **Preferences → YouTube Search → Approved channels only** for stricte
 
 For the mobile app, **Preferences → Remote Queueing → Suggest my active internet room to nearby mobile singers** defaults on. It advertises only a live room's public join address on trusted private interfaces and allows same-internet-connection suggestions. A singer still chooses to join; discovery grants no host controls. Disable it to use manual room links only. See [mobile modes](mobile-app.md).
 
-Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. On Windows, start sharing again after each launch. **Preferences → Singer Display** retains your preference and port, which defaults to 4051. Copy a displayed Private-network address to each venue browser. This is a silent visual mirror, separate from singer requests. Windows verifies each adapter's Private classification before opening its address, and rechecks trust every 30 seconds. See [LAN setup and limits](singer-screen-sharing.md).
+Open **Remote Sessions → LAN Singer Screens** and select **Start Singer-Screen Sharing**. On Windows, start sharing again after each launch. **Preferences → Audio & Display → Singer Display** retains your preference and port, which defaults to 4051. Copy a displayed Private-network address to each venue browser. This is a silent visual mirror, separate from singer requests. Windows verifies each adapter's Private classification before opening its address, and rechecks trust every 30 seconds. See [LAN setup and limits](singer-screen-sharing.md).
 
 ## Native KaraFun in 0.7.0
 
@@ -112,9 +112,9 @@ To move a playlist, choose **Export Playlist** in **Singer Playlists** or **KJ P
 
 ## Booth Branding and Bumper Music
 
-Under **Singer Display**, set a booth name, choose a PNG/JPEG logo and adjust its size from 10–85% of viewport width. The chosen image immediately appears beside the picker. The interlude shows the booth name. A scrolling banner can run at the top or bottom indefinitely or until an expiry; it resets next launch unless **Show After Restart** is selected. Saved text is retained for reuse.
+Under **Audio & Display → Singer Display**, set a booth name, choose a PNG/JPEG logo and adjust its size from 10–85% of viewport width. The chosen image immediately appears beside the picker. The interlude shows the booth name. A scrolling banner can run at the top or bottom indefinitely or until an expiry; it resets next launch unless **Show After Restart** is selected. Saved text is retained for reuse.
 
-**Audio Controls** separately enables launch bumper and between-song bumper, both on by default. Fade-in defaults to 1000 ms, adjustable from 500–1700 ms. Select one of three generated themes or up to five custom files. The default audio output works; no visible singer window is required. Music after completion/Skip waits for karaoke-silence acknowledgement, and the next karaoke waits for bumper-stop acknowledgement. Output changes stop automation and need deliberate recovery. See [bumper behavior](bumper-playback-design.md).
+**Audio & Display → Bumper Music** controls launch and between-song music. Both start enabled with **Zen** selected. Fade-in defaults to 1000 ms and can be set from 500–1700 ms. Preview a track with **Start with** and **Play bumper**. Choose from Zen, three original themes, and up to five custom files. Clear **Include built-in bumper tracks** to use only your files. The default audio output works; no visible singer window is required. Music after completion/Skip waits for karaoke-silence acknowledgement, and the next karaoke waits for bumper-stop acknowledgement. Output changes stop automation and need deliberate recovery. See [bumper behavior](bumper-playback-design.md).
 
 ## Preferences and Keyboard Shortcuts
 
@@ -157,7 +157,7 @@ The unified result list identifies each provider with a label and 3px left borde
 
 Sources distinguishes public/developer catalog modes. **Choose Developer Profile…** selects optional protected Sunfly access. **Use Public Store Search** clears its selection only and retains the credential file; a bad explicitly selected profile is an error, never a silent public fallback. Stingray's **Remove Profile Selection** likewise keeps its file and leaves Stingray unconfigured. Store results retain the exact SF SKU separately from `store:productID`; these store identities are not streaming identities or proof of subscription access. Missing artist/duration remains unknown; enrichment never guesses from a URL slug.
 
-In **Preferences → Karaoke Services**, choose which providers, local files, YouTube, and Karaoke Nerds appear in search. A successful account connection enables that service for search. The Sources switches edit the same preferences. Library Settings contains the blacklist and song-rating configuration. Public Party Tyme Pro snapshots are held only while the app is running, with a 24-hour refresh interval; failed refreshes may retain a clearly labeled older complete public snapshot. Sunfly Store query results are cached for five minutes and matching product detail for 24 hours in the main process. No central or disk cache exists for these catalogs yet. Strict show age restrictions or a version allowlist block provider discovery at the host boundary; local and Karaoke Nerds behavior continues normally. See [provider catalog setup and limits](provider-catalog-search.md).
+In **Preferences → Library & Sources → Search Sources**, choose which providers, local files, YouTube, and Karaoke Nerds appear in search. A successful account connection enables that service for search. The Sources switches edit the same preferences. Library & Sources also contains the blacklist and song-rating configuration. Public Party Tyme Pro snapshots are held only while the app is running, with a 24-hour refresh interval; failed refreshes may retain a clearly labeled older complete public snapshot. Sunfly Store query results are cached for five minutes and matching product detail for 24 hours in the main process. No central or disk cache exists for these catalogs yet. Strict show age restrictions or a version allowlist block provider discovery at the host boundary; local and Karaoke Nerds behavior continues normally. See [provider catalog setup and limits](provider-catalog-search.md).
 
 Fresh installs can search the shared Karaoke Nerds catalog without a reader configuration file or a bundled secret. Optional private catalog profiles remain supported; an invalid selected private file is reported rather than bypassed. The recovered snapshot's upstream freshness is still unknown and automatic feed refresh remains disabled. Saved searches can be reused offline. See [shared catalog help](shared-catalog.md).
 
@@ -203,7 +203,7 @@ In **Playlists → Singer Playlists**, search the visible list by playlist or si
 Choose **Share Internet Screen** under an active internet session. Share the complete link only with intended viewers. It contains a fresh private viewing code after `#`. The published 0.10.3 desktop app copies a `queue.thepropervolume.com` link. To use the shorter address in that build, replace only the hostname with `booth.thepropervolume.com`, keeping the path and the code. The screen shows about one frame per second for up to 32 concurrent browsers. Audio plays at the venue. Stopping sharing or ending the room revokes future frame access. A viewer may retain an image their browser already received.
 
 
-In **Preferences → Library Settings**, choose **Preview filename metadata changes** to compare existing artist/title metadata with the current saved filename templates. Review the before/after list, choose individual entries or **Select all**, then **Apply selected**. Nothing is selected initially. The app skips songs changed since the preview, reports success and failure, and does not write file tags. Older manual changes cannot always be recognized; inspect the suggestions before applying.
+In **Preferences → Library & Sources → Imported Song Metadata**, choose **Preview filename metadata changes** to compare existing artist/title metadata with the current saved filename templates. Review the before/after list, choose individual entries or **Select all**, then **Apply selected**. Nothing is selected initially. The app skips songs changed since the preview, reports success and failure, and does not write file tags. Older manual changes cannot always be recognized; inspect the suggestions before applying.
 
 For an imported local MP4, right-click the song and open **Edit Song Details → Read Embedded Tags**. Booth checks that the file still matches the imported recording and shows the title and artist that FFprobe reports. Choose either field, then **Save Details** to update the library. The original file is read-only throughout this edit. Install FFprobe on `PATH` to use this feature.
 

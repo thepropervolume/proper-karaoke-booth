@@ -69,7 +69,7 @@ try {
     globalThis.tpvWarnings = [];
     dialog.showOpenDialog = async (_window, options) => ({ canceled: false, filePaths: [options?.title === 'Choose singer display logo' ? paths.logo : options?.title === 'Choose bumper music' ? paths.bumper : options?.title === 'Relink original video file' ? globalThis.tpvRelinkChoice : paths.video] });
     dialog.showMessageBox = async (_window, options) => { globalThis.tpvWarnings.push(options); return { response: 0, checkboxChecked: false }; };
-  }, { video: copiedFixture, logo: logoFixture, bumper: join(canonicalProfile, 'bumper-builtins', 'builtin-ambient-v1.wav'), wrong: wrongFixture });
+  }, { video: copiedFixture, logo: logoFixture, bumper: join(canonicalProfile, 'bumper-builtins', 'builtin-ambient-v2.wav'), wrong: wrongFixture });
   const host = await hostWindow(app);
   const untilState = async (predicate, description) => {
     for (let attempt = 0; attempt < 200; attempt++) {
@@ -105,13 +105,12 @@ try {
   assert.equal(remoteStatus.available, true);
   assert.equal(remoteStatus.room, 'closed', 'Remote access must remain closed until explicitly opened.');
   assert.equal(await host.evaluate(async () => { try { await window.tpv.remote.openLan({}); return false; } catch { return true; } }), true, 'Malformed remote room settings must be rejected.');
-  await host.getByText('Library Settings', { exact: true }).click();
+  await host.getByText('Library & Sources', { exact: true }).click();
   const templates = host.getByLabel('Filename and folder templates, one per line');
   await templates.fill('${DJ Code} - ${Artist} - ${Track Name}');
-  await host.locator('summary').filter({ hasText: /^Singer Display$/ }).click();
+  await host.locator('summary').filter({ hasText: /^Audio & Display$/ }).click();
   await host.getByLabel('Show the next singers').check();
   await host.getByRole('button', { name: 'Choose Logo…' }).click();
-  await host.getByText('Audio Controls', { exact: true }).click();
   await host.getByLabel('Pause Interval (seconds)').fill('2');
   const outputPicker = host.getByRole('combobox', { name: 'Output Device' });
   await outputPicker.waitFor();
@@ -209,7 +208,7 @@ try {
   await display.getByText('Coming up: QA Singer').waitFor();
   await display.waitForFunction(() => { const logo = document.querySelector('#idle-logo'); return logo && !logo.hidden && logo.complete && logo.naturalWidth > 0; });
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
-  await host.getByText('Audio Controls', { exact: true }).click();
+  await host.getByText('Audio & Display', { exact: true }).click();
   const bumperPanel = host.getByRole('region', { name: 'Bumper music' });
   await bumperPanel.getByRole('button', { name: 'Add audio (0/5)' }).click();
   await bumperPanel.getByRole('button', { name: 'Add audio (1/5)' }).waitFor();

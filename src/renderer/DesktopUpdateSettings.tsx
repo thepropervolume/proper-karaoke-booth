@@ -15,9 +15,7 @@ export function DesktopUpdateSettings({ mode, onChange }: { mode: DesktopUpdateM
     status.phase === 'current' ? 'You’re running the latest available version.' :
     status.phase === 'available' ? 'Booth ' + status.version + ' is available.' :
     status.phase === 'downloaded' ? 'Booth ' + status.version + ' is ready.' : '');
-  return <details className="settings-group" data-settings-section="updates">
-    <summary>Updates</summary>
-    <div className="settings-group__content">
+  return <>
       <label>Available Updates Mechanism
         <select value={mode} onChange={event => {
           const selected = event.currentTarget.value;
@@ -33,6 +31,5 @@ export function DesktopUpdateSettings({ mode, onChange }: { mode: DesktopUpdateM
         {status.phase === 'downloaded' && <button type="button" onClick={() => void window.tpv.revealDesktopUpdate().catch(() => setStatus({ phase: 'error', message: 'The downloaded update could not be opened. Check for updates again.' }))}>Show Download</button>}
       </div>
       {message && <p role="status">{message}</p>}
-    </div>
-  </details>;
+  </>;
 }

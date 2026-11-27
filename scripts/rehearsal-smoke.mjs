@@ -82,7 +82,7 @@ try {
   await host.getByRole('button', { name: 'Preferences' }).click();
   await host.getByRole('combobox', { name: /^Appearance/ }).selectOption('day');
   await host.getByLabel('Workspace layout').selectOption('rotation');
-  await host.getByText('Audio Controls', { exact: true }).click();
+  await host.getByText('Audio & Display', { exact: true }).click();
   await host.getByRole('slider', { name: 'Playback Volume' }).fill('0');
   await host.getByRole('button', { name: 'Save preferences' }).click();
   await host.waitForFunction(() => document.querySelector('.app')?.getAttribute('data-layout') === 'rotation' && document.documentElement.dataset.theme === 'day');

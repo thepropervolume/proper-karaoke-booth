@@ -32,12 +32,18 @@
   }
   .settings-dialog__header p { margin-top: .35rem; font-size: .85rem; }
   .settings-dialog__close { flex: none; }
+  .settings-search { flex: 0 0 auto; padding: .85rem 1.4rem 0; }
+  .settings-search input { width: 100%; }
   .settings-groups { display: grid; flex: 1 1 auto; gap: .5rem; min-height: 0; padding: 1rem 1.4rem; overflow: auto; }
   .settings-group { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-soft); }
   .settings-group[open] { border-color: var(--line-strong); background: var(--panel); }
-  .settings-group summary { padding: .9rem 1rem; cursor: pointer; font-size: 1.2rem; font-weight: 800; }
+  .settings-group summary { padding: .9rem 1rem; cursor: pointer; font-size: 1.25rem; font-weight: 800; }
   .settings-group summary:hover { color: var(--accent); }
   .settings-group__content { display: grid; gap: .8rem; padding: 0 1rem 1rem; border-top: 1px solid var(--line); padding-top: .9rem; }
+  .preference-topic { display: grid; gap: .75rem; }
+  .preference-topic h3 { margin: 0; font-size: 1.05rem; }
+  .preference-topic:not([hidden]) + .preference-topic:not([hidden]) { padding-top: .9rem; border-top: 1px solid var(--line); }
+  .settings-group[hidden], .preference-topic[hidden] { display: none; }
   .settings-actions {
     position: sticky;
     bottom: 0;

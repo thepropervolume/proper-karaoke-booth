@@ -20,11 +20,9 @@ export function SharedCatalogControls({ value, onChange }: {value: Settings; onC
     'rate-limited':'The shared catalog is busy. Wait before checking again.',
     'invalid-response':'The shared catalog returned an unsupported response.',
   };
-  return <details className="settings-group">
-    <summary>Shared Karaoke Nerds Catalog</summary>
-    <div className="settings-group__content">
+  return <>
       <label className="settings-check"><input type="checkbox" checked={value.sharedCatalogEnabled} onChange={event => onChange({...value,sharedCatalogEnabled:event.target.checked})} /> Use the shared catalog when configured</label>
-      <p className="muted">The public catalog works without a configuration file. Private profiles are optional and take precedence when installed. The Karaoke Nerds key and database credentials stay on the server. Previously saved searches can work offline; new searches need a connection.</p>
+      <p className="muted">Private profiles are optional. Previously saved searches can work offline.</p>
       <Tooltip text={value.sharedCatalogConfigFile || 'Uses the public catalog, or this host’s default private profile when installed'}><button type="button" disabled={checking} onClick={() => {
         void window.tpv.chooseSharedCatalogConfiguration().then(file => { if (file) {onChange({...value,sharedCatalogConfigFile:file});setResult(null);} }).catch(() => setResult({status:'configuration-error'}));
       }}>{value.sharedCatalogConfigFile ? `Configuration: ${value.sharedCatalogConfigFile.split(/[\\/]/).pop()}` : 'Choose catalog configuration…'}</button></Tooltip>
@@ -32,7 +30,5 @@ export function SharedCatalogControls({ value, onChange }: {value: Settings; onC
       <button type="button" disabled={checking} onClick={() => void check()}>{checking ? 'Checking…' : 'Check catalog connection'}</button>
       {result?.status === 'ready' ? <p role="status">{result.source === 'cache' ? 'Offline saved status' : 'Connected'} · {result.recordCount?.toLocaleString()} catalog records · {result.searchableCount?.toLocaleString()} searchable videos. {result.lastSuccess === null ? 'Upstream refresh time is unknown.' : result.lastSuccess ? `Last feed refresh: ${new Date(result.lastSuccess).toLocaleString()}.` : ''}{result.source === 'cache' && result.fetchedAt !== undefined ? ` Status saved: ${new Date(result.fetchedAt).toLocaleString()}.` : ''}{result.stale ? ' Catalog freshness could not be confirmed.' : ''}</p> : result && <p role="status">{messages[result.status] || 'The catalog is not available.'}</p>}
       {result?.status === 'ready' && result.cachePersisted === false && <p role="status">This status could not be saved for offline use. Check available disk space and app data permissions.</p>}
-      <p className="muted">Save preferences to change where searches run. Choosing or checking a client configuration does not refresh the upstream feed.</p>
-    </div>
-  </details>;
+  </>;
 }

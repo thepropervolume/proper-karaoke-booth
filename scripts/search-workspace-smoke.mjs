@@ -124,7 +124,7 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await host.keyboard.press('Control+f'); await preferences.waitFor({ state: 'hidden' });
   assert.equal(await search.evaluate(node => document.activeElement === node), true);
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
-  await preferences.locator('summary').filter({ hasText: /^Karaoke Services$/ }).click();
+  await preferences.locator('summary').filter({ hasText: /^Library & Sources$/ }).click();
   await preferences.getByRole('checkbox', { name: 'Show Karaoke Nerds in search', exact: true }).waitFor();
   await preferences.getByRole('checkbox', { name: 'Show YouTube in search', exact: true }).waitFor();
   await preferences.getByRole('checkbox', { name: 'Show KaraFun in search', exact: true }).uncheck();
@@ -224,9 +224,7 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   const previousPreviewImage = await host.getByAltText('Live singer display preview', { exact: true }).getAttribute('src');
 
   await host.getByRole('button', { name: 'Preferences', exact: true }).click(); await preferences.waitFor();
-  const section = preferences.locator('[data-settings-section="singer-display"]');
-  if (await section.count()) { if (!await section.evaluate(node => node.open)) await section.locator('summary').click(); }
-  else await preferences.locator('summary').filter({ hasText: /^Singer Display$/ }).click();
+  await preferences.locator('summary').filter({ hasText: /^Audio & Display$/ }).click();
   const showLogo = preferences.getByLabel('Show custom logo', { exact: true }); assert.equal(await showLogo.isChecked(), false);
   await app.evaluate((_electron, file) => { globalThis.searchWorkspaceQa.nextOpenFile = file; }, logo);
   await preferences.getByRole('button', { name: 'Choose Logo…', exact: true }).click();

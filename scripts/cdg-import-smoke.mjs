@@ -37,7 +37,7 @@ try {
   };
   const openBackdropPreferences = async host => {
     await host.getByRole('button', { name: 'Preferences', exact: true }).click();
-    await host.locator('summary').filter({ hasText: /^Singer Display$/ }).click();
+    await host.locator('summary').filter({ hasText: /^Audio & Display$/ }).click();
     return host.getByLabel('Lyric Backdrop', { exact: true });
   };
   const savePreferences = async host => {
