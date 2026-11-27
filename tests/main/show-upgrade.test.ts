@@ -91,7 +91,7 @@ test('an unversioned legacy show can be backed up before the baseline migration'
   } finally { rmSync(directory, { force: true, recursive: true }); }
 });
 
-test('schema 7 upgrades with a checked rollback copy while schema 8 preserves a held singer on disk', async () => {
+test('schema 7 upgrades with a checked rollback copy and the current show preserves a held singer on disk', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-show-hold-upgrade-'));
   const filename = join(directory, 'show.sqlite');
   const original = createInitialState('show', 'host');
@@ -106,7 +106,7 @@ test('schema 7 upgrades with a checked rollback copy while schema 8 preserves a 
     store = await Store.openForHost(filename);
     assert.deepEqual(store.load(), original);
     const [name] = readdirSync(join(directory, 'show-upgrade-backups'));
-    assert.ok(name.startsWith('show-v7-before-v8-'));
+    assert.ok(name.startsWith(`show-v7-before-v${SHOW_SCHEMA_VERSION}-`));
     const previous = new DatabaseSync(join(directory, 'show-upgrade-backups', name), { readOnly: true });
     try {
       assert.equal(previous.prepare('PRAGMA user_version').get()?.user_version, 7);

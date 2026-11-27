@@ -116,6 +116,8 @@ Use clear status words alongside color, strong headings, visible keyboard focus 
 
 The host can remove a local song, select a folder to remove its indexed descendants, or select a missing song’s saved parent folder in Review Missing Files. Removal withdraws source entries from the library without deleting bytes, and retains version IDs for past requests and history. Pending, queued or active requests block removal of that selection. Playlist rows whose recordings were removed are hidden.
 
+New converted lyric pairs record the original selected file privately in SQLite. Folder removal matches the recorded original location as well as the converted asset. The host renderer receives the original basename for filename sorting. Historical conversions without an origin can be removed by row.
+
 One **Import Songs** action routes files or a recursive folder scan through the existing video hash and karaoke pair conversion paths. Explicitly selected audio files use same-name lyrics. Folder scans discover pairs from their lyric files and ZIPs independently. The batch shows per-item outcomes and supports cancellation after any saved items.
 
 **Available:** configurable filename/folder templates are tried in order, with metadata ambiguity marked for review and a fallback format. Supported fields include `${Artist}`, `${Title}`, `${Track Name}`, `${DJ Code}` and `${Track Number}`. Examples include `${DJ Code} - ${Artist} - ${Title}`, `${Track Number}.${Artist} - ${Title}`, `${Artist}/${Track Name}.mp4` and `${Title} - ${Artist}`. Host artist/title corrections currently update the local library only.
@@ -238,7 +240,7 @@ Capture polling is approximately 125 ms, deduplicates static frames and never ov
 
 ## 9. Recovery, backups and data
 
-**Available:** Booth stores show state and metadata in SQLite schema 8, commits changes before acknowledging them, and checkpoints the active playback position. An interrupted performance opens paused under a fresh host epoch. The checkpoint may lag the last audible position. The single-instance lock and forced-termination recovery have been rehearsed.
+**Available:** Booth stores show state and metadata in SQLite schema 9, commits changes before acknowledging them, and checkpoints the active playback position. An interrupted performance opens paused under a fresh host epoch. The checkpoint may lag the last audible position. The single-instance lock and forced-termination recovery have been rehearsed.
 
 Version 0.7.1 upgrades schema 4 transactionally, making `performance_history.singer_id` nullable while retaining existing rows and assigned show state. Back up before upgrading; older applications reject schema 5, and downgrade requires the pre-upgrade backup.
 

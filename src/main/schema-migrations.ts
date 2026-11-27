@@ -10,7 +10,8 @@ import { seedSongHistory } from './song-history';
 // Version 7 preserves queued song identities for cross-show scoring.
 // Version 8 reserves an availability value for host-controlled singer holds.
 // An older host would let the singer clear the hold as if it were timed.
-export const SHOW_SCHEMA_VERSION = 8;
+// Version 9 records the original private path for new CDG and LRC conversions.
+export const SHOW_SCHEMA_VERSION = 9;
 const required: Record<string, readonly string[]> = {
   show_state: ['id', 'value'], media: ['id', 'path', 'fingerprint'], checkpoint: ['id', 'generation', 'position'],
   missing_song_requests: ['id', 'singer', 'title', 'artist', 'created_at'], missing_song_request_reviews: ['request_id', 'status', 'updated_at'], playlists: ['id', 'name', 'singer_id'],
@@ -19,6 +20,7 @@ const required: Record<string, readonly string[]> = {
   remote_invitation_scopes: ['token_hash', 'scope_id'], remote_guest_scopes: ['guest_id', 'scope_id'], remote_sessions: ['token_hash', 'guest_id', 'run_id', 'expires', 'revoked'],
   remote_receipts: ['guest_id', 'command_id', 'fingerprint', 'outcome'], remote_missing_song_owners: ['request_id', 'guest_id', 'singer_id', 'show_id'],
   local_song_ratings: ['fingerprint', 'value', 'updated_at'], song_queue_history: ['identity'],
+  library_media_origins: ['version_id', 'source_path'],
 };
 const primaryKeys: Record<string, readonly string[]> = {
   show_state: ['id'], media: ['id'], checkpoint: ['id'], missing_song_requests: ['id'], missing_song_request_reviews: ['request_id'], playlists: ['id'],
@@ -26,6 +28,7 @@ const primaryKeys: Record<string, readonly string[]> = {
   remote_guests: ['id'], remote_invitation_scopes: ['token_hash'], remote_guest_scopes: ['guest_id'], remote_sessions: ['token_hash'],
   remote_receipts: ['guest_id', 'command_id'], remote_missing_song_owners: ['request_id'],
   local_song_ratings: ['fingerprint'], song_queue_history: ['identity'],
+  library_media_origins: ['version_id'],
 };
 const notNull: Record<string, readonly string[]> = {
   show_state: ['value'], media: ['path', 'fingerprint'], checkpoint: ['generation', 'position'],
@@ -35,6 +38,7 @@ const notNull: Record<string, readonly string[]> = {
   remote_invitation_scopes: ['scope_id'], remote_guest_scopes: ['scope_id'], remote_sessions: ['guest_id', 'run_id', 'expires', 'revoked'],
   remote_receipts: ['guest_id', 'command_id', 'fingerprint', 'outcome'], remote_missing_song_owners: ['guest_id', 'singer_id', 'show_id'],
   local_song_ratings: ['value', 'updated_at'], song_queue_history: ['identity'],
+  library_media_origins: ['version_id', 'source_path'],
 };
 
 /** Reject unrelated or incompatible legacy tables instead of silently stamping them as upgraded. */
@@ -44,7 +48,7 @@ function validateExisting(db: DatabaseSync, complete: boolean, schemaVersion = S
   if (tables.size && !tables.has('show_state')) throw new Error('This is not a recognizable show database.');
   for (const [name, columns] of Object.entries(required)) {
     if (!tables.has(name)) {
-      const introducedIn = name === 'song_queue_history' ? 7 : name === 'local_song_ratings' ? 3 : name === 'missing_song_request_reviews' ? 2 : 1;
+      const introducedIn = name === 'library_media_origins' ? 9 : name === 'song_queue_history' ? 7 : name === 'local_song_ratings' ? 3 : name === 'missing_song_request_reviews' ? 2 : 1;
       if (complete && schemaVersion >= introducedIn) throw new Error(`Show database table ${name} is missing.`);
       continue;
     }
@@ -83,6 +87,9 @@ function validateExisting(db: DatabaseSync, complete: boolean, schemaVersion = S
     WHERE typeof(fingerprint) <> 'text' OR length(fingerprint) <> 64 OR fingerprint GLOB '*[^0-9a-f]*'
     OR typeof(value) <> 'integer' OR value < 1 OR value > 10 OR typeof(updated_at) <> 'text' LIMIT 1`).get())
     throw new Error('Show database has an invalid local song rating.');
+  if (tables.has('library_media_origins') && db.prepare(`SELECT 1 FROM library_media_origins o LEFT JOIN media ON media.id=o.version_id
+    WHERE media.id IS NULL OR typeof(o.source_path) <> 'text' OR length(o.source_path) = 0 LIMIT 1`).get())
+    throw new Error('Show database has an invalid library media origin.');
   if (tables.has('show_state')) {
     const row = db.prepare('SELECT value FROM show_state WHERE id = 1').get() as { value: unknown } | undefined;
     if (row) {
@@ -155,6 +162,7 @@ export function migrateReservedShowSchema(db: DatabaseSync, current: number): vo
       CREATE TABLE IF NOT EXISTS local_song_ratings (fingerprint TEXT PRIMARY KEY CHECK (length(fingerprint) = 64 AND fingerprint NOT GLOB '*[^0-9a-f]*'),
         value INTEGER NOT NULL CHECK (typeof(value) = 'integer' AND value BETWEEN 1 AND 10), updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS song_queue_history (identity TEXT PRIMARY KEY NOT NULL);
+      CREATE TABLE IF NOT EXISTS library_media_origins (version_id TEXT PRIMARY KEY NOT NULL, source_path TEXT NOT NULL);
       INSERT OR IGNORE INTO playlists (id, name, singer_id) VALUES ('kj-picks', 'KJ Picks', NULL);`);
     const history = db.prepare('PRAGMA table_info(performance_history)').all() as { name: string; notnull: number }[];
     if (history.find(column => column.name === 'singer_id')?.notnull === 1) {

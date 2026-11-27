@@ -104,6 +104,8 @@ Choose **Import Songs** beside the Song Library heading, then choose files or a 
 
 Right-click a local song and select **Remove from Library**. To remove the indexed songs under a location, use **Remove Folder** and confirm the song count. **Review Missing Files** also lets you remove a missing song or its saved parent folder. Booth keeps all source files and performance history. Removed songs no longer appear in playlists, and Booth asks you to finish or remove any queued or active requests before removing their media entries.
 
+New CD+G and LRC conversions retain their original source folder and filename so that folder removal and filename sorting include them. Remove an older converted song from its individual row if it was imported before Booth recorded its original location.
+
 To restore a show, stop playback, finish any active import or relink, and choose **File → Restore Show Backup…**. Review the backup counts before confirming. Booth saves the current show under `show-restore-backups` in app data, ends remote sessions, and restarts silently. A restored performance stays paused until you press Play.
 
 After moving media or restoring a show, open **Song Library → Review Missing Files**. Search the affected songs, then use **Relink File** to choose the original or an identical copy. Choose **Check Again** after reconnecting a drive. The review shows filenames without folder paths and checks saved locations for local songs that the current show permits.

@@ -10,6 +10,27 @@ import { Store } from '../../src/main/store';
 const version = (db: DatabaseSync) => (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 const names = (db: DatabaseSync) => (db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]).map(row => row.name);
 
+test('schema 8 adds private origins without guessing the source of old conversions', () => {
+  const db = new DatabaseSync(':memory:');
+  let store: Store<{ revision: number }> | undefined;
+  try {
+    migrateShowSchema(db);
+    db.exec('DROP TABLE library_media_origins; PRAGMA user_version = 8;');
+    db.prepare('INSERT INTO show_state VALUES (1, ?)').run('{"revision":1}');
+    db.prepare('INSERT INTO media VALUES (?, ?, ?)').run('old', '/managed/old/track.mp4', 'old');
+    migrateShowSchema(db);
+    assert.equal(version(db), SHOW_SCHEMA_VERSION);
+    store = new Store(db);
+    assert.deepEqual(store.libraryMediaLocations().map(row => ({ ...row })), [{ id: 'old', path: '/managed/old/track.mp4', sourcePath: null }]);
+    store.save({ revision: 2 }, [{ id: 'new', path: '/managed/new/track.mp4', fingerprint: 'new', sourcePath: '/private/karaoke/Artist - Title.lrc' }]);
+    assert.equal(store.mediaSourcePath('new'), '/private/karaoke/Artist - Title.lrc');
+    assert.deepEqual(store.mediaFilenames(), { old: 'track.mp4', new: 'Artist - Title.lrc' });
+    store.removeLocalMedia({ revision: 3 }, [{ id: 'new', path: '/managed/new/track.mp4' }]);
+    assert.equal(store.mediaSourcePath('new'), undefined);
+    assert.equal(store.media('new'), undefined);
+  } finally { if (store) store.close(); else db.close(); }
+});
+
 test('schema 5 format upgrade preserves show and media bytes and rolls back an interrupted marker',()=>{
   const db=new DatabaseSync(':memory:');
   try{

@@ -17,6 +17,7 @@ export interface StoredMedia {
   id: string;
   path: string;
   fingerprint: string;
+  sourcePath?: string;
 }
 
 /** One synchronous SQLite transaction commits state and any imported media together. */
@@ -71,9 +72,11 @@ export class Store<T> {
   removeLocalMedia(state: T, selected: readonly { id: string; path: string | undefined }[]): void {
     this.writeTransaction(() => {
       const remove = this.db.prepare('DELETE FROM media WHERE id = ?');
+      const removeOrigin = this.db.prepare('DELETE FROM library_media_origins WHERE version_id = ?');
       for (const { id, path } of selected) {
         if (this.media(id)?.path !== path) throw new Error('A source location changed. Select the files again.');
         remove.run(id);
+        removeOrigin.run(id);
       }
       this.writeState(state);
     });
@@ -90,7 +93,10 @@ export class Store<T> {
   private writeState(state: T, media: StoredMedia[] = [], history?: HistoryEntry): void {
     const before = this.load();
     const putMedia = this.db.prepare('INSERT OR REPLACE INTO media (id, path, fingerprint) VALUES (?, ?, ?)');
-    for (const item of media) putMedia.run(item.id, item.path, item.fingerprint);
+    for (const item of media) {
+      putMedia.run(item.id, item.path, item.fingerprint);
+      if (item.sourcePath) this.db.prepare('INSERT OR REPLACE INTO library_media_origins (version_id, source_path) VALUES (?, ?)').run(item.id, item.sourcePath);
+    }
     recordQueuedSongs(this.db, before, state);
     this.db.prepare('INSERT INTO show_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(JSON.stringify(state));
     if (history) this.collections.record(history);
@@ -178,12 +184,21 @@ export class Store<T> {
 
   /** Host library search receives filenames only, never private directories. */
   mediaFilenames(): Record<string, string> {
-    return Object.fromEntries(this.mediaLocations().map(row => [row.id, row.path.split(/[\\/]/).pop() ?? '']));
+    return Object.fromEntries(this.libraryMediaLocations().map(row => [row.id, (row.sourcePath ?? row.path).split(/[\\/]/).pop() ?? '']));
   }
 
   /** Saved locations for main-process storage checks. */
   mediaLocations(): Pick<StoredMedia, 'id' | 'path'>[] {
     return this.db.prepare('SELECT id, path FROM media').all() as Pick<StoredMedia, 'id' | 'path'>[];
+  }
+
+  /** Managed assets can also be selected in the folder they were imported from. */
+  libraryMediaLocations(): { id: string; path: string; sourcePath: string | null }[] {
+    return this.db.prepare('SELECT m.id, m.path, o.source_path AS sourcePath FROM media m LEFT JOIN library_media_origins o ON o.version_id=m.id').all() as
+      { id: string; path: string; sourcePath: string | null }[];
+  }
+  mediaSourcePath(id: string): string | undefined {
+    return (this.db.prepare('SELECT source_path AS path FROM library_media_origins WHERE version_id = ?').get(id) as { path: string } | undefined)?.path;
   }
 
   /** Build a private lookup for portable recording matches without reading stored paths. */
@@ -241,6 +256,7 @@ export class Store<T> {
       const result = this.db.prepare('UPDATE media SET path = ?, fingerprint = ? WHERE id = ? AND path = ? AND fingerprint = ?')
         .run(replacement.path, replacement.fingerprint, expected.id, expected.path, expected.fingerprint);
       if (result.changes !== 1) return 'stale';
+      this.db.prepare('DELETE FROM library_media_origins WHERE version_id = ?').run(expected.id);
       this.writeState(state);
       return 'updated';
     });

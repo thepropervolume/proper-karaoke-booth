@@ -149,7 +149,7 @@ The desktop host supports local MP4 and converted MP3/CDG imports, unified searc
 - [x] Add a guided missing/moved-file review and keep exact-copy relinking. The isolated Windows rehearsal found a moved file, rejected a different video, and played the relinked original.
 - [ ] Test fingerprint checking, import responsiveness and relinking on large libraries, Dropbox, removable and network drives.
 - [x] Restore from a checked backup after native confirmation, with automatic current-show rollback and a silent restart. Windows Electron verified both cancellation and successful restore.
-- [x] Add versioned SQLite migrations (current schema 8) with upgrade, interrupted-write and rollback tests.
+- [x] Add versioned SQLite migrations (current schema 9) with upgrade, interrupted-write and rollback tests.
 - [x] Add a validated, standalone pre-migration show backup before opening an older database; stop the upgrade if the backup fails.
 - [ ] Verify pre-migration backup, upgrade and rollback on installed show systems and real filesystems. The new in-app flow passed an isolated Windows restart test.
 - [ ] Test crash/restart, concurrent instances and interrupted playback on real systems; never unexpectedly autoplay.

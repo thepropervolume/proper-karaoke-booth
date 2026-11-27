@@ -1431,11 +1431,12 @@ function localMediaSelection(input: { kind: 'file' | 'folder' | 'parent'; id?: s
   const available = new Set(state.versions.filter(version => !version.source && !version.removedFromLibrary).map(version => version.id));
   if (input.kind === 'file') return input.id && available.has(input.id) ? [{ id: input.id, path: store.media(input.id)?.path }] : [];
   if (!folder || !isAbsolute(folder)) return [];
-  return store.mediaLocations().filter(row => {
-    if (!available.has(row.id) || !isAbsolute(row.path)) return false;
-    const nested = relative(folder, row.path);
+  const inFolder = (path: string) => {
+    if (!isAbsolute(path)) return false;
+    const nested = relative(folder, path);
     return nested !== '' && nested !== '..' && !nested.startsWith(`..${sep}`) && !isAbsolute(nested);
-  });
+  };
+  return store.libraryMediaLocations().filter(row => available.has(row.id) && (inFolder(row.path) || !!row.sourcePath && inFolder(row.sourcePath)));
 }
 async function removeIndexedMedia(input: { kind: 'file' | 'folder' | 'parent'; id?: string }) {
   if (!host || host.isDestroyed() || shuttingDown || removingLibraryMedia || relinking || restorePending)
@@ -1452,7 +1453,7 @@ async function removeIndexedMedia(input: { kind: 'file' | 'folder' | 'parent'; i
       folder = choice.filePaths[0];
     } else if (input.kind === 'parent') {
       const version = state.versions.find(item => item.id === input.id && !item.source && !item.removedFromLibrary);
-      const path = version && store.media(version.id)?.path;
+      const path = version && (store.mediaSourcePath(version.id) ?? store.media(version.id)?.path);
       if (!path || !isAbsolute(path)) return { ok: false, error: 'This song has no saved source folder.' };
       folder = dirname(path);
     }
@@ -1655,7 +1656,7 @@ else {
     partyTymeHost.accountChanged();
     if(host&&!host.isDestroyed()&&!shuttingDown)host.webContents.send('host:partytyme-account',value);
   });
-  const commitImported = (path: string, fingerprint: string, metadataPath = path, parsing = importParsing ?? settings) => {
+  const commitImported = (path: string, fingerprint: string, metadataPath = path, parsing = importParsing ?? settings, sourcePath?: string) => {
     if (shuttingDown) throw new Error('Import is unavailable.');
     if (store.byFingerprint(fingerprint)) return { outcome: 'duplicate' as const };
     const id = randomUUID(), parsed = metadataFromPath(metadataPath, parsing.metadataTemplates, parsing.metadataFormat);
@@ -1665,7 +1666,7 @@ else {
         ...(djCode ? { djCode } : {}), ...(trackNumber ? { trackNumber } : {}),
         ...(matchedTemplate ? { metadataTemplate: matchedTemplate } : {}), metadataAmbiguous: parsed.ambiguous } } }, settings, Date.now());
     if (!result.outcome.ok) throw new Error('The song metadata could not be added.');
-    store.save(result.state, [{ id, path, fingerprint }]);
+    store.save(result.state, [{ id, path, fingerprint, ...(sourcePath ? { sourcePath } : {}) }]);
     installShowState(result.state);
     // A UI notification must not make a successful durable import look failed.
     try { broadcast(); } catch { /* The host can reload the persisted show. */ }
@@ -1687,8 +1688,8 @@ else {
       } finally { signal.removeEventListener('abort', cancel); }
     },
   });
-  cdgImport = new CdgImport(join(app.getPath('userData'), 'cdg-library'), (path, fingerprint, metadataPath) =>
-    commitImported(path, fingerprint, metadataPath.slice(0, -extname(metadataPath).length) + '.mp4', cdgImportParsing ?? settings).outcome);
+  cdgImport = new CdgImport(join(app.getPath('userData'), 'cdg-library'), (path, fingerprint, metadataPath, sourcePath) =>
+    commitImported(path, fingerprint, metadataPath.slice(0, -extname(metadataPath).length) + '.mp4', cdgImportParsing ?? settings, sourcePath).outcome);
   try {
     const staticHandler = createSingerStaticHandler(join(__dirname, '../ui'));
     const installCommitted = (committed: ShowState) => { if (shuttingDown) throw new Error('Show is shutting down.'); installShowState(committed); syncQueuedDownloads(); broadcast(); };

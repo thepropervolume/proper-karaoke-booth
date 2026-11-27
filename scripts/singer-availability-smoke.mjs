@@ -59,7 +59,7 @@ try {
   let row = host.locator('.track-row').filter({ has: host.getByText('Alex', { exact: true }) });
   const rollbackDirectory = join(profile, 'show-upgrade-backups');
   const [rollbackName] = await readdir(rollbackDirectory);
-  assert.match(rollbackName, /^show-v7-before-v8-/);
+  assert.match(rollbackName, /^show-v7-before-v\d+-/);
   const rollback = new DatabaseSync(join(rollbackDirectory, rollbackName), { readOnly: true });
   try {
     assert.equal(rollback.prepare('PRAGMA user_version').get().user_version, 7);

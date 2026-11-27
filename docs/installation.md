@@ -30,7 +30,7 @@ The Windows legacy `tpv-karaoke.cmd` remains bundled. On Linux and macOS, rerunn
 
 ## Upgrading to 0.10.8
 
-Back up your show before upgrading. The built-in backup covers the show database. Back up media and preferences separately. A show last opened before 0.10.7 upgrades to schema 8 and gets a checked pre-upgrade database copy for rollback. [Show database safety](show-database-safety.md)
+Back up your show before upgrading. The built-in backup covers the show database. Back up media and preferences separately. Booth upgrades older show databases to schema 9 and saves a checked pre-upgrade copy for rollback. [Show database safety](show-database-safety.md)
 
 The Debian package now installs to `/opt/proper-karaoke-booth`. If you previously added `tpv-karaoke` to PATH through Preferences, choose **Local API and CLI → Install CLI to PATH** again after the upgrade to update the managed launcher. [Local API and CLI](local-control-api.md)
 

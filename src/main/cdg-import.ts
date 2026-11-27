@@ -194,7 +194,7 @@ export class CdgImport {
   private progress: CdgProgress | null = null;
   private controller: AbortController | null = null;
   private completion: Promise<void> | null = null;
-  constructor(private readonly root: string, private readonly commit: (path: string, fingerprint: string, metadataPath: string) => 'imported' | 'duplicate') {}
+  constructor(private readonly root: string, private readonly commit: (path: string, fingerprint: string, metadataPath: string, selectedPath: string) => 'imported' | 'duplicate') {}
   snapshot(): CdgProgress | null { return this.progress && { ...this.progress }; }
   active(): boolean { return !!this.controller; }
   start(selected: string, backdropPath?: string): CdgProgress {
@@ -250,7 +250,7 @@ export class CdgImport {
       // Once persistence starts the commit outcome may be uncertain. Retain the
       // complete asset if it throws so a durable row never points at deleted bytes.
       retain = true;
-      const outcome = this.commit(path, fingerprint, metadataPath);
+      const outcome = this.commit(path, fingerprint, metadataPath, selected);
       if (outcome === 'duplicate') retain = false;
       progress.outcome = outcome;
       progress.phase = 'completed'; progress.message = outcome === 'duplicate' ? 'Already in the library.' : 'Imported into Song Library. Sources were left unchanged.';
