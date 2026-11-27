@@ -21,7 +21,7 @@ const customBumper = join(temp, 'Synthetic Bumper.wav');
 await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false,
   providerCatalogEnabled: false, youtubeSearchEnabled: false, localControlEnabled: false, singerScreenEnabled: false,
   hostPreviewPosition: 'above', autoAdvance: true, autoBumper: true, bumperOnLaunch: true, bumperFadeMs: 1000,
-  autoBumperTrackId: 'builtin-sunset', pauseIntervalSeconds: 2, masterVolume: 0, lyricBackdrop: 'none' }));
+  autoBumperTrackId: 'builtin-ambient', pauseIntervalSeconds: 2, masterVolume: 0, lyricBackdrop: 'none' }));
 const bootstrap = join(temp, 'bootstrap.cjs');
 await writeFile(bootstrap, `const {app,dialog}=require('electron'); const fs=require('node:fs'); app.setPath('userData',process.env.TPV_QA_PROFILE); app.setAppPath(process.env.TPV_QA_REPO); if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_QA_PROFILE))throw Error('Unsafe profile'); globalThis.fetch=async()=>{throw Error('External requests disabled in automation rehearsal');}; dialog.showMessageBox=async()=>({response:0,checkboxChecked:false}); require(process.env.TPV_QA_ENTRY);`);
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: join(stage, 'dist/main/index.cjs'),
@@ -78,7 +78,7 @@ try {
   await display.locator('#video').evaluate(v => { v.currentTime = v.duration - 0.15; });
   await poll(() => host.evaluate(() => window.tpv.getState()), s => s.requests.some(r => r.id === 'auto-one' && r.status === 'completed'), 'natural completion');
   const firstBumper = await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'automatic bumper after completion');
-  assert.equal(firstBumper.status.trackId, 'builtin-sunset', 'Use the saved automatic track.');
+  assert.equal(firstBumper.status.trackId, 'builtin-zen', 'The saved old default starts the bundled Zen track.');
   assert.equal(await display.locator('#video').evaluate(v => v.paused && v.muted), true, 'Bumper must start only after karaoke is silent.');
   const firstGap = (await host.evaluate(() => window.tpv.getState())).nextStartAtMs;
   assert.ok(firstGap > Date.now(), 'The gap must remain active while the bumper plays.');
@@ -103,7 +103,7 @@ try {
   const afterRestart = await poll(() => host.evaluate(() => window.tpv.getBumpers()), info => info.status.status === 'playing', 'launch bumper with an interrupted paused performance');
   assert.equal(afterRestart.outputReady, true);
   assert.equal((await host.evaluate(() => window.tpv.getState())).playback.status, 'paused', 'Restart must not resume karaoke.');
-  assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.autoBumperTrackId, 'builtin-sunset', 'Selected bumper track must survive restart.');
+  assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.autoBumperTrackId, 'builtin-zen', 'The migrated bumper choice must survive restart.');
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', customBumper], { windowsHide: true });
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, customBumper);
   const added = await host.evaluate(() => window.tpv.addBumpers());

@@ -62,10 +62,12 @@ export async function verifyPackagedPlatform(repo, platform, version, commit) {
       assert.ok(extract(notice).length > 0, `Missing packaged notice: ${notice}.`);
     }
     const names = ['resources/app.asar', 'resources/control/cli.cjs', 'resources/backdrops/tpv-karaoke-v3.mp4',
+      'resources/bumpers/Zen.ogg',
       ...(await readdir(join(unpacked, 'resources/branding'))).map(name => `resources/branding/${name}`),
       ...(platform === 'win' ? ['proper-karaoke-booth.exe', 'tpv-karaoke.cmd', 'tpv-karaoke-booth.exe']
         : ['proper-karaoke-booth', 'tpv-karaoke', 'tpv-karaoke-booth'])];
     const hashes = await Promise.all(names.map(async name => [name, await sha256(join(unpacked, name))]));
+    assert.equal(new Map(hashes).get('resources/bumpers/Zen.ogg'), await sha256(join(repo, 'assets/audio/bumpers/Zen.ogg')));
     let executable = join(unpacked, platform === 'win' ? 'proper-karaoke-booth.exe' : 'proper-karaoke-booth');
     if (platform === 'win') {
       await zipPayload(join(release, `Proper-Karaoke-Booth-${version}-win-x64.zip`), hashes, require);

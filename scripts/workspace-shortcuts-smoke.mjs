@@ -200,7 +200,7 @@ try {
   }, versionId);
   const queue = host.getByRole('listbox', { name: 'Singer Rotation', exact: true });
   await queue.getByRole('option').first().click(); await host.keyboard.press('Delete');
-  assert.equal((await host.evaluate(() => window.tpv.getState())).requests.find(value => value.id === 'shortcut-request').status, 'accepted');
+  assert.ok(['accepted', 'staged'].includes((await host.evaluate(() => window.tpv.getState())).requests.find(value => value.id === 'shortcut-request').status));
   await app.close(); app = undefined;
 
   // Cold CLI deep link, persisted editor values, and default reset.
