@@ -1,8 +1,9 @@
 export const LIBRARY_RESULT_FIELDS = {
-  title: 'Name / Title', artist: 'Artist', duration: 'Duration', source: 'Service / Location',
+  title: 'Name / Title', artist: 'Artist', duration: 'Duration', source: 'Source',
   code: 'DJ Code', bpm: 'BPM', key: 'Key', date: 'Date Added', filename: 'Filename',
 } as const;
 export type LibraryResultField = keyof typeof LIBRARY_RESULT_FIELDS;
+export type LibraryResultSort = 'import-oldest' | 'import-newest' | `${LibraryResultField}-${'asc' | 'desc'}`;
 export const DEFAULT_LIBRARY_RESULT_FIELDS: readonly LibraryResultField[] =
   ['title', 'artist', 'duration', 'source', 'code', 'bpm', 'key', 'date'];
 
@@ -24,6 +25,28 @@ export function parseLibraryResultFields(value: unknown): LibraryResultField[] {
       !value.every(isLibraryResultField) || !value.includes('title') || new Set(value).size !== value.length)
     throw new Error('Invalid library result fields. Keep the title field and list each field once.');
   return (Object.keys(LIBRARY_RESULT_FIELDS) as LibraryResultField[]).filter(field => value.includes(field));
+}
+
+export function activeLibrarySort(sort: LibraryResultSort): { field: LibraryResultField; direction: 'asc' | 'desc' } | null {
+  const [field, direction] = sort.split('-');
+  return isLibraryResultField(field) && (direction === 'asc' || direction === 'desc') ? { field, direction } : null;
+}
+
+export function cycleLibrarySort(sort: LibraryResultSort, field: LibraryResultField): LibraryResultSort {
+  if (sort === `${field}-asc`) return `${field}-desc`;
+  return sort === `${field}-desc` ? 'import-oldest' : `${field}-asc`;
+}
+
+const sortText = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+/** Sort display values without moving unavailable values to the top or changing equal-value order. */
+export function compareLibrarySortValues(left: string | number | null | undefined, right: string | number | null | undefined,
+  direction: 'asc' | 'desc'): number {
+  const known = (value: typeof left): value is string | number => typeof value === 'number' ? Number.isFinite(value) : !!value?.trim();
+  if (!known(left)) return known(right) ? 1 : 0;
+  if (!known(right)) return -1;
+  const order = typeof left === 'number' && typeof right === 'number' ? left - right : sortText.compare(String(left), String(right));
+  return direction === 'asc' ? order : -order;
 }
 
 /** Calendar-day metadata is displayed as supplied rather than shifted to the host's time zone. */

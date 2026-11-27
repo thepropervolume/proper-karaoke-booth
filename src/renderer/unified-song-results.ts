@@ -18,7 +18,7 @@ export type SongResult = LibrarySearchVersion & LibraryResultMetadata & {
   youtubeSearchReceipt?: { searchId: string; videoId: string };
 };
 export const RESULT_PROVIDER_LABELS: Record<SongResultProvider, string> = {
-  local: 'Imported', youtube: 'YouTube', karaokenerds: 'Karaoke Nerds', karafun: 'KaraFun', partytyme: 'Party Tyme', sunfly: 'Sunfly', stingray: 'Stingray',
+  local: 'Filesystem', youtube: 'YouTube', karaokenerds: 'Karaoke Nerds', karafun: 'KaraFun', partytyme: 'Party Tyme', sunfly: 'Sunfly', stingray: 'Stingray',
 };
 export const RESULT_PROVIDER_COLORS: Record<SongResultProvider, string> = {
   local: '#601CE9', youtube: '#ff0033', karaokenerds: '#007bff', karafun: '#d5167a', partytyme: '#FACC15', sunfly: '#d18300', stingray: '#278b91',
@@ -33,14 +33,14 @@ export function unifiedSongResults(library: readonly LibrarySearchVersion[], sav
   karaFun?: KaraFunSearchReply | null; youtube?: YouTubeSearchResult | null;
   partyTyme?: PartyTymeSearchReply | null; partyTymeConnected?: boolean;
   sourceVisibility?: Partial<Record<SongResultProvider, boolean>>;
-  sourceFilter?: SongResultProvider | 'all';
+  sourceFilters?: readonly SongResultProvider[];
   catalogs?: readonly ProviderCatalogSearchResult[] | null; karaFunConnected: boolean; sort: LibrarySort;
 }): SongResult[] {
   const rows: SongResult[] = [], seen = new Set<string>();
   // Apply visibility before YouTube duplicate suppression: a hidden source
   // must not hide an otherwise eligible YouTube recording of the same song.
   const append = (row: SongResult) => {
-    if (input.sourceVisibility?.[row.resultProvider] === false || input.sourceFilter && input.sourceFilter !== 'all' && row.resultProvider !== input.sourceFilter) return;
+    if (input.sourceVisibility?.[row.resultProvider] === false || input.sourceFilters?.length && !input.sourceFilters.includes(row.resultProvider)) return;
     const key = row.catalogOnly ? `catalog:${row.catalogOnly.provider}:${row.catalogOnly.id}` : identity(row);
     if (!seen.has(key)) { seen.add(key); rows.push(row); }
   };

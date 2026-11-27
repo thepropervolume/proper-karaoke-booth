@@ -16,18 +16,18 @@
 .search-workspace .library-toolbar select { min-height: 34px; padding: 6px 9px; font-size: .85rem; }
 .search-workspace .library-meta { margin: 0; font-size: .8rem; }
 .search-workspace .library-meta .link { min-height: 22px; padding: 0; }
-.library-source-filter { display: inline-flex; align-items: center; flex-direction: row; gap: 7px; margin-left: auto; }
-.library-source-filter select { padding: 3px 7px; min-height: 30px; font-size: .8rem; }
-.library-fields { position: relative; }
-.library-fields summary { cursor: pointer; border: 1px solid var(--line); padding: 5px 8px; min-height: 30px; color: var(--text); background: var(--panel); }
-.library-fields__options {
-  position: absolute; z-index: 3; right: 0; top: calc(100% + 4px); min-width: 175px;
-  display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+.library-source-filter { margin-left: auto; }
+.library-source-trigger { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; font-size: .8rem; }
+.library-source-count { color: var(--accent); font-variant-numeric: tabular-nums; }
+.library-options-popover {
+  position: fixed; inset: auto; margin: 0; width: min(214px, calc(100vw - 16px)); box-sizing: border-box;
+  overflow-y: auto; gap: 6px; padding: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text);
   box-shadow: var(--shadow-2);
 }
-.library-fields__options label { display: flex; align-items: center; flex-direction: row; gap: 8px; font-size: .85rem; }
-.library-fields__options input { margin: 0; }
-.library-fields__options button { margin-top: 4px; padding: 5px 8px; font-size: .8rem; }
+.library-options-popover:popover-open { display: grid; }
+.library-options-popover label { display: flex; align-items: center; flex-direction: row; gap: 8px; font-size: .85rem; }
+.library-options-popover input { margin: 0; }
+.library-options-popover button { margin-top: 4px; padding: 5px 8px; font-size: .8rem; }
 .search-service-status { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: .78rem; }
 .search-service-status:empty { display: none; }
 .library-catalog-paging { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
@@ -36,9 +36,21 @@
 .search-workspace .song-list { display: block; min-width: var(--result-min-width); padding: 0; border-radius: 0; }
 .song-list__columns, .song-option[data-provider] { display: grid; grid-template-columns: var(--result-grid); align-items: center; gap: 8px; }
 .song-list__columns {
-  position: sticky; z-index: 1; top: 0; padding: 6px 10px 6px 13px; border-bottom: 1px solid var(--line);
+  position: sticky; z-index: 1; top: 0; padding: 3px 10px 3px 13px; border-bottom: 1px solid var(--line);
   background: var(--panel-raised); color: var(--muted); font-size: .75rem; font-weight: 600; white-space: nowrap;
 }
+.song-list__columns > .tooltip-trigger { display: flex; min-width: 0; }
+.song-list__columns .song-column-sort, .song-list__columns .library-columns-trigger {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 3px; min-width: 0; min-height: 26px;
+  width: 100%; padding: 2px 3px; border: 0; box-shadow: none; background: transparent; color: var(--muted);
+  font: inherit; text-align: left;
+}
+.song-list__columns .library-columns-trigger { justify-content: center; }
+.song-list__columns .song-column-sort[data-direction]:not([data-direction='off']) { color: var(--accent); }
+.song-list__columns .song-column-sort:hover, .song-list__columns .library-columns-trigger:hover { background: var(--panel-selected); color: var(--text); }
+.song-column-label { overflow: hidden; text-overflow: ellipsis; }
+.song-column-direction { font-size: .85rem; }
+.library-sort-status { margin: 8px 12px; color: var(--muted); font-size: .78rem; }
 .search-workspace .song-option + .song-option { margin-top: 0; }
 .song-option[data-provider] { border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid var(--provider-color); padding: 2px 10px; min-height: 34px; border-radius: 0; }
 // The yellow Party Tyme stripe needs an edge against the light library panel.

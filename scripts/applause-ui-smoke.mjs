@@ -19,7 +19,7 @@ const profile = join(temporary, 'profile'), stage = join(temporary, 'stage');
 await mkdir(profile);
 await mkdir(stage);
 await writeFile(join(profile, 'settings.json'), JSON.stringify({
-  settingsVersion: 2, sharedCatalogEnabled: false, providerCatalogEnabled: false,
+  settingsVersion: 2, librarySourceFilters: ['local'], sharedCatalogEnabled: false, providerCatalogEnabled: false,
   youtubeSearchEnabled: false, localControlEnabled: false, singerScreenEnabled: false,
   autoBumper: false, bumperOnLaunch: false, autoAdvance: false, masterVolume: 0,
   lyricBackdrop: 'none',

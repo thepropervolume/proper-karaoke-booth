@@ -17,7 +17,7 @@ const require = createRequire(join(repo, 'package.json')), { _electron: electron
 const executablePath = require('electron'), root = await realpath(tmpdir());
 const temp = await mkdtemp(join(root, 'tpv-workspace-qa-')), profile = join(temp, 'profile');
 await mkdir(profile);
-await writeFile(join(profile, 'settings.json'), JSON.stringify({ sharedCatalogEnabled: false }));
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ librarySourceFilters: ['local'], sharedCatalogEnabled: false }));
 const canonicalProfile = await realpath(profile), entry = await realpath(join(repo, 'dist/main/index.cjs'));
 const fixture = join(temp, 'Synthetic Artist - Workspace Shortcuts.mp4'), bootstrap = join(temp, 'bootstrap.cjs');
 const encoded = spawnSync('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=320x180:r=25:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', fixture], { windowsHide: true });

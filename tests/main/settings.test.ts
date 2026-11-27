@@ -14,9 +14,13 @@ test('custom library columns persist while older settings get defaults', () => {
     writeFileSync(path, '{}');
     const defaults = readSettings(path);
     assert.deepEqual(defaults.libraryResultFields, DEFAULT_LIBRARY_RESULT_FIELDS);
-    const saved = writeSettings(path, { ...defaults, libraryResultFields: ['filename', 'title', 'source'] });
+    assert.deepEqual(defaults.librarySourceFilters, []);
+    const saved = writeSettings(path, { ...defaults, libraryResultFields: ['filename', 'title', 'source'], librarySourceFilters: ['youtube', 'local'] });
     assert.deepEqual(readSettings(path).libraryResultFields, ['title', 'source', 'filename']);
+    assert.deepEqual(readSettings(path).librarySourceFilters, ['local', 'youtube']);
     assert.throws(() => writeSettings(path, { ...saved, libraryResultFields: ['artist'] }), /title field/);
+    assert.throws(() => writeSettings(path, { ...saved, librarySourceFilters: ['local', 'local'] }), /selected source once/);
+    assert.throws(() => writeSettings(path, { ...saved, librarySourceFilters: ['other' as never] }), /selected source once/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

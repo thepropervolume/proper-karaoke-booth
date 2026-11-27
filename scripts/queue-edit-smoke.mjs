@@ -21,7 +21,7 @@ await mkdir(profile);
 const canonicalProfile = await realpath(profile);
 const bootstrap = join(temp, 'bootstrap.cjs');
 await writeFile(bootstrap, `const { app, session } = require('electron');\nconst fs = require('node:fs');\napp.setPath('userData', process.env.TPV_QA_PROFILE);\nif (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(process.env.TPV_QA_PROFILE)) throw new Error('Unsafe profile');\nglobalThis.fetch = async () => { throw new Error('External networking is disabled for the queue rehearsal.'); };\napp.whenReady().then(() => session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_details, done) => done({ cancel: true })));\nrequire(process.env.TPV_QA_ENTRY);\n`);
-await writeFile(join(profile, 'settings.json'), JSON.stringify({ bumperOnLaunch: false, sharedCatalogEnabled: false,
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ librarySourceFilters: ['local'], bumperOnLaunch: false, sharedCatalogEnabled: false,
   providerCatalogEnabled: false, youtubeSearchEnabled: false, singerScreenEnabled: false }));
 const env = { ...process.env, TPV_QA_PROFILE: canonicalProfile, TPV_QA_ENTRY: await realpath(join(repo, 'dist/main/index.cjs')),
   XDG_CONFIG_HOME: join(temp, 'xdg-config'), XDG_DATA_HOME: join(temp, 'xdg-data'),

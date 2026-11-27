@@ -26,7 +26,7 @@ const profile = join(temp, 'profile');
 await mkdir(profile);
 const canonicalProfile = await realpath(profile);
 // This fixture exercises the seeded local catalog, never the public service.
-await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false, providerCatalogEnabled: false,
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, librarySourceFilters: ['local'], sharedCatalogEnabled: false, providerCatalogEnabled: false,
   youtubeSearchEnabled: false, autoBumper: false, bumperOnLaunch: false, autoAdvance: false, singerScreenEnabled: false }));
 const localCatalogBase = join(temp, process.platform === 'win32' ? 'localappdata' : 'xdg-data');
 const localCatalogDir = join(localCatalogBase, 'ProperKaraokeBooth', 'karaokenerds');

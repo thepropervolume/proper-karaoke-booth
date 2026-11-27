@@ -16,7 +16,7 @@ const root = await realpath(tmpdir()), temp = await mkdtemp(join(root, 'tpv-host
 const profile = join(temp, 'profile'); await mkdir(profile, { mode: 0o700 });
 const canonicalProfile = await realpath(profile), screenshots = process.argv[2] ? resolve(process.argv[2]) : null;
 const fixture = join(temp, 'Test Artist - Test Song.mp4'), bootstrap = join(temp, 'bootstrap.cjs');
-const settings = { sharedCatalogEnabled: false, providerCatalogEnabled: false, youtubeSearchEnabled: false, singerDisplayFullscreen: false, appearance: 'day' };
+const settings = { librarySourceFilters: ['local'], sharedCatalogEnabled: false, providerCatalogEnabled: false, youtubeSearchEnabled: false, singerDisplayFullscreen: false, appearance: 'day' };
 await writeFile(join(profile, 'settings.json'), JSON.stringify(settings));
 await writeFile(join(temp, 'package.json'), JSON.stringify({ name: metadata.name, version: metadata.version, main: 'bootstrap.cjs' }));
 await writeFile(bootstrap, `const{app}=require('electron');const fs=require('node:fs');app.setPath('userData',process.env.TPV_QA_PROFILE);app.setAppPath(process.env.TPV_QA_REPO);if(fs.realpathSync(app.getPath('userData'))!==fs.realpathSync(process.env.TPV_QA_PROFILE))throw Error('Unsafe QA profile');require(process.env.TPV_QA_ENTRY);`);

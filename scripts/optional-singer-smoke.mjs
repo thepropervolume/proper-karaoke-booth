@@ -16,7 +16,7 @@ const { _electron: electron } = require('playwright-core');
 const parent = await realpath(tmpdir()), temporary = await mkdtemp(join(parent, 'tpv-optional-singer-'));
 const profile = join(temporary, 'profile'), stage = join(temporary, 'stage');
 await mkdir(profile); await mkdir(stage);
-await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false,
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ settingsVersion: 2, librarySourceFilters: ['local'], sharedCatalogEnabled: false,
   providerCatalogEnabled: false, youtubeSearchEnabled: false, localControlEnabled: false, singerScreenEnabled: false,
   autoBumper: false, bumperOnLaunch: false, autoAdvance: false, masterVolume: 0, lyricBackdrop: 'none' }));
 const fixture = join(temporary, 'QA Artist - Optional Singer.mp4');

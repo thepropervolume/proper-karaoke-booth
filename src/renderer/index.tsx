@@ -8,7 +8,7 @@ import brandLogoLight from '../../assets/branding/logo-light.svg';
 import type { Command, ShowState, SongRequest, Version } from '../domain/index';
 import { isVersionAllowed, singerAvailable, orderedFuture, remainingPauseSeconds, visibleVersions } from '../domain/index';
 import { SINGER_ON_HOLD, timedSingerReturnAt } from '../domain/singer-availability';
-import { DEFAULT_SETTINGS, nextAccentColor, type Settings } from '../domain/settings';
+import { DEFAULT_SETTINGS, SOURCE_IDS, nextAccentColor, type Settings } from '../domain/settings';
 import { appearanceFontStack } from '../domain/appearance-font';
 import type { LibraryFilter, LibrarySort } from '../domain/library-view';
 import type { MediaReviewResult } from '../domain/media-review';
@@ -55,9 +55,9 @@ import { estimateQueueWaits, formatQueueWait } from '../domain/queue-wait';
 import { MissingSongReviewPanel } from './MissingSongReviewPanel';
 import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { SongResults } from './SongResults';
-import { RESULT_PROVIDER_LABELS, unifiedSongResults, type SongResult, type SongResultProvider } from './unified-song-results';
-import type { LibraryResultField, LibraryResultMetadata } from '../domain/library-result-fields';
-import { LibraryFieldPicker } from './LibraryFieldPicker';
+import { unifiedSongResults, type SongResult, type SongResultProvider } from './unified-song-results';
+import { LIBRARY_RESULT_FIELDS, type LibraryResultField, type LibraryResultMetadata, type LibraryResultSort } from '../domain/library-result-fields';
+import { LibrarySourceFilter } from './LibrarySourceFilter';
 import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-streaming-search';
 import { useLibraryCatalogSearch } from './use-library-catalog-search';
 import { LibraryCatalogPaging } from './LibraryCatalogStatus';
@@ -218,10 +218,11 @@ function App() {
   const [screen, setScreen] = useState<Screen>('library');
   const [search, setSearch] = useState('');
   const [providerCatalogRevision, setProviderCatalogRevision] = useState(0);
-  const [librarySort, setLibrarySort] = useState<LibrarySort>('import-oldest');
+  const [librarySort, setLibrarySort] = useState<LibraryResultSort>('import-oldest');
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
-  const [librarySource, setLibrarySource] = useState<SongResultProvider | 'all'>('all');
+  const [savingLibrarySources, setSavingLibrarySources] = useState(false);
   const [savingLibraryFields, setSavingLibraryFields] = useState(false);
+  const [revealedLibraryId, setRevealedLibraryId] = useState('');
   const [libraryFilenames, setLibraryFilenames] = useState<Record<string, string>>({});
   const [filenameRefresh, setFilenameRefresh] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -430,23 +431,45 @@ function App() {
   const versions = useMemo(() => state ? visibleVersions(state).filter(version => !blacklist.isBlocked(version)) : [], [state, blacklist]);
   const hostVersionAllowed = (versionId: string) => !!(state && isVersionAllowed(state, versionId) && !blacklist.isBlocked(state.versions.find(version => version.id === versionId) ?? {}));
   const communityCatalogScope = JSON.stringify([settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility]);
-  const sourceChoices = (Object.keys(RESULT_PROVIDER_LABELS) as SongResultProvider[]).filter(provider => settings.sourceVisibility[provider]);
-  const sourceFilter = librarySource === 'all' || sourceChoices.includes(librarySource) ? librarySource : 'all';
-  const offersSource = (provider: SongResultProvider) => sourceFilter === 'all' || sourceFilter === provider;
-  useEffect(() => { songList.current?.scrollTo(0, 0); }, [sourceFilter]);
+  const sourceChoices = SOURCE_IDS.filter(provider => settings.sourceVisibility[provider]);
+  const sourceFilters = settings.librarySourceFilters;
+  const sourceFilterKey = sourceFilters.join(',');
+  const offersSource = (provider: SongResultProvider) => settings.sourceVisibility[provider] && (!sourceFilters.length || sourceFilters.includes(provider));
+  const libraryBrowsing = Boolean(search.trim() || sourceFilters.length);
+  const importSort: LibrarySort = librarySort === 'import-newest' ? 'import-newest' : 'import-oldest';
+  useEffect(() => { songList.current?.scrollTo(0, 0); }, [sourceFilterKey]);
   const catalogSearch = useLibraryCatalogSearch(search, screen === 'library' && settings.sourceVisibility.karaokenerds && offersSource('karaokenerds'), communityCatalogScope, window.tpv.searchCommunityCatalog);
   const providerCatalogScope = JSON.stringify([providerCatalogRevision, settings.providerCatalogEnabled, settings.providerCatalogProfiles, state?.policy, settings.songBlacklist, settings.artistBlacklist, settings.sourceVisibility, karaFunAccount.state, karaFunAccount.revision, partyTymeAccount.state, partyTymeAccount.revision]);
   const providerSearch = useProviderCatalogSearch(search, settings.providerCatalogEnabled && screen === 'library' && libraryFilter === 'all'
     && (offersSource('partytyme') || offersSource('sunfly') || offersSource('stingray')), providerCatalogScope, window.tpv.searchProviderCatalog);
-  const libraryRows = useMemo(() => state ? unifiedLibrary(state, search, libraryFilenames, librarySort, libraryFilter,
-    catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version)) : [], [state, versions, search, libraryFilenames, librarySort, libraryFilter, catalogSearch.result, blacklist]);
+  const libraryRows = useMemo(() => {
+    if (!state) return [];
+    if (!libraryBrowsing) return versions.filter(version => version.id === revealedLibraryId);
+    return unifiedLibrary(state, search, libraryFilenames, importSort, libraryFilter,
+      catalogSearch.result?.status === 'ready' ? catalogSearch.result.tracks : [], versions).filter(version => !blacklist.isBlocked(version));
+  }, [state, versions, search, libraryFilenames, importSort, libraryFilter, catalogSearch.result, blacklist, libraryBrowsing, revealedLibraryId]);
   const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, settings.sourceVisibility.karafun && offersSource('karafun') && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
   const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, settings.sourceVisibility.partytyme && offersSource('partytyme') && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
   const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.sourceVisibility.youtube && offersSource('youtube') && settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
     JSON.stringify([providerCatalogScope, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]));
   const filtered = useMemo(() => unifiedSongResults(libraryRows, new Set(state?.versions.map(row => row.id)), {
-    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: librarySort, sourceVisibility: settings.sourceVisibility, sourceFilter,
-  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, librarySort, blacklist, settings.sourceVisibility, sourceFilter]);
+    karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: importSort, sourceVisibility: settings.sourceVisibility, sourceFilters,
+  }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, importSort, blacklist, settings.sourceVisibility, sourceFilters]);
+
+  const selectLibraryVersion = (id: string) => {
+    setSelectedVersionId(id);
+    setRevealedLibraryId(id);
+    setScreen('library');
+  };
+  const saveLibrarySources = async (selected: SongResultProvider[]) => {
+    setSavingLibrarySources(true);
+    setRevealedLibraryId('');
+    try {
+      const saved = await window.tpv.saveSettings({ librarySourceFilters: selected });
+      setSettings(current => ({ ...current, librarySourceFilters: saved.librarySourceFilters }));
+    } catch (error) { setNotice(`Could not save source filters: ${String(error)}`, 'error'); }
+    finally { setSavingLibrarySources(false); }
+  };
 
   const saveLibraryFields = async (fields: readonly LibraryResultField[]) => {
     setSavingLibraryFields(true);
@@ -723,7 +746,7 @@ function App() {
       </div>
     </header>
     <nav className="sidebar" aria-label="Workspace">
-      <div className="global-search"><div className="search-field"><Icon name="search" /><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search songs" value={search} onChange={event => { setSearch(event.target.value); setScreen('library'); }} /></div></div>
+      <div className="global-search"><div className="search-field"><Icon name="search" /><input ref={searchInput} type="search" aria-label="Search library" placeholder="Search songs" value={search} onChange={event => { setSearch(event.target.value); setRevealedLibraryId(''); setScreen('library'); }} /></div></div>
       <div className="eyebrow">Workspace</div>
       {([['library', 'Library', 'library'], ['playlists', 'Playlists', 'playlist'], ['sources', 'Sources', 'globe']] as const).map(([id, label, icon]) =>
         <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-label={label} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}><Icon name={icon} /><span>{label}</span></button>)}
@@ -747,23 +770,24 @@ function App() {
               <h2>Song Library <Tooltip text="Double-click or press Enter to choose a singer and queue. Right-click for more actions."><button type="button" className="help-button" aria-label="Song library help">?</button></Tooltip></h2>
             </div>
           <div className="library-toolbar">
-            <label>Sort<select aria-label="Sort songs" value={librarySort} onChange={event => setLibrarySort(event.target.value as LibrarySort)}>
-              <option value="import-oldest">Import order</option><option value="import-newest">Newest imported</option><option value="title-asc">Title A–Z</option><option value="title-desc">Title Z–A</option><option value="artist-asc">Artist A–Z</option><option value="artist-desc">Artist Z–A</option>
-            </select></label>
-            <label>Filter<select aria-label="Filter songs" value={libraryFilter} onChange={event => setLibraryFilter(event.target.value as LibraryFilter)}>
+            <Tooltip text="Choose a sort, including original filename. Click a column header to cycle ascending, descending and import order."><label>Sort<select aria-label="Sort songs" value={librarySort} onChange={event => setLibrarySort(event.target.value as LibraryResultSort)}>
+              <option value="import-oldest">Import order</option><option value="import-newest">Newest imported</option>
+              {Object.entries(LIBRARY_RESULT_FIELDS).map(([field, label]) => <optgroup key={field} label={label}>
+                <option value={`${field}-asc`}>{label} ↑</option><option value={`${field}-desc`}>{label} ↓</option>
+              </optgroup>)}
+            </select></label></Tooltip>
+            <Tooltip text="Narrow results by metadata review status or content rating."><label>Filter<select aria-label="Filter songs" value={libraryFilter} onChange={event => setLibraryFilter(event.target.value as LibraryFilter)}>
               <option value="all">All songs</option><option value="review">Needs metadata review</option><option value="missing-artist">Missing artist</option><option value="clean">Clean</option><option value="explicit">Explicit</option><option value="unrated">Unrated</option><option value="uncertain">Uncertain rating</option>
-            </select></label>
+            </select></label></Tooltip>
           </div>
             <div className="page-heading__actions"><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint(KARAOKE_PAIR_IMPORT_LABEL, 'importCdg')}><button className="icon-button" aria-label={`${KARAOKE_PAIR_IMPORT_LABEL}…`} disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div>
           </div>
           <div className="library-meta">
             <span role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</span>
-            <label className="library-source-filter">Source<select value={sourceFilter} onChange={event => setLibrarySource(event.target.value as SongResultProvider | 'all')}>
-              <option value="all">All sources</option>{sourceChoices.map(provider => <option key={provider} value={provider}>{RESULT_PROVIDER_LABELS[provider]}</option>)}
-            </select></label>
-            <LibraryFieldPicker value={settings.libraryResultFields} disabled={savingLibraryFields} onChange={fields => void saveLibraryFields(fields)} />
-            {(search.trim() || libraryFilter !== 'all' || sourceFilter !== 'all') && <button type="button" className="link" onClick={() => { setSearch(''); setLibraryFilter('all'); setLibrarySource('all'); }}>Clear search and filters</button>}
-            {settings.sourceVisibility.local && <button type="button" className="link" disabled={busy || relinkBusy} onClick={() => setMediaReviewOpen(true)}>Review Missing Files</button>}
+            <LibrarySourceFilter choices={sourceChoices} selected={sourceFilters} busy={savingLibrarySources} onChange={selected => void saveLibrarySources(selected)} />
+            {(libraryBrowsing || revealedLibraryId || libraryFilter !== 'all') && <button type="button" className="link" disabled={savingLibrarySources}
+              onClick={() => { setSearch(''); setRevealedLibraryId(''); setLibraryFilter('all'); if (sourceFilters.length) void saveLibrarySources([]); }}>Clear search and filters</button>}
+            {settings.sourceVisibility.local && <Tooltip text="Find imported songs whose files were moved or became unavailable, and relink them."><button type="button" className="link" disabled={busy || relinkBusy} onClick={() => setMediaReviewOpen(true)}>Review Missing Files</button></Tooltip>}
           </div>
           <div className="search-service-status" role="status">
             {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || partyTymeSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
@@ -779,6 +803,8 @@ function App() {
           </div>
           <SongResults rows={filtered} selected={selectedVersionId} listRef={songList} onSelect={setSelectedVersionId} missingMedia={missingLocalMedia}
             columns={settings.libraryResultFields} filenames={libraryFilenames} readMetadata={window.tpv.getLibraryMetadata} metadataRevision={filenameRefresh}
+            sort={librarySort} onSort={setLibrarySort} savingColumns={savingLibraryFields} onColumnsChange={fields => void saveLibraryFields(fields)}
+            emptyMessage={libraryBrowsing || revealedLibraryId ? 'No matching songs.' : 'Search for a song or choose sources to browse.'}
             onQueue={row => { if (busy || missingLocalMedia.has(row.id)) return; if (row.catalogOnly) { setNotice('Playback is not connected for this service.'); return; } setQueueVersion(row); }}
             onContext={(version, x, y) => setContextMenu({ version, x: Math.max(0, Math.min(x, window.innerWidth - 240)), y: Math.max(0, Math.min(y, window.innerHeight - 330)) })}
             star={starButton} />
@@ -792,7 +818,7 @@ function App() {
             </form>
           </details>
         </>}
-        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={searchSourceChoices(settings)} onSave={async value => setSettings(await window.tpv.saveSettings(sourceSearchPatch(settings, value)))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel scope={communityCatalogScope} search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { setSelectedVersionId(id); setScreen('library'); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /></div>}
+        {screen === 'sources' && <div className="sources-panel"><h2>Sources</h2><SourceToggles value={searchSourceChoices(settings)} onSave={async value => setSettings(await window.tpv.saveSettings(sourceSearchPatch(settings, value)))} /><KaraFunPanel bridge={window.tpv.karaFun} status={karaFunAccount} versions={state.versions} /><PartyTymePanel bridge={window.tpv.partyTyme} status={partyTymeAccount} versions={state.versions} /><CommunityCatalogPanel scope={communityCatalogScope} search={window.tpv.searchCommunityCatalog} openVideo={window.tpv.openCommunityVideo} addVideo={window.tpv.addYouTube} onAdded={(id, notice) => { selectLibraryVersion(id); setNotice(notice || 'YouTube song saved in the library. Choose a singer and add a request to queue its download.', 'success'); }} /><ProviderCatalogPanel bridge={window.tpv} enabled={settings.providerCatalogEnabled} sourceVisibility={settings.sourceVisibility} karaFunConnected={karaFunAccount.state === 'connected'} partyTymeConnected={partyTymeAccount.state === 'connected'} partyTymePremium={partyTymeAccount.premium} scope={providerCatalogScope} onConfigurationChanged={() => setProviderCatalogRevision(value => value + 1)} /></div>}
         {screen === 'requests' && <>
           <h2>Requests</h2><p className="muted">Review requests before they enter the rotation.</p>
           {pending.map(request => { const item = describe(request); return <div className="track-row" key={request.id}><div><strong>{item.singer}</strong><small>{item.title}{item.artist ? ` · ${item.artist}` : ''}</small></div><div><button disabled={busy} onClick={() => void command({ type: 'accept', requestId: request.id })}>Accept</button> <button disabled={busy} onClick={() => void command({ type: 'rejectRequest', requestId: request.id })}>Reject</button></div></div>; })}
@@ -817,7 +843,7 @@ function App() {
             onRemove={() => { if (window.confirm(`Remove ${s.name} from this show? Their history, playlists and points will be kept, and their remote access will end.`)) void command({ type: 'removeSinger', singerId: s.id }, 'Singer removed from this show.'); }} />)}
           {!state.singers.some(s => !s.archived) && <p className="empty">No singers yet.</p>}
         </>}
-        {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} refreshCollections={async () => setCollections(await window.tpv.getCollections())} selectVersion={id => { setSelectedVersionId(id); setScreen('library'); }} />}
+        {screen === 'playlists' && <CollectionsPanel data={collections} versions={versions} singers={state.singers} selectedVersionId={selectedVersionId} busy={busy} mutate={mutateCollections} refreshCollections={async () => setCollections(await window.tpv.getCollections())} selectVersion={selectLibraryVersion} />}
       </>}
     </main>
     <PanelSeparator className="queue-separator" label={libraryLayout ? 'Resize Host Queue Height' : 'Resize Host Queue Width'} orientation={libraryLayout ? 'horizontal' : 'vertical'} reverse value={libraryLayout ? fittedPanels.libraryQueue : Math.min(fittedPanels.queue, queueMaximum)} minimum={libraryLayout ? 100 : 260} maximum={libraryLayout ? libraryQueueMaximum : queueMaximum} defaultValue={libraryLayout ? DEFAULT_HOST_PANEL_SIZES.libraryQueue : DEFAULT_HOST_PANEL_SIZES.queue} onChange={value => changePanelSize(libraryLayout ? 'libraryQueue' : 'queue', value)} onCommit={value => commitPanelSize(libraryLayout ? 'libraryQueue' : 'queue', value)} />

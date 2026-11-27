@@ -11,7 +11,7 @@ if (!fixture) throw new Error('Pass the path to a synthetic MP4 fixture');
 const config = await mkdtemp(join(tmpdir(), 'tpv-smoke-'));
 const canonicalConfig = await realpath(config), temporaryRoot = await realpath(tmpdir());
 const searchText = basename(fixture, '.mp4');
-await writeFile(join(config, 'settings.json'), JSON.stringify({ settingsVersion: 2, sharedCatalogEnabled: false, providerCatalogEnabled: false,
+await writeFile(join(config, 'settings.json'), JSON.stringify({ settingsVersion: 2, librarySourceFilters: ['local'], sharedCatalogEnabled: false, providerCatalogEnabled: false,
   youtubeSearchEnabled: false, autoBumper: false, bumperOnLaunch: false, autoAdvance: false, singerScreenEnabled: false }));
 const bootstrap = join(config, 'bootstrap.cjs');
 await writeFile(bootstrap, "const { app, session } = require('electron'); app.setPath('userData', process.env.TPV_TEST_PROFILE); globalThis.fetch=async()=>{throw Error('External requests disabled for playback rehearsal.');}; app.whenReady().then(()=>session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_details,done)=>done({cancel:true}))); require(process.env.TPV_TEST_ENTRY);\n");

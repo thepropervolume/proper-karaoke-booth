@@ -10,6 +10,7 @@ const require = createRequire(join(repo, 'package.json'));
 const { _electron: electron } = require('playwright-core');
 const tempRoot = await realpath(tmpdir()), temp = await mkdtemp(join(tempRoot, 'tpv-timeline-qa-'));
 const profile = join(temp, 'profile'); await mkdir(profile);
+await writeFile(join(profile, 'settings.json'), JSON.stringify({ librarySourceFilters: ['local'] }));
 const canonicalProfile = await realpath(profile), fixture = join(temp, 'Synthetic Artist - Timeline.mp4');
 const bootstrap = join(temp, 'bootstrap.cjs');
 await writeFile(bootstrap, `const { app } = require('electron'); const fs = require('node:fs'); app.setPath('userData', process.env.TPV_QA_PROFILE); if (fs.realpathSync(app.getPath('userData')) !== fs.realpathSync(process.env.TPV_QA_PROFILE)) throw Error('Unsafe profile'); require(process.env.TPV_QA_ENTRY);`);
