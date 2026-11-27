@@ -53,7 +53,7 @@ test('folder scan explains skipped formats and cloud availability without invent
   assert.match(scanning, /2 folders scanned/); assert.match(scanning, /3 other files skipped/);
   assert.match(scanning, /aria-label="Scanning Video\/Artist"/); assert.match(scanning, /cloud-only files may take time/i);
   const empty = render({ ...running, phase: 'completed', discovered: 0, processed: 0, imported: 0, duplicates: 0, needsReview: 0, current: null }, null);
-  assert.match(empty, /No MP4 videos were found/); assert.match(empty, /Import CD\+G \/ LRC \/ ZIP/);
+  assert.match(empty, /No supported karaoke files were found/);
 });
 
 test('progress explains a changed-file retry and its full recheck', () => {

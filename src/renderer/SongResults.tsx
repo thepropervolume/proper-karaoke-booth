@@ -8,7 +8,7 @@ import { useLibraryResultMetadata, type LibraryMetadataReader } from './use-libr
 
 const columnsLayout: Record<LibraryResultField, { min: number; flex?: number }> = {
   title: { min: 137, flex: 2 }, artist: { min: 105, flex: 1.45 }, duration: { min: 65 },
-  source: { min: 90, flex: 1 }, code: { min: 73 }, bpm: { min: 43 }, key: { min: 43 }, date: { min: 95 },
+  source: { min: 90, flex: 1 }, code: { min: 107, flex: 0.6 }, bpm: { min: 43 }, key: { min: 43 }, date: { min: 95 },
   filename: { min: 145, flex: 1.5 },
 };
 const dateFormat = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });

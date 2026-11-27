@@ -19,11 +19,11 @@ await mkdir(profile); await mkdir(join(stage, 'main'), { recursive: true });
 const canonicalProfile = await realpath(profile);
 const screenshots = resolve(process.argv[2] ?? join(repo, 'release/qa/search-workspace'));
 await mkdir(screenshots, { recursive: true });
-const fixture = join(temp, 'Synthetic Artist - Local Search Song.mp4'), logo = join(temp, 'synthetic-logo.png');
-const secondFixture = join(temp, 'A Second Artist - Zulu Search Song.mp4');
+const fixture = join(temp, 'PVOL-0428 - Synthetic Artist - Local Search Song.mp4'), logo = join(temp, 'synthetic-logo.png');
+const secondFixture = join(temp, 'A-002 - A Second Artist - Zulu Search Song.mp4');
 const metadata = JSON.parse(await readFile(join(repo, 'package.json'), 'utf8'));
 const community = Array.from({ length: 20 }, (_, index) => ({ artist: 'Synthetic Artist', title: `Community Search Song ${String(index).padStart(2, '0')}`,
-  brandSlug: 'SyntheticBrand', youtubeId: `knqa${String(index).padStart(7, '0')}`, uploadDate: null }));
+  brandSlug: 'SyntheticBrand', brandCode: 'QA', youtubeId: `knqa${String(index).padStart(7, '0')}`, uploadDate: null }));
 const youtube = Array.from({ length: 5 }, (_, index) => ({ provider: 'youtube', videoId: `ytqa${String(index).padStart(7, '0')}`,
   title: `YouTube Search Song ${index}`, artist: 'Synthetic Artist', videoTitle: `Synthetic Artist - Search Song ${index} Karaoke`,
   watchUrl: `https://www.youtube.com/watch?v=ytqa${String(index).padStart(7, '0')}`, channelId: 'UC' + 'A'.repeat(22),
@@ -43,7 +43,8 @@ const pageErrors = [];
 try {
   for (const [file, color, seconds] of [[fixture, 'navy', 2], [secondFixture, 'maroon', 3]]) {
     const media = spawnSync('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', `color=c=${color}:s=320x180:r=10:d=${seconds}`,
-      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', file], { windowsHide: true });
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an',
+      ...(file === fixture ? ['-movflags', 'use_metadata_tags', '-metadata', 'CATALOGNUMBER=STUDIO-014'] : []), file], { windowsHide: true });
     assert.equal(media.status, 0, 'Synthetic local-media rehearsal needs FFmpeg.');
   }
   const image = spawnSync('ffmpeg', ['-hide_banner', '-nostdin', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=0xd5167a:s=120x80', '-frames:v', '1', logo], { windowsHide: true });
@@ -62,6 +63,7 @@ try {
   await buildUi({ root: repo, configFile: join(repo, 'vite.config.mts'), build: { outDir: join(stage, 'ui'), emptyOutDir: true }, logLevel: 'warn' });
   const bootstrap = join(temp, 'bootstrap.cjs');
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ appearance: 'day', sharedCatalogEnabled: true,
+    metadataTemplates: ['${DJ Code}-${Track Number} - ${Artist} - ${Title}'],
     providerCatalogEnabled: true, youtubeSearchEnabled: true, showDisplayLogo: false, masterVolume: 0,
     autoBumper: false, bumperOnLaunch: false, autoAdvance: false, localControlEnabled: false,
     singerDisplayFullscreen: false }));
@@ -139,10 +141,10 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   await preferences.waitFor({ state: 'hidden' });
 
   await app.evaluate(({ dialog }, fixture) => { globalThis.searchWorkspaceQa.nextOpenFile = fixture; }, fixture);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 1);
   await app.evaluate(({ dialog }, fixture) => { globalThis.searchWorkspaceQa.nextOpenFile = fixture; }, secondFixture);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).click();
   await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 2);
   const songs = host.getByRole('listbox', { name: 'Songs', exact: true });
   assert.equal(await songs.getByRole('option').count(), 0, 'Unfiltered library stays blank until the host searches or selects a source.');
@@ -173,6 +175,9 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   const localRow = songs.locator('[data-provider="local"]').first();
   await localRow.getByText('0:02', { exact: true }).waitFor();
   assert.equal(await localRow.locator('[data-field="source"]').textContent(), 'Filesystem');
+  await localRow.getByText('STUDIO-014', { exact: true }).waitFor();
+  await songs.locator('[data-provider="local"]').nth(1).getByText('A-002', { exact: true }).waitFor();
+  await songs.getByText('QA-knqa0000001', { exact: true }).waitFor();
   const titleHeader = host.locator('[data-sort-field="title"]');
   await titleHeader.click();
   assert.equal(await titleHeader.getAttribute('data-direction'), 'asc');
