@@ -29,7 +29,7 @@ try {
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
   await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, media);
   let host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   let initial;
   for (let n = 0; n < 200; n++) { initial = await host.evaluate(() => window.tpv.getState()); if (initial.versions.length === 1) break; await host.waitForTimeout(50); }
   assert.equal(initial.versions.length, 1, 'Synthetic import did not finish');

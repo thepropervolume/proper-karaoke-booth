@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { copyFile, mkdir, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { waitForHostWindow } from './wait-for-host-window.mjs';
 
 const repo = await realpath(resolve(process.argv[2] ?? '.'));
 if (!process.argv[3]) throw new Error('Provide a synthetic MP4 fixture.');
@@ -60,8 +61,8 @@ try {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: selections++ === 0 ? paths.initial : [paths.slow] });
     dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
   }, { initial: [video, duplicate, empty], slow });
-  const host = await app.firstWindow(); await host.waitForFunction(() => !!window.tpv?.imports);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  const host = await waitForHostWindow(app); await host.waitForFunction(() => !!window.tpv?.imports);
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).click();
   const first = await waitFor(host, () => window.tpv.imports.status(), value => value?.phase === 'completed', 'initial import');
   assert.equal(first.imported, 1); assert.equal(first.duplicates, 1); assert.equal(first.failed, 1);
   await host.getByText('File results (3)', { exact: true }).click();
@@ -71,7 +72,7 @@ try {
   await host.evaluate(async versionId => {
     const singerId = crypto.randomUUID();
     for (const command of [{ type: 'addSinger', singer: { id: singerId, name: 'QA Singer' } },
-      { type: 'request', requestId: crypto.randomUUID(), singerId, versionId }, { type: 'stage' }]) {
+      { type: 'request', requestId: crypto.randomUUID(), singerId, versionId }]) {
       const result = await window.tpv.command(command); if (!result.ok) throw new Error(result.error);
     }
     await window.tpv.openDisplay();
@@ -79,10 +80,10 @@ try {
   let display;
   for (let attempt = 0; attempt < 100 && !display; attempt++) { display = app.windows().find(window => window !== host); if (!display) await new Promise(resolve => setTimeout(resolve, 50)); }
   assert.ok(display, 'Singer display did not open.');
-  await display.locator('video').waitFor({ state: 'attached' });
+  await display.locator('#video').waitFor({ state: 'attached' });
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await waitFor(host, () => window.tpv.getState(), value => value.playback?.status === 'playing', 'playback');
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).click();
   await waitFor(host, () => window.tpv.imports.status(), value => value?.phase === 'hashing' && value.current?.bytesRead > 0, 'slow worker progress');
   assert.equal(await host.getByRole('button', { name: 'Play/Pause', exact: true }).isEnabled(), true);
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
@@ -94,11 +95,11 @@ try {
   await host.getByText('Files not yet discovered were not processed. Songs already imported remain in the library.').waitFor();
   await host.getByRole('button', { name: 'Play/Pause', exact: true }).click();
   await waitFor(host, () => window.tpv.getState(), value => value.playback?.status === 'playing', 'resume after cancellation');
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).click();
   await waitFor(host, () => window.tpv.imports.status(), value => value?.phase === 'hashing', 'import before shutdown');
   await app.close(); app = undefined;
   app = await launch();
-  const restored = await app.firstWindow(); await restored.waitForFunction(() => !!window.tpv?.imports);
+  const restored = await waitForHostWindow(app); await restored.waitForFunction(() => !!window.tpv?.imports);
   const recovered = await restored.evaluate(() => window.tpv.getState());
   assert.equal(recovered.versions.length, 1); assert.equal(recovered.playback?.status, 'paused');
   assert.equal(await restored.evaluate(() => window.tpv.imports.status()), null);

@@ -34,7 +34,7 @@ try {
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, resolve(fixture));
   const host = await hostWindow(app);
   host.on('pageerror', error => console.error('Host error:', error.message));
-  await host.getByRole('button', { name: 'Import Video File' }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   await host.getByRole('listbox', { name: 'Songs' }).getByRole('option').first().waitFor();
   await host.getByRole('button', { name: 'Singers', exact: true }).click();
   await host.getByLabel('Singer name').fill('Rehearsal singer');

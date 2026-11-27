@@ -119,7 +119,7 @@ try {
   await host.getByRole('button', { name: 'Save preferences' }).click();
   assert.deepEqual((await host.evaluate(() => window.tpv.getSettings())).settings.metadataTemplates, ['${DJ Code} - ${Artist} - ${Track Name}']);
   if (availableOutputs.length) assert.equal((await host.evaluate(() => window.tpv.getSettings())).settings.audioOutputId, availableOutputs[0]);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   const song = (await untilState(state => state.versions.length === 1, 'import')).versions[0];
   assert.equal(song.artist, 'Nada Surf');
   assert.equal(song.title, 'Popular');
@@ -159,8 +159,8 @@ try {
     added.forEach(row => row.remove()); return result;
   });
   assert.ok(layout.listScrolls && layout.footerBottom <= layout.viewport + 1 && layout.pageHeight <= layout.viewport + 1, `The player must stay visible with a long library: ${JSON.stringify(layout)}`);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).hover();
-  await host.getByRole('tooltip', { name: 'Import Video File' }).waitFor({ state: 'visible', timeout: 1000 });
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).hover();
+  await host.getByRole('tooltip', { name: 'Import Songs' }).waitFor({ state: 'visible', timeout: 1000 });
   await songRow.click({ button: 'right' });
   await host.getByRole('menuitem', { name: 'Add to Playlist' }).click();
   const playlistDialog = host.getByRole('dialog', { name: 'Add to Playlist' });

@@ -75,7 +75,7 @@ const waitRatingLabel = async (area, score) => {
   await search.fill('Nada Surf Amateur');
   await host.getByRole('listbox', {name:'Songs',exact:true}).getByText('Amateur', {exact:true}).first().waitFor();
   await search.fill('');
-  await host.getByRole('button', {name:'Import Video File',exact:true}).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   await waitForHostCondition(host, async () => {
     const status = await window.tpv.imports.status();
     if (status?.phase === 'failed') throw new Error('Synthetic import failed.');

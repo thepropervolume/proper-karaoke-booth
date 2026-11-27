@@ -28,10 +28,13 @@ try {
   const identity = await app.evaluate(({ app }) => ({ packaged: app.isPackaged, profile: app.getPath('userData'), entry: app.getAppPath() }));
   assert.equal(identity.packaged, true); assert.ok(identity.entry.endsWith('app.asar'));
   assert.equal(await realpath(identity.profile), canonicalProfile, 'Refusing to use any non-disposable profile.');
-  await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, directory);
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+  }, directory);
   const host = await waitForHostWindow(app); await host.waitForFunction(() => !!window.tpv?.imports);
   assert.equal((await host.evaluate(() => window.tpv.getState())).versions.length, 0);
-  await host.getByRole('button', { name: 'Import Custom Directory', exact: true }).click();
+  await host.getByRole('button', { name: 'Import Songs', exact: true }).click();
   let status;
   for (let n = 0; n < 600; n++) {
     status = await host.evaluate(() => window.tpv.imports.status());

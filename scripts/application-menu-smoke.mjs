@@ -67,7 +67,7 @@ try {
   await preferences.waitFor();
   await click(['File', 'Import Video…'], false);
   await preferences.getByRole('button', { name: 'Cancel', exact: true }).click();
-  for (const [label, title] of [['Import Video…', 'Import local MP4 files'], ['Import Folder…', 'Import MP4 folder'],
+  for (const [label, title] of [['Import Video…', 'Import karaoke files'], ['Import Folder…', 'Import karaoke folder'],
     ['Import CD+G / LRC / ZIP…', 'Import CD+G, LRC or ZIP']]) {
     phase = label;
     await click(['File', label]);
@@ -78,7 +78,7 @@ try {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
     await waitForHostCondition(host, () => {
-      const button = document.querySelector('button[aria-label="Import Video File"]');
+      const button = document.querySelector('button[aria-label="Import Songs"]');
       return !!button && !button.disabled;
     });
   }

@@ -29,7 +29,7 @@ try {
   execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=navy:s=320x180:r=10:d=60', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=60', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', fixture], { stdio: 'pipe' });
   let host = await launch();
   await app.evaluate(({ dialog }, path) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] }); }, fixture);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   await host.getByRole('listbox', { name: 'Songs' }).getByRole('option').first().waitFor();
   await host.evaluate(async () => {
     const version = (await window.tpv.getState()).versions[0];

@@ -43,7 +43,7 @@ try {
   }, fixture);
   const host = await app.firstWindow();
   await host.waitForFunction(() => !!window.tpv);
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   await waitForHostCondition(host, async () => (await window.tpv.getState()).versions.length === 1);
   const row = host.getByRole('option', { name: /Synthetic Title/ });
   await row.dblclick();

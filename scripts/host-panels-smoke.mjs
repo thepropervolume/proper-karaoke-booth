@@ -63,7 +63,7 @@ try {
   dialog = await prefs(); await dialog.getByLabel('Singer Preview Position', { exact: true }).selectOption('hidden'); await dialog.getByLabel('Workspace layout', { exact: true }).selectOption('standard'); await save(dialog);
   assert.equal(await host.getByRole('region', { name: 'Singer preview', exact: true }).count(), 0); await fit();
 
-  await host.getByRole('button', { name: 'Import Video File', exact: true }).click();
+  await host.evaluate(() => window.tpv.importFiles('files'));
   await waitForHostCondition(host, () => window.tpv.getState().then(value => value.versions.length === 1));
   const songs = host.getByRole('listbox', { name: 'Songs', exact: true }), song = songs.getByRole('option').filter({ hasText: 'Test Song' }); await song.waitFor();
   await song.click({ button: 'right' }); await host.getByRole('menuitem', { name: 'Blacklist Song', exact: true }).click();
