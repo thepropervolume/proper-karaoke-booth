@@ -26,7 +26,11 @@ export function InternetSessionPanel({ bridge }: { bridge: InternetSessionBridge
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setMessage('');
     try { await action(); if (aliveRef.current && success) setMessage(success); }
-    catch (error) { if (aliveRef.current) setMessage(error instanceof Error ? error.message : 'Could not complete this action. Check the session status and try again.'); }
+    catch (error) {
+      if (aliveRef.current) setMessage(error instanceof Error
+        ? error.message.replace(/^Error invoking remote method 'host:internet-[^']+': (?:Error: )?/, '')
+        : 'Could not complete this action. Check the session status and try again.');
+    }
     finally { busyRef.current = false; if (aliveRef.current) setBusy(false); }
   };
   const start = () => {
@@ -46,6 +50,8 @@ export function InternetSessionPanel({ bridge }: { bridge: InternetSessionBridge
       aria-describedby="internet-session-address-help" /></label>
     <p id="internet-session-address-help">Choose an easy name to share, such as proper-volume. Session names are temporary and may already be in use.</p>
     {canStart && <button type="button" disabled={busy} onClick={start}>Start Session</button>}
+    {status?.canImportConnection && bridge.chooseConnectionFile && <button type="button" disabled={busy}
+      onClick={() => void run(() => bridge.chooseConnectionFile!())}>Choose Connection File…</button>}
     {shareable && <>
       <p>Anyone with this link can join. Share it with the people you want in your show.</p>
       <label>Singer link<input readOnly value={status.joinUrl!} onFocus={event => event.currentTarget.select()} /></label>

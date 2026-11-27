@@ -6,12 +6,14 @@ The 0.3.0 host has a **Remote Sessions** workspace for the experimental hosted s
 
 1. Open **Remote Sessions** in the left menu.
 2. Keep the suggested session name or enter your own, such as `proper-volume`. Names use 3–48 lowercase letters, numbers and interior hyphens. Reserved or currently owned names are unavailable.
-3. Choose **Start Session** and wait for **Session online**.
+3. If this is a new Linux or macOS host, use **Choose Connection File…** to install the private connection file issued for this computer. Choose **Start Session** and wait for **Session online**.
 4. Choose **Copy Link** and share the singer address, for example `https://queue.thepropervolume.com/proper-volume`. Anyone with that link can join while the session is active. It works for guests on venue Wi-Fi and on the internet; keep the booth connected and running.
 5. Review joined singers in the workspace. **Remove Access** revokes a current singer session; a public link still admits new guests, so end the session if the link has spread beyond the intended group.
 6. Choose **End Session** when finished. This revokes internet access without deleting songs, requests or show history, and leaves a separately opened local-network room independent.
 
-The host needs a separately provisioned private `remote-queue-connection.json` in its app-data directory. This contains only the fixed service origin and that computer's scoped owner token. It is not a database or Karaoke Nerds key, is never sent to the renderer or singers, and is excluded from installers. The owner's current Windows booth is provisioned separately; another host computer needs its own configuration. Full self-service account/device provisioning remains planned. On Linux and macOS, the app requires this file to belong to its current user with no group or other-user permissions (for example, mode `0600`); it checks these permissions before opening and again while reading. Windows setup must protect the file with a current-user and SYSTEM-only access list, which is an external provisioning requirement because Node's file mode bits cannot verify Windows access lists.
+Each computer needs its own private connection file from the room administrator. Booth stores it as `remote-queue-connection.json` in its app-data directory. It contains the fixed relay origin and a device-scoped owner token and stays in the host process. Linux and macOS install the selected profile with mode `0600` and check ownership and permissions when opening it. Windows uses a separately provisioned file with a current-user and SYSTEM-only access list. Connection profiles are excluded from installers. Self-service device provisioning is planned.
+
+If Booth asks for a connection file on a new computer, request one for that device. If the relay rejects a profile, request a replacement. If Booth reports that the show needs recovery, restart the app before trying again. When the relay could not confirm a room opened, choose **End Session** to resolve the previous attempt before retrying.
 
 ## Singer flow
 

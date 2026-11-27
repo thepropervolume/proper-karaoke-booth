@@ -10,11 +10,13 @@ export type InternetSessionStatus = {
   message: string;
   screenActive?: boolean;
   screenUrl?: string | null;
+  canImportConnection?: boolean;
 };
 export type InternetSessionBridge = {
   status(): Promise<InternetSessionStatus>;
   subscribe(callback: (status: InternetSessionStatus) => void): () => void;
   start(input: { slug: string }): Promise<void>;
+  chooseConnectionFile?(): Promise<void>;
   stop(): Promise<void>;
   copyLink(): Promise<void>;
   revokeGuest(singerId: string): Promise<void>;

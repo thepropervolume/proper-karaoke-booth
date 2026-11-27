@@ -2104,6 +2104,14 @@ else {
   ipcMain.handle('host:remote-status', event => { guardHost(event.sender.id); return remoteHost.status(); });
   ipcMain.handle('host:internet-status', event => {guardHost(event.sender.id);return internetQueue?.status() ?? {available:false,state:'failed',suggestedSlug:'proper-volume',slug:null,joinUrl:null,guests:[],message:'Internet sessions are unavailable. Reopen the app after checking its installation.'};});
   ipcMain.handle('host:internet-start', async(event,input:unknown)=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.start(input);});
+  ipcMain.handle('host:internet-choose-connection', async event => {
+    guardHost(event.sender.id);
+    if (shuttingDown || !host || !internetQueue?.status().canImportConnection) throw new Error('Connection file installation is unavailable.');
+    const selection = await dialog.showOpenDialog(host, {
+      title: 'Choose private internet-session connection file', properties: ['openFile'], filters: [{ name: 'Connection JSON', extensions: ['json'] }],
+    });
+    if (!selection.canceled && selection.filePaths[0] && !shuttingDown) await internetQueue.importConnection(selection.filePaths[0]);
+  });
   ipcMain.handle('host:internet-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stop();});
   ipcMain.handle('host:internet-screen-start', async event=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.startScreen();});
   ipcMain.handle('host:internet-screen-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stopScreen();});

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, chownSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, mkdtempSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
@@ -59,6 +59,7 @@ class RelayFixture {
   closes: unknown[] = [];
   screens: Record<string, any>[] = [];
   screenUnavailable = false;
+  openStatus = 200;
   screenViewerOrigin: string | undefined;
   pending: { resolve: (value: Response) => void; reject: (reason: Error) => void; generation: string } | undefined;
   replyFailures = 0;
@@ -73,6 +74,7 @@ class RelayFixture {
     const body = JSON.parse(init!.body as string) as Record<string, any>;
     switch (url.pathname) {
       case '/v1/relay/host/open': {
+        if (this.openStatus !== 200) return response({ error: 'open rejected' }, this.openStatus);
         const previous = this.opens.find(item => item.openId === body.openId);
         if (!previous && this.opens.length) this.generation = randomUUID();
         if (!previous) this.opens.push(body as { slug: string; openId: string });
@@ -264,6 +266,42 @@ test('invalid private origin and reserved slugs cannot send a network request', 
     await assert.rejects(f.client.start({ slug: 'proper-volume' }));
     assert.equal(f.relay.opens.length, 0); assert.doesNotMatch(JSON.stringify(f.client.status()), /evil\.test/);
   } finally { await f.dispose(); }
+});
+
+test('missing and rejected device profiles leave Start Session available with specific recovery messages', async () => {
+  const f = clientFixture();
+  try {
+    unlinkSync(f.configurationFile);
+    await assert.rejects(f.client.start({ slug: 'proper-volume' }), /computer needs/);
+    assert.equal(f.client.status().state, 'stopped');
+    assert.equal(f.relay.opens.length, 0);
+    writeFileSync(f.configurationFile, JSON.stringify({ baseUrl: INTERNET_QUEUE_ORIGIN, ownerToken: f.owner }), { mode: 0o600 });
+    f.relay.openStatus = 403;
+    await assert.rejects(f.client.start({ slug: 'proper-volume' }), /relay rejected this device/);
+    assert.equal(f.client.status().state, 'stopped');
+    f.relay.openStatus = 409;
+    await assert.rejects(f.client.start({ slug: 'proper-volume' }), /choose another name/i);
+    assert.equal(f.client.status().state, 'stopped');
+  } finally { await f.dispose(); }
+});
+
+test('Linux and macOS can install a validated device profile privately and start a room', { skip: process.platform === 'win32' }, async () => {
+  const f = clientFixture();
+  const incoming = join(mkdtempSync(join(tmpdir(), 'booth-internet-profile-')), 'profile.json');
+  try {
+    unlinkSync(f.configurationFile);
+    assert.equal(f.client.status().canImportConnection, true);
+    writeFileSync(incoming, JSON.stringify({ baseUrl: 'https://example.test', ownerToken: f.owner }), { mode: 0o644 });
+    await assert.rejects(f.client.importConnection(incoming), /invalid/);
+    writeFileSync(incoming, JSON.stringify({ baseUrl: INTERNET_QUEUE_ORIGIN, ownerToken: f.owner }));
+    await f.client.importConnection(incoming);
+    assert.equal(statSync(f.configurationFile).mode & 0o777, 0o600);
+    assert.equal(statSync(incoming).mode & 0o777, 0o644);
+    assert.doesNotMatch(JSON.stringify(f.client.status()), new RegExp(f.owner));
+    await f.client.start({ slug: 'proper-volume' });
+    assert.equal(f.client.status().state, 'online');
+    await assert.rejects(f.client.importConnection(incoming), /End the internet session/);
+  } finally { await f.dispose(); rmSync(resolve(incoming, '..'), { recursive: true, force: true }); }
 });
 
 test('a malformed poll batch cannot select host actions and fails closed without changing LAN', async () => {

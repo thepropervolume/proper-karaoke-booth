@@ -183,6 +183,7 @@ contextBridge.exposeInMainWorld('tpv', {
     copyScreenLink: () => ipcRenderer.invoke('host:internet-screen-copy'),
     status:()=>ipcRenderer.invoke('host:internet-status'),
     start:(input:unknown)=>ipcRenderer.invoke('host:internet-start',input),
+    chooseConnectionFile: () => ipcRenderer.invoke('host:internet-choose-connection'),
     stop:()=>ipcRenderer.invoke('host:internet-stop'),
     copyLink:()=>ipcRenderer.invoke('host:internet-copy'),
     revokeGuest:(id:string)=>ipcRenderer.invoke('host:internet-revoke',id),

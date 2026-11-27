@@ -1,7 +1,8 @@
 /** Outbound, host-authenticated relay client. It never opens a listener or proxies URLs. */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { lstat, open } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { constants, type Stats } from 'node:fs';
+import { lstat, open, rename, unlink, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join } from 'node:path';
 import { INTERNET_QUEUE_ORIGIN, validateSessionSlug, type InternetSessionStatus } from '../remote/internet-session-control';
 import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { JoinRevisionConflict } from './remote-queue';
@@ -108,28 +109,39 @@ export async function dispatchInternetGuestCallAsync(authority: GuestAuthority, 
   } catch { return denied(); }
 }
 
-async function readConnection(file: string): Promise<Connection> {
+class ConnectionFileError extends Error {}
+class ShowRecoveryError extends Error {}
+
+async function readConnection(file: string, requirePrivate = true): Promise<Connection> {
+  const validFile = (info: Stats) => requirePrivate ? privateFile(info) : info.isFile();
   try {
     if (!isAbsolute(file)) throw new Error();
     const before = await lstat(file);
-    if (!privateFile(before) || before.isSymbolicLink() || before.size < 1 || before.size > 8192) throw new Error();
-    const handle = await open(file, 'r');
+    if (!before.isFile() || before.size < 1 || before.size > 8192) throw new Error();
+    if (!validFile(before)) throw new ConnectionFileError('The connection file must belong to your user account and be private. Use Choose Connection File to install it again.');
+    const handle = await open(file, process.platform === 'win32' ? 'r' : constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     let data: Buffer;
     try {
       const stat = await handle.stat();
-      if (!privateFile(stat) || stat.dev !== before.dev || stat.ino !== before.ino || stat.size !== before.size || stat.mtimeMs !== before.mtimeMs || stat.ctimeMs !== before.ctimeMs) throw new Error();
+      if (!validFile(stat) || stat.dev !== before.dev || stat.ino !== before.ino || stat.size !== before.size || stat.mtimeMs !== before.mtimeMs || stat.ctimeMs !== before.ctimeMs) throw new Error();
       const bounded = Buffer.alloc(8193);
       const { bytesRead } = await handle.read(bounded, 0, bounded.length, 0);
       if (bytesRead !== stat.size) throw new Error();
       data = bounded.subarray(0, bytesRead);
       const after = await handle.stat(), named = await lstat(file);
-      if (!privateFile(after) || !privateFile(named) || data.length > 8192 || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs ||
+      if (!validFile(after) || !validFile(named) || data.length > 8192 || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs ||
           named.isSymbolicLink() || named.dev !== stat.dev || named.ino !== stat.ino || named.size !== stat.size || named.mtimeMs !== stat.mtimeMs || named.ctimeMs !== stat.ctimeMs) throw new Error();
     } finally { await handle.close(); }
     const parsed: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data));
     if (!record(parsed) || !exact(parsed, ['baseUrl', 'ownerToken']) || parsed.baseUrl !== INTERNET_QUEUE_ORIGIN || typeof parsed.ownerToken !== 'string' || !OWNER.test(parsed.ownerToken)) throw new Error();
     return { baseUrl: INTERNET_QUEUE_ORIGIN, ownerToken: parsed.ownerToken };
-  } catch { throw new Error('The private internet-session connection file is missing or invalid.'); }
+  } catch (error) {
+    if (error instanceof ConnectionFileError) throw error;
+    if (requirePrivate && (error as NodeJS.ErrnoException)?.code === 'ENOENT') throw new ConnectionFileError(process.platform === 'win32'
+      ? 'This computer needs a private internet-session connection file. Ask the room administrator to provision this device.'
+      : 'This computer needs its own internet-session connection file. Ask the room administrator for one, then choose it here.');
+    throw new ConnectionFileError('The connection file could not be read or is invalid. Ask the room administrator for a valid file for this computer.');
+  }
 }
 
 class RelayFailure extends Error {
@@ -228,6 +240,7 @@ export class InternetQueueClient {
   private opening: Promise<void> | undefined;
   private polling: Promise<void> | undefined;
   private stopping: Promise<void> | undefined;
+  private configuring = false;
   private pendingOpen: { slug: string; openId: string } | undefined;
   private disposed = false;
   private epoch = 0;
@@ -243,6 +256,7 @@ export class InternetQueueClient {
     if (this.scope && this.state === 'online') { try { guests = this.scope.guests().map(({ singerId, name }) => ({ singerId, name })); } catch {} }
     return { available: !this.disposed, state: this.state, suggestedSlug: this.suggestedSlug, slug: this.slug,
       joinUrl: this.state === 'online' ? this.currentRoom?.publicUrl ?? null : null, guests, message: this.message,
+      canImportConnection: process.platform !== 'win32' && this.state === 'stopped',
       screenActive: !!this.screen, screenUrl: this.screen?.ready && this.state === 'online' && this.currentRoom ? `${this.screen.viewerOrigin}/${this.currentRoom.slug}/screen#${this.screen.secret}` : null };
   }
   get screenSharing(): boolean { return !!this.screen; }
@@ -297,10 +311,36 @@ export class InternetQueueClient {
     try { this.scope.close(); this.scope = undefined; this.invitation = ''; return true; } catch { return false; }
   }
   private live(controller: AbortController, epoch: number): boolean { return !controller.signal.aborted && !this.disposed && this.epoch === epoch; }
+  async importConnection(file: string): Promise<void> {
+    if (process.platform === 'win32' || this.disposed || this.configuring || this.state !== 'stopped' || this.opening || this.stopping)
+      throw new Error('End the internet session before choosing a connection file.');
+    this.configuring = true;
+    const target = this.options.configurationFile, directory = dirname(target);
+    const temporary = join(directory, `.internet-connection-${randomUUID()}.tmp`);
+    try {
+      const config = await readConnection(file, false);
+      const parent = await lstat(directory);
+      // App data can be readable, but other users must be unable to replace the file.
+      if (!parent.isDirectory() || parent.uid !== process.getuid?.() || (parent.mode & 0o022) !== 0 || this.disposed || this.status().state !== 'stopped')
+        throw new Error('The app data folder must belong to your user account and be writable only by you.');
+      await writeFile(temporary, JSON.stringify(config), { flag: 'wx', mode: 0o600 });
+      await rename(temporary, target);
+      this.message = 'Connection file installed. Start a session to invite singers.';
+      this.changed();
+    } catch (error) {
+      if (error instanceof ConnectionFileError) throw error;
+      throw new Error('Could not install the connection file. Check that your app data folder is private and writable.');
+    } finally {
+      await unlink(temporary).catch(() => {});
+      this.configuring = false;
+    }
+  }
   private async connect(controller: AbortController, epoch: number): Promise<void> {
     if (!this.config || !this.pendingOpen || !this.live(controller, epoch)) throw new RelayFailure(false);
     if (!this.closeScope()) throw new RelayFailure(false);
-    this.scope = new RemoteRelayScope(this.options.coordinator.getAuthority(), { guests: () => this.changed(), missing: this.options.onMissingRequest });
+    try {
+      this.scope = new RemoteRelayScope(this.options.coordinator.getAuthority(), { guests: () => this.changed(), missing: this.options.onMissingRequest });
+    } catch { throw new ShowRecoveryError(); }
     const value = await post(this.options.fetch ?? fetch, this.config, 'open', this.pendingOpen, controller.signal, 10000);
     const opened = room(value, this.pendingOpen.slug);
     this.currentRoom = opened; this.pendingOpen = undefined;
@@ -308,7 +348,7 @@ export class InternetQueueClient {
     this.state = 'online'; this.message = 'Session online. Share the singer link to invite your guests.'; this.changed();
   }
   async start(input: unknown): Promise<void> {
-    if (this.disposed || this.opening || this.polling || this.stopping || !['stopped', 'failed'].includes(this.state) || this.scope || this.currentRoom || this.pendingOpen) throw new Error('End the previous session before starting another.');
+    if (this.disposed || this.configuring || this.opening || this.polling || this.stopping || !['stopped', 'failed'].includes(this.state) || this.scope || this.currentRoom || this.pendingOpen) throw new Error('End the previous session before starting another.');
     if (!record(input) || !exact(input, ['slug']) || validateSessionSlug(input.slug)) throw new Error('Choose a valid session name.');
     const slug = input.slug as string, controller = new AbortController(), epoch = ++this.epoch;
     this.controller = controller; this.slug = slug; this.state = 'starting'; this.message = 'Starting your internet session…'; this.changed();
@@ -324,9 +364,15 @@ export class InternetQueueClient {
       } catch (error) {
         this.closeScope();
         if (controller.signal.aborted) return;
-        if (error instanceof RelayFailure && !error.retryable && error.code >= 400 && error.code < 500) this.pendingOpen = undefined;
-        this.state = 'failed';
-        this.message = error instanceof RelayFailure && error.code === 409 ? 'That session name is already in use. End this attempt and choose another name.' : error instanceof RelayFailure ? 'The session could not connect. End this attempt and try again.' : 'The private internet-session connection is unavailable or the show needs recovery.';
+        const rejected = error instanceof RelayFailure && !error.retryable && error.code >= 400 && error.code < 500;
+        if (rejected || error instanceof ShowRecoveryError) this.pendingOpen = undefined;
+        this.state = error instanceof ShowRecoveryError || this.pendingOpen || this.scope ? 'failed' : 'stopped';
+        if (error instanceof ConnectionFileError) this.message = error.message;
+        else if (error instanceof ShowRecoveryError) this.message = 'The show needs recovery. Restart Booth before opening another session.';
+        else if (error instanceof RelayFailure && error.code === 409) this.message = 'That session name is already in use. Choose another name.';
+        else if (error instanceof RelayFailure && (error.code === 401 || error.code === 403)) this.message = 'The relay rejected this device’s connection file. Ask the room administrator for a replacement.';
+        else this.message = this.pendingOpen ? 'The relay could not confirm the room opened. End this attempt and try again once you are online.'
+          : 'The relay could not open a room. Check your network connection and try again.';
         this.changed(); throw new Error(this.message);
       }
     })();
