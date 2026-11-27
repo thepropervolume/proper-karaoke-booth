@@ -1,22 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Version } from '../domain';
-import type { MediaReviewIssue, MediaReviewResult } from '../domain/media-review';
+import type { LibraryMediaRemoval, MediaReviewIssue, MediaReviewResult } from '../domain/media-review';
 import '../styles/media-review.scss';
 
 type ReviewBridge = {
   reviewMedia(id: string): Promise<MediaReviewResult>;
   cancelMediaReview(id: string): Promise<void>;
 };
-type RelinkResult = { ok: boolean; cancelled?: boolean; error?: string };
+type ActionResult = { ok: boolean; cancelled?: boolean; error?: string; notice?: string };
 const reasonText: Record<MediaReviewIssue['reason'], string> = {
   missing: 'File not found', unavailable: 'Storage unavailable', invalid: 'Empty or invalid file',
 };
 const PAGE_SIZE = 40;
 
-export function MediaReviewDialog({ bridge, versions, onRelink, onClose }: {
+export function MediaReviewDialog({ bridge, versions, onRelink, onRemove, onClose }: {
   bridge: ReviewBridge;
   versions: readonly Version[];
-  onRelink(id: string): Promise<RelinkResult>;
+  onRelink(id: string): Promise<ActionResult>;
+  onRemove(input: LibraryMediaRemoval): Promise<ActionResult>;
   onClose(): void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -72,9 +73,18 @@ export function MediaReviewDialog({ bridge, versions, onRelink, onClose }: {
       if (!result.ok) setError(result.error || 'The song could not be relinked.');
       else if (!result.cancelled) {
         setReport(current => current && { ...current, issues: current.issues.filter(issue => issue.versionId !== song.id) });
-        setMessage(`Relinked ${song.title}.`);
+        setMessage(result.notice || `Relinked ${song.title}.`);
       }
     } catch { setError('The song could not be relinked. Try selecting the original video again.'); }
+    finally { setRelinking(false); }
+  };
+  const remove = async (song: Version, kind: 'file' | 'parent') => {
+    setRelinking(true); setError(''); setMessage('');
+    try {
+      const result = await onRemove({ kind, id: song.id });
+      if (!result.ok) setError(result.error || 'Could not remove the selected library entries.');
+      else if (!result.cancelled) setMessage(result.notice || 'Library updated.');
+    } catch { setError('Could not remove the selected library entries.'); }
     finally { setRelinking(false); }
   };
 
@@ -92,7 +102,7 @@ export function MediaReviewDialog({ bridge, versions, onRelink, onClose }: {
   return <dialog ref={dialog} className="settings-dialog media-review" aria-labelledby="media-review-title"
     onCancel={event => { event.preventDefault(); if (!relinking) onClose(); }}>
     <h2 id="media-review-title">Review Missing Files</h2>
-    <p className="muted">Check saved local file locations. Relink a song using the original video or an identical copy.</p>
+    <p className="muted">Relink a moved file, or remove its library entry while keeping the file on disk.</p>
     <p role="status" aria-live="polite">{checking ? 'Checking local file locations…' : report ? `Checked ${report.checked} local files. ${present.length} need attention.` : ''}</p>
     {message && <p role="status">{message}</p>}
     {error && <p role="alert">{error}</p>}
@@ -100,8 +110,12 @@ export function MediaReviewDialog({ bridge, versions, onRelink, onClose }: {
       <label>Find by song, artist or filename<input type="search" value={query} onChange={event => { setQuery(event.target.value); setPage(0); }} /></label>
       <ul className="media-review__list">
         {matching.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(({ song, issue }) => <li className="track-row" key={song.id}>
-          <div><strong>{song.title}</strong><small>{song.artist || 'Unknown Artist'}</small><small>{reasonText[issue.reason]} · {issue.filename}</small></div>
-          <button type="button" disabled={relinking || checking} aria-label={`Relink file for ${song.title}`} onClick={() => void relink(song)}>Relink File…</button>
+          <div><strong>{song.title}</strong><small>{song.artist || 'Unknown Artist'}</small><small>{[reasonText[issue.reason], issue.filename].filter(Boolean).join(' · ')}</small></div>
+          <div className="media-review__actions">
+            <button type="button" disabled={relinking || checking} aria-label={`Relink file for ${song.title}`} onClick={() => void relink(song)}>Relink File…</button>
+            <button type="button" disabled={relinking || checking} aria-label={`Remove ${song.title} from library`} onClick={() => void remove(song, 'file')}>Remove…</button>
+            {issue.filename && <button type="button" disabled={relinking || checking} aria-label={`Remove folder for ${song.title} from library`} onClick={() => void remove(song, 'parent')}>Remove Folder…</button>}
+          </div>
         </li>)}
       </ul>
       {matching.length === 0 && <p>No files match this search.</p>}

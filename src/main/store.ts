@@ -67,6 +67,18 @@ export class Store<T> {
     this.writeTransaction(() => this.writeState(state, media, history));
   }
 
+  /** Keep historical version IDs while withdrawing their paths from the active library. */
+  removeLocalMedia(state: T, selected: readonly { id: string; path: string | undefined }[]): void {
+    this.writeTransaction(() => {
+      const remove = this.db.prepare('DELETE FROM media WHERE id = ?');
+      for (const { id, path } of selected) {
+        if (this.media(id)?.path !== path) throw new Error('A source location changed. Select the files again.');
+        remove.run(id);
+      }
+      this.writeState(state);
+    });
+  }
+
   saveDiscoveredKjPick(this: Store<ShowState>, state: ShowState, versionId: string): void {
     // The new library entry and its KJ Picks membership must survive together.
     this.writeTransaction(() => {
@@ -220,6 +232,18 @@ export class Store<T> {
     const result = this.db.prepare('UPDATE media SET path = ? WHERE id = ? AND path = ? AND fingerprint = ?')
       .run(replacementPath, expected.id, expected.path, expected.fingerprint);
     return result.changes === 1;
+  }
+
+  /** The host confirmed changed bytes. Reject stale links and library duplicates in the same transaction. */
+  replaceMedia(state: T, expected: StoredMedia, replacement: Omit<StoredMedia, 'id'>): 'updated' | 'duplicate' | 'stale' {
+    return this.writeTransaction(() => {
+      if (this.byFingerprint(replacement.fingerprint)) return 'duplicate';
+      const result = this.db.prepare('UPDATE media SET path = ?, fingerprint = ? WHERE id = ? AND path = ? AND fingerprint = ?')
+        .run(replacement.path, replacement.fingerprint, expected.id, expected.path, expected.fingerprint);
+      if (result.changes !== 1) return 'stale';
+      this.writeState(state);
+      return 'updated';
+    });
   }
 
   checkpoint(generation: string, position: number): void {

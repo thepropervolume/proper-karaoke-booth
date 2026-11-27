@@ -91,6 +91,31 @@ test('conditional relink updates only the matched row and preserves fingerprint 
   } finally { store.close(); }
 });
 
+test('confirmed replacement checks duplicate and stale records without changing either file on disk', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-replace-tested-'));
+  const store = new Store<{ revision: number }>(':memory:');
+  try {
+    const first = join(directory, 'original.mp4'), second = join(directory, 'replacement.mp4'), other = join(directory, 'existing.mp4');
+    writeFileSync(first, 'original'); writeFileSync(second, 'replacement'); writeFileSync(other, 'already imported');
+    const original = { id: 'one', path: first, fingerprint: (await fingerprintMedia(first)).fingerprint };
+    const replacement = { path: second, fingerprint: (await fingerprintMedia(second)).fingerprint };
+    const existing = { id: 'two', path: other, fingerprint: (await fingerprintMedia(other)).fingerprint };
+    store.save({ revision: 1 }, [original, existing]);
+    assert.equal(store.replaceMedia({ revision: 2 }, original, existing), 'duplicate');
+    assert.equal(store.replaceMedia({ revision: 2 }, { ...original, path: second }, replacement), 'stale');
+    assert.deepEqual(store.load(), { revision: 1 });
+    assert.equal(store.replaceMedia({ revision: 2 }, original, replacement), 'updated');
+    assert.deepEqual({ ...store.media('one') }, { id: 'one', ...replacement });
+    assert.equal((await fingerprintMedia(first)).fingerprint, original.fingerprint);
+    assert.equal((await fingerprintMedia(second)).fingerprint, replacement.fingerprint);
+    assert.throws(() => store.removeLocalMedia({ revision: 3 }, [existing, original]), /source location changed/);
+    assert.equal(store.media('two')?.path, other, 'The earlier removal rolls back with the stale second row.');
+    store.removeLocalMedia({ revision: 3 }, [{ id: 'one', path: second }]);
+    assert.equal(store.media('one'), undefined);
+    assert.equal((await fingerprintMedia(second)).fingerprint, replacement.fingerprint, 'Only the index entry is removed.');
+  } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('relink rejects symbolic links without changing the stored source', async context => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-relink-'));
   const store = new Store<{ revision: number }>(':memory:');

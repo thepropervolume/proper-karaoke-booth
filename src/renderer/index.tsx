@@ -11,7 +11,7 @@ import { SINGER_ON_HOLD, timedSingerReturnAt } from '../domain/singer-availabili
 import { DEFAULT_SETTINGS, SOURCE_IDS, nextAccentColor, type Settings } from '../domain/settings';
 import { appearanceFontStack } from '../domain/appearance-font';
 import type { LibraryFilter, LibrarySort } from '../domain/library-view';
-import type { MediaReviewResult } from '../domain/media-review';
+import type { LibraryMediaRemoval, MediaReviewResult } from '../domain/media-review';
 import type { PlaylistApplyResult, PlaylistDestination, PlaylistExportResult, PlaylistPreviewResult } from '../domain/playlist-transfer';
 import { MediaReviewDialog } from './MediaReviewDialog';
 import { unifiedLibrary, type LibrarySearchVersion } from '../domain/unified-library';
@@ -20,7 +20,7 @@ import type { SongRatingsLookup } from '../main/song-ratings-client';
 import { compileSongBlacklist } from '../domain/song-blacklist';
 import { DEFAULT_HOST_PANEL_SIZES, fittedHostPanels, HOST_PANEL_LIMITS, type HostPanelSizes } from '../domain/host-layout';
 import type { LocalControlUiStatus } from './LocalControlSettings';
-import { DEFAULT_SHORTCUTS, KARAOKE_PAIR_IMPORT_LABEL, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, formatShortcut, matchesShortcut, isTextEditingShortcut, type Shortcuts, type ShortcutAction } from '../domain/shortcuts';
 import type { AppAction, SettingsSection } from '../domain/app-action';
 import type { WorkspaceMenuContext } from '../main/application-menu';
 import type { MissingSongRequest, MissingSongReview, MissingSongStatus } from '../domain/missing-request';
@@ -169,7 +169,7 @@ declare global {
       cycleAccentColor: () => Promise<Settings['accentColor']>;
       subscribe: (callback: (state: ShowState) => void) => () => void;
       onFocusSearch: (callback: () => void) => () => void;
-      importFiles: (kind?: 'files' | 'folder') => Promise<ImportProgress | null>;
+      importFiles: (kind?: 'files' | 'folder' | 'choose') => Promise<ImportProgress | null>;
       imports: ImportBridge;
       cdg: CdgBridge;
       youtubeDownloads: YouTubeDownloadBridge;
@@ -197,6 +197,7 @@ declare global {
       onBumperState: (callback: (state: BumperInfo) => void) => () => void;
       revealMedia: (versionId: string) => Promise<void>;
       relinkMedia: (versionId: string) => Promise<Result>;
+      removeLocalMedia: (input: LibraryMediaRemoval) => Promise<Result>;
       reviewMedia: (id: string) => Promise<MediaReviewResult>;
       cancelMediaReview: (id: string) => Promise<void>;
       remote: HostRemoteBridge;
@@ -542,7 +543,7 @@ function App() {
       default: return { ok: false, error: 'Show restore could not start. Check app data permissions and available space, then try again.' };
     }
   });
-  const beginImport = async (kind: 'files' | 'folder') => {
+  const beginImport = async (kind: 'files' | 'folder' | 'choose') => {
     if (importPickerBusy || importActive) return;
     setImportPickerBusy(true); setNotice('');
     try { await window.tpv.importFiles(kind); }
@@ -558,14 +559,30 @@ function App() {
         setMissingLocalMedia(current => { const next = new Set(current); next.delete(id); return next; });
         setFilenameRefresh(value => value + 1);
       }
-      setNotice(result.cancelled ? '' : result.ok ? 'Song file relinked.' : result.error || 'The song could not be relinked.', result.ok ? 'success' : 'error');
+      setNotice(result.cancelled ? '' : result.ok ? result.notice || 'Song file relinked.' : result.error || 'The song could not be relinked.', result.ok ? 'success' : 'error');
       return result;
-    } catch (reason) {
-      const error = reason instanceof Error ? reason.message : String(reason);
+    } catch {
+      const error = 'The song could not be relinked. Try choosing its original video again.';
       setNotice(error, 'error');
       return { ok: false, error };
     }
     finally { setRelinkBusy(false); }
+  };
+  const removeLibraryMedia = async (input: LibraryMediaRemoval): Promise<Result> => {
+    if (relinkBusy) return { ok: false, error: 'Finish the current file operation first.' };
+    setRelinkBusy(true); setNotice('');
+    try {
+      const result = await window.tpv.removeLocalMedia(input);
+      if (result.ok && !result.cancelled) {
+        setSelectedVersionId(''); setFilenameRefresh(value => value + 1);
+      }
+      setNotice(result.cancelled ? '' : result.ok ? result.notice || 'Library updated.' : result.error || 'Could not remove the selected library entries.', result.ok ? 'success' : 'error');
+      return result;
+    } catch {
+      const error = 'Could not remove the selected library entries. Try again.';
+      setNotice(error, 'error');
+      return { ok: false, error };
+    } finally { setRelinkBusy(false); }
   };
   const playPause = async () => {
     if (transportBusyRef.current) return;
@@ -780,7 +797,7 @@ function App() {
               <option value="all">All songs</option><option value="review">Needs metadata review</option><option value="missing-artist">Missing artist</option><option value="clean">Clean</option><option value="explicit">Explicit</option><option value="unrated">Unrated</option><option value="uncertain">Uncertain rating</option>
             </select></label></Tooltip>
           </div>
-            <div className="page-heading__actions"><Tooltip text={shortcutHint('Import Video File', 'importVideo')}><button className="icon-button" aria-label="Import Video File" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('files')}><Icon name="file" /></button></Tooltip> <Tooltip text={shortcutHint('Import Custom Directory', 'importDirectory')}><button className="icon-button" aria-label="Import Custom Directory" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('folder')}><Icon name="folder" /></button></Tooltip> <Tooltip text={shortcutHint(KARAOKE_PAIR_IMPORT_LABEL, 'importCdg')}><button className="icon-button" aria-label={`${KARAOKE_PAIR_IMPORT_LABEL}…`} disabled={busy || importPickerBusy} onClick={() => actionHandler.current('importCdg')}><Icon name="cdg" /></button></Tooltip></div>
+            <div className="page-heading__actions"><Tooltip text="Import Songs"><button className="icon-button" aria-label="Import Songs" disabled={busy || importActive || importPickerBusy} onClick={() => void beginImport('choose')}><Icon name="file" /></button></Tooltip></div>
           </div>
           <div className="library-meta">
             <span role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? 'result' : 'results'}</span>
@@ -788,6 +805,7 @@ function App() {
             {(libraryBrowsing || revealedLibraryId || libraryFilter !== 'all') && <button type="button" className="link" disabled={savingLibrarySources}
               onClick={() => { setSearch(''); setRevealedLibraryId(''); setLibraryFilter('all'); if (sourceFilters.length) void saveLibrarySources([]); }}>Clear search and filters</button>}
             {settings.sourceVisibility.local && <Tooltip text="Find imported songs whose files were moved or became unavailable, and relink them."><button type="button" className="link" disabled={busy || relinkBusy} onClick={() => setMediaReviewOpen(true)}>Review Missing Files</button></Tooltip>}
+            {settings.sourceVisibility.local && <button type="button" className="link" disabled={busy || relinkBusy} onClick={() => void removeLibraryMedia({ kind: 'folder' })}>Remove Folder…</button>}
           </div>
           <div className="search-service-status" role="status">
             {(catalogSearch.phase === 'searching' || providerSearch.phase === 'searching' || karaFunSearch.loading || partyTymeSearch.loading || youtubeSearch.loading) && <span>Searching…</span>}
@@ -949,6 +967,7 @@ function App() {
       {contextMenu.version.source?.provider === 'partytyme' && <button role="menuitem" disabled={busy || !contextMenu.version.persisted} onClick={() => { const id=contextMenu.version.id;setContextMenu(null);void run(async()=>{await window.tpv.partyTyme.retry(id);return{ok:true};}); }}>Prepare Song / Retry</button>}
       {contextMenu.version.source?.provider === 'youtube' && <button role="menuitem" disabled={busy || !!contextMenu.version.youtubeSearchReceipt} onClick={() => { const version = contextMenu.version; setContextMenu(null); void run(async () => { const result = await downloadLibrarySong(version, window.tpv); if (result.ok && result.versionId) setSelectedVersionId(result.versionId); return result; }); }}>Download Video / Retry</button>}
       <button role="menuitem" disabled={relinkBusy || !contextMenu.version.persisted || !!contextMenu.version.source} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void relinkSong(id); }}>Relink File…</button>
+      {contextMenu.version.persisted && !contextMenu.version.source && <button role="menuitem" disabled={busy || relinkBusy} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void removeLibraryMedia({ kind: 'file', id }); }}>Remove from Library…</button>}
       <button role="menuitem" disabled={!contextMenu.version.persisted || !!contextMenu.version.source && !cachedVideoIds.includes(contextMenu.version.id)} onClick={() => { const id = contextMenu.version.id; setContextMenu(null); void run(() => window.tpv.revealMedia(id)); }}>Show in Files…</button>
     </div>}
     {queueVersion && state && <SongRequestDialog version={queueVersion} singers={state.singers.filter(s => !s.archived)} onClose={() => setQueueVersion(null)} onSubmit={async (choice, singerCreated, coSingerId) => {
@@ -974,7 +993,7 @@ function App() {
       setNotice(queueNotice || (settings.autoApprove ? 'Song added to the queue.' : 'Request submitted for review.'), 'success');
     }} />}
     {playlistVersion && state && <AddToPlaylistDialog song={playlistVersion} singers={state.singers.filter(s => !s.archived)} playlists={collections.playlists} onClose={() => setPlaylistVersion(null)} onSave={async playlistId => { if (!await mutateCollections({ type: 'add', playlistId, versionId: playlistVersion.id })) throw new Error('Could not add the song.'); }} />}
-    {mediaReviewOpen && <MediaReviewDialog bridge={window.tpv} versions={versions} onRelink={relinkSong} onClose={() => setMediaReviewOpen(false)} />}
+    {mediaReviewOpen && <MediaReviewDialog bridge={window.tpv} versions={versions} onRelink={relinkSong} onRemove={removeLibraryMedia} onClose={() => setMediaReviewOpen(false)} />}
   </div>;
 }
 

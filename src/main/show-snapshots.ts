@@ -59,6 +59,7 @@ function validState(value: unknown, allowUnassigned: boolean): boolean {
       !value.versions.every(version => record(version) && id(version.id) && id(version.title) && typeof version.artist === 'string' &&
         ['clean', 'explicit', 'unrated', 'uncertain'].includes(String(version.rating)) && (version.isDuet === undefined || typeof version.isDuet === 'boolean') &&
         (version.source === undefined || validStreamingSource(version.source)) &&
+        (version.removedFromLibrary === undefined || version.removedFromLibrary === true && version.source === undefined) &&
         (version.discoveryOrigin === undefined || version.discoveryOrigin === 'karaokenerds' && record(version.source) && version.source.provider === 'youtube'))) return false;
   const singers = new Set(value.singers.map(singer => (singer as Record<string, unknown>).id));
   const versions = new Set(value.versions.map(version => (version as Record<string, unknown>).id));

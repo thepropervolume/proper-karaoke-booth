@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, opendir } from 'node:fs/promises';
-import { basename, extname, isAbsolute, join, relative } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative } from 'node:path';
 import type { ImportProgress, ImportResult, ImportResultsPage } from '../domain/import-job';
 import { hashImportFile, ImportCancelled, ImportFileError } from './import-hash';
 
-type Candidate = { path: string; name: string; kind: 'file' | 'directory'; error?: true };
+type Candidate = { path: string; name: string; kind: 'file' | 'directory'; error?: true; convert?: true };
 /** Commit synchronously on the authority thread, persisting before returning. */
 export type ImportCommit = (path: string, fingerprint: string) => { outcome: 'imported' | 'duplicate'; needsReview?: boolean };
+type Conversion = { selectedExtensions: readonly string[]; convert(path: string, signal: AbortSignal): Promise<ReturnType<ImportCommit>> };
+export class KaraokeImportFileError extends Error {}
 type Hash = typeof hashImportFile;
 const changedRetryDelays = [100, 250] as const;
 function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
@@ -19,6 +21,7 @@ function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 function failureMessage(error: unknown): string {
+  if (error instanceof KaraokeImportFileError) return error.message;
   if (!(error instanceof ImportFileError)) return 'The song could not be saved. Check available space and try again.';
   switch (error.reason) {
     case 'missing': return 'The file is no longer available. Check its location or cloud sync.';
@@ -40,7 +43,7 @@ export class ImportJob {
   private results: ImportResult[] = [];
   private completion: Promise<ImportProgress> | null = null;
   constructor(private readonly commit: ImportCommit, private readonly publish: (progress: ImportProgress) => void = () => {},
-    private readonly hash: Hash = hashImportFile) {}
+    private readonly hash: Hash = hashImportFile, private readonly conversion?: Conversion) {}
 
   snapshot(): ImportProgress | null {
     if (!this.progress) return null;
@@ -79,6 +82,26 @@ export class ImportJob {
     else current.cancelled++;
     if (result.needsReview) current.needsReview++;
   }
+  private async importVideo(candidate: Candidate, signal: AbortSignal): Promise<ReturnType<ImportCommit>> {
+    const state = this.progress!;
+    let fingerprint: string;
+    let retries = 0;
+    while (true) {
+      try {
+        fingerprint = await this.hash(candidate.path, signal, (bytesRead, bytesTotal) => {
+          if (!signal.aborted && state.current) { state.current = { ...state.current, bytesRead, bytesTotal }; this.changed(); }
+        });
+        break;
+      } catch (error) {
+        if (signal.aborted || !(error instanceof ImportFileError) || error.reason !== 'changed' || retries >= changedRetryDelays.length) throw error;
+        const delay = changedRetryDelays[retries++];
+        state.current = { name: candidate.name, bytesRead: 0, bytesTotal: 0, retry: retries }; this.changed();
+        await waitForRetry(delay, signal);
+      }
+    }
+    if (signal.aborted) throw new ImportCancelled();
+    return this.commit(candidate.path, fingerprint);
+  }
   private async run(kind: 'files' | 'folder', paths: string[], controller: AbortController): Promise<ImportProgress> {
     const state = this.progress!;
     let lastScanUpdate = 0;
@@ -89,33 +112,18 @@ export class ImportJob {
       if (now - lastScanUpdate >= 200) { lastScanUpdate = now; this.changed(); }
     };
     try {
-      for await (const candidate of candidates(kind, paths, controller.signal, onScan)) {
+      for await (const candidate of candidates(kind, paths, controller.signal, onScan, this.conversion?.selectedExtensions)) {
         if (controller.signal.aborted) throw new ImportCancelled();
         state.discovered++;
         if (candidate.error) {
-          this.add({ name: candidate.name, kind: candidate.kind, outcome: 'failed', needsReview: false, message: candidate.kind === 'directory' ? 'The directory could not be read.' : 'Choose an MP4 video file.' });
+          this.add({ name: candidate.name, kind: candidate.kind, outcome: 'failed', needsReview: false, message: candidate.kind === 'directory' ? 'The directory could not be read.' : this.conversion ? 'Choose a supported video or karaoke lyric file.' : 'Choose an MP4 video file.' });
           this.changed(); continue;
         }
-        state.phase = 'hashing'; state.current = { name: candidate.name, bytesRead: 0, bytesTotal: 0 }; this.changed();
+        state.phase = 'hashing'; state.current = { name: candidate.name, bytesRead: 0, bytesTotal: 0, ...(candidate.convert ? { converting: true } : {}) }; this.changed();
         try {
-          let fingerprint: string;
-          let retries = 0;
-          while (true) {
-            try {
-              fingerprint = await this.hash(candidate.path, controller.signal, (bytesRead, bytesTotal) => {
-                if (!controller.signal.aborted && state.current) { state.current = { ...state.current, bytesRead, bytesTotal }; this.changed(); }
-              });
-              break;
-            } catch (error) {
-              if (controller.signal.aborted || !(error instanceof ImportFileError) || error.reason !== 'changed' || retries >= changedRetryDelays.length) throw error;
-              const delay = changedRetryDelays[retries++];
-              state.current = { name: candidate.name, bytesRead: 0, bytesTotal: 0, retry: retries }; this.changed();
-              await waitForRetry(delay, controller.signal);
-            }
-          }
-          if (controller.signal.aborted) throw new ImportCancelled();
           // Once an atomic commit begins, finish recording its actual result even if cancellation arrives.
-          const committed = this.commit(candidate.path, fingerprint);
+          const committed = candidate.convert && this.conversion ? await this.conversion.convert(candidate.path, controller.signal)
+            : await this.importVideo(candidate, controller.signal);
           this.add({ name: candidate.name, kind: 'file', outcome: committed.outcome, needsReview: committed.outcome === 'imported' && !!committed.needsReview });
         } catch (error) {
           if (controller.signal.aborted || error instanceof ImportCancelled) {
@@ -135,9 +143,19 @@ export class ImportJob {
   }
 }
 
-async function* candidates(kind: 'files' | 'folder', paths: string[], signal: AbortSignal, onScan: (event: 'directory' | 'unsupported', name: string) => void): AsyncGenerator<Candidate> {
+async function* candidates(kind: 'files' | 'folder', paths: string[], signal: AbortSignal, onScan: (event: 'directory' | 'unsupported', name: string) => void,
+  selectedExtensions: readonly string[] = []): AsyncGenerator<Candidate> {
+  const paired = new Set(selectedExtensions.map(extension => `.${extension}`));
+  const lyrics = new Set(['.cdg', '.lrc']);
+  const stemKey = (path: string) => join(process.platform === 'win32' ? dirname(path).toLowerCase() : dirname(path), basename(path, extname(path)).toLowerCase());
   if (kind === 'files') {
-    for (const path of paths) { if (signal.aborted) throw new ImportCancelled(); yield { path, name: basename(path), kind: 'file', ...(extname(path).toLowerCase() === '.mp4' ? {} : { error: true as const }) }; }
+    const lyricStems = new Set(paths.filter(path => lyrics.has(extname(path).toLowerCase())).map(stemKey));
+    for (const path of new Set(paths)) {
+      if (signal.aborted) throw new ImportCancelled();
+      const extension = extname(path).toLowerCase();
+      if (paired.has(extension) && extension !== '.zip' && !lyrics.has(extension) && lyricStems.has(stemKey(path))) continue;
+      yield { path, name: basename(path), kind: 'file', ...(extension === '.mp4' ? {} : paired.has(extension) ? { convert: true } : { error: true }) };
+    }
     return;
   }
   const stack = paths.map(path => ({ path, root: path })).reverse();
@@ -160,6 +178,8 @@ async function* candidates(kind: 'files' | 'folder', paths: string[], signal: Ab
         const path = join(directory.path, entry.name);
         if (entry.isDirectory()) stack.push({ path, root: directory.root });
         else if (entry.isFile() && extname(entry.name).toLowerCase() === '.mp4') yield { path, name: label(path), kind: 'file' };
+        else if (entry.isFile() && paired.has(extname(entry.name).toLowerCase()) && (lyrics.has(extname(entry.name).toLowerCase()) || extname(entry.name).toLowerCase() === '.zip'))
+          yield { path, name: label(path), kind: 'file', convert: true };
         else if (entry.isFile()) onScan('unsupported', label(path));
       }
       if (signal.aborted) throw new ImportCancelled();

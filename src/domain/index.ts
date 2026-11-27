@@ -11,7 +11,7 @@ import { SINGER_ON_HOLD } from './singer-availability';
 export type Role = 'host' | 'staff' | 'singer' | 'engine';
 export type Actor = { role: Role; id: string };
 export type Rating = 'clean' | 'explicit' | 'unrated' | 'uncertain';
-export type Version = { id: string; title: string; artist: string; rating: Rating;
+export type Version = { id: string; title: string; artist: string; rating: Rating; removedFromLibrary?: true;
   source?: StreamingSource; discoveryOrigin?: 'karaokenerds'; djCode?: string; trackNumber?: string; metadataAmbiguous?: boolean; metadataTemplate?: string; isDuet?: boolean };
 export type Singer = { id: string; name: string; unavailableUntilMs?: number; archived?: boolean };
 export type Policy = { ageRestricted: boolean; includeVersionIds: string[] | null; excludeVersionIds: string[] };
@@ -23,6 +23,7 @@ export type Playback = { requestId: string; generationId: string; status: 'playi
 export type Command =
   | { type: 'addVersion'; version: Version }
   | { type: 'editVersion'; id: string; title: string; artist: string; isDuet?: boolean }
+  | { type: 'removeLocalVersions'; ids: string[] }
   | { type: 'addSinger'; singer: Singer }
   | { type: 'renameSinger'; singerId: string; name: string }
   | { type: 'removeSinger'; singerId: string }
@@ -78,7 +79,7 @@ const blacklistMatcher = (settings: BlacklistSettings): SongBlacklistMatcher => 
   artistBlacklist: settings.artistBlacklist === undefined ? [] : settings.artistBlacklist,
 });
 function allowedVersion(state: ShowState, version: Version | undefined, blacklist: SongBlacklistMatcher): boolean {
-  if (!version || state.policy.excludeVersionIds.includes(version.id)) return false;
+  if (!version || version.removedFromLibrary || state.policy.excludeVersionIds.includes(version.id)) return false;
   if (state.policy.includeVersionIds !== null && !state.policy.includeVersionIds.includes(version.id)) return false;
   return (!state.policy.ageRestricted || version.rating === 'clean') && !blacklist.isBlocked(version);
 }
@@ -209,15 +210,24 @@ export function applyCommand(original: ShowState, envelope: Envelope, settings: 
       if (!v || !nonempty(v.id) || !nonempty(v.title) || typeof v.artist !== 'string' || !['clean', 'explicit', 'unrated', 'uncertain'].includes(v.rating) ||
           (v.source !== undefined && !validStreamingSource(v.source)) || (v.djCode !== undefined && typeof v.djCode !== 'string') || (v.trackNumber !== undefined && typeof v.trackNumber !== 'string') ||
           (v.metadataAmbiguous !== undefined && typeof v.metadataAmbiguous !== 'boolean') || (v.metadataTemplate !== undefined && typeof v.metadataTemplate !== 'string') ||
-          (v.isDuet !== undefined && typeof v.isDuet !== 'boolean') || (v.discoveryOrigin !== undefined && (v.discoveryOrigin !== 'karaokenerds' || v.source?.provider !== 'youtube'))) reject('INVALID', 'Invalid version');
+          (v.isDuet !== undefined && typeof v.isDuet !== 'boolean') || v.removedFromLibrary !== undefined || (v.discoveryOrigin !== undefined && (v.discoveryOrigin !== 'karaokenerds' || v.source?.provider !== 'youtube'))) reject('INVALID', 'Invalid version');
       else if (state.versions.some(x => x.id === v.id)) reject('DUPLICATE', 'Version already exists');
       else state.versions.push({ ...v });
       break;
     }
     case 'editVersion': {
       const version = state.versions.find(v => v.id === cmd.id);
-      if (!version || !nonempty(cmd.title) || cmd.title.length > 500 || typeof cmd.artist !== 'string' || cmd.artist.length > 500 || (cmd.isDuet !== undefined && typeof cmd.isDuet !== 'boolean')) reject('INVALID', 'Invalid song metadata');
+      if (!version || version.removedFromLibrary || !nonempty(cmd.title) || cmd.title.length > 500 || typeof cmd.artist !== 'string' || cmd.artist.length > 500 || (cmd.isDuet !== undefined && typeof cmd.isDuet !== 'boolean')) reject('INVALID', 'Invalid song metadata');
       else { version.title = cmd.title.trim(); version.artist = cmd.artist.trim(); if (cmd.isDuet !== undefined) version.isDuet = cmd.isDuet; if (version.metadataAmbiguous) version.metadataAmbiguous = false; }
+      break;
+    }
+    case 'removeLocalVersions': {
+      const ids = new Set(cmd.ids);
+      const selected = state.versions.filter(version => ids.has(version.id) && !version.source && !version.removedFromLibrary);
+      if (!ids.size || ids.size !== cmd.ids.length || selected.length !== ids.size) reject('INVALID', 'The selected local songs changed. Select them again.');
+      else if (state.requests.some(request => ids.has(request.versionId) && ['pending', 'accepted', 'staged', 'playing'].includes(request.status)))
+        reject('INVALID_STATE', 'At least one selected song is queued or playing. Remove or finish those requests before removing their files from the library.');
+      else for (const version of selected) version.removedFromLibrary = true;
       break;
     }
     case 'addSinger':

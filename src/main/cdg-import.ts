@@ -10,7 +10,7 @@ import { hashImportFile } from './import-hash';
 import { runFfmpegConversion } from './ffmpeg-conversion';
 import { convertLrc, LRC_BYTE_LIMIT, resolveLrcPair, useLrcPair } from './lrc-import';
 
-export type CdgProgress = { id: string; phase: 'preparing' | 'converting' | 'importing' | 'completed' | 'cancelled' | 'failed'; name: string; seconds: number; message: string };
+export type CdgProgress = { id: string; phase: 'preparing' | 'converting' | 'importing' | 'completed' | 'cancelled' | 'failed'; name: string; seconds: number; message: string; outcome?: 'imported' | 'duplicate' };
 const AUDIO_LIMIT = 256 * 1024 * 1024, CDG_LIMIT = 32 * 1024 * 1024;
 const checkAbort = (signal: AbortSignal) => { if (signal.aborted) throw new Error('Import cancelled.'); };
 
@@ -205,6 +205,7 @@ export class CdgImport {
     return this.snapshot()!;
   }
   cancel(id: string): boolean { if (!this.controller || this.progress?.id !== id) return false; this.controller.abort(); return true; }
+  async wait(): Promise<CdgProgress | null> { await this.completion; return this.snapshot(); }
   async shutdown(): Promise<void> { this.controller?.abort(); await this.completion; }
   private async run(selected: string, controller: AbortController, backdropPath?: string): Promise<void> {
     const progress = this.progress!; let directory: string | null = null, retain = false;
@@ -251,6 +252,7 @@ export class CdgImport {
       retain = true;
       const outcome = this.commit(path, fingerprint, metadataPath);
       if (outcome === 'duplicate') retain = false;
+      progress.outcome = outcome;
       progress.phase = 'completed'; progress.message = outcome === 'duplicate' ? 'Already in the library.' : 'Imported into Song Library. Sources were left unchanged.';
     } catch (error) {
       progress.phase = controller.signal.aborted ? 'cancelled' : 'failed';

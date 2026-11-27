@@ -10,3 +10,4 @@
   }
   .media-review__list button { flex: none; }
 }
+.media-review__actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 6px; }

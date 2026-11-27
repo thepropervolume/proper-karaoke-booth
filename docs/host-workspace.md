@@ -98,7 +98,9 @@ Changes apply immediately without restarting the track, including with the singe
 
 The larger sidebar links put **Library**, **Playlists** and **Sources** first. **Requests**, **Singers** and **Remote Sessions** form the Host Workspace group at the bottom. Sources contains native KaraFun sign-in/preparation, Karaoke Nerds discovery, the Custom YouTube Video Importer and Third-Party Services catalog search/configuration. Other paid-provider playback still needs access and implementation.
 
-The **File** menu includes **Import Video**, **Import Folder**, and **Import CD+G / LRC / ZIP**. The same actions are available next to the Song Library heading. CDG and LRC conversion progress and cancellation stay visible while a job runs. **Back up show…** saves the show database. Back up song media and preferences separately.
+Choose **Import Songs** beside the Song Library heading, then choose files or a folder. Booth detects MP4 videos, CD+G and LRC pairs, and ZIPs containing one MP3/CDG pair. Folder imports scan subfolders. An explicitly selected audio file needs matching lyrics. CD+G and LRC conversion requires FFmpeg, and LRC also uses FFprobe. The **File** menu and keyboard shortcuts still offer direct entry points. **Back up show…** saves the show database. Back up song media and preferences separately.
+
+Right-click a local song and select **Remove from Library**. To remove the indexed songs under a location, use **Remove Folder** and confirm the song count. **Review Missing Files** also lets you remove a missing song or its saved parent folder. Booth keeps all source files and performance history. Removed songs no longer appear in playlists, and Booth asks you to finish or remove any queued or active requests before removing their media entries.
 
 To restore a show, stop playback, finish any active import or relink, and choose **File → Restore Show Backup…**. Review the backup counts before confirming. Booth saves the current show under `show-restore-backups` in app data, ends remote sessions, and restarts silently. A restored performance stays paused until you press Play.
 
@@ -144,6 +146,8 @@ Approved eligible requests stage automatically. Press **Play/Pause** to start th
 **Previous — Restart Current Song** seeks the same performance to the beginning and resumes it if paused. It does not choose a previous queue item, consume a turn, or change singers. The normal timeline also supports scrubbing and ten-second seek actions.
 
 Each local media range uses a verified open file handle. A changed or replaced source is rejected and the current performance pauses with a restore/relink recovery message. This catches observed changes before a range is served; it does not promise immutable source files against every possible concurrent in-place write.
+
+**Relink File** first checks for an exact copy of the original video. A revised export or Dropbox conflicted copy may have different contents. If you confirm **Use This Replacement**, Booth updates the existing song and keeps its queue and history. Review the replacement’s content rating before using it in an age-restricted show. If the replacement already has its own entry, use that version instead. Stop an active performance before relinking its file.
 
 Library results mark a confirmed missing local file as **File missing** and disable queueing. Use **Relink File** from the row’s context menu to locate the original. If a cloud-synced file is still downloading or temporarily unreadable, let it finish syncing and press **Play** to retry.
 

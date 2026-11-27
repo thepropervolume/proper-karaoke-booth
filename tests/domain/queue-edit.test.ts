@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { applyCommand, createInitialState, orderedFuture, type Actor, type Command, type ShowState } from '../../src/domain';
+import { applyCommand, createInitialState, orderedFuture, visibleVersions, type Actor, type Command, type ShowState } from '../../src/domain';
 import { migrateShowSchema } from '../../src/main/schema-migrations';
 import { inspectShowSnapshot } from '../../src/main/show-snapshots';
 
@@ -152,6 +152,21 @@ test('renaming a singer changes only their display name and preserves their wait
   assert.deepEqual(f.get().singers.find(singer => singer.id === 'a'), { id: 'a', name: 'Greg the Egg' });
   assert.deepEqual(f.get().requests, before.requests);
   assert.deepEqual(f.get().points, before.points);
+});
+
+test('removing indexed local media is all-or-nothing for active requests and retains historical versions', () => {
+  const f = fixture();
+  const remove: Command = { type: 'removeLocalVersions', ids: ['v1', 'v2'] };
+  assert.equal(f.send(remove).ok, false);
+  assert.equal(f.send({ ...remove, ids: ['v2'] }, { role: 'singer', id: 'a' }).ok, false);
+  assert.deepEqual(visibleVersions(f.get()).map(song => song.id), ['v1', 'v2']);
+  for (const requestId of ['a1','a2','b1','c1']) f.ok({ type: 'removeRequest', requestId });
+  const requests = f.get().requests;
+  f.ok(remove);
+  assert.deepEqual(visibleVersions(f.get()), []);
+  assert.deepEqual(f.get().requests, requests);
+  assert.ok(f.get().versions.every(song => song.removedFromLibrary === true));
+  assert.equal(f.send({ type: 'request', requestId: 'new-request', versionId: 'v1', singerId: null }).ok, false);
 });
 
 test('snapshot validation accepts legacy/manual queues and rejects duplicate, stale and pending references', () => {

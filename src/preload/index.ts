@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld('tpv', {
   mutateCollections: (action: unknown) => ipcRenderer.invoke('host:mutate-collections', action),
   revealMedia: (versionId: string) => ipcRenderer.invoke('host:reveal-media', versionId),
   relinkMedia: (versionId: string) => ipcRenderer.invoke('host:relink-media', versionId),
+  removeLocalMedia: (input: import('../domain/media-review').LibraryMediaRemoval) => ipcRenderer.invoke('host:remove-local-media', input),
   reviewMedia: (id: string) => ipcRenderer.invoke('host:review-media', id),
   cancelMediaReview: (id: string) => ipcRenderer.invoke('host:cancel-media-review', id),
   getSettings: () => ipcRenderer.invoke('host:get-settings'),
@@ -209,7 +210,7 @@ contextBridge.exposeInMainWorld('tpv', {
     ipcRenderer.on('host:focus-search', listener);
     return () => ipcRenderer.removeListener('host:focus-search', listener);
   },
-  importFiles: (kind?: 'files' | 'folder') => ipcRenderer.invoke('host:import', kind),
+  importFiles: (kind?: 'files' | 'folder' | 'choose') => ipcRenderer.invoke('host:import', kind),
   cdg: {
     status: () => ipcRenderer.invoke('host:cdg-status'),
     start: () => ipcRenderer.invoke('host:cdg-import'),

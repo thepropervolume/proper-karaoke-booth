@@ -10,6 +10,30 @@ import { ImportJob } from '../../src/main/import-job';
 function fixture() { return mkdtempSync(join(tmpdir(), 'tpv-import-test-')); }
 function sparse(path: string, bytes: number) { const fd = openSync(path, 'w'); try { ftruncateSync(fd, bytes); } finally { closeSync(fd); } }
 
+test('mixed file selection and recursive import send videos and lyric pairs to the right workers', async () => {
+  const dir = fixture();
+  try {
+    const sub = join(dir, 'Set'); mkdirSync(sub);
+    const video = join(dir, 'Video.MP4'), lyric = join(sub, 'Pair.LRC'), audio = join(sub, 'Pair.mp3'), zip = join(sub, 'CDG.zip');
+    for (const path of [video, lyric, audio, zip]) writeFileSync(path, basename(path));
+    const calls: string[] = [];
+    const job = new ImportJob((path) => { calls.push(`video:${basename(path)}`); return { outcome: 'imported' }; }, undefined, undefined, {
+      selectedExtensions: ['lrc', 'mp3', 'cdg', 'zip'],
+      async convert(path) { calls.push(`pair:${basename(path)}`); return { outcome: path === zip ? 'duplicate' : 'imported' }; },
+    });
+    job.start('files', [video, audio, lyric, zip]);
+    const files = await job.wait();
+    assert.equal(files?.imported, 2); assert.equal(files?.duplicates, 1);
+    assert.deepEqual(calls, ['video:Video.MP4', 'pair:Pair.LRC', 'pair:CDG.zip']);
+    calls.length = 0;
+    job.start('folder', [dir]);
+    const folder = await job.wait();
+    assert.equal(folder?.imported, 2); assert.equal(folder?.duplicates, 1);
+    assert.equal(folder?.directoriesScanned, 2);
+    assert.deepEqual(calls.sort(), ['pair:CDG.zip', 'pair:Pair.LRC', 'video:Video.MP4']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('worker hashing returns the full-file fingerprint and leaves the host event loop responsive', async () => {
   const dir = fixture();
   try {

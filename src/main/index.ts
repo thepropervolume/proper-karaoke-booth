@@ -5,7 +5,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, prot
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { unlink, readFile, lstat, open } from 'node:fs/promises';
-import { dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
 import { userInfo } from 'node:os';
 import { Readable } from 'node:stream';
 import { applyCommand, createInitialState, isVersionAllowed, orderedFuture, singerAvailable, remainingPauseSeconds, visibleVersions, type Actor, type Command, type Outcome, type ShowState, type Version } from '../domain';
@@ -49,14 +49,14 @@ import { RemoteAuthorityCoordinator } from './remote-authority-coordinator';
 import { RemoteCatalog, type RemoteCatalogProviders, type RemoteCatalogTrack } from './remote-catalog';
 import { InternetQueueClient } from './internet-queue-client';
 import { createSingerStaticHandler } from './remote-static';
-import { fingerprintMedia, fingerprintPlaybackMedia, mediaIdentityMatches, verifyAndRelinkMedia, type MediaIdentity } from './media-verification';
+import { fingerprintMedia, fingerprintPlaybackMedia, mediaIdentityMatches, type MediaIdentity } from './media-verification';
 import { inspectMediaLocation, MediaReview } from './media-review';
 import { startPolicyError } from './playback-policy';
 import { openVerifiedMediaFile, VerifiedMediaFileError } from './verified-media-file';
 import { cachedVideoIdentityMatches, inspectCachedVideo, sameStoredMedia } from './cached-video-integrity';
 import { mediaErrorDetail, mediaVerificationDetail } from './media-error-message';
 import { mediaRange } from './media-range';
-import { ImportJob } from './import-job';
+import { ImportJob, KaraokeImportFileError } from './import-job';
 import { CdgImport } from './cdg-import';
 import { LYRIC_FILE_EXTENSIONS } from './lrc-import';
 import { lyricBackdropPath, validateLyricBackdropFile } from './lyric-backdrop';
@@ -299,7 +299,10 @@ let cdgImport: CdgImport | null = null;
 let cdgPickerOpen = false;
 let cdgImportParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
 let importParsing: Pick<Settings, 'metadataFormat' | 'metadataTemplates'> | null = null;
+let batchImportSettings: Settings | null = null;
+let batchPairId = '';
 let relinking = false;
+let removingLibraryMedia = false;
 const showBackup = new ShowBackup(async () => {
   if (!host || host.isDestroyed() || shuttingDown) return null;
   const result = await dialog.showSaveDialog(host, { title: 'Back up show to a new file', defaultPath: 'karaoke-show-backup.sqlite',
@@ -311,7 +314,7 @@ let restorePending: PreparedShowRestore | null = null;
 function restoreBusy(): boolean {
   const phase = importJob?.snapshot()?.phase;
   return !!state.playback || playbackTransition || importPickerOpen || cdgPickerOpen || !!cdgImport?.active() ||
-    phase === 'scanning' || phase === 'hashing' || phase === 'cancelling' || relinking || showBackup.needsShutdownWait();
+    phase === 'scanning' || phase === 'hashing' || phase === 'cancelling' || relinking || removingLibraryMedia || showBackup.needsShutdownWait();
 }
 
 function chooseShowRestore(): Promise<RestoreResult> {
@@ -1393,19 +1396,90 @@ async function executeHostCommand(command: Command, transportOwned = false, obse
   const result = perform(command);
   return result.ok ? { ok: true } : { ok: false, error: result.message };
 }
-async function importFiles(kind: 'files' | 'folder') {
+function catalogImportActive(): boolean {
+  const phase = importJob?.snapshot()?.phase;
+  return phase === 'scanning' || phase === 'hashing' || phase === 'cancelling';
+}
+async function startLyricImport(path: string, importSettings: Settings, signal?: AbortSignal) {
+  const backdrop = lyricBackdropPath(importSettings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath });
+  if (backdrop) await validateLyricBackdropFile(backdrop);
+  if (shuttingDown || signal?.aborted) return null;
+  cdgImportParsing = { metadataFormat: importSettings.metadataFormat, metadataTemplates: importSettings.metadataTemplates };
+  return cdgImport!.start(path, backdrop);
+}
+async function importFiles(kind: 'files' | 'folder' | 'choose') {
   if (!host || host.isDestroyed() || shuttingDown || !importJob) throw new Error('Import is unavailable.');
-  const current = importJob.snapshot();
-  if (importPickerOpen || (current && ['scanning', 'hashing', 'cancelling'].includes(current.phase))) throw new Error('An import is already in progress.');
+  if (importPickerOpen || cdgPickerOpen || cdgImport?.active() || catalogImportActive()) throw new Error('An import is already in progress.');
   importPickerOpen = true;
   try {
+    if (kind === 'choose') {
+      const chosen = await dialog.showMessageBox(host, { type: 'question', message: 'Import Songs', detail: 'Choose karaoke files or scan a folder and its subfolders.',
+        buttons: ['Choose Files…', 'Choose Folder…', 'Cancel'], defaultId: 0, cancelId: 2, noLink: true });
+      if (chosen.response === 2 || shuttingDown || host.isDestroyed()) return null;
+      kind = chosen.response === 1 ? 'folder' : 'files';
+    }
     const selection = await dialog.showOpenDialog(host, kind === 'folder'
-      ? { title: 'Import MP4 folder', properties: ['openDirectory'] }
-      : { title: 'Import local MP4 files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
+      ? { title: 'Import karaoke folder', properties: ['openDirectory'] }
+      : { title: 'Import karaoke files', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Karaoke video, paired lyrics and ZIP', extensions: ['mp4', ...LYRIC_FILE_EXTENSIONS] }] });
     if (selection.canceled || shuttingDown || !selection.filePaths.length) return null;
-    importParsing = { metadataFormat: settings.metadataFormat, metadataTemplates: [...settings.metadataTemplates] };
+    batchImportSettings = structuredClone(settings);
+    importParsing = { metadataFormat: batchImportSettings.metadataFormat, metadataTemplates: batchImportSettings.metadataTemplates };
     return importJob.start(kind, selection.filePaths);
   } finally { importPickerOpen = false; }
+}
+function localMediaSelection(input: { kind: 'file' | 'folder' | 'parent'; id?: string }, folder?: string) {
+  const available = new Set(state.versions.filter(version => !version.source && !version.removedFromLibrary).map(version => version.id));
+  if (input.kind === 'file') return input.id && available.has(input.id) ? [{ id: input.id, path: store.media(input.id)?.path }] : [];
+  if (!folder || !isAbsolute(folder)) return [];
+  return store.mediaLocations().filter(row => {
+    if (!available.has(row.id) || !isAbsolute(row.path)) return false;
+    const nested = relative(folder, row.path);
+    return nested !== '' && nested !== '..' && !nested.startsWith(`..${sep}`) && !isAbsolute(nested);
+  });
+}
+async function removeIndexedMedia(input: { kind: 'file' | 'folder' | 'parent'; id?: string }) {
+  if (!host || host.isDestroyed() || shuttingDown || removingLibraryMedia || relinking || restorePending)
+    return { ok: false, error: 'Finish the current library operation first.' };
+  const window = host;
+  const { showId, hostEpoch } = state;
+  const current = () => !shuttingDown && !restorePending && !window.isDestroyed() && state.showId === showId && state.hostEpoch === hostEpoch;
+  removingLibraryMedia = true;
+  try {
+    let folder: string | undefined;
+    if (input.kind === 'folder') {
+      const choice = await dialog.showOpenDialog(window, { title: 'Choose Folder to Remove from Library', properties: ['openDirectory'] });
+      if (choice.canceled || !choice.filePaths[0]) return { ok: true, cancelled: true };
+      folder = choice.filePaths[0];
+    } else if (input.kind === 'parent') {
+      const version = state.versions.find(item => item.id === input.id && !item.source && !item.removedFromLibrary);
+      const path = version && store.media(version.id)?.path;
+      if (!path || !isAbsolute(path)) return { ok: false, error: 'This song has no saved source folder.' };
+      folder = dirname(path);
+    }
+    if (!current()) return { ok: false, error: 'The show changed. Choose the files again.' };
+    const media = localMediaSelection(input, folder);
+    if (!media.length) return { ok: false, error: 'There are no indexed local files in this selection.' };
+    const ids = media.map(row => row.id);
+    const plan = () => applyCommand(state, { commandId: randomUUID(), showId, hostEpoch, expectedRevision: state.revision,
+      actor: { role: 'host', id: 'host' }, command: { type: 'removeLocalVersions', ids } }, settings, Date.now());
+    const preview = plan();
+    if (!preview.outcome.ok) return { ok: false, error: preview.outcome.message };
+    const message = folder ? `Remove ${media.length} ${media.length === 1 ? 'song' : 'songs'} from ${basename(folder) || 'this drive'}?`
+      : `Remove “${state.versions.find(version => version.id === input.id)?.title}” from the library?`;
+    const confirmed = await dialog.showMessageBox(window, { type: 'question', message,
+      detail: 'Booth will remove the selected library entries and keep the files on disk. Performance history is kept. Removed songs disappear from playlists.',
+      buttons: ['Remove from Library', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true });
+    if (confirmed.response !== 0) return { ok: true, cancelled: true };
+    if (!current()) return { ok: false, error: 'The show changed. Choose the files again.' };
+    const result = plan();
+    if (!result.outcome.ok) return { ok: false, error: result.outcome.message };
+    store.removeLocalMedia(result.state, media);
+    installShowState(result.state);
+    try { broadcast(); } catch { /* Durable library removal can be reloaded. */ }
+    return { ok: true, notice: `${media.length === 1 ? '1 song' : `${media.length} songs`} removed from the library. Files were kept.` };
+  } catch {
+    return { ok: false, error: 'Could not remove the selected library entries. If a source location changed, select the files again.' };
+  } finally { removingLibraryMedia = false; }
 }
 type PlaybackCertificate = { generation: string; id: string; path: string; fingerprint: string; identity: MediaIdentity };
 const pendingMediaCertificates = new Map<string, Promise<PlaybackCertificate>>();
@@ -1597,7 +1671,22 @@ else {
     try { broadcast(); } catch { /* The host can reload the persisted show. */ }
     return { outcome: 'imported' as const, needsReview: parsed.ambiguous };
   };
-  importJob = new ImportJob(commitImported, progress => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:import-progress', progress); });
+  importJob = new ImportJob(commitImported, progress => { if (host && !host.isDestroyed() && !shuttingDown) host.webContents.send('host:import-progress', progress); }, undefined, {
+    selectedExtensions: LYRIC_FILE_EXTENSIONS,
+    async convert(path, signal) {
+      const job = await startLyricImport(path, batchImportSettings ?? settings, signal);
+      if (!job) throw new KaraokeImportFileError('Import cancelled.');
+      batchPairId = job.id;
+      const cancel = () => cdgImport?.cancel(job.id);
+      signal.addEventListener('abort', cancel, { once: true });
+      if (signal.aborted) cancel();
+      try {
+        const result = await cdgImport!.wait();
+        if (result?.outcome) return { outcome: result.outcome };
+        throw new KaraokeImportFileError(result?.message || 'The karaoke pair could not be imported. Check the audio, lyric and ZIP files.');
+      } finally { signal.removeEventListener('abort', cancel); }
+    },
+  });
   cdgImport = new CdgImport(join(app.getPath('userData'), 'cdg-library'), (path, fingerprint, metadataPath) =>
     commitImported(path, fingerprint, metadataPath.slice(0, -extname(metadataPath).length) + '.mp4', cdgImportParsing ?? settings).outcome);
   try {
@@ -1642,21 +1731,16 @@ else {
     bumper = new BumperController(bumperOutput, playableBumpers, publishBumper);
   } catch (error) { bumper = null; bumperOutput = null; bumperError = error instanceof Error ? error.message : String(error); }
   protocol.handle('tpv-media', serveMedia);
-  ipcMain.handle('host:cdg-status', event => { guardHost(event.sender.id); return cdgImport?.snapshot() ?? null; });
+  ipcMain.handle('host:cdg-status', event => { guardHost(event.sender.id); const item = cdgImport?.snapshot(); return item?.id === batchPairId ? null : item ?? null; });
   ipcMain.handle('host:cdg-cancel', (event, id: unknown) => { guardHost(event.sender.id); return typeof id === 'string' && !!cdgImport?.cancel(id); });
   ipcMain.handle('host:cdg-import', async event => {
     guardHost(event.sender.id);
-    if (!host || shuttingDown || cdgPickerOpen || cdgImport?.active()) throw new Error('Finish the current karaoke pair import first.');
+    if (!host || shuttingDown || importPickerOpen || cdgPickerOpen || cdgImport?.active() || catalogImportActive()) throw new Error('Finish the current import first.');
     cdgPickerOpen = true;
     try {
       const picked = await dialog.showOpenDialog(host, { title: 'Import CD+G, LRC or ZIP', properties: ['openFile'], filters: [{ name: 'Karaoke lyrics, audio and ZIP', extensions: LYRIC_FILE_EXTENSIONS }] });
       if (picked.canceled || !picked.filePaths[0] || shuttingDown) return null;
-      const importSettings = structuredClone(settings);
-      const backdrop = lyricBackdropPath(importSettings, { packaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath });
-      if (backdrop) await validateLyricBackdropFile(backdrop);
-      if (shuttingDown) return null;
-      cdgImportParsing = { metadataFormat: importSettings.metadataFormat, metadataTemplates: importSettings.metadataTemplates };
-      return cdgImport!.start(picked.filePaths[0], backdrop);
+      return await startLyricImport(picked.filePaths[0], structuredClone(settings));
     } finally { cdgPickerOpen = false; }
   });
   ipcMain.handle('host:backup-show', event => { guardHost(event.sender.id); return showBackup.start(); });
@@ -1668,7 +1752,8 @@ else {
     if (shuttingDown || typeof id !== 'string' || id.length !== 36) return { status: 'cancelled' };
     const result = await mediaReview.scan(id, () => {
       const permitted = reviewableMedia();
-      return store.mediaLocations().filter(file => permitted.has(file.id));
+      const locations = new Map(store.mediaLocations().map(row => [row.id, row.path]));
+      return [...permitted].map(id => ({ id, path: locations.get(id) ?? '' }));
     });
     if (result.status !== 'completed') return result;
     const permitted = reviewableMedia();
@@ -1679,6 +1764,13 @@ else {
     if (typeof id === 'string' && id.length === 36) mediaReview.cancel(id);
   });
   ipcMain.handle('host:get-library-filenames', event => { guardHost(event.sender.id); return store.mediaFilenames(); });
+  ipcMain.handle('host:remove-local-media', (event, input: unknown) => {
+    guardHost(event.sender.id);
+    if (!isRecord(input)) return { ok: false, error: 'Choose a local file or folder.' };
+    if (input.kind === 'folder') return removeIndexedMedia({ kind: 'folder' });
+    if ((input.kind === 'file' || input.kind === 'parent') && shortString(input.id)) return removeIndexedMedia({ kind: input.kind, id: input.id });
+    return { ok: false, error: 'Choose a local file or folder.' };
+  });
   ipcMain.handle('host:get-missing-local-media', async event => {
     guardHost(event.sender.id);
     if (shuttingDown) return null;
@@ -1866,26 +1958,55 @@ else {
   });
   ipcMain.handle('host:relink-media', async (event, versionId: unknown) => {
     guardHost(event.sender.id);
-    if (typeof versionId !== 'string' || !isVersionAllowed(state, versionId, settings)) throw new Error('Song unavailable.');
-    if (!host || host.isDestroyed() || relinking || playbackTransition) throw new Error('Finish the current playback or file operation first.');
+    const version = typeof versionId === 'string' ? state.versions.find(item => item.id === versionId && !item.source && !item.removedFromLibrary) : undefined;
+    if (!version) return { ok: false, error: 'Choose a saved local song from the library.' };
+    if (!host || host.isDestroyed() || shuttingDown || relinking || removingLibraryMedia || playbackTransition || hostTransport.busy())
+      return { ok: false, error: 'Finish the current playback or file operation first.' };
     const activeVersion = () => state.requests.find(item => item.id === state.playback?.requestId)?.versionId;
-    if (activeVersion() === versionId) throw new Error('Stop the active performance before relinking this song.');
-    const original = store.media(versionId);
-    if (!original) throw new Error('This song has no source file to relink.');
+    if (activeVersion() === version.id) return { ok: false, error: 'Stop the active performance before relinking this song.' };
+    const original = store.media(version.id);
+    if (!original) return { ok: false, error: 'This song has no saved source to relink. Remove it from the library, then import its file.' };
+    const window = host;
+    const { showId, hostEpoch } = state;
+    const current = () => !shuttingDown && !restorePending && !window.isDestroyed() && !playbackTransition && !hostTransport.busy() &&
+      state.showId === showId && state.hostEpoch === hostEpoch && activeVersion() !== version.id &&
+      state.versions.some(item => item.id === version.id && !item.source && !item.removedFromLibrary);
     relinking = true;
     try {
-      const selection = await dialog.showOpenDialog(host, { title: 'Relink original video file', properties: ['openFile'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
+      const selection = await dialog.showOpenDialog(window, { title: 'Relink Song Video', properties: ['openFile'], filters: [{ name: 'MP4 video', extensions: ['mp4'] }] });
       if (selection.canceled || !selection.filePaths[0]) return { ok: true, cancelled: true };
       const path = selection.filePaths[0];
-      if (extname(path).toLowerCase() !== '.mp4') throw new Error('Choose the original MP4 video file.');
+      if (!isAbsolute(path) || extname(path).toLowerCase() !== '.mp4') return { ok: false, error: 'Choose an MP4 video file.' };
+      if (!current()) return { ok: false, error: 'The show or playback changed. Stop this song and try relinking again.' };
       const check = new AbortController(); mediaChecks.add(check);
       try {
-        await verifyAndRelinkMedia(path, original.fingerprint, check.signal,
-          () => !shuttingDown && !playbackTransition && activeVersion() !== versionId && isVersionAllowed(state, versionId, settings),
-          () => store.relinkMedia(original, path));
-      }
-      finally { mediaChecks.delete(check); }
-      return { ok: true };
+        const checked = await fingerprintPlaybackMedia(path, check.signal).catch(() => null);
+        if (!checked) return { ok: false, error: 'Booth could not read this file. Wait for cloud sync to finish or choose a readable MP4.' };
+        if (!current() || check.signal.aborted) return { ok: false, error: 'The show or playback changed. Try relinking again.' };
+        const replacing = checked.fingerprint !== original.fingerprint;
+        if (replacing) {
+          if (store.byFingerprint(checked.fingerprint)) return { ok: false, error: 'This file is already in the library. Choose the original, or use the existing version.' };
+          const confirmed = await dialog.showMessageBox(window, { type: 'warning',
+            message: 'The selected file differs from the original recording.',
+            detail: `Booth found different file contents in “${basename(path)}”. A revised export or Dropbox conflicted copy can differ. Select Cancel to choose the original. Use This Replacement only if this is the video you want linked to “${version.title}”. Booth keeps the song and queue entries, resets its content rating for review, and leaves both files on disk.`,
+            buttons: ['Use This Replacement', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true });
+          if (confirmed.response !== 0) return { ok: true, cancelled: true };
+        }
+        if (!await mediaIdentityMatches(path, checked.identity) || !current() || check.signal.aborted)
+          return { ok: false, error: 'The song or selected file changed while relinking. Try again after it stops or finishes syncing.' };
+        if (replacing) {
+          const next = { ...state, revision: state.revision + 1,
+            versions: state.versions.map(item => item.id === version.id ? { ...item, rating: 'unrated' as const } : item) };
+          const outcome = store.replaceMedia(next, original, { path, fingerprint: checked.fingerprint });
+          if (outcome === 'duplicate') return { ok: false, error: 'This replacement was just imported as another song. Choose the original, or use the existing version.' };
+          if (outcome === 'stale') return { ok: false, error: 'The original link changed. Select the file again.' };
+          installShowState(next);
+        } else if (!store.relinkMedia(original, path)) return { ok: false, error: 'The original link changed. Select the file again.' };
+        try { broadcast(); } catch { /* The source link was saved. */ }
+        return { ok: true, notice: replacing ? 'Replacement linked. Review its content rating before using the song in an age-restricted show.' : 'Song file relinked.' };
+      } finally { mediaChecks.delete(check); }
+    } catch {
+      return { ok: false, error: 'The file could not be relinked. Check that it is readable and try again.' };
     } finally { relinking = false; }
   });
   ipcMain.handle('host:mutate-collections', (event, action: unknown) => {
@@ -2261,8 +2382,8 @@ else {
   ipcMain.handle('host:stop-bumper', async event => { guardHost(event.sender.id); automaticBumper.cancel(); if (bumper) await bumper.stop(); publishBumper(); return bumperInfo(); });
   ipcMain.handle('host:import', async (event, kind: unknown) => {
     guardHost(event.sender.id);
-    if (kind !== undefined && kind !== 'files' && kind !== 'folder') throw new Error('Invalid import type.');
-    return importFiles(kind === 'folder' ? 'folder' : 'files');
+    if (kind !== undefined && kind !== 'files' && kind !== 'folder' && kind !== 'choose') throw new Error('Invalid import type.');
+    return importFiles(kind ?? 'files');
   });
   ipcMain.handle('host:import-status', event => { guardHost(event.sender.id); return importJob?.snapshot() ?? null; });
   ipcMain.handle('host:import-cancel', (event, id: unknown) => {
