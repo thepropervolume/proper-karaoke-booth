@@ -5,7 +5,7 @@ import { parseCommunityCatalog } from '../catalog/karaokenerds';
 import { youtubeVideoId } from '../catalog/karaokenerds-brand-map';
 import { libraryDate } from '../domain/library-result-fields';
 
-export type LocalCatalogTrack = { id: number | string; artist: string; title: string; brand: string | null; brandSlug?: string; youtubeId: string | null; dateAdded?: string };
+export type LocalCatalogTrack = { id: number | string; artist: string; title: string; brand: string | null; brandSlug?: string; brandCode?: string; youtubeId: string | null; dateAdded?: string };
 export type LocalCatalogResult =
   | { status: 'ready'; tracks: LocalCatalogTrack[]; limited: boolean; nextCursor?: string | null; lastSuccess: number | null; source?: 'shared' | 'offline-cache'; fetchedAt?: number; stale?: boolean; revision?: string | null; cachePersisted?: boolean }
   | { status: 'missing' | 'unavailable' | 'uninitialized' | 'unauthorized' | 'forbidden' | 'configuration-error' | 'rate-limited' | 'timed-out' | 'invalid-request' | 'invalid-response'; tracks: []; limited: false; lastSuccess: null };

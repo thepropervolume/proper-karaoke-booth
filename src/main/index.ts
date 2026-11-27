@@ -1694,7 +1694,7 @@ else {
     return libraryMediaMetadata.load([...new Set<string>(ids)].flatMap(id => {
       const media = store.media(id);
       return media ? [media] : [];
-    }));
+    }), settings.metadataTemplates, settings.metadataFormat);
   });
   ipcMain.handle('host:preview-filename-metadata', event => {
     guardHost(event.sender.id);

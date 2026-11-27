@@ -3,6 +3,7 @@ import { lstat } from 'node:fs/promises';
 import { extname, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import { libraryBpm, libraryMusicalKey, type LibraryResultMetadata } from '../domain/library-result-fields';
+import { metadataFromPath, type MetadataFormat } from '../domain/metadata';
 import type { StoredMedia } from './store';
 
 const probe = promisify(execFile);
@@ -17,10 +18,14 @@ export function readContainerMetadata(value: unknown): LibraryResultMetadata {
   const seconds = typeof duration === 'string' && /^\d+(?:\.\d+)?$/.test(duration) ? Number(duration) : 0;
   const bpm = libraryBpm(normalized.get('bpm') ?? normalized.get('tbpm') ?? normalized.get('tempo'));
   const musicalKey = libraryMusicalKey(normalized.get('initialkey') ?? normalized.get('tkey') ?? normalized.get('key'));
+  const catalogNumber = normalized.get('catalognumber');
+  const djCatalogNumber = typeof catalogNumber === 'string' && catalogNumber.length <= 100 &&
+    catalogNumber.trim() && !/[\x00-\x1f\x7f]/.test(catalogNumber) ? catalogNumber.trim() : undefined;
   return {
     ...(seconds > 0 && seconds <= 86400 ? { durationSeconds: seconds } : {}),
     ...(bpm === undefined ? {} : { bpm }),
     ...(musicalKey === undefined ? {} : { musicalKey }),
+    ...(djCatalogNumber === undefined ? {} : { djCatalogNumber }),
   };
 }
 
@@ -29,7 +34,7 @@ export class LibraryMediaMetadata {
   private readonly cache = new Map<string, { identity: string; details: LibraryResultMetadata }>();
   private batches = 0;
 
-  async load(media: readonly StoredMedia[]): Promise<Record<string, LibraryResultMetadata> | null> {
+  async load(media: readonly StoredMedia[], templates: readonly string[] = [], format: MetadataFormat = 'artist-title'): Promise<Record<string, LibraryResultMetadata> | null> {
     if (media.length > MAX_LIBRARY_METADATA_BATCH) throw new Error('Too many library metadata requests.');
     // The view retries a busy read only while those rows are still visible.
     if (this.batches >= 2) return null;
@@ -40,7 +45,11 @@ export class LibraryMediaMetadata {
       const readRemaining = async () => {
         while (cursor < media.length) {
           const item = media[cursor++];
-          entries.push([item.id, await this.read(item)]);
+          const details = await this.read(item);
+          // Derive the fallback from current templates, even for media imported before DJ codes were recorded.
+          const parsed = details.djCatalogNumber || !templates.length ? null : metadataFromPath(item.path, templates, format);
+          const filenameDjCode = parsed?.djCode ? [parsed.djCode, parsed.trackNumber].filter(Boolean).join('-') : undefined;
+          entries.push([item.id, filenameDjCode ? { ...details, filenameDjCode } : details]);
         }
       };
       await Promise.all([readRemaining(), readRemaining()]);
@@ -57,12 +66,13 @@ export class LibraryMediaMetadata {
     if (cached?.identity === identity) return cached.details;
     const dateAdded = file.birthtimeMs > 0 ? file.birthtime.toISOString().slice(0, 10) : undefined;
     let details: LibraryResultMetadata = dateAdded ? { dateAdded } : {};
-    if (extname(item.path).toLowerCase() === '.mp4') {
+    const extension = extname(item.path).toLowerCase();
+    if (extension === '.mp4' || extension === '.mp3') {
       try {
-        // Match the existing FFprobe path restrictions for imported MP4 container tags.
+        // Force a known demuxer and allow only local files. MOV external references stay disabled.
         const { stdout } = await probe('ffprobe', [
-          '-v', 'error', '-protocol_whitelist', 'file,pipe', '-f', 'mov', '-enable_drefs', '0', '-i', item.path,
-          '-show_entries', 'format=duration:format_tags=bpm,TBPM,initialkey,TKEY,key,tempo', '-of', 'json=string_validation=fail',
+          '-v', 'error', '-protocol_whitelist', 'file,pipe', ...(extension === '.mp4' ? ['-f', 'mov', '-enable_drefs', '0'] : ['-f', 'mp3']), '-i', item.path,
+          '-show_entries', 'format=duration:format_tags=bpm,TBPM,initialkey,TKEY,key,tempo,CATALOGNUMBER,catalognumber', '-of', 'json=string_validation=fail',
         ], { timeout: 3500, maxBuffer: 16384, windowsHide: true, killSignal: 'SIGKILL' });
         details = { ...details, ...readContainerMetadata(JSON.parse(stdout)) };
       } catch { /* Unsupported media or missing FFprobe can still show its filesystem date. */ }

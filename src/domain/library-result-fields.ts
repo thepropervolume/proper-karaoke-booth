@@ -11,6 +11,8 @@ export type LibraryResultMetadata = {
   bpm?: number;
   musicalKey?: string;
   dateAdded?: string;
+  djCatalogNumber?: string;
+  filenameDjCode?: string;
 };
 
 export function isLibraryResultField(value: unknown): value is LibraryResultField {
