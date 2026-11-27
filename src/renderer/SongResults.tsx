@@ -34,7 +34,7 @@ function resultValue(field: LibraryResultField, row: SongResult, file: string | 
     case 'bpm': return row.resultProvider === 'youtube' ? '' : row.bpm ?? metadata?.bpm;
     case 'key': return row.resultProvider === 'youtube' ? '' : row.musicalKey ?? metadata?.musicalKey ?? '';
     case 'date': return row.dateAdded ?? metadata?.dateAdded;
-    case 'filename': return row.resultProvider === 'youtube' ? '' : file ?? '';
+    case 'filename': return row.resultProvider === 'local' ? file ?? '' : '';
   }
 }
 
@@ -110,6 +110,7 @@ export function SongResults({ rows, selected, onSelect, onQueue, onContext, star
       })}
       <LibraryFieldPicker value={columns} disabled={savingColumns} onChange={onColumnsChange} triggerRef={columnsTrigger} />
     </div>
+    {loading && metadataSort && <p className="library-sort-status" role="status">Reading local media details for sorting…</p>}
     <div role="listbox" aria-label="Songs">
     {orderedRows.map((row, index) => {
       const missing = missingMedia?.has(row.id);
@@ -135,7 +136,6 @@ export function SongResults({ rows, selected, onSelect, onQueue, onContext, star
     })}
     </div>
   </div>
-    {loading && metadataSort && <p className="library-sort-status" role="status">Reading local media details for sorting…</p>}
     {!rows.length && <p className="empty">{emptyMessage}</p>}
   </div>;
 }

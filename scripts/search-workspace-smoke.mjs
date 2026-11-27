@@ -84,16 +84,19 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
     APPDATA: join(temp, 'appdata'), LOCALAPPDATA: join(temp, 'localappdata'), XDG_CONFIG_HOME: join(temp, 'config'), XDG_DATA_HOME: join(temp, 'data') });
   const args = [bootstrap, `--user-data-dir=${canonicalProfile}`, '--mute-audio', '--disable-background-networking'];
   if (process.env.TPV_TEST_NO_SANDBOX === '1') args.push('--no-sandbox');
-  app = await electron.launch({ executablePath: require('electron'), args, env, cwd: repo, timeout: 30000 });
-  assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
-  const deadline = performance.now() + 15000;
-  do {
-    host = app.windows().find(page => page.url().replaceAll('\\', '/').includes('/src/renderer/index.html'));
-    if (!host) await new Promise(resolve => setTimeout(resolve, 30));
-  } while (!host && performance.now() < deadline);
-  assert.ok(host, 'Select the host by its renderer URL, not the first (possibly hidden singer) window.');
-  host.on('pageerror', error => pageErrors.push(error.message));
-  await host.waitForFunction(() => !!window.tpv?.getSettings);
+  const launch = async () => {
+    app = await electron.launch({ executablePath: require('electron'), args, env, cwd: repo, timeout: 30000 });
+    assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath('userData'))), canonicalProfile);
+    const deadline = performance.now() + 15000;
+    do {
+      host = app.windows().find(page => page.url().replaceAll('\\', '/').includes('/src/renderer/index.html'));
+      if (!host) await new Promise(resolve => setTimeout(resolve, 30));
+    } while (!host && performance.now() < deadline);
+    assert.ok(host, 'Select the host by its renderer URL, not the first (possibly hidden singer) window.');
+    host.on('pageerror', error => pageErrors.push(error.message));
+    await host.waitForFunction(() => !!window.tpv?.getSettings);
+  };
+  await launch();
   await waitForHostCondition(host, async () => (await window.tpv.getState()).playback === null);
   const search = host.getByRole('searchbox', { name: 'Search library', exact: true });
   for (const section of ['Sources', 'Singers', 'Playlists']) {
@@ -185,6 +188,10 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   assert.equal(await songs.locator('.song-option__title strong').first().textContent(), 'Zulu Search Song');
   await sort.selectOption('filename-desc');
   assert.equal(await songs.locator('.song-option__title strong').first().textContent(), 'Local Search Song');
+  const durationHeader = host.locator('[data-sort-field="duration"]');
+  await durationHeader.click();
+  assert.equal(await songs.locator('.song-option__title strong').first().textContent(), 'Local Search Song');
+  assert.equal(await songs.locator('.song-option__title strong').nth(1).textContent(), 'Zulu Search Song');
   await sort.selectOption('import-oldest');
   await sourceFilter.click();
   await sourceOptions.getByRole('checkbox', { name: 'YouTube', exact: true }).click();
@@ -316,7 +323,17 @@ require(process.env.TPV_SEARCH_QA_ENTRY);`);
   const counters = await app.evaluate(() => ({ unexpectedFetches: searchWorkspaceQa.unexpectedFetches, downloads: searchWorkspaceQa.downloads }));
   assert.deepEqual(counters, { unexpectedFetches: 0, downloads: 0 }); assert.deepEqual(pageErrors, []);
   assert.deepEqual(geometryProblems, []);
-  console.log(`PASS ${metadata.version}: global search, unified providers, source activation, columns and filtering, KaraFun KJ Picks, fixed transport, branding and hidden singer preview. Screenshots: ${screenshots}`);
+  await host.evaluate(() => window.tpv.saveSettings({ librarySourceFilters: ['local', 'karaokenerds'] }));
+  await app.close();
+  await launch();
+  const restoredSongs = host.getByRole('listbox', { name: 'Songs', exact: true });
+  await restoredSongs.getByText('Local Search Song', { exact: true }).waitFor();
+  await restoredSongs.getByText('Saved Metadata Override', { exact: true }).waitFor();
+  assert.equal(await restoredSongs.getByRole('option').count(), 3);
+  assert.equal(await host.getByRole('searchbox', { name: 'Search library', exact: true }).inputValue(), '');
+  assert.deepEqual((await host.evaluate(() => window.tpv.getSettings())).settings.librarySourceFilters, ['local', 'karaokenerds']);
+  assert.deepEqual(pageErrors, []);
+  console.log(`PASS ${metadata.version}: global search, unified providers, source activation, column sorting, multiple sources restored on restart, KaraFun KJ Picks, fixed transport, branding and hidden singer preview. Screenshots: ${screenshots}`);
 } catch (error) {
   if (host) { await host.screenshot({ path: join(screenshots, 'failure.png') }).catch(() => {}); console.error((await host.locator('body').ariaSnapshot().catch(() => '')).slice(-12000)); }
   throw error;

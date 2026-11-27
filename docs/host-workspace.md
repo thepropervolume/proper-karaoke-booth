@@ -155,7 +155,7 @@ Library results mark a confirmed missing local file as **File missing** and disa
 
 ## Catalog and KJ Picks
 
-The Song Library opens without tracks until you search or choose sources to browse. Open **Source** to select one or more catalogs, including **Filesystem** for imported tracks. Booth remembers your selections on restart. With the filter cleared, typing searches all enabled sources and uses YouTube as a fallback for songs already available elsewhere. Online catalogs need a search term to find new tracks. The source switches in Preferences control which providers can contribute results.
+The Song Library opens without tracks until you search or choose sources to browse. Open **Source** to select one or more catalogs, including **Filesystem** for imported tracks. Booth remembers your selections on restart. With the filter cleared, typing searches all enabled sources and shows YouTube for songs without another visible match. Online catalogs need a search term to find new tracks. The source switches in Preferences control which providers can contribute results.
 
 Open the caret at the end of the results header or right-click a heading to choose columns or restore the defaults. Booth remembers the selection. Click a heading to cycle ascending, descending and import order. Choose **Filename** in **Sort** to order local tracks by their original filenames, or enable that column to sort directly from its heading. A value Booth could not read sorts after known values. YouTube shows its channel name in **Source** and uses its publication date when available.
 
