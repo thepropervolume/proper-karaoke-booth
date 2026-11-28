@@ -15,6 +15,7 @@ export default defineConfig({
       display: resolve(root, 'src/display/index.html'),
       singer: resolve(root, 'src/remote/index.html'),
       documentation: resolve(root, 'src/help/index.html'),
+      splash: resolve(root, 'src/splash/index.html'),
     } },
   },
 });

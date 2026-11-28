@@ -1,0 +1,79 @@
+:root {
+  color-scheme: dark;
+  font-family: "Nunito Sans", "Avenir Next", system-ui, sans-serif;
+  --ground: #090E18;
+  --text: #F4F2E9;
+  --secondary: #AEB8C9;
+  --link: #FF92BF;
+  --surface: #131C2B;
+}
+
+:root[data-theme="day"] {
+  color-scheme: light;
+  --ground: #FDFEF8;
+  --text: #131457;
+  --secondary: #56616B;
+  --link: #A91E5C;
+  --surface: #F1F0E8;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ground); color: var(--text); }
+
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 22px 28px 12px;
+  text-align: center;
+}
+
+p, h1 { margin: 0; }
+.eyebrow {
+  color: var(--secondary);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.mark { display: block; width: 120px; height: 120px; margin: 12px 0 8px; }
+h1 { font-size: 2rem; line-height: 1.1; font-weight: 800; letter-spacing: -0.035em; }
+.purpose { margin-top: 6px; color: var(--secondary); font-size: 0.9375rem; line-height: 1.5; }
+.status { margin-top: 18px; color: var(--secondary); font-size: 0.875rem; line-height: 1.5; }
+.status::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: #ED0D63; }
+.waiting, .quit { display: none; }
+[data-startup-state="waiting"] .preparing { display: none; }
+[data-startup-state="waiting"] :is(.waiting, .quit) { display: inline-flex; }
+
+footer { display: flex; justify-content: center; flex-wrap: wrap; padding-top: 6px; margin-top: auto; }
+a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--link);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+a:hover { background: var(--surface); }
+a:focus-visible { outline: 3px solid var(--link); outline-offset: 1px; }
+
+@media (max-height: 330px) {
+  main { padding-top: 15px; }
+  .mark { width: 92px; height: 92px; margin: 6px 0; }
+  h1 { font-size: 1.875rem; }
+  .purpose { font-size: 0.875rem; margin-top: 4px; }
+  .status { margin-top: 10px; }
+}
+
+@media (max-height: 240px) {
+  .mark { display: none; }
+  h1 { margin-top: 14px; }
+}

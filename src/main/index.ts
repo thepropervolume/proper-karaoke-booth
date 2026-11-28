@@ -33,6 +33,7 @@ import { HOST_ZOOM_LEVELS, roomShareUrl } from '../domain/booth-workspace-settin
 import { DiagnosticLog } from './diagnostic-log';
 import { makeConfiguration, mergeConfiguration, readConfiguration, saveConfiguration } from './booth-configuration';
 import { openDocumentationWindow } from './documentation-window';
+import { StartupSplash } from './startup-splash';
 import { LocalControlServer } from '../control/server';
 import { projectControlQueue, type ControlQueueEnvelope } from '../control/queue';
 import { projectControlLibrary } from '../control/library';
@@ -117,6 +118,8 @@ import { BoothDesktopUpdates } from './desktop-updates';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 let host: BrowserWindow | null = null;
+let startupSplash: StartupSplash | null = null;
+let hostWindowPainted = false;
 let desktopUpdates: BoothDesktopUpdates | undefined;
 let diagnostics: DiagnosticLog | undefined;
 let display: BrowserWindow | null = null;
@@ -828,9 +831,16 @@ function restrictWindow(window: BrowserWindow): void {
   window.webContents.on('will-attach-webview', event => event.preventDefault());
 }
 let hostActionsReady = false;
+function revealStartupHost(): void {
+  if (!startupSplash || !host || !hostWindowPainted || !hostActionsReady || host.isDestroyed() || shuttingDown) return;
+  const splash = startupSplash;
+  startupSplash = null;
+  splash.showHost(host);
+}
 const launchIntent = parseLaunchIntent(process.argv);
 let pendingHostActions: AppAction[] = launchIntent ? [launchIntent === 'keybindings' ? 'keybindings' : 'preferences'] : [];
 function showHostWindow(): BrowserWindow | null {
+  if (startupSplash && !hostActionsReady) { startupSplash.focus(); return null; }
   if (!host || host.isDestroyed()) return null;
   if (host.isMinimized()) host.restore();
   host.show(); host.focus();
@@ -1011,11 +1021,33 @@ async function reconcileLocalControl(): Promise<void> {
 }
 function createHost(): void {
   hostActionsReady = false;
+  hostWindowPainted = false;
   host = new BrowserWindow({ width: 1440, height: 900, minWidth: 780, minHeight: 600, title: BOOTH_PRODUCT_NAME, icon: applicationIcon,
+    show: !startupSplash,
     webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   const window = host;
   restrictWindow(window);
   window.webContents.on('render-process-gone', () => diagnostics?.record('renderer-exited'));
+  window.once('ready-to-show', () => { hostWindowPainted = true; revealStartupHost(); });
+  window.webContents.once('did-finish-load', () => {
+    // A hidden Wayland window can finish loading without a paint notification.
+    const fallback = setTimeout(() => {
+      if (host === window && !window.isDestroyed() && !hostWindowPainted) {
+        hostWindowPainted = true;
+        revealStartupHost();
+      }
+    }, 200);
+    fallback.unref();
+    window.once('closed', () => clearTimeout(fallback));
+  });
+  const onStartupFailure = () => {
+    if (shuttingDown || !startupSplash) return;
+    startupSplash.dismiss();
+    startupSplash = null;
+    dialog.showErrorBox('KaraBooth could not open the workspace', 'Close KaraBooth and relaunch it to try again.');
+    app.quit();
+  };
+  window.webContents.once('render-process-gone', onStartupFailure);
   const fullscreen = new DisplayFullscreen(value => window.setFullScreen(value), () => window.isFullScreen(), () => {
     if (!shuttingDown && !window.isDestroyed()) void dialog.showMessageBox(window, { type: 'warning', message: 'Could not change host fullscreen.' });
   });
@@ -1023,7 +1055,7 @@ function createHost(): void {
   window.on('enter-full-screen', () => fullscreen.changed(true));
   window.on('leave-full-screen', () => fullscreen.changed(false));
   publishSettings();
-  void window.loadFile(join(uiRoot, 'renderer/index.html'));
+  void window.loadFile(join(uiRoot, 'renderer/index.html')).catch(onStartupFailure);
   window.on('closed', () => { fullscreen.close(); hostFullscreen = null; host = null; app.quit(); });
 }
 let displayCreation: Promise<void> | null = null;
@@ -1727,6 +1759,8 @@ else {
     existsSync(join(process.resourcesPath, 'tpv-booth-local-api-default'));
   settings = readSettings(settingsPath, localControlDefault);
   if (settingsCreated) settings = writeSettings(settingsPath, { ...settings, hostSetupPending: true });
+  try { startupSplash = new StartupSplash(uiRoot, settings.appearance, applicationIcon); }
+  catch { /* Startup remains available if a window manager cannot show the splash. */ }
   try {
     desktopUpdates = new BoothDesktopUpdates(app.getVersion(), join(app.getPath('userData'), 'desktop-updates'), settings.desktopUpdateMode,
       app.isPackaged, process.resourcesPath, value => {
@@ -1738,7 +1772,10 @@ else {
   communityBrowser = new LocalCommunityBrowser(join(localData || app.getPath('userData'), 'ProperKaraokeBooth', 'karaokenerds', 'community.sqlite'));
   sharedCatalog = new SharedCatalogConnection(join(app.getPath('userData'), 'shared-catalog-cache', 'queries.json'));
   logoData = await loadLogo(logoPath);
-  store = await Store.openForHost(join(app.getPath('userData'), 'show.sqlite'));
+  if (shuttingDown) return;
+  const openingStore = await Store.openForHost(join(app.getPath('userData'), 'show.sqlite'));
+  if (shuttingDown) { openingStore.close(); return; }
+  store = openingStore;
   hostRatings = new HostSongRatings(store, () => {
     const connection = ratingsConnection(), path = ratingConfigFile();
     return {
@@ -2179,6 +2216,7 @@ else {
     guardHost(event.sender.id);
     if (hostActionsReady) return;
     hostActionsReady = true;
+    revealStartupHost();
     const actions = pendingHostActions; pendingHostActions = [];
     for (const action of actions) host?.webContents.send('host:app-action', action);
     // The renderer has subscribed and loaded its preferences before an update can be announced.
@@ -2664,6 +2702,7 @@ else {
       display.hide();
     }
   });
+  if (shuttingDown) return;
   createHost();
   broadcast();
   void karaFunAccount.restore();
@@ -2672,6 +2711,9 @@ else {
   try { await reconcileLocalControl(); } catch { /* Core local show operation remains available. */ }
   syncQueuedDownloads();
   }).catch(error => {
+    if (shuttingDown) return;
+    startupSplash?.dismiss();
+    startupSplash = null;
     diagnostics?.record('startup-failed');
     console.error('Unable to start application:', error);
     dialog.showErrorBox('Unable to start The Proper Volume Karaoke', error instanceof Error ? error.message : String(error));
@@ -2705,6 +2747,8 @@ function waitForImport(job: ImportJob): Promise<boolean> {
 // Fence new work before awaiting shutdown. Otherwise a late download, seek or
 // guest reply could still mutate the show after its database connection closes.
 app.on('before-quit', event => {
+  startupSplash?.dismiss();
+  startupSplash = null;
   automaticBumper.close(); showAdvance.close();
   cancelPendingPlayback();
   shuttingDown = true; mediaReview.cancel(); libraryMediaReview.cancel(); for (const check of mediaChecks) check.abort();

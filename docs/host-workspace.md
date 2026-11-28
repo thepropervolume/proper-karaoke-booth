@@ -2,6 +2,8 @@
 
 ## First launch and sharing
 
+The startup splash uses your saved Day or Night appearance, or follows your system. Its website link opens The Proper Volume in your browser. The splash closes when the workspace is ready. Press **Escape** to quit while it is loading.
+
 On a new profile, enter your DJ or brand name and a host handle. KaraBooth uses the handle to suggest a room code and checks availability when you start the internet room. Existing profiles can set a handle in **Preferences → Queue & Rooms → Remote Queueing**.
 
 While an internet room is online, the sidebar and idle singer screen show a QR code. Click the sidebar code to copy the public destination. In **Remote Queueing**, hide the code or enter a custom public URL. A blank custom URL uses the active room's link.
