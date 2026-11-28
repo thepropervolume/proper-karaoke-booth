@@ -92,7 +92,8 @@ for (const [name, width, height] of [['installer-header.bmp',150,57],['installer
   assert.equal(bmp.readInt32LE(18), width); assert.equal(Math.abs(bmp.readInt32LE(22)), height);
   assert.equal(bmp.readUInt16LE(28), 24, 'NSIS artwork must be 24-bit RGB BMP.');
 }
-assert.match(await readFile(join(brand, 'installer.nsh'), 'utf8'), /!macro customWelcomePage\s+!insertmacro MUI_PAGE_WELCOME\s+!macroend/);
+assert.match(await readFile(join(brand, 'installer.nsh'), 'utf8'),
+  /!macro customWelcomePage\s+!define MUI_WELCOMEPAGE_TITLE "Welcome to KaraBooth Setup"\s+!insertmacro MUI_PAGE_WELCOME\s+!macroend/);
 console.log(`Verified ${Object.keys(manifest.files).length} asset hashes, both ICO/ICNS sets, all package icon paths and mobile references.`);
 
 if (process.argv.includes('--windows-resource-check')) {
