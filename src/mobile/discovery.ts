@@ -7,11 +7,17 @@ interface DiscoveryPlugin { discover(): Promise<{ rooms: { url: string; name: st
 const native = registerPlugin<DiscoveryPlugin>('TPVRoomDiscovery');
 /** Discovery suggests public join addresses; it never joins or grants privileges. */
 export function roomSlug(value: string): string | null {
-  if (!validateSessionSlug(value.trim())) return value.trim();
+  const input = value.trim(), code = input.toLowerCase();
+  if (!validateSessionSlug(code)) return code;
   try {
-    const u = new URL(value.trim());
-    const slug = u.pathname.replace(/^\//, '').replace(/\/$/, '');
-    return u.origin === MOBILE_ORIGIN && !u.username && !u.password && !u.search && !u.hash && !validateSessionSlug(slug) ? slug : null;
+    const u = new URL(input);
+    if (u.origin !== MOBILE_ORIGIN || u.username || u.password || u.hash) return null;
+    if (u.pathname === '/app/' || u.pathname === '/app') {
+      const room = u.searchParams.get('room')?.toLowerCase() ?? '';
+      return [...u.searchParams.keys()].length === 1 && !validateSessionSlug(room) ? room : null;
+    }
+    const slug = u.pathname.replace(/^\//, '').replace(/\/$/, '').toLowerCase();
+    return !u.search && !validateSessionSlug(slug) ? slug : null;
   } catch { return null; }
 }
 export async function discoverRooms(signal?: AbortSignal): Promise<DiscoveredRoom[]> {
@@ -31,8 +37,9 @@ export async function discoverRooms(signal?: AbortSignal): Promise<DiscoveredRoo
   if (!value || typeof value !== 'object' || !Array.isArray((value as { rooms?: unknown }).rooms)) return [];
   return (value as { rooms: unknown[] }).rooms.slice(0, 20).flatMap(room => {
     if (!room || typeof room !== 'object') return [];
-    const r = room as { slug: unknown; online: unknown; roomId: unknown; generation: unknown };
-    return typeof r.slug === 'string' && !validateSessionSlug(r.slug) && r.online === true && typeof r.roomId === 'string' && typeof r.generation === 'string' && /^[a-f0-9-]{36}$/.test(r.roomId) && /^[a-f0-9-]{36}$/.test(r.generation) ? [{ slug: r.slug, name: r.slug, instance: `${r.roomId}:${r.generation}`, method: 'same-egress' as const }] : [];
+    const r = room as { slug: unknown; online: unknown; roomId: unknown; generation: unknown; expiresAt: unknown };
+    return typeof r.slug === 'string' && !validateSessionSlug(r.slug) && r.online === true && typeof r.roomId === 'string' && typeof r.generation === 'string' && /^[a-f0-9-]{36}$/.test(r.roomId) && /^[a-f0-9-]{36}$/.test(r.generation) && typeof r.expiresAt === 'number' && Number.isSafeInteger(r.expiresAt) && r.expiresAt > Date.now()
+      ? [{ slug: r.slug, name: r.slug, instance: `${r.roomId}:${r.generation}`, method: 'same-egress' as const }] : [];
   });
 }
 export async function advertiseMobileRoom(url: string, name: string): Promise<void> { if (Capacitor.isNativePlatform() && roomSlug(url)) await native.advertise({ url, name }); }

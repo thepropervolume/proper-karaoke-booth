@@ -14,6 +14,11 @@ function welcomeComplete(): boolean {
   catch { return false; }
 }
 
+function entersRooms(): boolean {
+  const params = new URLSearchParams(location.search);
+  return location.pathname === '/app/' && (params.get('rooms') === '1' || params.has('room'));
+}
+
 /** Read a mail link once and remove its credential from the browser address bar. */
 function takeAccountLink(): string | undefined {
   if (!location.hash.startsWith('#accountLink=')) return;
@@ -24,7 +29,7 @@ function takeAccountLink(): string | undefined {
 
 export function MobileApp() {
   const [link, setLink] = useState(takeAccountLink);
-  const [entered, setEntered] = useState(welcomeComplete);
+  const [entered, setEntered] = useState(() => entersRooms() || welcomeComplete());
   const [showAccount, setShowAccount] = useState(!!link);
   const [linkUsed, setLinkUsed] = useState(false);
   const [session, setSession] = useState<SignedInAccount | null>(null);

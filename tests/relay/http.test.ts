@@ -18,7 +18,34 @@ const owners = [{ id: ownerId, tokenSha256: createHash('sha256').update(token).d
 test('mobile endpoints remain disabled unless explicitly enabled', async () => fixture(async call => {
   assert.equal((await call('/v1/mobile/hosts', {}, { origin })).status, 404);
   assert.equal((await call('/v1/mobile/nearby')).status, 404);
+  assert.equal((await call('/')).status, 200);
 }));
+test('queue home opens Rooms, and nearby discovery matches a trusted IPv6 subnet only', async () => fixture(async call => {
+  const host = '2001:db8:abcd:12::1', singer = '2001:DB8:ABCD:0012::9876', other = '2001:db8:abcd:13::1';
+  const proxy = (client: string) => ({ 'x-tpv-client-ip': client });
+  const landing = await call('/', undefined, { headers: proxy(singer) });
+  assert.equal(landing.status, 302);
+  assert.equal(landing.headers.get('location'), '/app/?rooms=1');
+  assert.equal(landing.headers.get('cache-control'), 'no-store');
+  const opened = await (await call('/v1/relay/host/open', { slug: 'venue-room', openId: randomUUID() }, {
+    token, headers: { ...proxy(host), 'x-tpv-room-discovery': 'yes' },
+  })).json();
+  const identity = { roomId: opened.roomId, generation: opened.generation };
+  assert.equal((await call('/v1/relay/host/poll', identity, { token, headers: { ...proxy(host), 'x-tpv-room-discovery': 'yes' } })).status, 200);
+  const lookup = (client: string) => call('/v1/mobile/nearby', undefined, { headers: proxy(client) });
+  const nearby = await (await lookup(singer)).json();
+  assert.deepEqual(nearby.rooms.map((room: {slug: string}) => room.slug), ['venue-room']);
+  assert.doesNotMatch(JSON.stringify(nearby), /2001:db8/i);
+  assert.deepEqual((await (await lookup(other)).json()).rooms, []);
+  assert.equal((await call('/v1/relay/host/poll', identity, { token, headers: { ...proxy(host), 'x-tpv-room-discovery': 'no' } })).status, 200);
+  assert.deepEqual((await (await lookup(singer)).json()).rooms, []);
+  const manual = await call('/v1/relay/lookup/venue-room', undefined, { headers: proxy(other) });
+  assert.equal(manual.status, 200);
+  assert.equal((await manual.json()).roomId, identity.roomId);
+  assert.equal((await call('/v1/relay/host/close', identity, { token, headers: proxy(host) })).status, 200);
+  const closed = await call('/v1/relay/lookup/venue-room', undefined, { headers: proxy(other) });
+  assert.equal(await closed.json().then(value => value.online), false);
+}, true, true));
 test('mobile hosts require exact origins, get isolated temporary capabilities and share the singer protocol', async () => fixture(async call => {
   assert.equal((await call('/v1/mobile/hosts', {})).status, 403);
   assert.equal((await call('/v1/mobile/hosts', {}, { origin: 'https://attacker.test' })).status, 403);

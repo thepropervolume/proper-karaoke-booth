@@ -116,16 +116,63 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   await context.route(origin + '/**', async route => {
     const request = route.request(), url = new URL(request.url());
-    const reply = await fetch(testOrigin + url.pathname + url.search, { method: request.method(), headers: request.headers(),
+    const reply = await fetch(testOrigin + url.pathname + url.search, { method: request.method(), headers: request.headers(), redirect: 'manual',
       ...(request.method() !== 'GET' && { body: request.postDataBuffer() }) });
     await route.fulfill({ status: reply.status, headers: Object.fromEntries(reply.headers), body: Buffer.from(await reply.arrayBuffer()) });
   });
+  const login = await context.newPage();
+  let checksForEmail = 0;
+  let retryLookup: (() => void) | undefined;
+  let lookupStarted!: () => void;
+  const lookupPending = new Promise<void>(resolve => { lookupStarted = resolve; });
+  await login.route('**/v1/mobile/account/lookup', async route => {
+    const observed: { email: string } = route.request().postDataJSON();
+    if (++checksForEmail === 1) { await route.fulfill({ status: 503, json: { error: 'ACCOUNT_UNAVAILABLE' } }); return; }
+    if (checksForEmail === 2) await new Promise<void>(resolve => { retryLookup = resolve; lookupStarted(); });
+    await route.fulfill({ json: { registered: true, ...(observed.email.startsWith('legacy@') ? { passwordSet: false } : {}) } });
+  });
+  await login.route('**/v1/mobile/account/link', async route => {
+    assert.deepEqual(route.request().postDataJSON(), { email: 'legacy@example.test', purpose: 'reset' });
+    await route.fulfill({ status: 202, json: { ok: true } });
+  });
+  await login.route('**/v1/mobile/account/link/redeem', async route => {
+    assert.deepEqual(route.request().postDataJSON(), { token: 'z'.repeat(43) });
+    await route.fulfill({ status: 400, json: { error: 'PASSWORD_REQUIRED' } });
+  });
+  const authButton = (name: string) => login.getByRole('button', { name, exact: true });
+  await login.goto(origin + '/app/');
+  await authButton('Sign In / Create Account').click();
+  const email = login.getByRole('textbox', { name: 'Email address', exact: true });
+  await email.fill('registered@example.test');
+  assert.equal(checksForEmail, 0, 'Typing an email must not make account lookups.');
+  await authButton('Continue').click();
+  await authButton('Try Again').click();
+  await lookupPending;
+  try {
+    await login.waitForFunction(() => document.querySelector('.intro-form')?.getAttribute('aria-busy') === 'true');
+    await authButton('Try Again').waitFor();
+  }
+  finally { retryLookup?.(); }
+  await login.getByLabel('Password', { exact: true }).waitFor();
+  await email.fill('legacy@example.test');
+  await authButton('Continue').click();
+  await login.getByText(/I sent a password setup link to legacy@example\.test/).waitFor();
+  assert.equal(await login.getByLabel('Link from your Booth email', { exact: true }).count(), 0);
+  await login.goto(origin + '/app/#accountLink=' + 'z'.repeat(43));
+  await login.getByLabel('New password', { exact: true }).waitFor();
+  assert.equal(new URL(login.url()).hash, '');
+  await login.close();
+  checks.push('Account lookup occurs on submit, keeps retry visible, prompts for existing passwords, and explains how to open a first-password email.');
   const singer = await context.newPage();
   singer.on('pageerror', error => errors.push(error.message));
-  await singer.goto(origin + '/app/');
+  const landing = await fetch(testOrigin + '/', { redirect: 'manual' });
+  const roomPath = landing.headers.get('location');
+  assert.equal(landing.status, 302);
+  assert.equal(roomPath, '/app/?rooms=1');
+  await singer.goto(origin + roomPath);
   const exactButton = (name: string) => singer.getByRole('button', { name, exact: true });
-  await exactButton('Continue as Guest').click();
   await singer.getByRole('heading', { name: 'Rooms', exact: true }).waitFor();
+  assert.equal(new URL(singer.url()).searchParams.get('rooms'), '1');
   const nav = singer.getByRole('navigation', { name: 'Singer workspace' });
   const tab = async (name: string) => {
     await nav.getByRole('tab', { name, exact: true }).click();
@@ -181,7 +228,7 @@ try {
 
   await tab('Rooms');
   await exactButton('Join Room').click();
-  assert.equal(await singer.getByRole('textbox', { name: 'Display name', exact: true }).inputValue(), 'Alex');
+  assert.equal(await singer.getByRole('textbox', { name: 'Singer name', exact: true }).inputValue(), 'Alex');
   await singer.getByRole('dialog', { name: 'Join Room', exact: true }).waitFor();
   await singer.locator('ion-modal.singer-sheet').getByRole('button', { name: 'Join Room', exact: true }).click();
   await songOptions('Wonderwall').waitFor();
@@ -259,9 +306,9 @@ try {
   await singer.getByText('Wonderwall', { exact: true }).waitFor();
   await singer.getByText('Rehearsal Song', { exact: true }).waitFor();
   await tab('Rooms');
-  await singer.getByLabel('Room code or invitation link').fill(origin + '/' + slug);
+  await singer.getByLabel('Room code or invitation link').fill(origin + '/app/?room=' + slug);
   await exactButton('Go').click();
-  assert.equal(await singer.getByRole('textbox', { name: 'Display name', exact: true }).inputValue(), 'Alex');
+  assert.equal(await singer.getByRole('textbox', { name: 'Singer name', exact: true }).inputValue(), 'Alex');
   await singer.getByRole('dialog', { name: 'Join Room', exact: true }).waitFor();
   await singer.locator('ion-modal.singer-sheet').getByRole('button', { name: 'Join Room', exact: true }).click();
   await songOptions('Wonderwall').waitFor();

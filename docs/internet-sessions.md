@@ -17,6 +17,8 @@ If Booth asks for a connection file on a new computer, request one for that devi
 
 ## Singer flow
 
+Singers on venue Wi-Fi can open the [queue homepage](https://queue.thepropervolume.com/) and choose their host from the nearby room suggestions. This uses the trusted relay connection and the host's discovery setting. Ask your host for a room code or link whenever suggestions are absent. Joining by code works from other networks.
+
 Open the shared link, enter your name, join and request songs from the host's available library. Watch request status, withdraw an eligible request or mark yourself temporarily unavailable from the singer page. The host's approval and future-request limits still apply. A queued YouTube recording downloads on the host computer once approved; it never downloads onto the singer's phone and completion never starts playback.
 
 ## Outages and limits

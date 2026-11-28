@@ -202,6 +202,10 @@ export function createQueueRelayHandler(options: Options) {
           respond(response, 200, room); return;
         }
         if (path === '/') {
+          if (options.mobileEnabled) {
+            response.writeHead(302, { Location: '/app/?rooms=1', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }).end();
+            return;
+          }
           respond(response, 200, '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The Proper Volume Karaoke Queue</title><main><h1>The Proper Volume Karaoke Queue</h1><p>Open the session link shared by your karaoke host to choose a song and join the queue.</p><p>Hosts create a session in The Proper Volume Karaoke Booth application.</p></main></html>', true); return;
         }
         if (/^\/assets\/[A-Za-z0-9_.-]+\.(?:js|css|woff2?)$/.test(path)) {

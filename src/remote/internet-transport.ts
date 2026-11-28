@@ -36,7 +36,12 @@ export async function lookupInternetSingerRoom(slug: string, fetcher: Fetcher = 
     const response = await fetcher(`${INTERNET_QUEUE_ORIGIN}/v1/relay/lookup/${slug}`, {
       method: 'GET', credentials: 'omit', mode: 'same-origin', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer', signal,
     });
-    if (!response.ok) { void response.body?.cancel().catch(() => {}); throw new Error('This session is unavailable.'); }
+    if (!response.ok) {
+      void response.body?.cancel().catch(() => {});
+      if (response.status === 404 || response.status === 410) throw new Error('No open room found for this code. Check the code, or ask your host to start their internet session.');
+      if (response.status === 429) throw new Error('Too many attempts. Wait a moment, then try again.');
+      throw new Error('Couldn’t check this room. Check your internet connection and try again.');
+    }
     const value = await json(response, 8192);
     if (!record(value) || typeof value.roomId !== 'string' || !UUID.test(value.roomId) || typeof value.generation !== 'string' || !UUID.test(value.generation) ||
         value.slug !== slug || !Number.isSafeInteger(value.expiresAt) || (value.expiresAt as number) <= Date.now() || typeof value.online !== 'boolean') throw new Error('This session is unavailable.');

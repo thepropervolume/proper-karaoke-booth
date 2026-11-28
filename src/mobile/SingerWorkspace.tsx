@@ -60,6 +60,7 @@ const elapsed = (seconds: number) => {
 const sourceNames: Record<SourceId, string> = { ...BROWSE_LABELS, local: 'Host Library', partytyme: 'Party Tyme', youtube: 'YouTube', sunfly: 'Sunfly', stingray: 'Stingray' };
 const sourceKey = 'tpv-mobile-browse-sources-v1';
 const roomKey = 'tpv-mobile-last-room';
+const inviteRoom = () => roomSlug(new URLSearchParams(location.search).get('room') ?? '');
 
 function savedValue(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -67,6 +68,11 @@ function savedValue(key: string): string | null {
 
 function saveValue(key: string, value: string): void {
   try { localStorage.setItem(key, value); } catch { /* Browsing still works without storage. */ }
+}
+
+async function accountRoomKey(email: string): Promise<string> {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email.trim().toLowerCase()));
+  return roomKey + ':' + Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function loadSources(): BrowseSource[] {
@@ -88,7 +94,7 @@ function lanLink(input: string): string | null {
   } catch { return null; }
 }
 
-type CurrentRoom = { slug: string; client: SingerClient; number: number; id: string };
+type CurrentRoom = { slug: string; client: SingerClient; number: number; id: string; generation: string };
 type Results = { items: BrowseSong[]; next: string | null; status: 'loading' | 'ready' | 'error' };
 
 function useBrowseResults(sources: BrowseSource[], query: string, active: boolean) {
@@ -133,7 +139,10 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
   const store = useSingerProfile();
   const [tab, setTab] = useState<Screen>('room');
   const [returnFromPlayer, setReturnFromPlayer] = useState<Tab>('queue');
-  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [sheet, setSheet] = useState<Sheet | null>(() => {
+    const slug = inviteRoom();
+    return slug && !kioskRoom ? { kind: 'join', slug, label: slug } : null;
+  });
   const [sheetValue, setSheetValue] = useState('');
   const [sheetError, setSheetError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -148,10 +157,11 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
   const [sources, setSources] = useState(loadSources);
   const [sourceFilter, setSourceFilter] = useState<SourceId | 'all'>('all');
   const [lastRoom, setLastRoom] = useState(() => roomSlug(savedValue(roomKey) ?? '') ?? '');
-  const [roomInput, setRoomInput] = useState(() => roomSlug(new URLSearchParams(location.search).get('room') ?? '') ?? '');
+  const [roomInput, setRoomInput] = useState(() => inviteRoom() ?? '');
   const [roomName, setRoomName] = useState('');
   const [name, setName] = useState<string | null>(null);
   const [nearby, setNearby] = useState<DiscoveredRoom[]>([]);
+  const [accountRoom, setAccountRoom] = useState<{ email: string; slug: string } | null>(null);
   const [room, setRoom] = useState<CurrentRoom | null>(null);
   const [guest, setGuest] = useState<GuestView | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -172,11 +182,25 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
     const controller = new AbortController();
     const scan = () => void discoverRooms(controller.signal).then(found => {
       if (!controller.signal.aborted) setNearby(found);
-    }).catch(() => {});
+    }).catch(() => { if (!controller.signal.aborted) setNearby([]); });
     scan();
     const timer = setInterval(scan, 30_000);
     return () => { controller.abort(); clearInterval(timer); };
   }, [joined, kiosk]);
+  useEffect(() => {
+    const email = account?.email;
+    setAccountRoom(null);
+    if (!email || joined || kiosk) return;
+    let active = true;
+    void accountRoomKey(email).then(async key => {
+      const saved = JSON.parse(savedValue(key) ?? 'null');
+      const slug = typeof saved?.slug === 'string' ? roomSlug(saved.slug) : null;
+      if (!slug || !active) return;
+      const live = await lookupInternetSingerRoom(slug, mobileFetch);
+      if (active && live.online && live.roomId === saved.id && live.generation === saved.generation) setAccountRoom({ email, slug });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [account?.email, joined, kiosk, lastRoom]);
 
   useEffect(() => {
     if (!room || !singerId || !query.trim()) return;
@@ -241,7 +265,7 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
   async function join(slug: string, label: string, displayName: string) {
     if (connecting || joined) return;
     const value = displayName.trim();
-    if (!value) { setSheetError('Enter a display name for the room.'); return; }
+    if (!value) { setSheetError('Enter the name you want the host to use.'); return; }
     const number = room?.slug === slug ? room.number : ++connection.current;
     setName(value);
     setConnecting(true);
@@ -256,7 +280,7 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
         const client = new SingerClient(internetGuestTransport(live, { fetch: mobileFetch, rotation: true, onEnded: () => {
           if (connection.current === number) closeRoom('This room ended. You can still browse and save songs.');
         } }), '');
-        target = { slug, client, number, id: live.roomId };
+        target = { slug, client, number, id: live.roomId, generation: live.generation };
         requestNames.current.clear();
         setRoom(target);
       }
@@ -268,6 +292,10 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
         if (!kiosk) {
           setLastRoom(slug);
           saveValue(roomKey, slug);
+          if (account?.email) {
+            const identifier = JSON.stringify({ slug, id: target.id, generation: target.generation });
+            void accountRoomKey(account.email).then(key => saveValue(key, identifier)).catch(() => {});
+          }
           if (store.ready && !store.profile.displayName) void store.saveIdentity(value, store.profile.email).catch(() => {});
         }
         setTab('library');
@@ -358,6 +386,7 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
     title: playing.title, artist: playing.artist, source: playing.source, recordingKey: playing.recordingId, id: playing.versionId, roomId: room.id,
   } : undefined;
   const firstNearby = nearby[0];
+  const returnRoom = accountRoom?.email === account?.email ? accountRoom?.slug : undefined;
   const currentPlaylist = store.profile.playlists.find(value => value.id === playlist);
   const stars = starredPlaylist(store.profile);
   const collections = store.profile.playlists.filter(value => value.kind !== 'starred');
@@ -390,14 +419,15 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
 
       {tab === 'room' && <section>
         <div className="singer-room-hero">
-          {(joined || firstNearby) && <span className="singer-badge singer-badge-live">{joined ? 'Connected' : 'Nearby · Live'}</span>}
-          <div><h2>{joined ? label : (kiosk || firstNearby?.name || 'Find Your Room')}</h2>
-            <p>{joined ? 'Joined as ' + (snapshot?.singerName || connectName) : firstNearby ? 'Available to join' : 'Find the show you want to sing in.'}</p>
+          {(joined || firstNearby || returnRoom) && <span className="singer-badge singer-badge-live">{joined ? 'Connected' : returnRoom ? 'Recent Room · Live' : 'Nearby · Live'}</span>}
+          <div><h2>{joined ? label : (kiosk || returnRoom || firstNearby?.name || 'Find Your Room')}</h2>
+            <p>{joined ? 'Joined as ' + (snapshot?.singerName || connectName) : returnRoom ? 'The room you joined on this device is still open.' :
+              firstNearby?.method === 'same-egress' ? 'Confirm the room with your host.' : firstNearby ? 'Available to join' : 'Find the show you want to sing in.'}</p>
             <IonButton type="button" className="singer-ion-action" fill="solid" shape="round" disabled={connecting} onClick={() => {
               if (joined) changeTab('queue');
-              else if (kiosk || firstNearby) chooseRoom(kiosk ?? firstNearby!.slug, firstNearby?.name);
+              else if (kiosk || returnRoom || firstNearby) chooseRoom(kiosk || returnRoom || firstNearby!.slug, returnRoom || firstNearby?.name);
               else roomBox.current?.focus();
-            }}>{joined ? 'Open Queue' : kiosk ? 'Continue as Guest' : firstNearby ? 'Join Room' : 'Enter Room Code'}</IonButton>
+            }}>{joined ? 'Open Queue' : kiosk ? 'Continue as Guest' : returnRoom ? 'Return to Room' : firstNearby ? 'Join Room' : 'Enter Room Code'}</IonButton>
           </div>
         </div>
         {joined && room && guest ? <>
@@ -418,8 +448,8 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
             {!manualLan && <IonButton className="singer-ion-action" fill="solid" shape="round" type="submit" disabled={connecting}>Go</IonButton>}
           </form>
           {manualLan && <p><a href={manualLan} target="_blank" rel="noopener noreferrer">Open Local Invitation</a> on the host’s Wi-Fi.</p>}
-          {nearby.length > 1 && <section><h2 className="singer-subheading">More Nearby Rooms</h2>
-            {nearby.slice(1).map(found => <ListLink key={found.instance} icon={radioOutline} title={found.name}
+          {(returnRoom ? nearby.some(found => found.slug !== returnRoom) : nearby.length > 1) && <section><h2 className="singer-subheading">More Nearby Rooms</h2>
+            {(returnRoom ? nearby.filter(found => found.slug !== returnRoom) : nearby.slice(1)).map(found => <ListLink key={found.instance} icon={radioOutline} title={found.name}
               subtitle="Nearby" onClick={() => chooseRoom(found.slug, found.name)} />)}
           </section>}
           {lastRoom && <section><h2 className="singer-subheading">Recently Joined</h2>
@@ -594,11 +624,12 @@ export function SingerWorkspace({ accountSession, onSignIn, onSignOut, kioskRoom
         else void saveSheet();
       }}>
         {sheet.kind === 'join' && <p className="mobile-quiet">{sheet.label}</p>}
-        <label>{sheet.kind === 'playlist' ? 'Playlist name' : 'Display name'}
+        <label>{sheet.kind === 'playlist' ? 'Playlist name' : sheet.kind === 'join' ? 'Singer name' : 'Display name'}
           <input value={sheetValue} maxLength={100} autoComplete={sheet.kind === 'playlist' || kiosk ? 'off' : 'nickname'} required
             disabled={connecting || saving || (sheet.kind === 'join' && guest?.joinUncertain)}
             onChange={event => setSheetValue(event.currentTarget.value)} />
         </label>
+        {sheet.kind === 'join' && <p className="mobile-quiet">The host uses this name to call you up.</p>}
         <IonButton type="submit" className="singer-ion-action" expand="block" shape="round"
           disabled={connecting || saving || !sheetValue.trim()}>{sheet.kind === 'join'
           ? connecting ? 'Connecting…' : guest?.joinUncertain ? 'Retry Joining' : 'Join Room' : 'Save'}</IonButton>

@@ -4,14 +4,14 @@ Booth for iPhone, Android, and the [mobile web app](https://queue.thepropervolum
 
 ## First launch and accounts
 
-Choose **Continue as Guest** or **Sign In / Create Account**. Guests can browse, save tracks, and join rooms with a display name. In **Account**, you can sign in later without losing the playlists on this device.
+Choose **Continue as Guest** or **Sign In / Create Account**. Guests can browse, save tracks, and join rooms with a singer name. The queue website opens directly to **Rooms**. You can sign in from **Account** and keep the playlists on this device.
 
-Enter your email address. If you already have a Booth account, enter your password. **Email me a sign-in link** and **Forgot password?** send optional links. To create an account, choose a display name and a password of at least 12 characters, then confirm the email address. On your phone, you can open the link in your browser or copy its full address and choose **Use a link I already have** in Booth. Account verification asks you to re-enter the password you chose. Your Booth account is separate from your karaoke service subscriptions. Playlists live on this device. Use **Account → Singing Profile** to add a photo, pronouns or a short bio when the profile service is available.
+Enter your email address and choose **Continue**. If you have a Booth password, the app asks for it. If you already have an account and need to set your first password, Booth sends you a password setup link and shows where it was sent. Open the email and tap the link. **Email me a sign-in link** and **Forgot password?** send links on request. For a new account, choose a singer name and a password of at least 12 characters, then open the confirmation email and re-enter the password you chose. If you started on a different device, copy the full address from the email and choose **I Already Have a Booth Email** to paste it. Your Booth account is separate from your karaoke subscriptions. Playlists live on this device. Use **Account → Singing Profile** to add a photo, pronouns or a short bio when the profile service is available.
 
 ## Discover a room
 
-- **Nearby.** In **Rooms**, choose your host from the suggestions. Native builds use local-network discovery where available. Rooms on the same public connection can also appear, so check that the room belongs to your host.
-- **Room code or invitation.** Paste the internet invitation or enter the code, choose a display name, and join. Booth remembers the last room for your next visit. **Invite to Room** opens the device share sheet with a message and link. You can also copy the invitation. Restarting the app requires a new join.
+- **Nearby.** Connect to the host’s Wi-Fi and visit [the queue website](https://queue.thepropervolume.com/). If the host enabled nearby discovery, the browser can suggest rooms sharing the same public IPv4 address or IPv6 subnet. Native builds can also use local-network discovery. Verify the room with your host before joining. Networks with separate address families, VPNs or private browsing relays may need a room code.
+- **Room code or invitation.** Use your host's code or paste the internet invitation from any network. Enter the name the host should use when calling you up. **Invite to Room** opens the share sheet, and **Copy Invitation** copies the room link. Signed-in singers can return to their last still-active room on this device. Admission is confirmed again after restarting.
 - **LAN-only invitation.** Connect to the host's Wi-Fi and open its trusted local HTTPS link in your device browser.
 
 ## Search and Playlists

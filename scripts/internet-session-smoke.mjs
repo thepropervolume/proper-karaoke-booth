@@ -9,6 +9,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createRequire } from 'node:module';
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -127,11 +128,20 @@ try {
 
   mobile = await context.newPage();
   mobile.setDefaultTimeout(10000);
-  await mobile.goto(`${publicOrigin}/app/`);
-  await mobile.getByRole('button', { name: 'Continue as Guest', exact: true }).click();
-  await mobile.getByLabel('Room code or invitation link').fill(link);
+  const landing = await new Promise((resolve, reject) => {
+    get(loopback + '/', { headers: { host: new URL(publicOrigin).host } }, response => {
+      response.resume();
+      resolve({ status: response.statusCode, location: response.headers.location });
+    }).once('error', reject);
+  });
+  const roomPath = landing.location;
+  assert.equal(landing.status, 302);
+  assert.equal(roomPath, '/app/?rooms=1');
+  await mobile.goto(publicOrigin + roomPath);
+  await mobile.getByRole('heading', { name: 'Rooms', exact: true }).waitFor();
+  await mobile.getByLabel('Room code or invitation link').fill(slug.toUpperCase());
   await mobile.getByRole('button', { name: 'Go', exact: true }).click();
-  await mobile.getByRole('textbox', { name: 'Display name', exact: true }).fill('Mobile QA Listener');
+  await mobile.getByRole('textbox', { name: 'Singer name', exact: true }).fill('Mobile QA Listener');
   await mobile.getByRole('dialog', { name: 'Join Room', exact: true }).waitFor();
   await mobile.locator('ion-modal.singer-sheet').getByRole('button', { name: 'Join Room', exact: true }).click();
   const nav = mobile.getByRole('navigation', { name: 'Singer workspace' });

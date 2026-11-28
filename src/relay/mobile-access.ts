@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { isIP, SocketAddress } from 'node:net';
 import type { HostOpenResult } from './store';
 import type { PublicRoom } from './broker';
 /** Short-lived browser-host capabilities, isolated from configured desktop owners. */
@@ -20,12 +21,25 @@ export class MobileHostAccess {
   }
 }
 type Nearby = { room: HostOpenResult; network: string; until: number };
-/** Same-egress hints, not proof of proximity. Raw IPs are never stored or returned. */
+
+function discoveryNetwork(ip: string): string {
+  if (isIP(ip) !== 6) return ip;
+  const canonical = new SocketAddress({ family: 'ipv6', address: ip }).address;
+  if (canonical.startsWith('::ffff:')) return canonical.slice(7);
+  // Devices on IPv6 Wi-Fi have different addresses. Use the global unicast
+  // subnet only as a room suggestion, and never return it to guests.
+  if (!/^[23]/.test(canonical)) return canonical;
+  const [start, end] = canonical.split('::'), head = start.split(':');
+  const tail = end ? end.split(':') : [];
+  return (end === undefined ? head : [...head, ...Array(8 - head.length - tail.length).fill('0'), ...tail]).slice(0, 4).join(':') + '/64';
+}
+
+/** Same-network hints. Raw addresses are never stored or returned. */
 export class NearbyRooms {
   private readonly salt = randomBytes(32);
   private entries = new Map<string, Nearby>();
   constructor(private now: () => number = Date.now) {}
-  private network(ip: string) { return createHmac('sha256', this.salt).update(ip.replace(/^::ffff:/, '')).digest('hex'); }
+  private network(ip: string) { return createHmac('sha256', this.salt).update(discoveryNetwork(ip)).digest('hex'); }
   record(room: HostOpenResult, client: string, enabled: boolean): void {
     this.entries.delete(room.roomId);
     for (const [id, value] of this.entries) if (value.room.expiresAt <= this.now()) this.entries.delete(id);
