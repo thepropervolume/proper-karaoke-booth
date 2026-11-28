@@ -132,15 +132,18 @@ export class MobileAccounts {
     if (action === 'lookup' && sameKeys(input, 'email')) {
       if (!take('booth-lookup:' + ip, 12) || !take('booth-lookup-hour:' + ip, 60, 60 * MINUTE))
         return fault(429, 'RATE_LIMITED');
-      return reply(200, { registered: Boolean(await this.store.account(email)) });
+      const account = await this.store.account(email);
+      // Legacy accounts may have no verifier yet. They use the reset flow
+      // to prove email ownership before setting their first password.
+      return reply(200, { registered: Boolean(account), ...(account && !account.passwordHash ? { passwordSet: false } : {}) });
     }
     if (action === 'login' && sameKeys(input, 'email,password') && passwordUsable(input.password)) {
       if (!take('booth-login-ip:' + ip, 12) || !take('booth-login-email:' + identity, 10, 15 * MINUTE))
         return fault(429, 'RATE_LIMITED');
       const account = await this.store.account(email);
-      const verified = await prove(() => matchesPassword(input.password as string, account?.passwordHash ?? DUMMY));
+      const verified = await prove(() => matchesPassword(input.password as string, account?.passwordHash || DUMMY));
       if (verified === null) return fault(429, 'RATE_LIMITED');
-      if (!verified || !account) return fault(401, 'INVALID_CREDENTIALS');
+      if (!verified || !account?.passwordHash) return fault(401, 'INVALID_CREDENTIALS');
       const session = issueSession(this.now());
       if (!await this.store.addSession(account, session.record, this.now())) return fault(401, 'INVALID_CREDENTIALS');
       return reply(200, { token: session.token, account: profile(account) });

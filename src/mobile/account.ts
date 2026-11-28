@@ -46,10 +46,11 @@ export function accountLinkToken(value: string): string | null {
   } catch { return null; }
 }
 
-export async function lookupAccount(email: string, signal: AbortSignal): Promise<boolean> {
-  const answer = await mobileJson(root + 'lookup', { email }, { signal }) as { registered?: unknown } | null;
-  if (typeof answer?.registered !== 'boolean') throw new Error('Account lookup unavailable.');
-  return answer.registered;
+export async function lookupAccount(email: string): Promise<'new' | 'existing' | 'setup-password'> {
+  const answer = await mobileJson(root + 'lookup', { email }) as { registered?: unknown; passwordSet?: unknown } | null;
+  if (typeof answer?.registered !== 'boolean' || answer.passwordSet !== undefined && typeof answer.passwordSet !== 'boolean')
+    throw new Error('Account lookup unavailable.');
+  return !answer.registered ? 'new' : answer.passwordSet === false ? 'setup-password' : 'existing';
 }
 
 export async function signIn(email: string, password: string): Promise<SignedInAccount> {

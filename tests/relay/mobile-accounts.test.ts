@@ -103,6 +103,22 @@ test('Booth sign-up verifies ownership, link sign-in is single use, reset revoke
   assert.equal(mail.length, 4);
 });
 
+test('an account without a verifier can set its first password through a single-use email link', async () => {
+  const email = 'legacy@example.test', password = 'test legacy account password';
+  const store = new MemoryAccounts(new Map([[email, { email, id: 1, name: 'Legacy Singer', passwordHash: '' }]]));
+  const mail: string[] = [];
+  const service = new MobileAccounts(store, async (_, kind, token) => { assert.equal(kind, 'reset'); mail.push(token); });
+  const call = (action: string, body: unknown) => service.handle(action, 'POST', body, undefined, '127.0.0.1', () => true);
+  assert.deepEqual((await call('lookup', { email })).body, { registered: true, passwordSet: false });
+  assert.equal((await call('login', { email, password })).status, 401);
+  assert.equal((await call('link', { email, purpose: 'reset' })).status, 202);
+  assert.deepEqual((await call('link/redeem', { token: mail[0] })).body, { error: 'PASSWORD_REQUIRED' });
+  assert.equal((await call('link/redeem', { token: mail[0], password })).status, 200);
+  assert.equal((await call('link/redeem', { token: mail[0], password })).status, 400);
+  assert.deepEqual((await call('lookup', { email })).body, { registered: true });
+  assert.equal((await call('login', { email, password })).status, 200);
+});
+
 test('account HTTP routes allow exact native origins without widening the room origin boundary', async () => {
   const origin = 'https://queue.example.test';
   const roomDb = new DatabaseSync(':memory:');
