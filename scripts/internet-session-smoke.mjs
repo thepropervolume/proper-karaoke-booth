@@ -94,9 +94,9 @@ try {
   assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), link);
   const qr = host.getByRole('button', { name: 'Copy public room link', exact: true });
   await qr.locator('img[src^="data:image/png"]').waitFor();
-  const display = app.windows().find(page => page.url().replaceAll('\\', '/').includes('/display/index.html'));
-  assert.ok(display, 'The singer renderer is available.');
-  const audienceQr = display.locator('#singer-room-qr:not([hidden]) img[src^="data:image/png"]');
+  const idleDisplay = app.windows().find(page => page.url().replaceAll('\\', '/').includes('/display/index.html'));
+  assert.ok(idleDisplay, 'The singer renderer is available.');
+  const audienceQr = idleDisplay.locator('#singer-room-qr:not([hidden]) img[src^="data:image/png"]');
   await audienceQr.waitFor();
   await qr.click();
   assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), link);
