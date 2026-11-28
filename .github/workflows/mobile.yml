@@ -48,7 +48,17 @@ jobs:
           export JAVA_HOME="$JAVA_HOME_21_X64"
           export PATH="$JAVA_HOME/bin:$PATH"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
-          bash gradlew assembleDebug bundleRelease --no-daemon
+          gradle_log="$RUNNER_TEMP/karabooth-gradle.log"
+          for retry_delay in 20 45 0; do
+            if bash gradlew assembleDebug bundleRelease --no-daemon 2>&1 | tee "$gradle_log"; then
+              break
+            fi
+            if [ "$retry_delay" -eq 0 ] || ! grep -q 'Received status code 429' "$gradle_log"; then
+              exit 1
+            fi
+            echo "Maven rate limited dependency downloads. Retrying in $retry_delay seconds."
+            sleep "$retry_delay"
+          done
         working-directory: mobile/android
       - name: Prepare checksummed Android development packages
         run: node scripts/mobile-release.mjs stage android
