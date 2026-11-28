@@ -165,7 +165,7 @@ try {
       const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('TPV_') && key !== 'ELECTRON_RUN_AS_NODE'));
       env.PATH = toolDirectory; // No Node executable; wrapper uses Electron's runtime.
       const help = command(zipInspection.wrapper, ['--help'], { cwd: temporary, env });
-      assert.match(help, /TPV|Karaoke|tpv-karaoke/);
+      assert.match(help, /Usage: karabooth-cli\b/);
       assert.match(help, /--help/); result.cliWithoutNode = true;
       for (const script of ['packaged-app-smoke.mjs', 'packaged-branding-smoke.mjs']) {
         const output = command(process.execPath, [join(repo, 'scripts', script), zipInspection.executable], { timeout: 240_000 });
