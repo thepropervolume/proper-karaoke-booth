@@ -46,7 +46,7 @@ export default {
   // Require genuine ALSA on both t64 and older distributions. Ubuntu can satisfy
   // an unversioned libasound2 with an OSS compatibility library missing Electron symbols.
   deb: { depends: ['libgtk-3-0 | libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils',
-    'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0', 'libgbm1', 'libasound2t64 | libasound2 (>= 1.0.16)', 'libdrm2', 'libx11-xcb1'] },
+    'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0', 'libgbm1', 'libasound2t64 | libasound2 (>= 1.0.16)', 'libdrm2', 'libx11-xcb1', 'ffmpeg'] },
   mac: { target: ['dmg', 'zip'], icon: 'assets/branding/app.icns', category: 'public.app-category.music',
     minimumSystemVersion: '13.0.0', hardenedRuntime: true, identity: '-', notarize: false,
     extendInfo: {

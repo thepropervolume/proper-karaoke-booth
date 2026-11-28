@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { extname, isAbsolute, relative, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { fingerprintMedia, mediaIdentityMatches } from './media-verification';
+import { findFfmpegTool } from './media-tool-paths';
 import type { StoredMedia } from './store';
 
 export type EmbeddedMetadataResult =
@@ -47,7 +48,9 @@ export async function readEmbeddedMp4(media: StoredMedia, managedRoots: readonly
     }
     const checked = await fingerprintMedia(media.path, deadline);
     if (checked.fingerprint !== media.fingerprint) return { status: 'changed' };
-    const { stdout } = await probe('ffprobe', [
+    const ffprobe = await findFfmpegTool('ffprobe');
+    if (!ffprobe) return { status: 'tool-missing' };
+    const { stdout } = await probe(ffprobe, [
       '-v', 'error', '-protocol_whitelist', 'file,pipe', '-f', 'mov', '-enable_drefs', '0', '-i', path,
       '-show_entries', 'format_tags=title,artist', '-of', 'json=string_validation=fail',
     ], { signal: deadline, killSignal: 'SIGKILL', timeout: 5_000, maxBuffer: 8192, windowsHide: true });
@@ -59,7 +62,7 @@ export async function readEmbeddedMp4(media: StoredMedia, managedRoots: readonly
     if (signal.aborted) return { status: 'cancelled' };
     // Only a missing executable is a missing tool. The input file can disappear independently.
     const failure = error as NodeJS.ErrnoException;
-    if (failure.syscall === 'spawn ffprobe' && failure.code === 'ENOENT') return { status: 'tool-missing' };
+    if (failure.syscall?.endsWith('ffprobe' + (process.platform === 'win32' ? '.exe' : '')) && failure.code === 'ENOENT') return { status: 'tool-missing' };
     return { status: 'unavailable' };
   }
 }

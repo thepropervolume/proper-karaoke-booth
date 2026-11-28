@@ -7,18 +7,18 @@ import type { Settings } from '../domain/settings';
 import { emptyYouTubeSearchCounts, filterYouTubeSearchEntries, MAX_YOUTUBE_SEARCH_OUTPUT_BYTES,
   MAX_YOUTUBE_SEARCH_RESULTS, validYouTubeSearchQuery, YOUTUBE_KARAOKE_QUALITY_NOTE, youtubeKaraokeQuery,
   type YouTubeKaraokeSong, type YouTubeSearchResult, type YouTubeSearchStatus } from '../domain/youtube-search';
-import { resolveYtDlpExecutable } from './youtube-tools';
+import { managedYtDlpOptions, resolveYtDlpExecutable, ytDlpEnvironment, type YtDlpLaunch } from './youtube-tools';
 
 export type YouTubeSearchScope = Pick<Settings, 'youtubeSearchEnabled' | 'youtubeSearchMode' | 'youtubeApprovedChannels' |
-  'youtubeBlockedChannels' | 'songBlacklist' | 'artistBlacklist' | 'ytDlpExecutable'> & { policy: Policy };
-export type YouTubeSearchRunner = (executable: string, args: string[], options: { signal: AbortSignal; timeoutMs: number }) => Promise<string>;
+  'youtubeBlockedChannels' | 'songBlacklist' | 'artistBlacklist' | 'ytDlpExecutable' | 'ytDlpChannel'> & { policy: Policy };
+export type YouTubeSearchRunner = (executable: string, args: string[], options: { signal: AbortSignal; timeoutMs: number; managedRuntime?: boolean }) => Promise<string>;
 type FailureStatus = Exclude<YouTubeSearchStatus, 'ok'>;
 class SearchFailure extends Error { constructor(readonly status: FailureStatus) { super('YouTube metadata search failed.'); } }
 const messages: Record<FailureStatus, string> = {
   disabled: 'YouTube search is disabled in Preferences.',
   'invalid-input': 'Enter 2–200 characters to search YouTube karaoke.',
   'configuration-error': 'Check YouTube search mode and approved/blocked channel settings.',
-  'dependency-missing': 'YouTube search needs yt-dlp. Install it or select its executable in Preferences.',
+  'dependency-missing': 'YouTube search needs yt-dlp. Check the selected build or prepare it in Preferences → Video Downloads & Cache.',
   unavailable: 'YouTube search is unavailable. Try again later; other sources remain available.',
   'invalid-response': 'YouTube returned incomplete or invalid metadata. Update yt-dlp and try again.',
   'timed-out': 'YouTube search timed out. Try a more specific query or check the connection.',
@@ -36,7 +36,8 @@ export const runYouTubeSearch: YouTubeSearchRunner = (executable, args, options)
   }
   if (options.signal.aborted) { reject(new SearchFailure('cancelled')); return; }
   const windows = process.platform === 'win32';
-  const child = spawn(executable, args, { windowsHide: true, detached: !windows, shell: false, stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(executable, args, { windowsHide: true, detached: !windows, shell: false, stdio: ['ignore', 'pipe', 'ignore'],
+    env: ytDlpEnvironment(!!options.managedRuntime) });
   const chunks: Buffer[] = []; let bytes = 0, finished = false, stopping = false;
   let reason: FailureStatus | null = null, grace: ReturnType<typeof setTimeout> | undefined;
   const finish = (error?: FailureStatus) => {
@@ -74,7 +75,7 @@ export const runYouTubeSearch: YouTubeSearchRunner = (executable, args, options)
 });
 
 const scopeKey = (scope: YouTubeSearchScope) => JSON.stringify([scope.youtubeSearchEnabled, scope.youtubeSearchMode,
-  scope.youtubeApprovedChannels, scope.youtubeBlockedChannels, scope.songBlacklist, scope.artistBlacklist, scope.ytDlpExecutable, scope.policy]);
+  scope.youtubeApprovedChannels, scope.youtubeBlockedChannels, scope.songBlacklist, scope.artistBlacklist, scope.ytDlpExecutable, scope.ytDlpChannel, scope.policy]);
 const policyBlocksSearch = (scope: YouTubeSearchScope) => scope.policy.ageRestricted || scope.policy.includeVersionIds !== null;
 function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -93,7 +94,7 @@ export class YouTubeSearchService {
   private receipt: { id: string; scope: string; songs: Map<string, YouTubeKaraokeSong> } | null = null;
   private readonly timeoutMs: number;
   constructor(private readonly current: () => YouTubeSearchScope, private readonly options: {
-    run?: YouTubeSearchRunner; resolveExecutable?: (selected: string) => Promise<string>; timeoutMs?: number;
+    run?: YouTubeSearchRunner; resolveExecutable?: (selected: string, channel: Settings['ytDlpChannel']) => Promise<string | YtDlpLaunch>; timeoutMs?: number;
   } = {}) {
     this.timeoutMs = options.timeoutMs ?? 25_000;
     if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1 || this.timeoutMs > 45_000) throw new Error('Invalid YouTube search timeout.');
@@ -118,15 +119,22 @@ export class YouTubeSearchService {
     if (options.signal?.aborted) controller.abort();
     const timer = setTimeout(() => controller.abort('timed-out'), this.timeoutMs);
     try {
-      let executable: string;
-      try { executable = await abortable((this.options.resolveExecutable ?? resolveYtDlpExecutable)(scope.ytDlpExecutable), controller.signal); }
+      let launch: string | YtDlpLaunch;
+      try {
+        launch = await abortable(this.options.resolveExecutable?.(scope.ytDlpExecutable, scope.ytDlpChannel)
+          ?? resolveYtDlpExecutable(scope.ytDlpExecutable), controller.signal);
+      }
       catch (error) { if (controller.signal.aborted) throw error; throw new SearchFailure('dependency-missing'); }
+      const { executable, nodeExecutable } = typeof launch === 'string' ? { executable: launch, nodeExecutable: undefined } : launch;
       if (!isAbsolute(executable) || executable.length > 4096 || /[\x00-\x1f\x7f]/.test(executable)) throw new SearchFailure('dependency-missing');
       const args = ['--ignore-config', '--no-plugin-dirs', '--no-cache-dir', '--no-progress', '--no-warnings', '--skip-download',
-        '--flat-playlist', '--dump-single-json', '--no-mark-watched', '--no-remote-components', '--no-js-runtimes',
+        '--flat-playlist', '--dump-single-json', '--no-mark-watched',
+        ...(nodeExecutable ? managedYtDlpOptions(nodeExecutable) : ['--no-remote-components', '--no-js-runtimes']),
         '--playlist-end', String(MAX_YOUTUBE_SEARCH_RESULTS), '--socket-timeout', '10', '--retries', '0', '--extractor-retries', '0',
         '--', `ytsearch${MAX_YOUTUBE_SEARCH_RESULTS}:${youtubeKaraokeQuery(query)}`];
-      const output = await abortable((this.options.run ?? runYouTubeSearch)(executable, args, { signal: controller.signal, timeoutMs: this.timeoutMs }), controller.signal);
+      const output = await abortable((this.options.run ?? runYouTubeSearch)(executable, args, {
+        signal: controller.signal, timeoutMs: this.timeoutMs, managedRuntime: !!nodeExecutable,
+      }), controller.signal);
       if (controller.signal.aborted) throw new SearchFailure(controller.signal.reason === 'timed-out' ? 'timed-out' : 'cancelled');
       if (Buffer.byteLength(output) > MAX_YOUTUBE_SEARCH_OUTPUT_BYTES) throw new SearchFailure('invalid-response');
       let value: unknown; try { value = JSON.parse(output); } catch { throw new SearchFailure('invalid-response'); }

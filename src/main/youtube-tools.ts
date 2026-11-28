@@ -1,18 +1,23 @@
-import { constants } from 'node:fs';
-import { access, realpath, stat } from 'node:fs/promises';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { findExecutable, pathExecutables } from './media-tool-paths';
+
+export type YtDlpLaunch = { executable: string; nodeExecutable?: string };
+
+export function managedYtDlpOptions(nodeExecutable?: string): string[] {
+  return nodeExecutable ? ['--no-js-runtimes', '--js-runtimes', `node:${nodeExecutable}`, '--no-remote-components'] : [];
+}
+
+export function ytDlpEnvironment(managedRuntime: boolean): NodeJS.ProcessEnv | undefined {
+  if (!managedRuntime) return undefined;
+  // Electron provides Node for the offline EJS scripts distributed by yt-dlp.
+  const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+  delete env.NODE_OPTIONS;
+  delete env.NODE_PATH;
+  return env;
+}
 
 /** Resolve a host-selected executable or a normal absolute PATH entry; never a shell. */
 export async function resolveYtDlpExecutable(selected = '', searchPath = process.env.PATH ?? ''): Promise<string> {
-  const candidates = selected ? [selected] : searchPath.split(delimiter).filter(isAbsolute).map(directory => join(directory, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'));
-  for (const candidate of candidates) {
-    if (!isAbsolute(candidate) || /[\x00-\x1f\x7f]/.test(candidate)) continue;
-    try {
-      const resolved = await realpath(candidate), info = await stat(resolved);
-      if (!info.isFile() || (process.platform === 'win32' && !/\.exe$/i.test(resolved))) continue;
-      await access(resolved, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
-      return resolved;
-    } catch { /* Try the next normal PATH entry. */ }
-  }
-  throw new Error('yt-dlp was not found. Install yt-dlp and FFmpeg, add them to PATH, or choose the yt-dlp executable in Preferences.');
+  const resolved = await findExecutable(selected ? [selected] : pathExecutables('yt-dlp', searchPath));
+  if (resolved) return resolved;
+  throw new Error('yt-dlp was not found. Prepare a managed build or correct your custom executable in Preferences.');
 }

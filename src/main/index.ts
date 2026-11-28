@@ -92,7 +92,10 @@ import { AutomaticBumper } from './automatic-bumper';
 import { ShowAdvance } from './show-advance';
 import { stageNextApproved } from './stage-next';
 import { StartIntentFence } from './start-intent';
-import { resolveYtDlpExecutable } from './youtube-tools';
+import { resolveYtDlpExecutable, type YtDlpLaunch } from './youtube-tools';
+import { ManagedMediaTools, pinnedYtDlp } from './managed-media-tools';
+import { ffmpegStatus, installMissingFfmpeg } from './ffmpeg-setup';
+import { isYtDlpChannel, type YtDlpChannel } from '../domain/media-tools';
 import { youtubeIdentity } from '../domain/streaming-source';
 import { PlaybackTimeline } from './playback-timeline';
 import { applicationUserData } from './user-data-path';
@@ -178,6 +181,14 @@ function ratingsConnection(): SongRatingsConnection {
 }
 let state: ShowState;
 let settings: Settings;
+let managedMediaTools: ManagedMediaTools | undefined;
+function mediaTools(): ManagedMediaTools {
+  return managedMediaTools ??= new ManagedMediaTools(join(app.getPath('userData'), 'managed-tools'));
+}
+async function resolveMediaDownloader(selected: string, channel: YtDlpChannel): Promise<YtDlpLaunch> {
+  if (selected || !pinnedYtDlp(channel)) return { executable: await resolveYtDlpExecutable(selected) };
+  return { executable: await mediaTools().prepare(channel), nodeExecutable: process.execPath };
+}
 const startIntentFence = new StartIntentFence();
 // Every durable authority install records the selected turn before callbacks or
 // notifications, even if later work fails. This catches selection ABA changes.
@@ -186,7 +197,7 @@ function installShowState(next: ShowState): void {
   if (settings) startIntentFence.observe(state, settings, Date.now());
 }
 const providerCatalog = new ProviderCatalogService(() => ({ providerCatalogEnabled: settings.providerCatalogEnabled, providerCatalogProfiles: settings.providerCatalogProfiles, sourceVisibility: settings.sourceVisibility, policy: state.policy, songBlacklist: settings.songBlacklist, artistBlacklist: settings.artistBlacklist, karaFunConnected: karaFunAccount?.status().state === 'connected' }));
-const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }));
+const youtubeSearch = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }), { resolveExecutable: resolveMediaDownloader });
 // In-flight discovery replies must not reappear after a source is toggled.
 let sourceVisibilityRevision = 0;
 function guestCommunityTracks(tracks: LocalCatalogTrack[]): RemoteCatalogTrack[] {
@@ -210,7 +221,7 @@ const guestProviderCatalog: RemoteCatalogProviders = {
     source === 'karafun' ? karaFunAccount.revision() :
       source === 'partytyme' ? partyTymeAccount.revision() :
         source === 'karaokenerds' ? [settings.sharedCatalogEnabled, settings.sharedCatalogConfigFile] :
-          [settings.youtubeSearchEnabled, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]]),
+          [settings.youtubeSearchEnabled, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable, settings.ytDlpChannel]]),
   async search(source, query, signal): Promise<RemoteCatalogTrack[]> {
     signal.throwIfAborted();
     if (source === 'karafun') {
@@ -226,7 +237,7 @@ const guestProviderCatalog: RemoteCatalogProviders = {
     if (source === 'karaokenerds') return [];
     // Give guest lookups an independent receipt/cancellation lifetime. They
     // cannot cancel the desktop host’s search or replace its selection.
-    const search = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }));
+    const search = new YouTubeSearchService(() => ({ ...settings, youtubeSearchEnabled: settings.youtubeSearchEnabled && settings.sourceVisibility.youtube, policy: state.policy }), { resolveExecutable: resolveMediaDownloader });
     const result = await search.search(query, { signal });
     return result.songs.map(song => ({ title: song.title, artist: song.artist ?? '', rating: 'unrated', reverseTitleGuess: song.metadataSource === 'video-title',
       source: { provider: 'youtube', videoId: song.videoId } }));
@@ -577,7 +588,7 @@ async function startYouTubeDownload(versionId: string) {
   const baseline: DownloadBaseline = { videoId: version.source.videoId, media: originalMedia, retry };
   preparingDownload = true;
   try {
-    const executable = await resolveYtDlpExecutable(settings.ytDlpExecutable);
+    const { executable, nodeExecutable } = await resolveMediaDownloader(settings.ytDlpExecutable, settings.ytDlpChannel);
     if (shuttingDown) throw new Error('The application is closing.');
     const current=state.versions.find(item=>item.id===versionId);
     if(current?.source?.provider !== 'youtube' || current.source.videoId!==version.source.videoId || !isVersionAllowed(state, versionId, settings))throw new Error('This video selection is no longer available.');
@@ -600,7 +611,7 @@ async function startYouTubeDownload(versionId: string) {
         store.save(state, [{ id: asset.versionId, path: asset.path, fingerprint: asset.fingerprint }]);
         // The current Version and queued request IDs stay unchanged.
         try { broadcast(); } catch { /* A committed download must not be reported as failed by a view. */ }
-      });
+      }, { nodeExecutable });
       youtubeDownloadConfig = config;
     }
     activeDownloadBaselines.set(version.id, baseline);
@@ -2278,6 +2289,24 @@ else {
     return sharedCatalog.status(requested, requested === catalogConfigFile());
   });
   ipcMain.handle('host:get-settings', event => { guardHost(event.sender.id); return { settings, path: settingsPath, created: settingsCreated }; });
+  ipcMain.handle('host:media-tool-status', async (event, channel: unknown) => {
+    guardHost(event.sender.id);
+    if (!isYtDlpChannel(channel)) throw new Error('Invalid yt-dlp release channel.');
+    const [downloader, tools] = await Promise.all([mediaTools().status(channel), ffmpegStatus()]);
+    return { ytDlpVersion: downloader.version, ytDlpReady: downloader.ready, ...tools };
+  });
+  ipcMain.handle('host:prepare-media-downloader', async (event, channel: unknown) => {
+    guardHost(event.sender.id);
+    if (shuttingDown || !isYtDlpChannel(channel)) throw new Error('Cannot prepare this yt-dlp build.');
+    try { await mediaTools().prepare(channel); return { ok: true }; }
+    catch { return { ok: false, error: 'Could not download a verified yt-dlp build. Check your internet connection and try again.' }; }
+  });
+  ipcMain.handle('host:install-ffmpeg', async event => {
+    guardHost(event.sender.id);
+    if (shuttingDown) throw new Error('Application is shutting down.');
+    try { await installMissingFfmpeg(); return { ok: true }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'FFmpeg installation failed.' }; }
+  });
   ipcMain.handle('host:rating-keys', (event, ids: unknown) => {
     guardHost(event.sender.id);
     if (!Array.isArray(ids) || ids.length > 1000 || ids.some(id => typeof id !== 'string' || id.length > 500)) throw new Error('Choose a bounded list of library recordings.');
@@ -2401,7 +2430,7 @@ else {
         if (changingOutput) { await bumper?.setOutputAvailable(false); pauseForOutputLoss(); }
         const ratingProfileChanged = settings.ratingProfileConfigFile !== proposed.ratingProfileConfigFile;
         const khostSettingsChanged = (['khostBridgeConfigFile', 'songBlacklist', 'artistBlacklist'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
-        const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
+        const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable', 'ytDlpChannel'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const desktopUpdateModeChanged = settings.desktopUpdateMode !== proposed.desktopUpdateMode;
         const completedSetup = settings.hostSetupPending && !proposed.hostSetupPending;
         const singerScreenEnabledChanged = settings.singerScreenEnabled !== proposed.singerScreenEnabled;

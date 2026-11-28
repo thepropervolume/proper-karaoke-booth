@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { findFfmpegTool } from './media-tool-paths';
 
 /** Keep conversion cancellable, and wait for the worker to close before cleaning up its files. */
 export async function runFfmpegConversion(
@@ -6,8 +7,11 @@ export async function runFfmpegConversion(
   options: { cwd?: string; installMessage: string; decodeMessage: string },
 ): Promise<void> {
   if (signal.aborted) throw new Error('Import cancelled.');
+  const executable = await findFfmpegTool('ffmpeg');
+  if (!executable) throw new Error(options.installMessage);
+  if (signal.aborted) throw new Error('Import cancelled.');
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('ffmpeg', [...args, '-progress', 'pipe:1', '-nostats', output], {
+    const child = spawn(executable, [...args, '-progress', 'pipe:1', '-nostats', output], {
       cwd: options.cwd, windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let spawnError = false, timedOut = false, buffer = '';

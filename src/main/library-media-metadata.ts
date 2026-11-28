@@ -4,6 +4,7 @@ import { extname, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import { libraryBpm, libraryMusicalKey, type LibraryResultMetadata } from '../domain/library-result-fields';
 import { metadataFromPath, type MetadataFormat } from '../domain/metadata';
+import { findFfmpegTool } from './media-tool-paths';
 import type { StoredMedia } from './store';
 
 const probe = promisify(execFile);
@@ -70,7 +71,9 @@ export class LibraryMediaMetadata {
     if (extension === '.mp4' || extension === '.mp3') {
       try {
         // Force a known demuxer and allow only local files. MOV external references stay disabled.
-        const { stdout } = await probe('ffprobe', [
+        const ffprobe = await findFfmpegTool('ffprobe');
+        if (!ffprobe) return details;
+        const { stdout } = await probe(ffprobe, [
           '-v', 'error', '-protocol_whitelist', 'file,pipe', ...(extension === '.mp4' ? ['-f', 'mov', '-enable_drefs', '0'] : ['-f', 'mp3']), '-i', item.path,
           '-show_entries', 'format=duration:format_tags=bpm,TBPM,initialkey,TKEY,key,tempo,CATALOGNUMBER,catalognumber', '-of', 'json=string_validation=fail',
         ], { timeout: 3500, maxBuffer: 16384, windowsHide: true, killSignal: 'SIGKILL' });

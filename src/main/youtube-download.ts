@@ -4,13 +4,15 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, open, readdir, realpath, rmdir, unlink, link, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { hashImportFile } from './import-hash';
+import { findFfmpegTool } from './media-tool-paths';
+import { managedYtDlpOptions, ytDlpEnvironment } from './youtube-tools';
 
 export type YouTubeDownloadInput = { versionId: string; videoId: string; title: string; artist: string; brandSlug?: string };
 export type DownloadedYouTubeAsset = { versionId: string; videoId: string; path: string; fingerprint: string };
 export type YouTubeDownloadProgress = { id: string; versionId: string; videoId: string;
   phase: 'preparing' | 'downloading' | 'verifying' | 'cancelling' | 'completed' | 'cancelled' | 'failed';
   percent: number | null; message: string; cleanupNeeded: boolean };
-type RunOptions = { cwd: string; signal: AbortSignal; onLine(line: string): void };
+type RunOptions = { cwd: string; signal: AbortSignal; onLine(line: string): void; managedRuntime?: boolean };
 export type YouTubeDownloadRunner = (executable: string, args: string[], options: RunOptions) => Promise<void>;
 export class YouTubeDownloadRunError extends Error {
   constructor(readonly cleanupSafe: boolean) { super('Download process failed.'); }
@@ -103,7 +105,8 @@ export const runYouTubeDownload: YouTubeDownloadRunner = (executable, args, opti
   abortIfNeeded(options.signal);
   return new Promise((resolve, reject) => {
     const windows = process.platform === 'win32';
-    const child = spawn(executable, args, { cwd: options.cwd, windowsHide: true, detached: !windows, shell: false, stdio: ['ignore', 'pipe', 'ignore'] });
+    const child = spawn(executable, args, { cwd: options.cwd, windowsHide: true, detached: !windows, shell: false, stdio: ['ignore', 'pipe', 'ignore'],
+      env: ytDlpEnvironment(!!options.managedRuntime) });
     let spawnFailed = false, stopping: Promise<boolean> | null = null, buffer = '', finished = false;
     let abortTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (error?: YouTubeDownloadRunError) => {
@@ -156,7 +159,7 @@ export class YouTubeDownloads {
   private completion: Promise<YouTubeDownloadProgress | null> | null = null;
   constructor(private readonly baseDirectory: string, private readonly executable: string,
     private readonly commit: (asset: DownloadedYouTubeAsset) => void,
-    private readonly options: { run?: YouTubeDownloadRunner; timeoutMs?: number } = {}) {
+    private readonly options: { run?: YouTubeDownloadRunner; timeoutMs?: number; nodeExecutable?: string } = {}) {
     if (!isAbsolute(baseDirectory) || !isAbsolute(executable)) throw new DownloadFailure('Choose absolute video-cache and yt-dlp paths.');
     if (options.timeoutMs !== undefined && (!Number.isInteger(options.timeoutMs) || options.timeoutMs < 1 || options.timeoutMs > 30 * 60 * 1000)) throw new DownloadFailure('Invalid download timeout.');
   }
@@ -201,14 +204,17 @@ export class YouTubeDownloads {
       stage = await directoryInfo(await mkdtemp(join(dirname(target), '.tpv-youtube-')));
       progress.phase = 'downloading'; progress.message = 'Downloading video to the host drive.';
       let identityConfirmed = false, wrongIdentity = false;
+      const ffmpeg = await findFfmpegTool('ffmpeg');
+      abortIfNeeded(controller.signal);
       const args = ['--ignore-config', '--no-plugin-dirs', '--no-cache-dir', '--no-playlist', '--no-simulate', '--no-overwrites', '--no-write-info-json', '--no-write-thumbnail', '--no-write-subs', '--no-write-auto-subs',
+        ...managedYtDlpOptions(this.options.nodeExecutable), ...(ffmpeg ? ['--ffmpeg-location', ffmpeg] : []),
         '--socket-timeout', '20', '--retries', '2', '--fragment-retries', '2', '--max-filesize', '2G', '--newline', '--quiet', '--no-warnings', '--progress', '--progress-delta', '0.5',
         '--print', 'before_dl:TPV_ID:%(id)s', '--progress-template', 'download:TPV_PROGRESS:%(progress._percent_str)s',
-        '--format', 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/best[ext=mp4][vcodec^=avc1][acodec^=mp4a]',
+        '--format', (ffmpeg ? 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/' : '') + 'best[ext=mp4][vcodec^=avc1][acodec^=mp4a]',
         '--merge-output-format', 'mp4', '--output', 'video.%(ext)s', '--', `https://www.youtube.com/watch?v=${input.videoId}`];
       cleanupSafe = false;
       try {
-        await (this.options.run ?? runYouTubeDownload)(this.executable, args, { cwd: stage.path, signal: controller.signal, onLine: line => {
+        await (this.options.run ?? runYouTubeDownload)(this.executable, args, { cwd: stage.path, signal: controller.signal, managedRuntime: !!this.options.nodeExecutable, onLine: line => {
           if (line.startsWith('TPV_ID:')) { if (line === `TPV_ID:${input.videoId}`) identityConfirmed = true; else wrongIdentity = true; }
           const match = /^TPV_PROGRESS:\s*(\d+(?:\.\d+)?)%$/.exec(line);
           if (match && !controller.signal.aborted) progress.percent = Math.max(0, Math.min(100, Number(match[1])));

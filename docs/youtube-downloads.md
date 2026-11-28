@@ -1,6 +1,14 @@
 # Permanent YouTube download engine
 
-`YouTubeDownloads` invokes a host-selected absolute yt-dlp executable without a shell. It downloads one exact video ID at a time into an isolated sibling staging directory. External configuration/plugins, playlists and simulation are disabled. The format selection prefers H.264 video plus AAC audio in MP4, with FFmpeg merging when needed. Child output remains private; only bounded percentage/status messages reach the host UI.
+`YouTubeDownloads` invokes an absolute yt-dlp executable without a shell. It downloads one exact video ID at a time into an isolated sibling staging directory. External configuration/plugins, playlists and simulation are disabled. The format selection prefers H.264 video plus AAC audio in MP4, with FFmpeg merging when available. Without FFmpeg, Booth looks for a compatible combined stream. Child output remains private. Only bounded percentage/status messages reach the host UI.
+
+## Media tool setup
+
+Open **Preferences → Library & Sources → Video Downloads & Cache** to select **Stable** or **Nightly**. Booth downloads the selected build from yt-dlp's official releases on first use and stores it in the application's data folder. Choose **Prepare yt-dlp** to do this in advance. A previously configured **Custom yt-dlp executable** takes precedence. Clear that field to use the managed build. The current pins are Stable `2026.11.23` and Nightly `2026.11.24.232653`. New Booth versions can refresh the pins when YouTube changes.
+
+The managed builds are available on Windows x64, Linux x64, and both supported Mac architectures. Booth verifies exact release sizes and SHA-256 hashes before installation and checks a cached binary before reusing it. Electron's Node runtime supports the JavaScript components included by the upstream release. Tool-supplied configuration, plugins and remote JavaScript downloads stay disabled. If a first search outlasts the initial setup, prepare the tool in Preferences and search again.
+
+The Debian package declares FFmpeg as a dependency. On Windows and macOS, the same settings page detects FFmpeg and FFprobe and offers installation with an available WinGet or Homebrew. AppImage users can install FFmpeg with their distribution's package manager. Use **Check Again** after installing. Hosts need FFmpeg for conversion and for online recordings whose audio and video are offered separately.
 
 The engine requires an exact ID confirmation from yt-dlp, validates the MP4 header and full SHA-256, and publishes a complete file and ownership sidecar using exclusive hard links. The destination filesystem must support hard links. It never overwrites existing files. Mapped brand results use `BASE/karaokenerds/Brands/BRAND_SLUG/ARTIST/ARTIST - TITLE.mp4`; ordinary YouTube links use `BASE/youtube/ARTIST/ARTIST - TITLE.mp4`. Unsafe/reserved filename characters are normalized. If the ordinary filename is occupied by another or unowned recording, a video-ID suffix is tried; if both names are occupied, the job fails for review.
 
@@ -12,7 +20,7 @@ Cancellation stops the yt-dlp/FFmpeg process tree before staging is removed. If 
 
 Tests use an injected worker for exact identity, collisions, hash-based reuse, malformed output, cancellation, late cancellation, uncertain commits and junction substitution. A real child-process test checks descendant termination. An actual download of the owner's Nada Surf – Amateur video produced H.264 1920×1080/AAC (246.55 seconds); a fresh engine reused it with zero network calls. This verifies that recording and installed tools, not every YouTube video, operating system or physical mixer.
 
-The host workflow is described in [YouTube playback](youtube-streaming.md). Automatic brand/artist batch downloads and production packaging of yt-dlp/FFmpeg remain separate work.
+The host workflow is described in [YouTube playback](youtube-streaming.md). Automatic brand/artist batch downloads remain separate work.
 
 Reference: [yt-dlp upstream documentation](https://github.com/yt-dlp/yt-dlp#usage-and-options).
 

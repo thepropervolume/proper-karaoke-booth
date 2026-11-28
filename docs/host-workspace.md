@@ -80,6 +80,8 @@ Manage song and artist blacklist rules under **Preferences**. The rules apply ac
 
 ## YouTube Karaoke Search
 
+Choose **Stable** or **Nightly** in **Preferences → Library & Sources → Video Downloads & Cache**. **Prepare yt-dlp** fetches the selected, verified tool in advance. The app can also prepare it when search or a download first needs it. This topic checks FFmpeg and FFprobe and offers setup through an available system package manager on Windows and macOS. Debian installs them as a package dependency.
+
 With **All Songs** selected, type at least two characters in global search to include online sources. Local, Karaoke Nerds, curated YouTube, connected KaraFun and public service matches share one selectable list. YouTube discovery uses bounded yt-dlp search, adds karaoke and excludes live/private/restricted/out-of-range candidates. Video/channel hints and artist/title suggestions are heuristics rather than a quality guarantee.
 
 KaraFun results, including previously saved recordings, are hidden until Sources reports a connected account. Signing out hides pending search replies immediately. Other libraries stay available. Generic YouTube results, including cached recordings, are the last fallback even when sorting: they are hidden when another visible source has the same artist and title. Fresh YouTube discoveries also defer to an existing saved YouTube recording. Missing artists and different live/remix titles stay distinct. This changes discovery visibility, not your saved recordings, metadata, ratings or queue.

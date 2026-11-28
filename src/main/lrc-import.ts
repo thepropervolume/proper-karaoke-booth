@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { parseLrc } from '../domain/lrc';
 import { exportLrcWebVtt } from '../domain/lrc-vtt';
 import { runFfmpegConversion } from './ffmpeg-conversion';
+import { findFfmpegTool } from './media-tool-paths';
 
 // Force local container types rather than letting FFmpeg infer playlists or URLs.
 const audioFormats = new Map([
@@ -48,8 +49,10 @@ export async function resolveLrcPair(selected: string): Promise<{ audio: string;
 }
 
 async function probeAudioDuration(audio: string, format: string, signal: AbortSignal): Promise<number> {
+  const ffprobe = await findFfmpegTool('ffprobe');
+  if (!ffprobe) throw new Error('FFprobe was not found. Check the media tools in Preferences and install FFmpeg with FFprobe.');
   try {
-    const { stdout } = await probe('ffprobe', [
+    const { stdout } = await probe(ffprobe, [
       '-v', 'error', '-protocol_whitelist', 'file,pipe', '-f', format, '-i', audio,
       '-select_streams', 'a:0', '-show_entries', 'stream=codec_type:format=duration', '-of', 'json',
     ], { signal, killSignal: 'SIGKILL', timeout: 15_000, maxBuffer: 8192, windowsHide: true });

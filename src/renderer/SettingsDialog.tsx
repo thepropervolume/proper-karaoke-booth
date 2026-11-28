@@ -14,6 +14,7 @@ import { YouTubeSearchSettings } from './YouTubeSearchSettings';
 import { SingerBrandingSettings } from './SingerBrandingSettings';
 import { Tooltip } from './Tooltip';
 import { MetadataPreview } from './MetadataPreview';
+import { MediaToolSettings } from './MediaToolSettings';
 import { DesktopUpdateSettings } from './DesktopUpdateSettings';
 import { SearchSourceCheckboxes } from './SourceToggles';
 import { searchSourceChoices, sourceSearchPatch } from '../domain/source-visibility';
@@ -132,10 +133,11 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           <SharedCatalogControls value={draft} onChange={setDraft} />
           </> },
         { title: 'Video Downloads & Cache', keywords: 'video downloads directory cache folder ffmpeg yt-dlp executable brands artists automatic caching', controls: <>
-          <div className="settings-inline-help"><span className="muted">YouTube downloads are kept on this host.</span><SettingsHelp label="Video download help" text="yt-dlp and FFmpeg must be installed; FFmpeg must be on PATH. A blank folder uses The Proper Volume Karaoke in your Videos folder. Existing files stay where they are. Brand/artist bulk subscriptions remain planned." /></div>
+          <div className="settings-inline-help"><span className="muted">YouTube downloads are kept on this host.</span><SettingsHelp label="Video download help" text="Booth downloads a verified yt-dlp build on first use. Nightly may pick up YouTube fixes earlier. FFmpeg is needed to merge separate audio and video streams, and for CD+G and LRC imports. A blank folder uses The Proper Volume Karaoke in your Videos folder." /></div>
             <label>Base directory for cached videos<input type="text" value={draft.karaokeNerdsCacheDirectory} onChange={event => setDraft({ ...draft, karaokeNerdsCacheDirectory: event.target.value })} placeholder="Choose an absolute directory path" /></label>
             <div><button type="button" onClick={() => { void window.tpv.chooseVideoCacheDirectory().then(directory => { if (directory) setDraft({ ...draft, karaokeNerdsCacheDirectory: directory }); }).catch(() => setError('Could not choose a download folder.')); }}>Choose download folder…</button> <button type="button" onClick={() => { void window.tpv.revealVideoCacheDirectory().catch(() => setError('The saved download folder is not available yet.')); }}>Open saved download folder</button></div>
-            <label>yt-dlp executable<input type="text" value={draft.ytDlpExecutable} onChange={event => setDraft({ ...draft, ytDlpExecutable: event.target.value })} placeholder="Leave blank to find yt-dlp on PATH" /></label>
+            <MediaToolSettings channel={draft.ytDlpChannel} customExecutable={draft.ytDlpExecutable} changeChannel={ytDlpChannel => setDraft(current => ({ ...current, ytDlpChannel }))} />
+            <label>Custom yt-dlp executable<input type="text" value={draft.ytDlpExecutable} onChange={event => setDraft({ ...draft, ytDlpExecutable: event.target.value })} placeholder="Leave blank to use the managed build" /></label>
             <label className="settings-check"><input type="checkbox" checked={draft.karaokeNerdsAutoCache} onChange={event => setDraft({ ...draft, karaokeNerdsAutoCache: event.target.checked })} /> Plan automatic caching when available</label>
             <label>Brands to cache, one per line<textarea rows={3} value={cacheBrands} onChange={event => setCacheBrands(event.target.value)} /></label>
             <label>Artists to cache, one per line<textarea rows={3} value={cacheArtists} onChange={event => setCacheArtists(event.target.value)} /></label>

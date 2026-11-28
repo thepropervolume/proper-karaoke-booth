@@ -7,7 +7,7 @@ import { resolveYtDlpExecutable } from '../../src/main/youtube-tools';
 import { parseSettings } from '../../src/domain/settings';
 import { validStreamingSource } from '../../src/domain/streaming-source';
 
-test('old settings get PATH discovery and explicit yt-dlp paths reject malformed values', () => {
+test('old settings retain an empty custom override and explicit yt-dlp paths reject malformed values', () => {
   assert.equal(parseSettings({}).ytDlpExecutable, '');
   assert.equal(parseSettings({ ytDlpExecutable: process.execPath }).ytDlpExecutable, process.execPath);
   for (const value of ['relative.exe', 'bad\npath', null, 42]) assert.throws(() => parseSettings({ ytDlpExecutable: value }));

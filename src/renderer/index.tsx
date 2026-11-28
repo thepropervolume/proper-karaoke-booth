@@ -98,6 +98,9 @@ type QueueSelection = LibrarySearchVersion & { youtubeSearchReceipt?: { searchId
 declare global {
   interface Window {
     tpv: {
+      mediaToolStatus: (channel: import('../domain/media-tools').YtDlpChannel) => Promise<import('../domain/media-tools').MediaToolStatus>;
+      prepareMediaDownloader: (channel: import('../domain/media-tools').YtDlpChannel) => Promise<{ ok: boolean; error?: string }>;
+      installFfmpeg: () => Promise<{ ok: boolean; error?: string }>;
       getAppVersion: () => Promise<string>;
       appReady: () => Promise<void>;
       refreshMenu: () => Promise<void>;
@@ -464,7 +467,7 @@ function App() {
   const karaFunSearch = useKaraFunSearch(window.tpv.karaFun, karaFunAccount, search, settings.sourceVisibility.karafun && offersSource('karafun') && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
   const partyTymeSearch = usePartyTymeSearch(window.tpv.partyTyme, partyTymeAccount, search, settings.sourceVisibility.partytyme && offersSource('partytyme') && screen === 'library' && libraryFilter === 'all', providerCatalogScope);
   const youtubeSearch = useYouTubeSearch(window.tpv.youtubeSearch, search, settings.sourceVisibility.youtube && offersSource('youtube') && settings.youtubeSearchEnabled && screen === 'library' && libraryFilter === 'all' && !state?.policy.ageRestricted && state?.policy.includeVersionIds === null,
-    JSON.stringify([providerCatalogScope, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable]));
+    JSON.stringify([providerCatalogScope, settings.youtubeSearchMode, settings.youtubeApprovedChannels, settings.youtubeBlockedChannels, settings.ytDlpExecutable, settings.ytDlpChannel]));
   const filtered = useMemo(() => unifiedSongResults(libraryRows, new Set(state?.versions.map(row => row.id)), {
     karaFun: karaFunSearch.result, partyTyme:partyTymeSearch.result, partyTymeConnected:partyTymeAccount.state==='connected', youtube: youtubeSearch.result, catalogs: providerSearch.results, karaFunConnected: karaFunAccount.state === 'connected', sort: importSort, sourceVisibility: settings.sourceVisibility, sourceFilters,
   }).filter(row => !blacklist.isBlocked(row)), [libraryRows, state, karaFunSearch.result, partyTymeSearch.result, partyTymeAccount.state, youtubeSearch.result, providerSearch.results, karaFunAccount.state, importSort, blacklist, settings.sourceVisibility, sourceFilters]);
