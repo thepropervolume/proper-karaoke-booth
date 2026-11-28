@@ -21,11 +21,11 @@ declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unkno
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 let failedVideo: HTMLVideoElement | null = null;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
-const roomQr = document.querySelector<HTMLElement>('#singer-room-qr')!;
-const roomQrImage = roomQr.querySelector<HTMLImageElement>('img')!;
+const roomQr = document.querySelector<HTMLElement>('#singer-room-qr');
+const roomQrImage = roomQr?.querySelector<HTMLImageElement>('img');
 let displayedRoomQr: string | null = null;
 function updateRoomQr(url: string | null): void {
-  if (displayedRoomQr === url) return;
+  if (!roomQr || !roomQrImage || displayedRoomQr === url) return;
   displayedRoomQr = url;
   roomQr.hidden = true;
   roomQrImage.removeAttribute('src');
