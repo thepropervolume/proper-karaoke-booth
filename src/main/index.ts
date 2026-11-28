@@ -720,6 +720,7 @@ function publishDisplay(): void {
     src: `tpv-media://play/${encodeURIComponent(playback.generationId)}`,
     position: store.position(playback.generationId), title: version.title, singer: singerNames([request.singerId, request.coSingerId]), volume: settings.masterVolume, outputId: settings.audioOutputId } : null;
   display.webContents.send('display:state', { playback: current, next, logo: settings.showDisplayLogo ? logoData : null, shortcuts, bumperVolume: settings.masterVolume, fontFamily: settings.fontFamily,
+    roomQrUrl: settings.showRoomQr ? roomShareUrl(internetQueue?.status() ?? null, settings.roomQrUrl) : null,
     branding: { boothName: settings.boothName, displayLogoSize: settings.displayLogoSize, bannerEnabled: settings.bannerEnabled,
       bannerText: settings.bannerText, bannerPosition: settings.bannerPosition, bannerExpiresAt: settings.bannerExpiresAt, bannerOnLaunch: settings.bannerOnLaunch } });
 }
@@ -1834,7 +1835,7 @@ else {
       });
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
       suggestedSlug: () => settings.hostHandle,
-      publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
+      publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);publishDisplay();},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
       screenFrame: () => { const frame = singerFrames.current; if (!frame) return null; const image = nativeImage.createFromBuffer(frame.jpeg); if (image.isEmpty()) return null;
         const width = Math.min(960, frame.width); return image.resize({ width, quality: 'good' }).toJPEG(55); },
       fetch:(url,init)=>fetch(url,{...init,headers:{...Object.fromEntries(new Headers(init?.headers)),'X-TPV-Room-Discovery':settings.mobileRoomDiscovery?'yes':'no'}})});

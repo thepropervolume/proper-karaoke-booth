@@ -10,16 +10,32 @@ import { paintKaraFunLyrics } from './karafun-lyrics';
 import type { KaraFunTiming } from '../domain/karafun-kit-timing';
 import type { KaraFunStemVolumes } from '../domain/karafun-mix';
 import { createSingerDisplayBranding, type SingerDisplayBranding } from './branding';
+import QRCode from 'qrcode';
 import { appearanceFontStack, type AppearanceFont } from '../domain/appearance-font';
 type PlaybackCommon = { generation: string; src: string; status: 'playing' | 'paused'; singer: string; title: string; position: number; volume: number; outputId: string };
 type NativePlayback = PlaybackCommon & { kind: 'karafun'; karaFun: { timing: KaraFunTiming; durationSeconds: number; stems: KaraFunStemSource[]; stemVolumes: KaraFunStemVolumes }; backdropSrc: string | null };
 type PlaybackState = PlaybackCommon & { kind?: 'video' } | NativePlayback;
 const isNative = (state: PlaybackState | null): state is NativePlayback => state?.kind === 'karafun';
-type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number; fontFamily?: AppearanceFont };
+type DisplayState = { playback: PlaybackState | null; next: string[]; logo: string | null; branding?: SingerDisplayBranding; shortcuts: Shortcuts; bumperVolume: number; fontFamily?: AppearanceFont; roomQrUrl?: string | null };
 declare global { interface Window { tpvDisplay: { onSeek(callback: (value: unknown) => void): () => void; onOutputRecovery?(callback: (value: unknown) => void): () => void; ready(): void; shortcut(action: ShortcutAction): void; event(event: unknown): void; bumperAck(value: unknown): void; bumperEvent(value: unknown): void; bumperDeviceChange(): void; applauseResult?(value: unknown): void; onApplause?(callback: (request: ApplauseRequest) => void): () => void; onApplauseCommitted?(callback: () => void): () => void; onBumperCommand(callback: (request: BumperRequest) => void): () => void; subscribe(callback: (state: DisplayState) => void): () => void } } }
 let video = document.querySelector<HTMLVideoElement>('#video')!;
 let failedVideo: HTMLVideoElement | null = null;
 const waiting = document.querySelector<HTMLElement>('#waiting')!;
+const roomQr = document.querySelector<HTMLElement>('#singer-room-qr')!;
+const roomQrImage = roomQr.querySelector<HTMLImageElement>('img')!;
+let displayedRoomQr: string | null = null;
+function updateRoomQr(url: string | null): void {
+  if (displayedRoomQr === url) return;
+  displayedRoomQr = url;
+  roomQr.hidden = true;
+  roomQrImage.removeAttribute('src');
+  if (!url) return;
+  void QRCode.toDataURL(url, { width: 360, margin: 4, errorCorrectionLevel: 'M' }).then(image => {
+    if (displayedRoomQr !== url) return;
+    roomQrImage.src = image;
+    roomQr.hidden = false;
+  }).catch(() => {});
+}
 const caption = document.querySelector<HTMLElement>('#caption')!;
 const next = document.querySelector<HTMLElement>('#next')!;
 const branding = createSingerDisplayBranding({ root: document.documentElement,
@@ -244,6 +260,7 @@ window.tpvDisplay.subscribe(async (view) => {
     document.documentElement.style.setProperty('--booth-font-family', fontFamily ?? '');
   }
   const state = view.playback;
+  updateRoomQr(state ? null : view.roomQrUrl ?? null);
   document.body.classList.toggle('idle', !state);
   document.body.classList.toggle('native-karafun', isNative(state));
   next.textContent = view.next.length ? `Coming up: ${view.next.join(' · ')}` : '';
