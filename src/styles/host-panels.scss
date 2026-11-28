@@ -50,12 +50,15 @@
   .app[data-layout='library'] > .transport { grid-column: 3; grid-row: 5; }
 }
 @media (max-width: 850px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) minmax(80px, 23vh) auto; }
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(160px, 1fr) minmax(80px, 23vh) auto; overflow-y: auto; }
   .app > .sidebar { grid-column: 1; grid-row: 2; }
   .app > .main-panel { grid-column: 1; grid-row: 3; }
   .app > .host-queue-panel { grid-column: 1; grid-row: 4; }
   .app > .transport { grid-column: 1; grid-row: 5; }
   .app > .sidebar-separator, .app > .queue-separator { display: none; }
+  .room-share-card { margin: 0; }
+  .room-share-card__button { flex-direction: row; }
+  .room-share-card__button img { width: 68px; }
   .singer-preview { padding: 6px 10px; }
   .singer-preview > small { display: none; }
 }
