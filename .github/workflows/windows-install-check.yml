@@ -48,6 +48,10 @@ jobs:
           $expectCli = [version]$candidate -ge [version]'0.10.9'
           $cliName = if ([version]$candidate -ge [version]'0.10.22') { 'karabooth-cli' } else { 'tpv-karaoke-booth' }
           $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $programsDirectory = [Environment]::GetFolderPath('Programs')
+          $shortcutName = 'The Proper Volume Karaoke Booth.lnk'
+          $shortcut = Join-Path $programsDirectory $shortcutName
+          $shell = New-Object -ComObject WScript.Shell
 
           function Invoke-SilentProcess($path, $arguments) {
             $process = Start-Process -FilePath $path -ArgumentList $arguments -WindowStyle Hidden -PassThru
@@ -70,6 +74,13 @@ jobs:
             Invoke-SilentProcess $installer $arguments
             if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Expected installed program is missing.' }
             $mode = if ($version -eq $baseline) { 'seed' } else { 'verify' }
+            if ($mode -eq 'seed' -and $cliName -eq 'karabooth-cli') {
+              if (!(Test-Path -LiteralPath $shortcut -PathType Leaf)) { throw 'The baseline Start shortcut is missing.' }
+              # Use a property independent of description/search metadata to detect recreation.
+              $originalLink = $shell.CreateShortcut($shortcut)
+              $originalLink.WindowStyle = 3
+              $originalLink.Save()
+            }
             node scripts/windows-install-profile-smoke.mjs $mode $exe $version
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
@@ -79,10 +90,17 @@ jobs:
               Where-Object { $_.UninstallString -like "*$installDir\Uninstall*" })
             if ($installed.Count -ne 1 -or $installed[0].DisplayName -cne 'The Proper Volume Karaoke Booth' -or
                 $installed[0].DisplayVersion -ne $candidate) { throw 'Installed Apps must show one stable name and a separate version.' }
-            $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'The Proper Volume Karaoke Booth.lnk'
             if (!(Test-Path -LiteralPath $shortcut -PathType Leaf)) { throw 'The registered Start shortcut is missing after upgrade.' }
-            $shell = New-Object -ComObject WScript.Shell
-            if ($shell.CreateShortcut($shortcut).TargetPath -ine $exe) { throw 'The registered Start shortcut points to the wrong executable.' }
+            $updatedLink = $shell.CreateShortcut($shortcut)
+            if ($updatedLink.TargetPath -ine $exe -or $updatedLink.WindowStyle -ne 3) {
+              throw 'The in-place upgrade changed the existing Start shortcut target or window style.'
+            }
+            $shellApp = New-Object -ComObject Shell.Application
+            $startMenu = $shellApp.NameSpace($programsDirectory)
+            $entry = $startMenu.ParseName($shortcutName)
+            if ($null -eq $entry -or $entry.ExtendedProperty('System.AppUserModel.ID') -cne 'com.thepropervolume.karaokebooth') {
+              throw 'The upgrade did not preserve the Start shortcut application identity.'
+            }
             if (!(Test-Path -LiteralPath (Join-Path $installDir 'resources/tpv-booth-local-api-default') -PathType Leaf)) {
               throw 'The checked setup default for new profiles was not recorded.'
             }

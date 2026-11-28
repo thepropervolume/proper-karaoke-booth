@@ -15,6 +15,12 @@ Var boothApiCheckbox
 
 !macro customHeader
 !ifndef BUILD_UNINSTALLER
+; The directory page is already registered. Let the stock install section
+; retain existing shortcuts when the selected destination has the old app.
+!ifdef allowToChangeInstallationDirectory
+  !undef allowToChangeInstallationDirectory
+!endif
+
 ; Store choices per install scope. Updates that skip the page reuse them.
 Function LoadBoothSetupOptions
   ${If} $boothOptionsMode == $installMode
