@@ -3,6 +3,7 @@ import { DESKTOP_UPDATE_LABELS, DESKTOP_UPDATE_MODES, isDesktopUpdateMode, type 
 
 export function DesktopUpdateSettings({ mode, onChange }: { mode: DesktopUpdateMode; onChange: (value: DesktopUpdateMode) => void }) {
   const [status, setStatus] = useState<DesktopUpdateStatus>({ phase: 'idle' });
+  const [installError, setInstallError] = useState('');
   useEffect(() => {
     let mounted = true;
     let received = false;
@@ -29,7 +30,13 @@ export function DesktopUpdateSettings({ mode, onChange }: { mode: DesktopUpdateM
         <button type="button" disabled={unavailable || status.phase === 'checking'} onClick={() => void window.tpv.checkDesktopUpdate().catch(() => {})}>Check Now</button>
         {status.phase === 'available' && <button type="button" onClick={() => void window.tpv.downloadDesktopUpdate().catch(() => {})}>Download Update</button>}
         {status.phase === 'downloaded' && <button type="button" onClick={() => void window.tpv.revealDesktopUpdate().catch(() => setStatus({ phase: 'error', message: 'The downloaded update could not be opened. Check for updates again.' }))}>Show Download</button>}
+        {status.installable && ['available', 'downloaded'].includes(status.phase) && <button type="button" onClick={() => {
+          setInstallError('');
+          void window.tpv.installDesktopUpdate().catch(error => setInstallError(error instanceof Error ?
+            error.message.replace(/^Error invoking remote method 'host:desktop-update-install': (?:Error: )?/, '') : 'Could not start the upgrade.'));
+        }}>Upgrade Now</button>}
       </div>
       {message && <p role="status">{message}</p>}
+      {installError && <p role="alert">{installError}</p>}
   </>;
 }

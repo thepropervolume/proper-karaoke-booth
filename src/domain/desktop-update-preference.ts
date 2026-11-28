@@ -16,4 +16,5 @@ export type DesktopUpdateStatus = {
   phase: 'idle' | 'checking' | 'current' | 'available' | 'downloaded' | 'unavailable' | 'error';
   version?: string;
   message?: string;
+  installable?: boolean;
 };

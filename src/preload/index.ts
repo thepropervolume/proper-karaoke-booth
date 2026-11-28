@@ -146,6 +146,7 @@ contextBridge.exposeInMainWorld('tpv', {
   desktopUpdateStatus: () => ipcRenderer.invoke('host:desktop-update-status') as Promise<import('../domain/desktop-update-preference').DesktopUpdateStatus>,
   checkDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-check'),
   downloadDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-download'),
+  installDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-install'),
   revealDesktopUpdate: () => ipcRenderer.invoke('host:desktop-update-reveal'),
   onDesktopUpdate: (callback: (value: import('../domain/desktop-update-preference').DesktopUpdateStatus) => void) => {
     const listener = (_event: unknown, value: import('../domain/desktop-update-preference').DesktopUpdateStatus) => callback(value);
@@ -153,7 +154,7 @@ contextBridge.exposeInMainWorld('tpv', {
     return () => ipcRenderer.removeListener('host:desktop-update-state', listener);
   },
   cycleAccentColor: () => ipcRenderer.invoke('host:cycle-accent-color'),
-  revealConfigFile: (kind: 'settings' | 'shortcuts') => ipcRenderer.invoke('host:reveal-config-file', kind),
+  revealConfigFile: (kind: 'settings' | 'shortcuts' | 'log') => ipcRenderer.invoke('host:reveal-config-file', kind),
   chooseDisplayLogo: () => ipcRenderer.invoke('host:choose-display-logo'),
   chooseLyricBackdrop: () => ipcRenderer.invoke('host:choose-lyric-backdrop'),
   clearDisplayLogo: () => ipcRenderer.invoke('host:clear-display-logo'),
@@ -187,6 +188,7 @@ contextBridge.exposeInMainWorld('tpv', {
     chooseConnectionFile: () => ipcRenderer.invoke('host:internet-choose-connection'),
     stop:()=>ipcRenderer.invoke('host:internet-stop'),
     copyLink:()=>ipcRenderer.invoke('host:internet-copy'),
+    copyShareLink: () => ipcRenderer.invoke('host:internet-copy-share'),
     revokeGuest:(id:string)=>ipcRenderer.invoke('host:internet-revoke',id),
     subscribe:(callback:(value:unknown)=>void)=>{const listener=(_event:unknown,value:unknown)=>callback(value);ipcRenderer.on('host:internet-state',listener);return()=>ipcRenderer.removeListener('host:internet-state',listener);},
   },

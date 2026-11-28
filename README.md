@@ -1,6 +1,6 @@
 # The Proper Volume Karaoke Booth
 
-A desktop app for hosting karaoke: find songs, manage singer rotation, accept requests and play karaoke on a separate singer display.
+KaraBooth is a desktop app for hosting karaoke. Find songs, manage singer rotation, accept requests and play karaoke on a separate singer display.
 
 - One search for local files, Karaoke Nerds, YouTube and connected service catalogs — including seamless integration with KaraFun and Party Tyme Karaoke subscriptions.
 - Queue management, optional singer assignments, playlists and song ratings.
@@ -11,7 +11,7 @@ Desktop KaraFun and Party Tyme consumer Premium playback are experimental. Other
 
 ## Install or Run
 
-Download Windows, Linux and macOS installers from the [Karaoke Booth downloads page](https://release.thepropervolume.com/booth/). Back up your show before upgrading. See the [installation guide](docs/installation.md) for prerequisites.
+Download Windows, Linux and macOS installers from the [KaraBooth downloads page](https://release.thepropervolume.com/booth/). See the [installation guide](docs/installation.md) for prerequisites.
 
 For development, with Node.js and npm installed:
 

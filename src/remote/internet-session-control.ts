@@ -19,6 +19,7 @@ export type InternetSessionBridge = {
   chooseConnectionFile?(): Promise<void>;
   stop(): Promise<void>;
   copyLink(): Promise<void>;
+  copyShareLink?(): Promise<void>;
   revokeGuest(singerId: string): Promise<void>;
   startScreen?(): Promise<void>;
   stopScreen?(): Promise<void>;

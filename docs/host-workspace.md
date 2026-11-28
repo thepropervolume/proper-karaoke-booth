@@ -1,5 +1,17 @@
 # Host Workspace
 
+## First launch and sharing
+
+On a new profile, enter your DJ or brand name and a host handle. KaraBooth uses the handle to suggest a room code and checks availability when you start the internet room. Existing profiles can set a handle in **Preferences → Queue & Rooms → Remote Queueing**.
+
+While an internet room is online, the sidebar shows a QR code. Click it to copy the public destination. In **Remote Queueing**, hide the code or enter a custom public URL. A blank custom URL uses the active room's link.
+
+**View → Zoom In**, **Zoom Out** and **Reset Zoom** adjust the host interface and save its zoom. The singer screen retains its own layout.
+
+Use **File → Save Session As…** and **Load Session…** for complete show snapshots. To move settings instead, use **Export Current Configuration…** and **Import Configuration…**. The JSON includes preferences, shortcuts and local library locations and metadata. It contains paths, so keep it private. Copy media separately. Import replaces preferences and shortcuts, and merges tracks by fingerprint while keeping existing local locations and song IDs.
+
+Find the rotating local `karabooth.log` in **Preferences → Configuration Files**. It records timestamped event codes without account details, song names or media paths. KaraBooth keeps this log on the device.
+
 Use **File** to import videos, folders, and paired lyric files or to back up and restore your show. Open **Edit → Preferences** and type a term like `bumper music` or `screen port` to jump to the controls. Clearing the search restores the previous view and preserves changes you have entered. **View** changes the appearance, accent color, font, and layout. **Playback** exposes transport controls, including restart and 10-second seek actions. Use **Window** to control full screen separately for the host and singer display. **Help → Documentation** opens the [offline guides](help.md).
 
 ## App Updates

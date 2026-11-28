@@ -3,6 +3,7 @@ import { MobileRoomBeacon } from './mobile-room-beacon';
 // actions and report playback facts. Provider credentials and media paths stay here.
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, type MessageBoxOptions } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { unlink, readFile, lstat, open } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
@@ -27,6 +28,9 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, type Shortcuts } from '../domain/s
 import { readShortcuts, writeShortcuts } from './shortcuts';
 import type { AppAction } from '../domain/app-action';
 import { applicationMenu, BOOTH_PRODUCT_NAME, INITIAL_WORKSPACE_MENU_CONTEXT, type ApplicationMenuAction, type WorkspaceMenuContext } from './application-menu';
+import { HOST_ZOOM_LEVELS, roomShareUrl } from '../domain/booth-workspace-settings';
+import { DiagnosticLog } from './diagnostic-log';
+import { makeConfiguration, mergeConfiguration, readConfiguration, saveConfiguration } from './booth-configuration';
 import { openDocumentationWindow } from './documentation-window';
 import { LocalControlServer } from '../control/server';
 import { projectControlQueue, type ControlQueueEnvelope } from '../control/queue';
@@ -110,6 +114,7 @@ import { BoothDesktopUpdates } from './desktop-updates';
 protocol.registerSchemesAsPrivileged([{ scheme: 'tpv-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 let host: BrowserWindow | null = null;
 let desktopUpdates: BoothDesktopUpdates | undefined;
+let diagnostics: DiagnosticLog | undefined;
 let display: BrowserWindow | null = null;
 const applauseOutput = new ApplauseOutput(request => {
   if (!display || display.isDestroyed() || !displayReady) throw new Error('The singer player is unavailable.');
@@ -305,8 +310,8 @@ let relinking = false;
 let removingLibraryMedia = false;
 const showBackup = new ShowBackup(async () => {
   if (!host || host.isDestroyed() || shuttingDown) return null;
-  const result = await dialog.showSaveDialog(host, { title: 'Back up show to a new file', defaultPath: 'karaoke-show-backup.sqlite',
-    filters: [{ name: 'Show backup', extensions: ['sqlite'] }], properties: ['showOverwriteConfirmation'] });
+  const result = await dialog.showSaveDialog(host, { title: 'Save Session As', defaultPath: 'karaoke-session.sqlite',
+    filters: [{ name: 'KaraBooth session', extensions: ['sqlite'] }], properties: ['showOverwriteConfirmation'] });
   return result.canceled ? null : result.filePath ?? null;
 }, destination => store.backup(destination));
 let restoreRequest: Promise<RestoreResult> | null = null;
@@ -317,6 +322,45 @@ function restoreBusy(): boolean {
     phase === 'scanning' || phase === 'hashing' || phase === 'cancelling' || relinking || removingLibraryMedia || showBackup.needsShutdownWait();
 }
 
+let configurationBusy = false;
+const pendingConfiguration = () => join(app.getPath('userData'), 'configuration-import.pending.json');
+async function transferConfiguration(direction: 'import' | 'export'): Promise<void> {
+  const window = host;
+  if (!window || window.isDestroyed() || configurationBusy || shuttingDown) return;
+  configurationBusy = true;
+  try {
+    const filters = [{ name: 'KaraBooth configuration', extensions: ['json'] }];
+    if (direction === 'export') {
+      const selected = await dialog.showSaveDialog(window, { title: 'Export Current Configuration', defaultPath: 'KaraBooth Configuration.json', filters });
+      if (!selected.canceled && selected.filePath && !shuttingDown) {
+        saveConfiguration(selected.filePath, makeConfiguration(settings, shortcuts, state.versions, id => store.media(id)));
+        await dialog.showMessageBox(window, { message: 'Configuration exported', buttons: ['OK'] });
+      }
+      return;
+    }
+    const selected = await dialog.showOpenDialog(window, { title: 'Import Configuration', properties: ['openFile'], filters });
+    if (selected.canceled || !selected.filePaths[0] || shuttingDown) return;
+    const configuration = readConfiguration(selected.filePaths[0]);
+    if (restoreBusy() || restorePending || state.playback || internetQueue?.needsShutdownWait())
+      throw new Error('Finish playback, internet rooms and imports before importing a configuration.');
+    const answer = await dialog.showMessageBox(window, { type: 'warning', title: 'Import Configuration', message: 'Apply this configuration and restart KaraBooth?',
+      detail: `This replaces preferences and keyboard shortcuts and merges ${configuration.localRecordings.length} local library entries. It includes file locations and edits to song details. Allow up to a moment for KaraBooth to restart.`,
+      buttons: ['Cancel', 'Import and Restart'], defaultId: 0, cancelId: 0, noLink: true });
+    if (answer.response !== 1 || shuttingDown) return;
+    if (restoreBusy() || restorePending || internetQueue?.needsShutdownWait()) throw new Error('Finish the current activity before importing.');
+    saveConfiguration(pendingConfiguration(), configuration);
+    updateHandoffAllowed = false;
+    const flag = `--${restoreRestartSwitch}`;
+    app.relaunch({ args: [...process.argv.slice(1).filter(arg => arg !== flag), flag] });
+    app.quit();
+  } catch (error) {
+    diagnostics?.record('configuration-failed');
+    const exists = (error as NodeJS.ErrnoException)?.code === 'EEXIST';
+    dialog.showErrorBox('Configuration transfer stopped', exists ? 'That destination already exists. Choose a new filename.' :
+      error instanceof Error ? error.message : 'Choose a readable configuration file or a writable destination.');
+  } finally { configurationBusy = false; }
+}
+
 function chooseShowRestore(): Promise<RestoreResult> {
   const window = host;
   if (!window || window.isDestroyed() || shuttingDown) return Promise.resolve({ status: 'unavailable' });
@@ -324,8 +368,8 @@ function chooseShowRestore(): Promise<RestoreResult> {
   const operation = async (): Promise<RestoreResult> => {
     let candidate: PreparedShowRestore | undefined;
     try {
-      const chosen = await dialog.showOpenDialog(window, { title: 'Choose a show backup', properties: ['openFile'],
-        filters: [{ name: 'Show backup', extensions: ['sqlite'] }] });
+      const chosen = await dialog.showOpenDialog(window, { title: 'Load Session', properties: ['openFile'],
+        filters: [{ name: 'KaraBooth session', extensions: ['sqlite'] }] });
       const snapshot = chosen.filePaths[0];
       if (chosen.canceled || !snapshot || shuttingDown || window.isDestroyed()) return { status: 'cancelled' };
       candidate = await prepareShowRestore(snapshot, app.getPath('userData'));
@@ -506,7 +550,7 @@ const showAdvance = new ShowAdvance(() => {
   if (!shuttingDown && host && !host.isDestroyed()) void dialog.showMessageBox(host, { type: 'warning', message: 'Show needs attention', detail: message });
 });
 async function startLaunchBumper(): Promise<void> {
-  if (!startupBumperPending || !displayReady || shuttingDown) return;
+  if (!startupBumperPending || !displayReady || shuttingDown || settings.hostSetupPending) return;
   startupBumperPending = false;
   if (!settings.bumperOnLaunch || state.playback?.status === 'playing') return;
   startingLaunchBumper = true;
@@ -788,9 +832,46 @@ async function checkForStartupUpdate(window: BrowserWindow): Promise<void> {
   if (!desktopUpdates || settings.desktopUpdateMode === 'off' || shuttingDown) return;
   const result = await desktopUpdates.check();
   if (result.phase !== 'available' || settings.desktopUpdateMode !== 'notify' || shuttingDown || window.isDestroyed()) return;
-  const answer = await dialog.showMessageBox(window, { type: 'info', title: 'Booth Update Available',
-    message: `Booth ${result.version} is available.`, buttons: ['View Release', 'Later'], defaultId: 1, cancelId: 1, noLink: true });
-  if (answer.response === 0 && !shuttingDown) await shell.openExternal(boothReleasePage);
+  const buttons = result.installable ? ['Upgrade Now', 'View Release', 'Later'] : ['View Release', 'Later'];
+  const answer = await dialog.showMessageBox(window, { type: 'info', title: 'KaraBooth Update Available',
+    message: `KaraBooth ${result.version} is available.`, buttons, defaultId: buttons.length - 1, cancelId: buttons.length - 1, noLink: true });
+  if (shuttingDown) return;
+  if (buttons[answer.response] === 'Upgrade Now') {
+    try { await upgradeDesktopNow(); }
+    catch (error) {
+      if (!window.isDestroyed()) await dialog.showMessageBox(window, { type: 'warning', title: 'Upgrade KaraBooth',
+        message: error instanceof Error ? error.message : 'The upgrade could not start.', buttons: ['OK'] });
+    }
+  }
+  if (buttons[answer.response] === 'View Release') await shell.openExternal(boothReleasePage);
+}
+let upgradeInProgress = false;
+async function upgradeDesktopNow(): Promise<void> {
+  if (!desktopUpdates || upgradeInProgress || shuttingDown) return;
+  const showBusy = () => restoreBusy() || !!restorePending || !!internetQueue?.needsShutdownWait() || remoteHost.needsShutdownWait();
+  if (showBusy()) throw new Error('End active shows, rooms and imports before upgrading KaraBooth.');
+  upgradeInProgress = true;
+  try {
+    if (!await desktopUpdates.requestUpgrade()) throw new Error('The upgrade is unavailable. Try checking for updates again.');
+    if (shuttingDown || showBusy()) {
+      desktopUpdates.cancelUpgrade();
+      if (!shuttingDown) throw new Error('The upgrade is downloaded. End the current show before restarting.');
+      return;
+    }
+    app.quit();
+  } finally { upgradeInProgress = false; }
+}
+
+async function launchUpdateInstaller(path: string, silentRestart: boolean): Promise<string> {
+  if (!silentRestart || process.platform !== 'win32') return await shell.openPath(path);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const installer = spawn(path, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore', windowsHide: true });
+      installer.once('error', reject);
+      installer.once('spawn', () => { installer.unref(); resolve(); });
+    });
+    return '';
+  } catch { return await shell.openPath(path); }
 }
 let aboutOpen = false;
 async function showBoothAbout(): Promise<void> {
@@ -812,6 +893,10 @@ async function showBoothAbout(): Promise<void> {
 let hostFullscreen: DisplayFullscreen | null = null;
 function dispatchApplicationMenuAction(action: ApplicationMenuAction): void {
   if (shuttingDown) return;
+  if (action === 'importConfiguration' || action === 'exportConfiguration') {
+    void transferConfiguration(action === 'importConfiguration' ? 'import' : 'export');
+    return;
+  }
   if (action === 'documentation') { openDocumentationWindow(host); return; }
   if (action === 'about') {
     void showBoothAbout().catch(() => dialog.showErrorBox('About Booth unavailable', 'Booth could not open the About dialog.'));
@@ -823,6 +908,18 @@ function dispatchApplicationMenuAction(action: ApplicationMenuAction): void {
     return;
   }
   if (action === 'showHostWindow') { showHostWindow(); return; }
+  if (action === 'zoomIn' || action === 'zoomOut' || action === 'resetZoom') {
+    void settingsUpdates.run(() => {
+      const index = HOST_ZOOM_LEVELS.indexOf(settings.hostZoom);
+      const hostZoom = action === 'resetZoom' ? 100 :
+        HOST_ZOOM_LEVELS[Math.max(0, Math.min(HOST_ZOOM_LEVELS.length - 1, index + (action === 'zoomIn' ? 1 : -1)))];
+      if (hostZoom !== settings.hostZoom) {
+        settings = writeSettings(settingsPath, { ...settings, hostZoom });
+        publishSettings();
+      }
+    }).catch(() => dialog.showErrorBox('Zoom could not be saved', 'Check that KaraBooth can write to its settings file.'));
+    return;
+  }
   if (action === 'toggleHostFullscreen') { if (showHostWindow()) hostFullscreen?.toggle(); return; }
   dispatchHostAction(action);
 }
@@ -901,10 +998,11 @@ async function reconcileLocalControl(): Promise<void> {
 }
 function createHost(): void {
   hostActionsReady = false;
-  host = new BrowserWindow({ width: 1440, height: 900, minWidth: 780, minHeight: 600, title: 'The Proper Volume Karaoke', icon: applicationIcon,
+  host = new BrowserWindow({ width: 1440, height: 900, minWidth: 780, minHeight: 600, title: BOOTH_PRODUCT_NAME, icon: applicationIcon,
     webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
   const window = host;
   restrictWindow(window);
+  window.webContents.on('render-process-gone', () => diagnostics?.record('renderer-exited'));
   const fullscreen = new DisplayFullscreen(value => window.setFullScreen(value), () => window.isFullScreen(), () => {
     if (!shuttingDown && !window.isDestroyed()) void dialog.showMessageBox(window, { type: 'warning', message: 'Could not change host fullscreen.' });
   });
@@ -1603,12 +1701,15 @@ else {
   app.whenReady().then(async () => {
   app.setName('The Proper Volume Karaoke');
   settingsPath = join(app.getPath('userData'), 'settings.json');
+  diagnostics = new DiagnosticLog(app.getPath('userData'));
+  diagnostics.record('startup');
   logoPath = join(app.getPath('userData'), 'singer-display-logo');
   shortcutsPath = join(app.getPath('userData'), 'keybindings.json');
   try { shortcuts = readShortcuts(shortcutsPath); }
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   settingsCreated = !existsSync(settingsPath);
   settings = readSettings(settingsPath);
+  if (settingsCreated) settings = writeSettings(settingsPath, { ...settings, hostSetupPending: true });
   try {
     desktopUpdates = new BoothDesktopUpdates(app.getVersion(), join(app.getPath('userData'), 'desktop-updates'), settings.desktopUpdateMode,
       app.isPackaged, process.resourcesPath, value => {
@@ -1629,6 +1730,20 @@ else {
     };
   });
   installShowState(store.load() ?? createInitialState(randomUUID(), randomUUID()));
+  // Leave the journal in place until the settings, shortcuts and library are saved.
+  // Startup can retry the same merge after an interruption without duplicating media.
+  const configurationFile = pendingConfiguration();
+  if (existsSync(configurationFile)) {
+    const imported = readConfiguration(configurationFile);
+    const merged = mergeConfiguration(state, imported, id => store.media(id));
+    settings = writeSettings(settingsPath, { ...imported.preferences, bannerEnabled: imported.preferences.bannerOnLaunch && imported.preferences.bannerEnabled });
+    shortcuts = writeShortcuts(shortcutsPath, imported.shortcuts);
+    shortcutError = '';
+    store.save(merged.state, merged.media);
+    installShowState(merged.state);
+    desktopUpdates?.setMode(settings.desktopUpdateMode);
+    await unlink(configurationFile);
+  }
   // A restarted host is a new authority; an interrupted performance is never resumed automatically.
   state.hostEpoch = randomUUID();
   if (state.playback) state.playback.status = 'paused';
@@ -1702,6 +1817,7 @@ else {
         ]) };
       });
     internetQueue = new InternetQueueClient({coordinator:remoteAuthority,configurationFile:join(app.getPath('userData'),'remote-queue-connection.json'),
+      suggestedSlug: () => settings.hostHandle,
       publish:value=>{mobileRoomBeacon.update(value,settings.boothName,settings.mobileRoomDiscovery);if(host&&!host.isDestroyed())host.webContents.send('host:internet-state',value);},onMissingRequest:publishMissingRequests,writeClipboard:value=>clipboard.writeText(value),
       screenFrame: () => { const frame = singerFrames.current; if (!frame) return null; const image = nativeImage.createFromBuffer(frame.jpeg); if (image.isEmpty()) return null;
         const width = Math.min(960, frame.width); return image.resize({ width, quality: 'good' }).toJPEG(55); },
@@ -2226,7 +2342,12 @@ else {
   });
   ipcMain.handle('host:remote-status', event => { guardHost(event.sender.id); return remoteHost.status(); });
   ipcMain.handle('host:internet-status', event => {guardHost(event.sender.id);return internetQueue?.status() ?? {available:false,state:'failed',suggestedSlug:'proper-volume',slug:null,joinUrl:null,guests:[],message:'Internet sessions are unavailable. Reopen the app after checking its installation.'};});
-  ipcMain.handle('host:internet-start', async(event,input:unknown)=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.start(input);});
+  ipcMain.handle('host:internet-start', async (event, input: unknown) => {
+    guardHost(event.sender.id);
+    if (shuttingDown || !internetQueue) throw new Error('Internet sessions are unavailable.');
+    try { await internetQueue.start(input); diagnostics?.record('room-online'); }
+    catch (error) { diagnostics?.record('room-start-failed'); throw error; }
+  });
   ipcMain.handle('host:internet-choose-connection', async event => {
     guardHost(event.sender.id);
     if (shuttingDown || !host || !internetQueue?.status().canImportConnection) throw new Error('Connection file installation is unavailable.');
@@ -2235,11 +2356,17 @@ else {
     });
     if (!selection.canceled && selection.filePaths[0] && !shuttingDown) await internetQueue.importConnection(selection.filePaths[0]);
   });
-  ipcMain.handle('host:internet-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stop();});
+  ipcMain.handle('host:internet-stop', async event => { guardHost(event.sender.id); await internetQueue?.stop(); diagnostics?.record('room-ended'); });
   ipcMain.handle('host:internet-screen-start', async event=>{guardHost(event.sender.id);if(shuttingDown||!internetQueue)throw new Error('Internet sessions are unavailable.');await internetQueue.startScreen();});
   ipcMain.handle('host:internet-screen-stop', async event=>{guardHost(event.sender.id);await internetQueue?.stopScreen();});
   ipcMain.handle('host:internet-screen-copy', event=>{guardHost(event.sender.id);if(!internetQueue)throw new Error('Internet sessions are unavailable.');internetQueue.copyScreenLink();});
   ipcMain.handle('host:internet-copy', event=>{guardHost(event.sender.id);internetQueue?.copyLink();});
+  ipcMain.handle('host:internet-copy-share', event => {
+    guardHost(event.sender.id);
+    const url = roomShareUrl(internetQueue?.status() ?? null, settings.roomQrUrl);
+    if (!url) throw new Error('Start an internet room to share its link.');
+    clipboard.writeText(url);
+  });
   ipcMain.handle('host:internet-revoke', (event,id:unknown)=>{guardHost(event.sender.id);if(typeof id!=='string'||id.length>500)throw new Error('Choose a singer.');internetQueue?.revokeGuest(id);});
   ipcMain.handle('host:remote-choose-certificate', event => { guardHost(event.sender.id); return remoteHost.select('certificate'); });
   ipcMain.handle('host:remote-choose-key', event => { guardHost(event.sender.id); return remoteHost.select('privateKey'); });
@@ -2254,6 +2381,7 @@ else {
   });
   ipcMain.handle('host:desktop-update-check', event => { guardHost(event.sender.id); return desktopUpdates?.check(true); });
   ipcMain.handle('host:desktop-update-download', event => { guardHost(event.sender.id); return desktopUpdates?.download(); });
+  ipcMain.handle('host:desktop-update-install', event => { guardHost(event.sender.id); return upgradeDesktopNow(); });
   ipcMain.handle('host:desktop-update-reveal', event => { guardHost(event.sender.id); return desktopUpdates?.reveal(path => shell.showItemInFolder(path)); });
   ipcMain.handle('host:control-documentation', event => { guardHost(event.sender.id); return openDocumentationWindow(host, 'local-control-api'); });
   ipcMain.handle('host:save-settings', async (event, value: unknown) => {
@@ -2275,6 +2403,7 @@ else {
         const khostSettingsChanged = (['khostBridgeConfigFile', 'songBlacklist', 'artistBlacklist'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const youtubeSettingsChanged = (['youtubeSearchEnabled', 'youtubeSearchMode', 'youtubeApprovedChannels', 'youtubeBlockedChannels', 'songBlacklist', 'artistBlacklist', 'ytDlpExecutable'] as const).some(key => JSON.stringify(settings[key]) !== JSON.stringify(proposed[key]));
         const desktopUpdateModeChanged = settings.desktopUpdateMode !== proposed.desktopUpdateMode;
+        const completedSetup = settings.hostSetupPending && !proposed.hostSetupPending;
         const singerScreenEnabledChanged = settings.singerScreenEnabled !== proposed.singerScreenEnabled;
         const singerScreenPortChanged = settings.singerScreenPort !== proposed.singerScreenPort;
         persistSearchSettings(proposed);
@@ -2290,6 +2419,7 @@ else {
         if (excludingBuiltIns) publishBumper();
         settingsCreated = false;
         publishSettings();
+        if (completedSetup) void startLaunchBumper().catch(() => diagnostics?.record('media-error'));
         if (changingOutput && displayReady) await bumper?.setOutputAvailable(true);
         broadcast();
         if (youtubeSettingsChanged) youtubeSearch.cancel();
@@ -2312,9 +2442,9 @@ else {
   });
   ipcMain.handle('host:reveal-config-file', (event, kind: unknown) => {
     guardHost(event.sender.id);
-    if (kind !== 'settings' && kind !== 'shortcuts') throw new Error('Invalid configuration file.');
-    const path = kind === 'settings' ? settingsPath : shortcutsPath;
-    if (!existsSync(path)) throw new Error('Configuration file is unavailable.');
+    if (kind !== 'settings' && kind !== 'shortcuts' && kind !== 'log') throw new Error('Invalid configuration file.');
+    const path = kind === 'settings' ? settingsPath : kind === 'shortcuts' ? shortcutsPath : diagnostics?.path;
+    if (!path || !existsSync(path)) throw new Error('Configuration file is unavailable.');
     shell.showItemInFolder(path);
   });
   ipcMain.handle('host:choose-display-logo', async event => {
@@ -2507,6 +2637,7 @@ else {
   try { await reconcileLocalControl(); } catch { /* Core local show operation remains available. */ }
   syncQueuedDownloads();
   }).catch(error => {
+    diagnostics?.record('startup-failed');
     console.error('Unable to start application:', error);
     dialog.showErrorBox('Unable to start The Proper Volume Karaoke', error instanceof Error ? error.message : String(error));
     app.quit();
@@ -2592,12 +2723,12 @@ app.on('before-quit', event => {
 });
 
 // Let the normal quit handler save the show and close rooms before handing off
-// a verified installer. Updates never initiate quit.
+// a verified installer. An explicit Upgrade Now request can initiate quit.
 app.on('will-quit', event => {
   if (!updateHandoffAllowed || !quitReady || updateHandoffStarted || !desktopUpdates?.canApplyOnQuit()) return;
   event.preventDefault();
   updateHandoffStarted = true;
-  void desktopUpdates.applyOnQuit(path => shell.openPath(path)).catch(() => {
+  void desktopUpdates.applyOnQuit(launchUpdateInstaller, path => app.relaunch({ execPath: path })).catch(() => {
     dialog.showErrorBox('Booth update could not be opened', 'You can check again in Preferences → Updates and open the downloaded installer.');
   }).finally(() => app.quit());
 });

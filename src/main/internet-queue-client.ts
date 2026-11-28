@@ -217,6 +217,7 @@ export type InternetQueueClientOptions = {
   coordinator: RemoteAuthorityCoordinator;
   configurationFile: string;
   publish?: (value: InternetSessionStatus) => void;
+  suggestedSlug?: () => string;
   onMissingRequest?: () => void;
   writeClipboard?: (value: string) => void;
   fetch?: Fetcher;
@@ -228,7 +229,6 @@ export type InternetQueueClientOptions = {
 
 export class InternetQueueClient {
   private state: InternetSessionStatus['state'] = 'stopped';
-  private readonly suggestedSlug = `karaoke-${randomBytes(3).toString('hex')}`;
   private slug: string | null = null;
   private message = 'Start a session to invite singers.';
   private config: Connection | undefined;
@@ -254,7 +254,7 @@ export class InternetQueueClient {
   status(): InternetSessionStatus {
     let guests: InternetSessionStatus['guests'] = [];
     if (this.scope && this.state === 'online') { try { guests = this.scope.guests().map(({ singerId, name }) => ({ singerId, name })); } catch {} }
-    return { available: !this.disposed, state: this.state, suggestedSlug: this.suggestedSlug, slug: this.slug,
+    return { available: !this.disposed, state: this.state, suggestedSlug: this.options.suggestedSlug?.() ?? '', slug: this.slug,
       joinUrl: this.state === 'online' ? this.currentRoom?.publicUrl ?? null : null, guests, message: this.message,
       canImportConnection: !this.disposed && process.platform !== 'win32' && this.state === 'stopped',
       screenActive: !!this.screen, screenUrl: this.screen?.ready && this.state === 'online' && this.currentRoom ? `${this.screen.viewerOrigin}/${this.currentRoom.slug}/screen#${this.screen.secret}` : null };

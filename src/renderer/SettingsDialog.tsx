@@ -74,7 +74,7 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
-  const reveal = async (kind: 'settings' | 'shortcuts') => {
+  const reveal = async (kind: 'settings' | 'shortcuts' | 'log') => {
     setError('');
     try { await window.tpv.revealConfigFile(kind); }
     catch (reason) { setError(`Could not show the file: ${reason instanceof Error ? reason.message : String(reason)}`); }
@@ -160,6 +160,10 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
             <SettingsHelp label="Future request limits help" text="Counts pending, accepted and prepared songs, excluding the current song. Zero means unlimited. Lowering the limit keeps existing requests." />
           </> },
         { title: 'Remote Queueing', keywords: 'internet room discover nearby mobile private local network guest LAN TLS certificates invitation access', controls: <>
+          <label>Host handle<input value={draft.hostHandle} maxLength={48} placeholder="your-brand" onChange={event => setDraft({ ...draft, hostHandle: event.target.value.toLowerCase() })} /></label>
+          <label><input type="checkbox" checked={draft.showRoomQr} onChange={event => setDraft({ ...draft, showRoomQr: event.target.checked })} />Show room QR code while online</label>
+          <label>Custom QR destination<input type="url" value={draft.roomQrUrl} maxLength={500} placeholder="Use the current room link" onChange={event => setDraft({ ...draft, roomQrUrl: event.target.value })} /></label>
+          <p className="muted">Leave the custom address blank to share the active room link. Use a public address that singers can open.</p>
           <label><input type="checkbox" checked={draft.mobileRoomDiscovery} onChange={event => setDraft({ ...draft, mobileRoomDiscovery: event.target.checked })} />Suggest my active internet room to nearby mobile singers</label><p className="muted">Shares the public room address on trusted local networks and with devices using the same internet connection. Joining still needs approval from the singer.</p><HostRemotePanel bridge={window.tpv.remote} />
           </> }
     ] },
@@ -214,9 +218,10 @@ export function SettingsDialog({ value, path, shortcutsPath, shortcuts, onSaveSh
           </> }
     ] },
     { id: 'configuration-files', title: 'Configuration Files', topics: [
-        { keywords: 'settings json keybindings json file manager configuration path edit files restart', controls: <>
+        { keywords: 'settings json keybindings json file manager configuration path edit files restart diagnostics log crash errors', controls: <>
           <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="settings-file-tip" onClick={() => void reveal('settings')}>Show settings.json in file manager</button><span id="settings-file-tip" role="tooltip">Show {path} in the file manager</span></span></p>
             <p><span className="settings-tooltip"><button className="settings-file" type="button" aria-describedby="shortcuts-file-tip" onClick={() => void reveal('shortcuts')}>Show keybindings.json in file manager</button><span id="shortcuts-file-tip" role="tooltip">Show {shortcutsPath} in the file manager</span></span></p>
+            <p><button className="settings-file" type="button" onClick={() => void reveal('log')}>Show Diagnostic Log in File Manager</button></p>
             <p className="muted">Close the app before editing settings. Restart to apply file edits.</p>
           </> }
     ] },

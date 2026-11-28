@@ -5,7 +5,8 @@ import { ACCENT_COLORS, type Settings } from '../domain/settings';
 import { KARAOKE_PAIR_IMPORT_LABEL } from '../domain/shortcuts';
 
 export const BOOTH_PRODUCT_NAME = 'The Proper Volume Karaoke Booth';
-export type ApplicationMenuAction = AppAction | 'documentation' | 'about' | 'whatsNew' | 'showHostWindow';
+export type ApplicationMenuAction = AppAction | 'documentation' | 'about' | 'whatsNew' | 'showHostWindow' | 'zoomIn' | 'zoomOut' | 'resetZoom' |
+  'importConfiguration' | 'exportConfiguration';
 
 export type WorkspaceMenuContext = {
   busy: boolean;
@@ -28,7 +29,7 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
   const preferences: MenuItemConstructorOptions = { label: 'Preferences…', click: () => dispatch('preferences') };
   const about: MenuItemConstructorOptions = { label: 'About', enabled: !context.modal, click: () => dispatch('about') };
   const result: MenuItemConstructorOptions[] = [];
-  if (platform === 'darwin') result.push({ label: 'The Proper Volume Karaoke', submenu: [
+  if (platform === 'darwin') result.push({ label: BOOTH_PRODUCT_NAME, submenu: [
     { ...about, label: `About ${BOOTH_PRODUCT_NAME}` }, { type: 'separator' }, preferences, { type: 'separator' }, { role: 'services' },
     { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
   ] });
@@ -37,8 +38,11 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
     { label: 'Import Folder…', enabled: fileEnabled && !context.videoImportBlocked, click: () => dispatch('importDirectory') },
     { label: `${KARAOKE_PAIR_IMPORT_LABEL}…`, enabled: fileEnabled, click: () => dispatch('importCdg') },
     { type: 'separator' },
-    { label: 'Back up show…', enabled: fileEnabled, click: () => dispatch('backupShow') },
-    { label: 'Restore Show Backup…', enabled: fileEnabled, click: () => dispatch('restoreShow') },
+    { label: 'Save Session As…', enabled: fileEnabled, click: () => dispatch('backupShow') },
+    { label: 'Load Session…', enabled: fileEnabled, click: () => dispatch('restoreShow') },
+    { type: 'separator' },
+    { label: 'Import Configuration…', enabled: fileEnabled, click: () => dispatch('importConfiguration') },
+    { label: 'Export Current Configuration…', enabled: fileEnabled, click: () => dispatch('exportConfiguration') },
     ...(platform !== 'darwin' ? [{ type: 'separator' as const }, { role: 'quit' as const }] : []),
   ] });
   result.push({ label: 'Edit', submenu: [
@@ -64,6 +68,10 @@ export function applicationMenu(settings: Pick<Settings, 'appearance' | 'accentC
       { label: 'Wider Singer Rotation', type: 'radio', checked: settings.layout === 'rotation', click: () => dispatch('layoutRotation') },
       { label: 'Wide Song Library', type: 'radio', checked: settings.layout === 'library', click: () => dispatch('layoutLibrary') },
     ] },
+    { type: 'separator' },
+    { label: 'Zoom In', accelerator: 'CommandOrControl+=', click: () => dispatch('zoomIn') },
+    { label: 'Zoom Out', accelerator: 'CommandOrControl+-', click: () => dispatch('zoomOut') },
+    { label: 'Reset Zoom', accelerator: 'CommandOrControl+0', click: () => dispatch('resetZoom') },
   ] });
   result.push({ label: 'Playback', submenu: [
     { label: 'Play / Pause', enabled: fileEnabled && context.canPlay, click: () => dispatch('playPause') },

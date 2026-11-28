@@ -26,6 +26,7 @@ export class BoothDesktopUpdates {
   private updater?: Updater;
   private snapshot: DesktopUpdateStatus;
   private update?: Update;
+  private upgradeRequested = false;
   private job?: { controller: AbortController; promise: Promise<DesktopUpdateStatus> };
   private readonly appImage?: string;
 
@@ -56,6 +57,7 @@ export class BoothDesktopUpdates {
     this.updater?.setMode(mode);
     if (this.job) { this.job.controller.abort(); this.job = undefined; }
     this.update = undefined;
+    this.upgradeRequested = false;
     if (this.updater) this.set({ phase: 'idle' });
   }
 
@@ -70,7 +72,7 @@ export class BoothDesktopUpdates {
       }
       this.update = result.update;
       if (result.status === 'downloaded') return this.downloaded(result.update);
-      return this.set({ phase: result.status, version: result.update.version });
+      return this.set({ phase: result.status, version: result.update.version, installable: result.update.artifact.kind !== 'zip' });
     });
   }
 
@@ -84,7 +86,7 @@ export class BoothDesktopUpdates {
   }
 
   private downloaded(update: Update): DesktopUpdateStatus {
-    return this.set({ phase: 'downloaded', version: update.version, ...(update.artifact.kind === 'zip' && {
+    return this.set({ phase: 'downloaded', version: update.version, installable: update.artifact.kind !== 'zip', ...(update.artifact.kind === 'zip' && {
       message: 'Portable update downloaded. Use Show Download to find and extract the new ZIP.',
     }) });
   }
@@ -108,18 +110,30 @@ export class BoothDesktopUpdates {
   }
 
   canApplyOnQuit(): boolean {
-    return !!this.update && this.snapshot.phase === 'downloaded' && this.mode === 'install' &&
+    return !!this.update && this.snapshot.phase === 'downloaded' && (this.mode === 'install' || this.upgradeRequested) &&
       this.update.artifact.kind !== 'zip';
   }
 
-  async applyOnQuit(openInstaller: (path: string) => Promise<string>): Promise<void> {
+  async requestUpgrade(): Promise<boolean> {
+    if (this.snapshot.phase === 'available') await this.download();
+    if (this.snapshot.phase !== 'downloaded' || !this.snapshot.installable) return false;
+    this.upgradeRequested = true;
+    return true;
+  }
+
+  cancelUpgrade(): void { this.upgradeRequested = false; }
+
+  async applyOnQuit(openInstaller: (path: string, silentRestart: boolean) => Promise<string>,
+    relaunchAppImage?: (path: string) => void): Promise<void> {
     const update = this.update, updater = this.updater;
     if (!update || !updater || !this.canApplyOnQuit()) return;
     if (update.artifact.kind === 'appimage' && this.appImage) {
       await updater.applyAppImageUpdate(update, this.appImage);
+      if (this.upgradeRequested) relaunchAppImage?.(this.appImage);
       return;
     }
     const verified = await updater.prepareInstall(update);
-    if (await openInstaller(verified.path)) throw new Error('The system installer could not be opened.');
+    if (await openInstaller(verified.path, this.upgradeRequested && update.artifact.kind === 'nsis'))
+      throw new Error('The system installer could not be opened.');
   }
 }

@@ -17,8 +17,9 @@ test('native menus route desktop actions and mark saved View selections', () => 
     action => actions.push(action), 'linux', { ...INITIAL_WORKSPACE_MENU_CONTEXT, canPlay: true, canStop: true, performanceActive: true, canSeek: true }, true);
   assert.deepEqual(menu.map(item => item.label), ['File', 'Edit', 'View', 'Playback', 'Window', 'Help']);
   for (const [top, labels] of [
-    ['File', ['Import Video…', 'Import Folder…', 'Import CD+G / LRC / ZIP…', 'Back up show…', 'Restore Show Backup…']],
+    ['File', ['Import Video…', 'Import Folder…', 'Import CD+G / LRC / ZIP…', 'Save Session As…', 'Load Session…', 'Import Configuration…', 'Export Current Configuration…']],
     ['Edit', ['Find Song', 'Preferences…']],
+    ['View', ['Zoom In', 'Zoom Out', 'Reset Zoom']],
     ['Playback', ['Play / Pause', 'Stop', 'Restart Current Song', 'Skip Song…', 'Rewind 10 Seconds', 'Forward 10 Seconds']],
     ['Window', ['Show Host Window', 'Toggle Host Full Screen', 'Open Singer Display', 'Toggle Singer Display Full Screen']],
     ['Help', ['Documentation', 'Keyboard Shortcuts', "What's New", 'Check for Updates', 'About']],
@@ -30,7 +31,8 @@ test('native menus route desktop actions and mark saved View selections', () => 
       item.click(null as never, null as never, null as never);
     }
   }
-  assert.deepEqual(actions, ['importVideo', 'importDirectory', 'importCdg', 'backupShow', 'restoreShow', 'search', 'preferences',
+  assert.deepEqual(actions, ['importVideo', 'importDirectory', 'importCdg', 'backupShow', 'restoreShow', 'importConfiguration', 'exportConfiguration', 'search', 'preferences',
+    'zoomIn', 'zoomOut', 'resetZoom',
     'playPause', 'stop', 'previous', 'skip', 'seekBackward', 'seekForward', 'showHostWindow', 'toggleHostFullscreen',
     'singerDisplay', 'toggleFullscreen', 'documentation', 'keybindings', 'whatsNew', 'checkDesktopUpdate', 'about']);
 
@@ -52,7 +54,7 @@ test('native menus respect the picker, modal, transport and singer window availa
   const menu = applicationMenu(DEFAULT_SETTINGS, () => {}, 'win32', context);
   const item = (top: string, label: string) => named(children(named(menu, top)), label);
   assert.equal(item('File', 'Import Video…').enabled, false);
-  assert.equal(item('File', 'Back up show…').enabled, false);
+  assert.equal(item('File', 'Save Session As…').enabled, false);
   assert.equal(item('View', 'Font').enabled, true);
   assert.equal(item('Playback', 'Play / Pause').enabled, false);
   assert.equal(item('Playback', 'Stop').enabled, true);

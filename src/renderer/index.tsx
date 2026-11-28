@@ -57,6 +57,8 @@ import { CommunityCatalogPanel } from './CommunityCatalogPanel';
 import { SongResults } from './SongResults';
 import { unifiedSongResults, type SongResult, type SongResultProvider } from './unified-song-results';
 import { djCodeForLibraryResult } from './library-song-code';
+import { RoomShareCard } from './RoomShareCard';
+import { HostSetupDialog } from './HostSetupDialog';
 import { LIBRARY_RESULT_FIELDS, type LibraryResultField, type LibraryResultMetadata, type LibraryResultSort } from '../domain/library-result-fields';
 import { LibrarySourceFilter } from './LibrarySourceFilter';
 import { useKaraFunSearch, useYouTubeSearch, usePartyTymeSearch } from './use-streaming-search';
@@ -164,6 +166,7 @@ declare global {
       desktopUpdateStatus: () => Promise<import('../domain/desktop-update-preference').DesktopUpdateStatus>;
       checkDesktopUpdate: () => Promise<void>;
       downloadDesktopUpdate: () => Promise<void>;
+      installDesktopUpdate: () => Promise<void>;
       revealDesktopUpdate: () => Promise<void>;
       onDesktopUpdate: (callback: (value: import('../domain/desktop-update-preference').DesktopUpdateStatus) => void) => () => void;
       chooseLyricBackdrop: () => Promise<string | null>;
@@ -185,7 +188,7 @@ declare global {
       command: (payload: Command) => Promise<Result>;
       openDisplay: () => Promise<void>;
       toggleDisplayFullscreen: () => Promise<void>;
-      revealConfigFile: (kind: 'settings' | 'shortcuts') => Promise<void>;
+      revealConfigFile: (kind: 'settings' | 'shortcuts' | 'log') => Promise<void>;
       chooseDisplayLogo: () => Promise<boolean>;
       clearDisplayLogo: () => Promise<void>;
       getDisplayLogo: () => Promise<string | null>;
@@ -295,6 +298,7 @@ function App() {
   const transportBusyRef = useRef(false);
   const accentSaveInFlight = useRef(false);
   const [settingsPath, setSettingsPath] = useState('');
+  const [hostSetup, setHostSetup] = useState(false);
   const [shortcuts, setShortcuts] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
   const [shortcutsPath, setShortcutsPath] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -311,7 +315,7 @@ function App() {
   useEffect(() => { if (!busy && pendingPreferences.current) openPreferences(pendingPreferences.current); }, [busy]);
   const [editingVersion, setEditingVersion] = useState<Version | null>(null);
   useEffect(() => { songList.current?.scrollTo(0, 0); }, [search, librarySort, libraryFilter]);
-  const modalOpen = !!(settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || mediaReviewOpen);
+  const modalOpen = !!(hostSetup || settingsOpen || queueVersion || editingRequest || editingVersion || playlistVersion || mediaReviewOpen);
 
   useEffect(() => {
     let deadline = state?.nextStartAtMs ?? 0;
@@ -380,10 +384,17 @@ function App() {
       const previousTheme = localStorage.getItem('tpv-theme');
       if (result.created && (previousTheme === 'day' || previousTheme === 'night'))
         loaded = await window.tpv.saveSettings({ appearance: previousTheme });
-      if (alive) { setSettings(loaded); setSettingsPath(result.path); }
+      if (alive) {
+        setSettings(loaded); setSettingsPath(result.path);
+        setHostSetup(loaded.hostSetupPending && !loaded.hostHandle);
+      }
     }).catch(error => { if (alive) setNotice(`Could not load preferences: ${String(error)}`, 'error'); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    document.documentElement.style.zoom = String(settings.hostZoom / 100);
+  }, [settings.hostZoom]);
 
   useEffect(() => {
     const preference = window.matchMedia('(prefers-color-scheme: light)');
@@ -768,6 +779,7 @@ function App() {
       <div className="eyebrow">Workspace</div>
       {([['library', 'Library', 'library'], ['playlists', 'Playlists', 'playlist'], ['sources', 'Sources', 'globe']] as const).map(([id, label, icon]) =>
         <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-label={label} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}><Icon name={icon} /><span>{label}</span></button>)}
+      <RoomShareCard bridge={window.tpv.internetSessions} override={settings.roomQrUrl} enabled={settings.showRoomQr} />
       <div className="sidebar__host"><div className="eyebrow">Host Workspace</div>{([['requests', 'Requests', 'inbox'], ['singers', 'Singers', 'singers'], ['remote', 'Remote Sessions', 'remote']] as const).map(([id, label, icon]) => <button key={id} className={`nav-item ${screen === id ? 'active' : ''}`} aria-label={label} aria-current={screen === id ? 'page' : undefined} onClick={() => setScreen(id)}><Icon name={icon} /><span>{label}</span>{id === 'requests' && pending.length > 0 && <span className="nav-item__count" aria-hidden="true">{pending.length}</span>}</button>)}</div>
     </nav>
     <PanelSeparator className="sidebar-separator" label="Resize Workspace Sidebar" orientation="vertical" value={fittedPanels.sidebar} minimum={140} maximum={sidebarMaximum} defaultValue={DEFAULT_HOST_PANEL_SIZES.sidebar} onChange={value => changePanelSize('sidebar', value)} onCommit={value => commitPanelSize('sidebar', value)} />
@@ -954,6 +966,7 @@ function App() {
       if (!result.ok) throw new Error(result.error || 'The request could not be updated.');
       setNotice('Queued request updated.', 'success');
     }} />}
+    {hostSetup && <HostSetupDialog save={async patch => { setSettings(await window.tpv.saveSettings(patch)); setHostSetup(false); }} />}
     {settingsOpen && <SettingsDialog value={settings} path={settingsPath} shortcutsPath={shortcutsPath} shortcuts={shortcuts} initialSection={settingsSection} focusRequest={settingsFocusRequest} onSaveShortcuts={async value => { setBusy(true); try { setShortcuts(await window.tpv.saveShortcuts(value)); } finally { setBusy(false); } }} onClose={() => setSettingsOpen(false)} onSave={async value => { setBusy(true); try { const saved = await window.tpv.saveSettings(value); setSettings(saved); } finally { setBusy(false); } }} />}
     {editingVersion && <EditMetadataDialog version={editingVersion} onClose={() => setEditingVersion(null)} onSave={async (title, artist, isDuet) => {
       const result = await window.tpv.command({ type: 'editVersion', id: editingVersion.id, title, artist, isDuet });

@@ -30,6 +30,7 @@
     "multicast-dns": "7.2.5",
     "mysql2": "^3.24.6",
     "parse5": "^7.3.0",
+    "qrcode": "1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "reflect-metadata": "0.2.2",
@@ -39,6 +40,7 @@
   "devDependencies": {
     "@types/multicast-dns": "7.2.4",
     "@types/node": "^24.0.0",
+    "@types/qrcode": "1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/yauzl": "^3.4.0",
