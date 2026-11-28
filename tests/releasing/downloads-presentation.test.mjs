@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderDownloads } from '../../scripts/render-downloads.mjs';
 
 const manifest = {version:'0.10.21', tag:'v0.10.21', sourceCommit:'a'.repeat(40), artifacts:[]};
@@ -34,7 +39,59 @@ test('latest page displays five researched releases and retains history', async 
   assert.doesNotMatch(await renderDownloads(manifest, {versionPage:true}), /class="card changelog"/);
 });
 
-test('an unknown future version links to its release notes', async () => {
-  const html = await renderDownloads({...manifest, version:'0.10.22',tag:'v0.10.22'}, {earlierVersions:['0.10.21']});
+test('an unknown future version links to release notes in its manifest', async () => {
+  const artifacts = [{file:'RELEASE_NOTES.md',bytes:4,sha256:'c'.repeat(64)}];
+  const html = await renderDownloads({...manifest, version:'0.10.22',tag:'v0.10.22',artifacts}, {earlierVersions:['0.10.21']});
   assert.match(html, /href="\.\/v0\.10\.22\/RELEASE_NOTES\.md"/);
+});
+
+test('the page CLI uses verified current and retained notes, escapes raw HTML, and skips unsupported sources', async t => {
+  const parent = await realpath(tmpdir());
+  const directory = await mkdtemp(join(parent, 'tpv-download-notes-'));
+  t.after(async () => {
+    const checked = await realpath(directory);
+    assert.equal(dirname(checked), parent);
+    await rm(checked, { recursive: true, force: true });
+  });
+  const published = join(directory, 'public'), candidate = join(directory, 'incoming');
+  await mkdir(published); await mkdir(candidate);
+  const writeRelease = async (root, version, notes) => {
+    await mkdir(root, { recursive: true });
+    const file = join(root, 'release-manifest.json');
+    await writeFile(file, JSON.stringify({ ...manifest, version, tag:`v${version}`, artifacts: [
+      { file:'RELEASE_NOTES.md', bytes:Buffer.byteLength(notes), sha256:createHash('sha256').update(notes).digest('hex') },
+    ] }));
+    await writeFile(join(root, 'RELEASE_NOTES.md'), notes);
+    return file;
+  };
+  const input = await writeRelease(candidate, '0.10.22', [
+    '# KaraBooth 0.10.22', '## Playback <script>', '- Use **Room mode** and `karabooth-cli`.',
+    '- <img src=x onerror=alert(1)> & safe copy', '  on a second line.',
+    '', '```html', '- invisible fenced content', '```',
+  ].join('\n'));
+  await writeRelease(join(published,'v0.10.21'), '0.10.21', '## Library C#\n1. Retained entry from the published file');
+  await writeRelease(join(published,'v0.10.20'), '0.10.20', '- Published checksum target');
+  await writeFile(join(published,'v0.10.20','RELEASE_NOTES.md'), '- Tampered note should not render');
+  await writeRelease(join(directory,'external'), '0.10.19', '- External directory should never be read');
+  try { await symlink(join(directory,'external'), join(published,'v0.10.19'), process.platform === 'win32' ? 'junction' : 'dir'); }
+  catch(error) {
+    if (error.code !== 'EPERM') throw error;
+    t.diagnostic('Directory symlinks are unavailable on this Windows host');
+  }
+  const output = join(directory, 'index.html'), script = fileURLToPath(new URL('../../scripts/render-downloads.mjs', import.meta.url));
+  execFileSync(process.execPath, [script, input, output, '--public-dir', published, '--history', '0.10.21,0.10.20,0.10.19']);
+  const html = await readFile(output, 'utf8');
+  assert.match(html, /<h4>Playback &lt;script&gt;<\/h4>/);
+  assert.match(html, /<li>Use <strong>Room mode<\/strong> and <code>karabooth-cli<\/code>\.<\/li>/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt; &amp; safe copy on a second line/);
+  assert.match(html, /<h4>Library C#<\/h4>.*Retained entry from the published file/);
+  assert.match(html, /href="\.\/v0\.10\.21\/RELEASE_NOTES\.md">Read the full release notes/);
+  assert.match(html, /Find the running version in Help/);
+  assert.doesNotMatch(html, /<script>|<img src=x|invisible fenced content|Tampered note|External directory/);
+  const invalid = spawnSync(process.execPath, [script, input, output, '--public-dir', published, '--history', '../external']);
+  assert.notEqual(invalid.status, 0, 'retained version arguments cannot escape the public root');
+  execFileSync(process.execPath, [script, input, output, '--version-page']);
+  const versionHtml = await readFile(output, 'utf8');
+  assert.match(versionHtml, /class="card version-changelog"/);
+  assert.match(versionHtml, /href="\.\/RELEASE_NOTES\.md">Read the full release notes/);
 });

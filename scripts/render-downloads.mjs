@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { constants } from 'node:fs';
+import { lstat, open, readFile, realpath, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PLANNING_NAMES, releaseAssetNames, releaseVersion } from './release-artifacts.mjs';
 
 const repository = 'https://github.com/thepropervolume/proper-karaoke-booth';
-// Reviewed, public-facing highlights researched from release notes and Git history.
-// Add an entry when a new version is published; never expose raw commit messages.
-const highlights = {
+// Reviewed highlights for releases whose published notes predate this renderer.
+const historicalHighlights = {
   '0.10.21': ['Search or choose library sources and remember your selection.', 'Import files and folders with one control, and relink or remove library entries without deleting source files.', 'Sort library columns and use improved DJ codes for local and online tracks.'],
   '0.10.20': ['Find the running version in Help → About and open release notes from Help → What’s New.', 'Desktop singer displays show the mobile applause cue.'],
   '0.10.19': ['The mobile singer companion adds room controls and native interactions.', 'Singers can see host-confirmed applause and fulfilled requests; the desktop singer display shows an applause cue.'],
@@ -90,7 +91,98 @@ function releaseHistory(earlierVersions, currentVersion) {
   return entries.sort(newestFirst);
 }
 
-export async function renderDownloads(manifest, { versionPage = false, earlierVersions = [], archivedVersions = [] } = {}) {
+const NOTES_NAME = 'RELEASE_NOTES.md';
+const MAX_NOTES_BYTES = 64 * 1024;
+const MAX_RELEASE_MANIFEST_BYTES = 256 * 1024;
+const escapeHtml = text => text.replace(/[&<>"']/g, token => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[token]);
+
+function inlineNotes(text) {
+  return text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).map(part => {
+    if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
+    if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) return `<strong>${escapeHtml(part.slice(2, -2))}</strong>`;
+    return escapeHtml(part);
+  }).join('');
+}
+
+function notesSummary(markdown) {
+  const blocks = [];
+  let list, fence;
+  for (const line of markdown.split(/\r?\n/)) {
+    const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (delimiter?.[1][0] === fence[0] && delimiter[1].length >= fence.length && !delimiter[2].trim()) fence = undefined;
+      continue;
+    }
+    if (delimiter) { fence = delimiter[1]; list = undefined; continue; }
+    const heading = /^ {0,3}#{2,6}[ \t]+(.+?)\s*$/.exec(line);
+    if (heading) {
+      list = undefined;
+      blocks.push({ heading: heading[1].replace(/[ \t]+#+$/, '') || heading[1] });
+      continue;
+    }
+    const bullet = /^ {0,3}(?:[-*+]|\d+[.)])[ \t]+(.+)$/.exec(line);
+    if (bullet) {
+      if (!list) { list = []; blocks.push({ list }); }
+      list.push(bullet[1].trim());
+      continue;
+    }
+    if (list && /^ {2,}\S/.test(line)) list[list.length - 1] += ' ' + line.trim();
+    else if (line.trim()) list = undefined;
+  }
+  return blocks.map(block => block.heading ? `<h4>${inlineNotes(block.heading)}</h4>` :
+    `<ul>${block.list.map(text => `<li>${inlineNotes(text)}</li>`).join('')}</ul>`).join('');
+}
+
+// Only read bounded, regular files. Reject links before opening, disallow
+// following a swapped link where supported, then check the opened identity.
+async function readReleaseFile(directory, name, maximum) {
+  const path = join(directory, name);
+  try {
+    const original = await lstat(path);
+    if (!original.isFile() || original.size < 1 || original.size > maximum) return undefined;
+    const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.dev !== original.dev || opened.ino !== original.ino || opened.size !== original.size) return undefined;
+      const bytes = Buffer.alloc(original.size + 1);
+      const { bytesRead } = await handle.read(bytes);
+      return bytesRead === original.size ? bytes.subarray(0, bytesRead) : undefined;
+    } finally { await handle.close(); }
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ELOOP') return undefined;
+    throw error;
+  }
+}
+
+async function verifiedNotes(directory, assets) {
+  const record = assets.get(NOTES_NAME);
+  if (!record || record.bytes > MAX_NOTES_BYTES) return undefined;
+  const bytes = await readReleaseFile(directory, NOTES_NAME, MAX_NOTES_BYTES);
+  if (!bytes || bytes.length !== record.bytes || createHash('sha256').update(bytes).digest('hex') !== record.sha256) return undefined;
+  return bytes.toString('utf8');
+}
+
+async function loadNotes(input, manifest, { earlierVersions, publicDirectory }) {
+  const version = releaseVersion(manifest.version);
+  const notes = new Map([[version, await verifiedNotes(await realpath(dirname(input)), manifestRecords(manifest, version))]]);
+  if (!publicDirectory) return notes;
+  const root = await realpath(publicDirectory);
+  for (const earlier of releaseHistory(earlierVersions, version).slice(0, 4)) {
+    const directory = join(root, `v${earlier}`);
+    if (!await lstat(directory).then(info => info.isDirectory(), error => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }) || await realpath(directory) !== directory) continue;
+    const metadata = await readReleaseFile(directory, 'release-manifest.json', MAX_RELEASE_MANIFEST_BYTES);
+    if (!metadata) continue;
+    const retained = JSON.parse(metadata.toString('utf8'));
+    if (retained.version !== earlier) continue;
+    notes.set(earlier, await verifiedNotes(directory, manifestRecords(retained, earlier)));
+  }
+  return notes;
+}
+
+export async function renderDownloads(manifest, { versionPage = false, earlierVersions = [], archivedVersions = [], notes = new Map() } = {}) {
   const version = releaseVersion(manifest.version);
   const assets = manifestRecords(manifest, version);
   assert.ok(!versionPage || (earlierVersions.length === 0 && archivedVersions.length === 0), 'Release history belongs on the latest downloads page.');
@@ -117,9 +209,22 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
   }).join('\n');
   const planning = downloads(documents);
   const receipts = [...assets.keys()].filter(file => !featured.has(file) && !['SHA256SUMS.txt', 'release-manifest.json'].includes(file)).sort();
+  const changelogCard = item => {
+    const published = notes.get(item);
+    const summary = (published ? notesSummary(published) : '') || (historicalHighlights[item] ?
+      `<ul>${historicalHighlights[item].map(text => `<li>${escapeHtml(text)}</li>`).join('')}</ul>` : '');
+    const hasNotes = published !== undefined || (!notes.has(item) && item === version && assets.has(NOTES_NAME));
+    const url = versionPage ? `./${NOTES_NAME}` : `./v${item}/${hasNotes ? NOTES_NAME : ''}`;
+    const link = hasNotes ? `<p><a href="${url}">Read the full release notes</a></p>` :
+      (versionPage ? '' : `<p><a href="${url}">View this release</a></p>`);
+    return `<article><h3>Version ${item}</h3>${summary}${link}</article>`;
+  };
+  const changes = versionPage
+    ? (notes.get(version) ? `<section class="card version-changelog" aria-labelledby="changelog-title"><h2 id="changelog-title">What’s new</h2>${changelogCard(version)}</section>` : '')
+    : `<section class="card changelog" aria-labelledby="changelog-title"><h2 id="changelog-title">What’s new in KaraBooth</h2>${[version, ...history].slice(0, 5).map(changelogCard).join('')}</section>`;
 
-  // URLs come from the verified version and the release allowlist. There is no
-  // user-provided display text or script on the public download page.
+  // URLs come from verified versions and the release allowlist. Displayed
+  // changelog text is escaped before it reaches the public download page.
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -160,9 +265,9 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
         ${receipts.map(file => `<li><a href="${assetUrl(file)}" download>${file}</a></li>`).join('\n        ')}
       </ul>
     </details>
+    ${changes}
     ${history.length ? `<section class="card history"><h2>Earlier versions</h2><ul>${history.map(earlier => `<li><a href="./v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
     ${archived.length ? `<section class="card history"><h2>Archived release history</h2><p>Installers are retained for the five most recent versions.</p><ul>${archived.map(earlier => `<li><a href="./archive/v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
-    ${!versionPage ? `<section class="card changelog" aria-labelledby="changelog-title"><h2 id="changelog-title">What’s new in KaraBooth</h2>${[version, ...history, ...archived].slice(0, 5).map(item => `<article><h3>Version ${item}</h3>${highlights[item] ? `<ul>${highlights[item].map(text => `<li>${text}</li>`).join('')}</ul>` : `<p><a href="${archived.includes(item) ? `./archive/v${item}/` : `./v${item}/RELEASE_NOTES.md`}">Read the release notes</a></p>`}</article>`).join('')}</section>` : ''}
     <footer class="release-footer">
       ${versionPage ? '<a href="../">Latest release</a>' : `<a href="${root}">Permanent link to this version</a>`}
       <a href="${repository}" target="_blank" rel="noopener noreferrer">KaraBooth on GitHub</a>
@@ -178,15 +283,17 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [input, output, ...flags] = process.argv.slice(2);
-  let versionPage = false, earlierVersions = [], archivedVersions = [];
+  let versionPage = false, earlierVersions = [], archivedVersions = [], publicDirectory;
   while (flags.length) {
     const flag = flags.shift();
     if (flag === '--version-page' && !versionPage) versionPage = true;
     else if (flag === '--history' && !earlierVersions.length && flags[0]) earlierVersions = flags.shift().split(',');
     else if (flag === '--archived' && !archivedVersions.length && flags[0]) archivedVersions = flags.shift().split(',');
+    else if (flag === '--public-dir' && !publicDirectory && flags[0]) publicDirectory = flags.shift();
     else throw new Error('Invalid downloads page options.');
   }
-  assert.ok(input && output, 'Usage: node scripts/render-downloads.mjs <manifest> <output> [--version-page] [--history VERSIONS] [--archived VERSIONS]');
+  assert.ok(input && output, 'Usage: node scripts/render-downloads.mjs <manifest> <output> [--version-page] [--public-dir PATH] [--history VERSIONS] [--archived VERSIONS]');
   const manifest = JSON.parse(await readFile(input, 'utf8'));
-  await writeFile(output, await renderDownloads(manifest, { versionPage, earlierVersions, archivedVersions }), 'utf8');
+  const notes = await loadNotes(input, manifest, { earlierVersions, publicDirectory });
+  await writeFile(output, await renderDownloads(manifest, { versionPage, earlierVersions, archivedVersions, notes }), 'utf8');
 }

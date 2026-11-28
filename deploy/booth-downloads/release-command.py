@@ -264,12 +264,14 @@ def archive_release(public, version, scratch):
     candidate.rename(target)
 
 
-def render_page(node_binary, manifest, destination, is_version_page=False, history=(), archived=()):
+def render_page(node_binary, manifest, destination, is_version_page=False, history=(), archived=(), public=None):
     flags = ['--version-page'] if is_version_page else []
     if history:
         flags.extend(['--history', ','.join(history)])
     if archived:
         flags.extend(['--archived', ','.join(archived)])
+    if public is not None:
+        flags.extend(['--public-dir', public])
     node(node_binary, 'scripts/render-downloads.mjs', manifest, destination, *flags)
     destination.chmod(0o644)
 
@@ -326,7 +328,7 @@ def publish(session, public, version, commit, source_hash, node_binary):
             archive_root = public / 'archive'
             archived = [path.name[1:] for path in archive_root.iterdir() if path.is_dir() and not path.is_symlink()
                         and re.fullmatch(f'v{VERSION}', path.name) and path.name[1:] not in keep] if archive_root.exists() else []
-            render_page(node_binary, candidate / 'release-manifest.json', index, history=history, archived=archived)
+            render_page(node_binary, candidate / 'release-manifest.json', index, history=history, archived=archived, public=public)
             latest_map = scratch / '.latest.map'
             write_latest_map(candidate, version, latest_map)
         if candidate != target:
