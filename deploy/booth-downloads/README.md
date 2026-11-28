@@ -43,3 +43,9 @@ A failed upload leaves no completed batch for that platform. Attempts expire aft
 The private publisher umask also applies to newly created archive directories. The publish step explicitly sets the public archive root and validated version directories to mode `0755`. During a release check, verify anonymous GET for an older archive and confirm that its retired installer returns HTTP 404.
 
 On Linux, run `python3 deploy/booth-downloads/test-release-command.py -v` with Node on `PATH` to exercise a complete scratch publication. The tests also cover mixed attempts, conflicting commits and rejected commands and archive paths.
+
+## Release-page presentation
+
+The hub and Booth download page link to the Booth and Studio source repositories and the same social destinations as the TPV website. `assets/social-icons.svg` uses Simple Icons 11.15.0 brand paths (CC0 1.0); the Karaoke Nerds mark follows the TPV site icon. Brand trademarks belong to their respective owners. Copy the SVG sprite along with the other public assets when updating the server.
+
+The Booth renderer keeps a short, reviewed set of public highlights in `scripts/render-downloads.mjs`. Add an entry for each new release, using the approved release notes and verified history; do not publish raw commit messages. The latest page displays up to five current and retained releases. A version without curated highlights links to its release notes. Keep the hub, renderer, stylesheet, and public sprite in sync when deploying presentation changes.

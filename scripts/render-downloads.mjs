@@ -5,6 +5,26 @@ import { pathToFileURL } from 'node:url';
 import { PLANNING_NAMES, releaseAssetNames, releaseVersion } from './release-artifacts.mjs';
 
 const repository = 'https://github.com/thepropervolume/proper-karaoke-booth';
+// Reviewed, public-facing highlights researched from release notes and Git history.
+// Add an entry when a new version is published; never expose raw commit messages.
+const highlights = {
+  '0.10.21': ['Search or choose library sources and remember your selection.', 'Import files and folders with one control, and relink or remove library entries without deleting source files.', 'Sort library columns and use improved DJ codes for local and online tracks.'],
+  '0.10.20': ['Find the running version in Help → About and open release notes from Help → What’s New.', 'Desktop singer displays show the mobile applause cue.'],
+  '0.10.19': ['The mobile singer companion adds room controls and native interactions.', 'Singers can see host-confirmed applause and fulfilled requests; the desktop singer display shows an applause cue.'],
+  '0.10.18': ['The mobile singer app introduces updated Rooms, Search, Queue, Account, Playlists, and Now Playing screens.', 'Sign in with a Booth account or enter as a guest; playlists remain on the device.'],
+  '0.10.17': ['Filter the Song Library by source and choose which columns to display.', 'Manage karaoke services, rename singers, and play ready library tracks immediately.', 'Star songs for KJ Picks in Booth or personal playlists on a singer device.'],
+};
+const socialNav = `<nav class="social-nav" aria-label="The Proper Volume social accounts">
+  <a href="https://instagram.com/thepropervolume" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><svg aria-hidden="true"><use href="/assets/social-icons.svg#instagram"></use></svg></a>
+  <a href="https://www.linkedin.com/company/thepropervolume/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><svg aria-hidden="true"><use href="/assets/social-icons.svg#linkedin"></use></svg></a>
+  <a href="https://karaokenerds.com/Brand/TheProperVolume/Date" target="_blank" rel="noopener noreferrer" aria-label="Karaoke Nerds"><svg aria-hidden="true"><use href="/assets/social-icons.svg#karaokenerds"></use></svg></a>
+  <a href="https://twitch.tv/thepropervolume" target="_blank" rel="noopener noreferrer" aria-label="Twitch"><svg aria-hidden="true"><use href="/assets/social-icons.svg#twitch"></use></svg></a>
+  <a href="https://youtube.com/@thepropervolume" target="_blank" rel="noopener noreferrer" aria-label="YouTube"><svg aria-hidden="true"><use href="/assets/social-icons.svg#youtube"></use></svg></a>
+  <a href="https://open.spotify.com/artist/5QMHcgrYZEPcbHx75cF2my" target="_blank" rel="noopener noreferrer" aria-label="Spotify"><svg aria-hidden="true"><use href="/assets/social-icons.svg#spotify"></use></svg></a>
+  <a href="https://www.facebook.com/thepropervolume" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><svg aria-hidden="true"><use href="/assets/social-icons.svg#facebook"></use></svg></a>
+  <a href="https://github.com/thepropervolume" target="_blank" rel="noopener noreferrer" aria-label="GitHub"><svg aria-hidden="true"><use href="/assets/social-icons.svg#github"></use></svg></a>
+</nav>`;
+
 
 function sizeLabel(bytes) {
   if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
@@ -124,7 +144,7 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
     <section class="hero release-hero">
       <div class="hero-copy">
         <p class="eyebrow">${Number(version.split('.')[0]) === 0 ? 'Development release' : 'Release'} ${version}</p>
-        <h1>Karaoke Booth downloads</h1>
+        <h1>The Proper Volume Karaoke Booth <span class="short-name">(KaraBooth)</span> downloads</h1>
         <p class="lede">Desktop installers and mobile development builds.</p>
       </div>
       <img class="product-icon" src="/assets/karaoke-booth.png" width="96" height="96" alt="">
@@ -142,11 +162,15 @@ export async function renderDownloads(manifest, { versionPage = false, earlierVe
     </details>
     ${history.length ? `<section class="card history"><h2>Earlier versions</h2><ul>${history.map(earlier => `<li><a href="./v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
     ${archived.length ? `<section class="card history"><h2>Archived release history</h2><p>Installers are retained for the five most recent versions.</p><ul>${archived.map(earlier => `<li><a href="./archive/v${earlier}/">Version ${earlier}</a></li>`).join('')}</ul></section>` : ''}
+    ${!versionPage ? `<section class="card changelog" aria-labelledby="changelog-title"><h2 id="changelog-title">What’s new in KaraBooth</h2>${[version, ...history, ...archived].slice(0, 5).map(item => `<article><h3>Version ${item}</h3>${highlights[item] ? `<ul>${highlights[item].map(text => `<li>${text}</li>`).join('')}</ul>` : `<p><a href="${archived.includes(item) ? `./archive/v${item}/` : `./v${item}/RELEASE_NOTES.md`}">Read the release notes</a></p>`}</article>`).join('')}</section>` : ''}
     <footer class="release-footer">
       ${versionPage ? '<a href="../">Latest release</a>' : `<a href="${root}">Permanent link to this version</a>`}
+      <a href="${repository}" target="_blank" rel="noopener noreferrer">KaraBooth on GitHub</a>
+      <a href="https://github.com/thepropervolume/proper-karaoke-studio" target="_blank" rel="noopener noreferrer">Karaoke Studio on GitHub</a>
       <a href="${repository}/commit/${manifest.sourceCommit}">Source commit <code>${manifest.sourceCommit.slice(0, 7)}</code></a>
     </footer>
   </main>
+  <footer class="shell site-footer">${socialNav}</footer>
 </body>
 </html>
 `;

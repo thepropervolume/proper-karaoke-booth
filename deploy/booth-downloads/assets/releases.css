@@ -223,3 +223,20 @@ summary { min-height: 1.6rem; cursor: pointer; font-weight: 800; }
   .files a { flex-wrap: wrap; justify-content: start; }
   .release-hero { flex-direction: column-reverse; gap: .8rem; }
 }
+
+.short-name { font-size: .65em; color: var(--muted); }
+.source-link { align-self: flex-start; font-weight: 700; }
+.site-footer { padding-block: 1.5rem 3rem; border-block-start: 1px solid var(--line); }
+.social-nav { display: grid; grid-template-columns: repeat(9, 2.75rem); justify-content: center; gap: .5rem 1rem; }
+.social-nav a { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; color: var(--muted); border: 1px solid transparent; border-radius: .4rem; transition: color .2s, border-color .2s, transform .2s; }
+.social-nav a:hover { color: var(--link); border-color: currentColor; transform: translateY(-2px); }
+.social-nav a[aria-label="YouTube"] { color: #e00000; }
+.social-nav svg { width: 1.5rem; height: 1.5rem; fill: currentColor; }
+.changelog { margin-block-start: 1rem; }
+.changelog article { padding-block: 1.1rem; border-block-end: 1px solid var(--line); }
+.changelog article:last-child { border-block-end: 0; padding-block-end: 0; }
+.changelog h3 { font-size: 1.15rem; }
+.changelog ul { margin: .5rem 0 0; padding-inline-start: 1.3rem; }
+.changelog li + li { margin-block-start: .35rem; }
+@media (max-width: 39rem) { .social-nav { grid-template-columns: repeat(3, 2.75rem); } }
+@media (prefers-reduced-motion: reduce) { .social-nav a { transition: none; } .social-nav a:hover { transform: none; } }
