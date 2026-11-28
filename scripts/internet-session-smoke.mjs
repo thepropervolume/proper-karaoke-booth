@@ -94,6 +94,10 @@ try {
   assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), link);
   const qr = host.getByRole('button', { name: 'Copy public room link', exact: true });
   await qr.locator('img[src^="data:image/png"]').waitFor();
+  const display = app.windows().find(page => page.url().replaceAll('\\', '/').includes('/display/index.html'));
+  assert.ok(display, 'The singer renderer is available.');
+  const audienceQr = display.locator('#singer-room-qr:not([hidden]) img[src^="data:image/png"]');
+  await audienceQr.waitFor();
   await qr.click();
   assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), link);
   const custom = 'https://example.test/open-mic';
@@ -102,6 +106,7 @@ try {
   assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), custom);
   await host.evaluate(() => window.tpv.saveSettings({ showRoomQr: false }));
   await qr.waitFor({ state: 'detached' });
+  await audienceQr.waitFor({ state: 'detached' });
   await host.evaluate(() => window.tpv.saveSettings({ roomQrUrl: '', showRoomQr: true }));
   const chrome = process.env.TPV_QA_CHROME ?? (process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : undefined);
   if (!chrome) throw new Error('Set TPV_QA_CHROME to a Chromium executable.');

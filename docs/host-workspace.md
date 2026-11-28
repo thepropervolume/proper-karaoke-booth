@@ -4,7 +4,7 @@
 
 On a new profile, enter your DJ or brand name and a host handle. KaraBooth uses the handle to suggest a room code and checks availability when you start the internet room. Existing profiles can set a handle in **Preferences → Queue & Rooms → Remote Queueing**.
 
-While an internet room is online, the sidebar shows a QR code. Click it to copy the public destination. In **Remote Queueing**, hide the code or enter a custom public URL. A blank custom URL uses the active room's link.
+While an internet room is online, the sidebar and idle singer screen show a QR code. Click the sidebar code to copy the public destination. In **Remote Queueing**, hide the code or enter a custom public URL. A blank custom URL uses the active room's link.
 
 **View → Zoom In**, **Zoom Out** and **Reset Zoom** adjust the host interface and save its zoom. The singer screen retains its own layout.
 
