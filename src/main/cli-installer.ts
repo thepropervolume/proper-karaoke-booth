@@ -10,7 +10,7 @@ const START = '# >>> The Proper Volume Karaoke CLI >>>';
 const END = '# <<< The Proper Volume Karaoke CLI <<<';
 const BLOCK = `${START}\ncase ":$PATH:" in\n  *":$HOME/.local/bin:"*) ;;\n  *) PATH="$HOME/.local/bin\${PATH:+:$PATH}"; export PATH ;;\nesac\n${END}\n`;
 const MARKER = '# Managed by The Proper Volume Karaoke Booth CLI installer';
-const COMMAND = 'tpv-karaoke-booth';
+const COMMAND = 'karabooth-cli';
 const MAX_PROFILE = 2 * 1024 * 1024;
 
 export type CliInstallResult = { ok: boolean; command?: string; message: string; files?: string[] };
@@ -98,10 +98,12 @@ export async function installPosixCli(home: string, shell: string, target: strin
     edits.push({ path: launcher, previous: oldLauncher, content: program, mode: oldLauncher ? oldLauncher.mode | 0o100 : 0o700 });
   // Existing installations can keep using the old command. Leave unrelated
   // aliases alone, and do not create an extra command on a fresh installation.
-  const legacy = join(bin, 'tpv-karaoke'), oldLegacy = await inspectFile(legacy).catch(() => null);
-  if (oldLegacy?.bytes.toString('utf8').startsWith(`#!/bin/sh\n${MARKER}\n`)
-      && (!oldLegacy.bytes.equals(program) || (oldLegacy.mode & 0o100) === 0))
-    edits.push({ path: legacy, previous: oldLegacy, content: program, mode: oldLegacy.mode | 0o100 });
+  for (const name of ['tpv-karaoke-booth', 'tpv-karaoke']) {
+    const legacy = join(bin, name), oldLegacy = await inspectFile(legacy).catch(() => null);
+    if (oldLegacy?.bytes.toString('utf8').startsWith(`#!/bin/sh\n${MARKER}\n`)
+        && (!oldLegacy.bytes.equals(program) || (oldLegacy.mode & 0o100) === 0))
+      edits.push({ path: legacy, previous: oldLegacy, content: program, mode: oldLegacy.mode | 0o100 });
+  }
   for (const profile of profiles) {
     const oldProfile = await inspectFile(profile);
     const original = oldProfile?.bytes.toString('utf8') ?? '';

@@ -25,7 +25,8 @@ if (platform === 'mac' && process.platform !== 'darwin') throw new Error('Build 
 if (platform === 'win' && process.platform !== 'win32') throw new Error('Build the Windows CLI and packages on Windows.');
 const temporaryRoot = await realpath(tmpdir());
 const stage = await mkdtemp(join(temporaryRoot, 'tpv-package-'));
-const cliName = 'tpv-karaoke-booth';
+const cliName = 'karabooth-cli';
+const oldCliName = 'tpv-karaoke-booth';
 
 function buildWindowsCli(output, source) {
   const compiler = join(process.env.SystemRoot ?? 'C:\\Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe');
@@ -36,13 +37,16 @@ function buildWindowsCli(output, source) {
 async function buildMacInstaller(app, architecture, version) {
   const root = join(stage, `pkg-${architecture}`);
   const appPath = `Applications/${basename(app)}`;
-  const cliPath = join(root, 'usr/local/bin', cliName);
   await mkdir(join(root, 'Applications'), { recursive: true });
-  await mkdir(dirname(cliPath), { recursive: true });
+  const commandDirectory = join(root, 'usr/local/bin');
+  await mkdir(commandDirectory, { recursive: true });
   // ditto preserves the built bundle's relative framework links and code seal.
   execFileSync('/usr/bin/ditto', ['--rsrc', app, join(root, appPath)], { stdio: 'inherit', timeout: 120_000 });
-  await cp(join(stage, 'assets/cli/mac-system-cli'), cliPath);
-  await chmod(cliPath, 0o755);
+  for (const command of [cliName, oldCliName]) {
+    const launcher = join(commandDirectory, command);
+    await cp(join(stage, 'assets/cli/mac-system-cli'), launcher);
+    await chmod(launcher, 0o755);
+  }
   const components = join(stage, `pkg-components-${architecture}.plist`);
   await writeFile(components, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -122,7 +126,7 @@ try {
       },
     },
     mac: { ...configuration.mac, icon: join(stage, configuration.mac.icon) },
-    ...(platform === 'linux' ? { deb: { ...configuration.deb, fpm: [`${linuxSystemCli}=/usr/bin/${cliName}`] } } : {}),
+    ...(platform === 'linux' ? { deb: { ...configuration.deb, fpm: [cliName, oldCliName].map(name => `${linuxSystemCli}=/usr/bin/${name}`) } } : {}),
     nsis: { ...configuration.nsis, installerIcon: join(stage, configuration.nsis.installerIcon),
       uninstallerIcon: join(stage, configuration.nsis.uninstallerIcon),
       installerHeader: join(stage, configuration.nsis.installerHeader),
@@ -130,9 +134,9 @@ try {
       uninstallerSidebar: join(stage, configuration.nsis.uninstallerSidebar),
       include: join(stage, configuration.nsis.include) },
     extraResources: [...configuration.extraResources.map(resource => ({ ...resource, from: join(stage, resource.from) })),
-      ...(platform === 'mac' ? ['tpv-karaoke', cliName].map(name => ({ from: unixCli, to: `control/${name}` })) : [])],
+      ...(platform === 'mac' ? ['tpv-karaoke', oldCliName, cliName].map(name => ({ from: unixCli, to: `control/${name}` })) : [])],
     extraFiles: platform === 'mac' ? [] : [...configuration.extraFiles.map(resource => ({ ...resource, from: join(stage, resource.from) })),
-      ...(platform === 'win' ? [{ from: winCli, to: cliName + '.exe' }] : [{ from: unixCli, to: cliName }])],
+      ...[cliName, oldCliName].map(name => platform === 'win' ? { from: winCli, to: name + '.exe' } : { from: unixCli, to: name })],
     // A multi-architecture build must download each matching Electron runtime.
     // Reusing the host runtime would silently mislabel (for example) an arm64 Mac.
     ...(target.nodeName === process.platform && architectures.length === 1 && Arch[architectures[0]] === process.arch

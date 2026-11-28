@@ -8,7 +8,7 @@ import { parseControlQueueEnvelope } from './queue';
 export const CONTROL_CLI_EXIT={ok:0,usage:2,notRunning:3,access:4,service:5,unsupported:6,invalidResponse:7} as const;
 export const CONTROL_CLI_HELP=`The Proper Volume local control CLI
 
-Usage: tpv-karaoke-booth [--profile-dir DIR | --discovery FILE] COMMAND
+Usage: karabooth-cli [--profile-dir DIR | --discovery FILE] COMMAND
 Commands:
   status              Check this profile's running API and capabilities
   capabilities        List implemented reads and desktop navigation actions

@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /opt/proper-karaoke-booth/tpv-karaoke-booth "$@"
+exec /opt/proper-karaoke-booth/karabooth-cli "$@"

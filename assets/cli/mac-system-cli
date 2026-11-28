@@ -1,6 +1,6 @@
 #!/bin/sh
 # Managed by The Proper Volume Karaoke Booth PKG installer
-launcher=/Applications/proper-karaoke-booth.app/Contents/Resources/control/tpv-karaoke-booth
+launcher=/Applications/proper-karaoke-booth.app/Contents/Resources/control/karabooth-cli
 if [ ! -x "$launcher" ]; then
   printf '%s\n' 'Karaoke Booth was not found in /Applications. Reinstall it with the PKG installer.' >&2
   exit 5

@@ -5,12 +5,14 @@ case ${3:-} in
   /*) root=${3%/} ;;
   *) printf '%s\n' 'Karaoke Booth: missing installation volume.' >&2; exit 1 ;;
 esac
-cli="$root/usr/local/bin/tpv-karaoke-booth"
-if [ -L "$root/usr" ] || [ -L "$root/usr/local" ] || [ -L "$root/usr/local/bin" ] || [ -L "$cli" ]; then
+if [ -L "$root/usr" ] || [ -L "$root/usr/local" ] || [ -L "$root/usr/local/bin" ]; then
   printf '%s\n' 'Karaoke Booth: the CLI destination contains a symbolic link. Move it before installing.' >&2
   exit 1
 fi
-if [ -e "$cli" ] && { [ ! -f "$cli" ] || ! /usr/bin/grep -Fqx '# Managed by The Proper Volume Karaoke Booth PKG installer' "$cli"; }; then
-  printf '%s\n' 'Karaoke Booth: a different CLI already exists at the installation destination. Move it before installing.' >&2
-  exit 1
-fi
+for name in karabooth-cli tpv-karaoke-booth; do
+  cli="$root/usr/local/bin/$name"
+  if [ -L "$cli" ] || { [ -e "$cli" ] && { [ ! -f "$cli" ] || ! /usr/bin/grep -Fqx '# Managed by The Proper Volume Karaoke Booth PKG installer' "$cli"; }; }; then
+    printf 'KaraBooth: a different CLI already exists at %s. Move it before installing.\n' "$cli" >&2
+    exit 1
+  fi
+done

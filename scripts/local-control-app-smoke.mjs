@@ -68,7 +68,7 @@ try {
   await host.getByRole('button', { name: 'Preferences', exact: true }).click();
   const preferences = host.getByRole('dialog', { name: 'Preferences', exact: true });
   await preferences.locator('summary').filter({ hasText: /^Local API and CLI$/ }).click();
-  assert.match(await preferences.getByText('tpv-karaoke-booth --help', { exact: true }).innerText(), /tpv-karaoke-booth/);
+  assert.match(await preferences.getByText('karabooth-cli --help', { exact: true }).innerText(), /karabooth-cli/);
   const helpWindow = app.waitForEvent('window');
   await preferences.getByRole('button', { name: 'Local API and CLI documentation', exact: true }).click();
   const help = await helpWindow;

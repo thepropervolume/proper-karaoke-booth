@@ -97,13 +97,14 @@ const inspect = async (app, architecture) => {
       await matchSource(join(resources, resource.to, filename), join(repo, resource.from, filename), `${resource.to}/${filename}`);
     }
   }
-  const wrapper = join(resources, 'control', 'tpv-karaoke-booth');
+  const wrapper = join(resources, 'control', 'karabooth-cli');
   const wrapperText = await readFile(wrapper, 'utf8');
   assert.equal(wrapperText, (await readFile(join(repo, 'assets/cli/tpv-karaoke'), 'utf8')).replace(/\r\n/g, '\n'));
   assert.ok(!wrapperText.includes('\r'));
   assert.ok((await stat(wrapper)).mode & 0o111, 'CLI wrapper must be executable.');
   payload.wrapper = await hash(wrapper);
   assert.equal(await hash(join(resources, 'control', 'tpv-karaoke')), payload.wrapper, 'Legacy in-bundle launcher no longer matches.');
+  assert.equal(await hash(join(resources, 'control', 'tpv-karaoke-booth')), payload.wrapper, 'Compatibility launcher no longer matches.');
   return { executable, wrapper, payload, signature: signature(app) };
 };
 
@@ -140,14 +141,15 @@ try {
       const installedApp = await onlyApp(join(payload, 'Applications'));
       const pkgInspection = await inspect(installedApp, architecture);
       assert.deepEqual(pkgInspection.payload, zipInspection.payload, 'PKG and ZIP app payloads must match.');
-      const launcher = join(payload, 'usr/local/bin/tpv-karaoke-booth');
+      const launcher = join(payload, 'usr/local/bin/karabooth-cli');
       const mode = await lstat(launcher);
       assert.ok(mode.isFile() && (mode.mode & 0o111), 'PKG must own an executable CLI on system PATH.');
       const systemLauncher = (await readFile(join(repo, 'assets/cli/mac-system-cli'), 'utf8')).replace(/\r\n/g, '\n');
       assert.equal(await readFile(launcher, 'utf8'), systemLauncher);
+      assert.equal(await readFile(join(payload, 'usr/local/bin/tpv-karaoke-booth'), 'utf8'), systemLauncher);
       const preinstall = join(expanded, 'Scripts/preinstall');
       const isoVolume = join(temporary, `installation volume ${architecture}`);
-      const isoLauncher = join(isoVolume, 'usr/local/bin/tpv-karaoke-booth');
+      const isoLauncher = join(isoVolume, 'usr/local/bin/karabooth-cli');
       await mkdir(dirname(isoLauncher), { recursive: true });
       const checkInstall = () => spawnSync('/bin/sh', [preinstall, '', '/', isoVolume], { encoding: 'utf8', timeout: 5000 });
       assert.equal(checkInstall().status, 0, 'A new installation must pass the package preflight.');

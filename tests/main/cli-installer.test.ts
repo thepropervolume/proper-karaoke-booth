@@ -15,8 +15,8 @@ test('Bash installer preserves user content, installs an escaped launcher, and i
   await writeFile(rc, previous, { mode: 0o600 });
   const target = "/opt/Ben's karaoke/tpv-karaoke";
   const installed = await installPosixCli(home, '/bin/bash', target, '/usr/bin');
-  const launcher = join(home, '.local', 'bin', 'tpv-karaoke-booth');
-  assert.equal(installed.command, 'tpv-karaoke-booth');
+  const launcher = join(home, '.local', 'bin', 'karabooth-cli');
+  assert.equal(installed.command, 'karabooth-cli');
   assert.match(installed.message, /new terminal/i);
   assert.ok((await readFile(rc, 'utf8')).startsWith(previous));
   assert.match(await readFile(launcher, 'utf8'), /exec '\/opt\/Ben'\\''s karaoke\/tpv-karaoke' "\$@"/);
@@ -45,7 +45,7 @@ test('Bash login installs into its first existing login profile; Zsh updates log
 
 test('refuses an existing unrelated launcher and leaves its contents and profile unchanged', () => fixture(async home => {
   const bin = join(home, '.local', 'bin'); await mkdir(bin, { recursive: true });
-  const launcher = join(bin, 'tpv-karaoke-booth'), rc = join(home, '.zshrc');
+  const launcher = join(bin, 'karabooth-cli'), rc = join(home, '.zshrc');
   await writeFile(launcher, 'user-owned command\n'); await writeFile(rc, 'user profile\n');
   await assert.rejects(installPosixCli(home, '/bin/zsh', '/opt/tpv/launcher', ''), /different command/);
   assert.equal(await readFile(launcher, 'utf8'), 'user-owned command\n');
@@ -54,11 +54,13 @@ test('refuses an existing unrelated launcher and leaves its contents and profile
 
 test('updates a previously managed command and preserves an unrelated legacy alias', () => fixture(async home => {
   const bin = join(home, '.local', 'bin'); await mkdir(bin, { recursive: true });
-  const legacy = join(bin, 'tpv-karaoke');
-  await writeFile(legacy, '#!/bin/sh\n# Managed by The Proper Volume Karaoke Booth CLI installer\nexec /old/booth "$@"\n');
+  const legacy = join(bin, 'tpv-karaoke'), previous = join(bin, 'tpv-karaoke-booth');
+  for (const command of [legacy, previous])
+    await writeFile(command, '#!/bin/sh\n# Managed by The Proper Volume Karaoke Booth CLI installer\nexec /old/booth "$@"\n');
   await installPosixCli(home, '/bin/zsh', '/opt/tpv/launcher', '');
-  const canonical = await readFile(join(bin, 'tpv-karaoke-booth'), 'utf8');
+  const canonical = await readFile(join(bin, 'karabooth-cli'), 'utf8');
   assert.equal(await readFile(legacy, 'utf8'), canonical);
+  assert.equal(await readFile(previous, 'utf8'), canonical);
   await writeFile(legacy, 'user command\n');
   await installPosixCli(home, '/bin/zsh', '/opt/tpv/launcher', '');
   assert.equal(await readFile(legacy, 'utf8'), 'user command\n');
@@ -86,12 +88,12 @@ test('Windows PATH repair invokes the same native entry point as setup', async (
   let calls = 0;
   const execute = async (file: string, args: string[]) => {
     calls++;
-    assert.equal(file, join(appDirectory, 'tpv-karaoke-booth.exe'));
+    assert.equal(file, join(appDirectory, 'karabooth-cli.exe'));
     assert.deepEqual(args, ['--register-windows-path']);
     return { stdout: 'added\r\n' };
   };
   const result = await installWindowsCliPath(appDirectory, { SystemRoot: tmpdir() }, execute);
-  assert.equal(calls, 1); assert.match(result.message, /user PATH/); assert.equal(result.command, 'tpv-karaoke-booth');
+  assert.equal(calls, 1); assert.match(result.message, /user PATH/); assert.equal(result.command, 'karabooth-cli');
   await assert.rejects(installWindowsCliPath(`${appDirectory};injection`, { SystemRoot: tmpdir() }, execute), /safely/);
   assert.equal(calls, 1);
 });
