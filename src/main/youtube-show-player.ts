@@ -1,7 +1,7 @@
-import { app, BrowserWindow, session, shell, WebContentsView } from 'electron';
+import { BrowserWindow, session, shell, WebContentsView } from 'electron';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { allowedYouTubeLink, youtubeEmbedUrl, YOUTUBE_APP_ID, YOUTUBE_REFERER } from './youtube-player-page';
+import { allowedYouTubeLink, youtubeEmbedUrl, YOUTUBE_REFERER } from './youtube-player-page';
 import { youtubeShowPage } from './youtube-show-page';
 
 type Snapshot = { ready: boolean; error: number | null; state: number; position: number; duration: number };
@@ -45,7 +45,6 @@ export class YouTubeShowPlayer {
       headers.Referer = YOUTUBE_REFERER; callback({ requestHeaders: headers });
     });
     isolated.on('will-download', event => event.preventDefault());
-    if (process.platform === 'win32') app.setAppUserModelId(YOUTUBE_APP_ID);
     const view = new WebContentsView({ webPreferences: { session: isolated, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
     const resize = () => {
       if (window.isDestroyed() || this.current?.view !== view) return;

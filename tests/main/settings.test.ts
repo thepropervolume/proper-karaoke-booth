@@ -7,6 +7,18 @@ import { readSettings, writeSettings } from '../../src/main/settings';
 import { nextAccentColor } from '../../src/domain/settings';
 import { DEFAULT_LIBRARY_RESULT_FIELDS } from '../../src/domain/library-result-fields';
 
+test('the installer API default seeds a new profile without enabling queue writes or overriding an existing choice', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'tpv-installer-settings-'));
+  const path = join(directory, 'settings.json');
+  try {
+    const defaults = readSettings(path, true);
+    assert.equal(defaults.localControlEnabled, true);
+    assert.equal(defaults.localQueueControlEnabled, false);
+    writeSettings(path, { ...defaults, localControlEnabled: false });
+    assert.equal(readSettings(path, true).localControlEnabled, false);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('custom library columns persist while older settings get defaults', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tpv-library-columns-'));
   const path = join(directory, 'settings.json');

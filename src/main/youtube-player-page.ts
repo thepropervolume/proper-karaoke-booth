@@ -1,6 +1,7 @@
-/** Values in this file are app-owned; the browser never receives show data. */
-export const YOUTUBE_APP_ID = 'com.thepropervolume.karaoke';
-export const YOUTUBE_REFERER = `https://${YOUTUBE_APP_ID}/`;
+import desktopIdentity from '../../assets/branding/desktop-identity.json';
+
+/** Identify the embedding desktop app with the ID registered by its installer. */
+export const YOUTUBE_REFERER = `https://${desktopIdentity.appId}/`;
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
 export function youtubeEmbedUrl(input: unknown): string {

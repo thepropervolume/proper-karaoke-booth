@@ -46,6 +46,7 @@ jobs:
           $exe = Join-Path $installDir 'proper-karaoke-booth.exe'
           if (Test-Path -LiteralPath $installDir) { throw 'The QA installation path is already in use.' }
           $expectCli = [version]$candidate -ge [version]'0.10.9'
+          $cliName = if ([version]$candidate -ge [version]'0.10.22') { 'karabooth-cli' } else { 'tpv-karaoke-booth' }
           $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 
           function Invoke-SilentProcess($path, $arguments) {
@@ -73,16 +74,30 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+          if ($cliName -eq 'karabooth-cli') {
+            $installed = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+              Where-Object { $_.UninstallString -like "*$installDir\Uninstall*" })
+            if ($installed.Count -ne 1 -or $installed[0].DisplayName -cne 'The Proper Volume Karaoke Booth' -or
+                $installed[0].DisplayVersion -ne $candidate) { throw 'Installed Apps must show one stable name and a separate version.' }
+            $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'The Proper Volume Karaoke Booth.lnk'
+            if (!(Test-Path -LiteralPath $shortcut -PathType Leaf)) { throw 'The registered Start shortcut is missing after upgrade.' }
+            $shell = New-Object -ComObject WScript.Shell
+            if ($shell.CreateShortcut($shortcut).TargetPath -ine $exe) { throw 'The registered Start shortcut points to the wrong executable.' }
+            if (!(Test-Path -LiteralPath (Join-Path $installDir 'resources/tpv-booth-local-api-default') -PathType Leaf)) {
+              throw 'The checked setup default for new profiles was not recorded.'
+            }
+          }
+
           if ($expectCli) {
             $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
             if (@($userPath.Split(';') | Where-Object { $_ -ieq $installDir }).Count -ne 1) { throw 'Setup did not register user PATH exactly once.' }
             $previousProcessPath = $env:Path
             try {
               $env:Path = "$previousProcessPath;$userPath"
-              $launcher = Get-Command tpv-karaoke-booth -CommandType Application
-              if ($launcher.Source -ine (Join-Path $installDir 'tpv-karaoke-booth.exe')) { throw 'PATH did not resolve the installed CLI.' }
+              $launcher = Get-Command $cliName -CommandType Application
+              if ($launcher.Source -ine (Join-Path $installDir "$cliName.exe")) { throw 'PATH did not resolve the installed CLI.' }
               $help = & $launcher.Source --help
-              if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch 'Usage: tpv-karaoke-booth') { throw 'Installed CLI help failed.' }
+              if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch "Usage: $cliName ") { throw 'Installed CLI help failed.' }
             } finally { $env:Path = $previousProcessPath }
           }
 
@@ -103,7 +118,7 @@ jobs:
             $originalMachinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
             Invoke-SilentProcess $installer '/S'
             $defaultExe = Join-Path $defaultDir 'proper-karaoke-booth.exe'
-            $defaultCli = Join-Path $defaultDir 'tpv-karaoke-booth.exe'
+            $defaultCli = Join-Path $defaultDir "$cliName.exe"
             if (!(Test-Path -LiteralPath $defaultExe -PathType Leaf) -or !(Test-Path -LiteralPath $defaultCli -PathType Leaf)) {
               throw 'Fresh setup did not install both executables in the default Program Files directory.'
             }
@@ -112,7 +127,7 @@ jobs:
               throw 'Default setup did not register machine PATH exactly once.'
             }
             $help = & $defaultCli --help
-            if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch 'Usage: tpv-karaoke-booth') { throw 'Default CLI help failed.' }
+            if ($LASTEXITCODE -ne 0 -or ($help -join ' ') -notmatch "Usage: $cliName ") { throw 'Default CLI help failed.' }
             $uninstaller = @(Get-ChildItem -LiteralPath $defaultDir -File -Filter 'Uninstall*.exe')
             if ($uninstaller.Count -ne 1) { throw 'Expected one uninstaller in the default directory.' }
             Invoke-SilentProcess $uninstaller[0].FullName '/S'

@@ -2,6 +2,7 @@ import { MobileRoomBeacon } from './mobile-room-beacon';
 // Application composition root: the host owns durable state; renderers ask for
 // actions and report playback facts. Provider credentials and media paths stay here.
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, protocol, screen, shell, type MessageBoxOptions } from 'electron';
+import desktopIdentity from '../../assets/branding/desktop-identity.json';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -1699,6 +1700,8 @@ async function serveMedia(request: Request): Promise<Response> {
 const selectedUserData = applicationUserData({ appData: app.getPath('appData'), current: app.getPath('userData'), appName: app.getName(),
   packaged: app.isPackaged, explicit: app.commandLine.getSwitchValue('user-data-dir') || undefined });
 app.setPath('userData', selectedUserData);
+// Match the installed Start shortcut before creating any window.
+if (process.platform === 'win32') app.setAppUserModelId(desktopIdentity.appId);
 const hasInstanceLock = app.requestSingleInstanceLock();
 if (!hasInstanceLock) app.quit();
 else {
@@ -1719,7 +1722,9 @@ else {
   try { shortcuts = readShortcuts(shortcutsPath); }
   catch (error) { shortcutError = error instanceof Error ? error.message : String(error); shortcuts = DEFAULT_SHORTCUTS; }
   settingsCreated = !existsSync(settingsPath);
-  settings = readSettings(settingsPath);
+  const localControlDefault = process.platform === 'win32' && app.isPackaged &&
+    existsSync(join(process.resourcesPath, 'tpv-booth-local-api-default'));
+  settings = readSettings(settingsPath, localControlDefault);
   if (settingsCreated) settings = writeSettings(settingsPath, { ...settings, hostSetupPending: true });
   try {
     desktopUpdates = new BoothDesktopUpdates(app.getVersion(), join(app.getPath('userData'), 'desktop-updates'), settings.desktopUpdateMode,

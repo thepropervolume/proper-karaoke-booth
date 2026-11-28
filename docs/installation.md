@@ -14,19 +14,23 @@ Choose **Help → Check for Updates** for a manual check, even with **Preference
 
 ## Install the CLI
 
-Starting with 0.10.9, open a new terminal after installing Booth and run `tpv-karaoke-booth --help`.
+Open a new terminal after installing KaraBooth and run `karabooth-cli --help`.
+
+On Windows, the setup options page includes **Add karabooth-cli to PATH** and **Enable the local API for new profiles**. Both are checked on a fresh installation. You can change the API setting later in **Preferences → Local API and CLI**. The API accepts requests only on this computer and requires authentication. Setup keeps existing profile settings. The last page offers **Launch KaraBooth**.
+
+Windows shows **The Proper Volume Karaoke Booth** under Installed apps, with the version on its own line. Setup uses the same application identity and Start shortcut across releases. Windows controls whether the app appears under **Recently added** and can retain pins for the consistent identity. A pin created from a different install location or an old portable copy may need to be pinned again from Start.
 
 On a fresh Windows installation, 0.10.10 Setup selects **All users** and uses `C:\Program Files\The Proper Volume Karaoke Booth` on a standard Windows system. Approve the Windows administrator prompt or choose **Only for me** for a per-user install. Upgrades reuse the registered installation directory. For unattended installs, run `/S` from an elevated process or use `/currentuser /S` for a per-user install.
 
 | Desktop package | Where setup installs the command |
 | --- | --- |
-| Windows setup EXE | `tpv-karaoke-booth.exe` in the application directory. Setup registers that directory in user PATH for an individual install or system PATH for an all-users install. Uninstall removes the entry if setup added it. |
-| Debian or Ubuntu DEB | `/usr/bin/tpv-karaoke-booth`, owned by the package and removed when the package is removed. |
-| macOS Apple silicon or Intel PKG | `/usr/local/bin/tpv-karaoke-booth`. The installer places the matching app in **Applications** and preserves an unrelated command already at the destination by stopping the install. The development PKG is unsigned and unnotarized. |
+| Windows setup EXE | `karabooth-cli.exe` in the application directory. The default **Add karabooth-cli to PATH** option registers that directory in user PATH for an individual install or system PATH for an all-users install. Uninstall removes the entry if setup added it. |
+| Debian or Ubuntu DEB | `/usr/bin/karabooth-cli`, owned by the package and removed when the package is removed. |
+| macOS Apple silicon or Intel PKG | `/usr/local/bin/karabooth-cli`. The installer places the matching app in **Applications** and preserves an unrelated command already at the destination by stopping the install. The development PKG is unsigned and unnotarized. |
 
 With the Windows ZIP or a macOS DMG/ZIP, open **Preferences → Local API and CLI → Install CLI to PATH** after placing the application where you want it. On macOS that option works for your account. AppImage users can install the Debian package on supported distributions for a system PATH command.
 
-The Windows legacy `tpv-karaoke.cmd` remains bundled. On Linux and macOS, rerunning **Install CLI to PATH** also updates a legacy user launcher created by Booth. The macOS PKG installs its launcher separately from the app bundle. If you uninstall that installation by dragging the app to Trash, also remove the PKG-owned `/usr/local/bin/tpv-karaoke-booth` to retire the CLI. [CLI guide](local-control-api.md)
+The bundled `tpv-karaoke-booth` alias and Windows `tpv-karaoke.cmd` remain available. On Linux and macOS, rerunning **Install CLI to PATH** also updates a legacy user launcher created by Booth. The macOS PKG installs its launcher separately from the app bundle. If you uninstall that installation by dragging the app to Trash, also remove the PKG-owned `/usr/local/bin/karabooth-cli` and its `tpv-karaoke-booth` alias to retire the CLI. [CLI guide](local-control-api.md)
 
 ## Upgrading to 0.10.8
 

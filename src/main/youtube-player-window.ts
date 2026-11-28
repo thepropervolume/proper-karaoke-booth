@@ -1,8 +1,8 @@
 /** A manually controlled YouTube preview. This is independent of the show queue. */
-import { app, BrowserWindow, session, shell } from 'electron';
+import { BrowserWindow, session, shell } from 'electron';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { allowedYouTubeLink, youtubeEmbedUrl, youtubePlayerPage, YOUTUBE_APP_ID, YOUTUBE_REFERER } from './youtube-player-page';
+import { allowedYouTubeLink, youtubeEmbedUrl, youtubePlayerPage, YOUTUBE_REFERER } from './youtube-player-page';
 
 let current: { window: BrowserWindow; videoId: string } | null = null;
 let opening = false;
@@ -58,9 +58,6 @@ export async function openYouTubePlayer(videoId: unknown): Promise<void> {
       callback({ requestHeaders: headers });
     });
     playerSession.on('will-download', event => event.preventDefault());
-    // This is the development app identifier. The installer must register the
-    // same stable ID before distribution, as YouTube's embed guidance requires.
-    if (process.platform === 'win32') app.setAppUserModelId(YOUTUBE_APP_ID);
     window = new BrowserWindow({ width: 1000, height: 700, minWidth: 360, minHeight: 300, title: 'YouTube Player', show: false,
       webPreferences: { session: playerSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
     current = { window, videoId: id };

@@ -1,6 +1,8 @@
+import desktopIdentity from './assets/branding/desktop-identity.json' with { type: 'json' };
+
 /** Development packages have no publisher certificate. macOS uses ad-hoc integrity signing. */
 export default {
-  appId: 'com.thepropervolume.karaokebooth',
+  appId: desktopIdentity.appId,
   productName: 'The Proper Volume Karaoke Booth',
   executableName: 'proper-karaoke-booth',
   artifactName: 'Proper-Karaoke-Booth-${version}-${os}-${arch}.${ext}',
@@ -27,7 +29,9 @@ export default {
     selectPerMachineByDefault: true,
     allowElevation: true,
     allowToChangeInstallationDirectory: true,
-    runAfterFinish: false,
+    runAfterFinish: true,
+    shortcutName: 'The Proper Volume Karaoke Booth',
+    uninstallDisplayName: 'The Proper Volume Karaoke Booth',
     createDesktopShortcut: false,
     createStartMenuShortcut: true,
     installerIcon: 'assets/branding/app.ico',
@@ -41,7 +45,7 @@ export default {
   },
   linux: {
     target: ['AppImage', 'deb'], icon: 'assets/branding/linux', category: 'AudioVideo', maintainer: 'The Proper Volume',
-    desktop: { entry: { Keywords: 'TPV;Proper;Proper Volume;The Proper Volume;Karaoke;Karaoke App;Host;Booth;Karaoke Booth;Karaoke Host;Karaoke Player;CDG;LRC;Karaoke Nerds;YouTube;' } },
+    desktop: { entry: { Keywords: 'KaraBooth;TPV;Proper;Proper Volume;The Proper Volume;Karaoke;Karaoke App;Host;Booth;Karaoke Booth;Karaoke Host;Karaoke Player;CDG;LRC;Karaoke Nerds;YouTube;' } },
   },
   // Require genuine ALSA on both t64 and older distributions. Ubuntu can satisfy
   // an unversioned libasound2 with an OSS compatibility library missing Electron symbols.
@@ -50,6 +54,6 @@ export default {
   mac: { target: ['dmg', 'zip'], icon: 'assets/branding/app.icns', category: 'public.app-category.music',
     minimumSystemVersion: '13.0.0', hardenedRuntime: true, identity: '-', notarize: false,
     extendInfo: {
-      MDItemKeywords: 'TPV, Proper, Proper Volume, The Proper Volume, Karaoke, Karaoke App, Host, Booth, Karaoke Booth, Karaoke Host, Karaoke Player, CDG, LRC, Karaoke Nerds, YouTube',
+      MDItemKeywords: 'KaraBooth, TPV, Proper, Proper Volume, The Proper Volume, Karaoke, Karaoke App, Host, Booth, Karaoke Booth, Karaoke Host, Karaoke Player, CDG, LRC, Karaoke Nerds, YouTube',
     } },
 };
