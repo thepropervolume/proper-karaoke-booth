@@ -2,7 +2,7 @@
 
 ## First launch and sharing
 
-The startup splash uses your saved Day or Night appearance, or follows your system. Its website link opens The Proper Volume in your browser. The splash closes when the workspace is ready. Press **Escape** to quit while it is loading.
+The Signature Band startup splash uses your saved Day or Night appearance, or follows your system. Hover or focus the question mark to read about KaraBooth's license. Press **Escape** to dismiss the help or quit while the app is loading. The website link opens The Proper Volume in your browser. The splash closes when the workspace is ready.
 
 On a new profile, enter your DJ or brand name and a host handle. KaraBooth uses the handle to suggest a room code and checks availability when you start the internet room. Existing profiles can set a handle in **Preferences → Queue & Rooms → Remote Queueing**.
 

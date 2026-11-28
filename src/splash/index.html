@@ -8,17 +8,32 @@
 </head>
 <body>
   <main aria-label="The Proper Volume Karaoke Booth">
-    <p class="eyebrow">The Proper Volume</p>
-    <img class="mark" width="120" height="120" alt="" />
-    <h1>KaraBooth</h1>
-    <p class="purpose">Karaoke hosting &amp; singer display</p>
-    <p class="status" role="status">
-      <span class="preparing">Preparing your workspace…</span>
-      <span class="waiting">Still preparing your workspace. You can wait or quit.</span>
-    </p>
+    <div class="identity">
+      <img class="mark" width="120" height="120" alt="" />
+      <div class="identity__copy">
+        <div class="eyebrow">
+          <span>Professional &amp; Free Karaoke Software</span>
+          <span class="license-help">
+            <button class="license-trigger" type="button" aria-label="About KaraBooth licensing" aria-describedby="license-details">?</button>
+            <span class="license-tooltip" role="tooltip" id="license-details">KaraBooth is free to use. Its original source code is open source under the Mozilla Public License 2.0. Branding, media, and third-party components have separate terms.</span>
+          </span>
+        </div>
+        <h1>KaraBooth</h1>
+        <p class="purpose">A Modern Karaoke Hosting Solution</p>
+      </div>
+    </div>
     <footer>
-      <a href="https://thepropervolume.com/" target="_blank" rel="noopener noreferrer" aria-label="Open thepropervolume.com in your browser">thepropervolume.com <span aria-hidden="true">↗</span></a>
-      <a class="quit" href="about:blank#quit-karabooth-startup" target="_blank" rel="noopener noreferrer">Quit KaraBooth</a>
+      <div class="footer__startup">
+        <p class="status" role="status">
+          <span class="preparing">Preparing your workspace…</span>
+          <span class="waiting">Still preparing your workspace. You can wait or quit.</span>
+        </p>
+        <a class="quit" href="about:blank#quit-karabooth-startup" target="_blank" rel="noopener noreferrer">Quit KaraBooth</a>
+      </div>
+      <div class="credit">
+        <p><em>by</em> The Proper Volume</p>
+        <a href="https://thepropervolume.com/" target="_blank" rel="noopener noreferrer" aria-label="Open thepropervolume.com in your browser">thepropervolume.com <span aria-hidden="true">↗</span></a>
+      </div>
     </footer>
   </main>
   <script type="module" src="./index.ts"></script>

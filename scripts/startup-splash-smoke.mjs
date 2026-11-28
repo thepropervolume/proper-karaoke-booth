@@ -74,8 +74,20 @@ try {
   assert.equal(await splash.title(), 'The Proper Volume Karaoke Booth');
   await splash.waitForFunction(() => !!document.documentElement.dataset.theme);
   assert.equal(await splash.locator('html').getAttribute('data-theme'), 'day', 'Saved Day overrides the test system Night theme.');
+  await splash.getByText('Professional & Free Karaoke Software', { exact: true }).waitFor();
+  await splash.getByText('A Modern Karaoke Hosting Solution', { exact: true }).waitFor();
+  assert.equal(await splash.locator('.credit p').textContent(), 'by The Proper Volume');
+  assert.equal(await splash.locator('.credit p em').textContent(), 'by');
+  const help = splash.getByRole('button', { name: 'About KaraBooth licensing' });
+  const tooltip = splash.locator('#license-details');
   const link = splash.getByRole('link', { name: 'Open thepropervolume.com in your browser' });
   await splash.emulateMedia({ reducedMotion: 'reduce' });
+  await splash.keyboard.press('Tab');
+  assert.ok(await help.evaluate(element => document.activeElement === element));
+  await tooltip.waitFor();
+  assert.match(await tooltip.textContent(), /Mozilla Public License 2\.0/);
+  await splash.keyboard.press('Escape');
+  await tooltip.waitFor({ state: 'hidden' });
   await splash.keyboard.press('Tab');
   assert.ok(await link.evaluate(element => document.activeElement === element));
   await splash.keyboard.press('Enter');
@@ -95,13 +107,27 @@ try {
   electron = await launch('system');
   const systemSplash = await splashPage(electron);
   assert.equal(await systemSplash.locator('html').getAttribute('data-theme'), 'night');
+  await electron.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('/splash/index.html'));
+    window?.setContentSize(320, 240);
+  });
+  await systemSplash.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await systemSplash.waitForFunction(() => window.innerWidth <= 320);
+  assert.ok(await systemSplash.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'The compact splash must fit the window at enlarged text size.');
+  const compactLink = systemSplash.getByRole('link', { name: 'Open thepropervolume.com in your browser' });
+  await compactLink.focus();
+  assert.ok(await compactLink.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+  }), 'Keyboard users can reach and scroll to the website.');
   const quit = electron.waitForEvent('close', { timeout: 8000 });
   await systemSplash.keyboard.press('Escape').catch(error => {
     if (!/Target page, context or browser has been closed/.test(String(error))) throw error;
   });
   await quit;
   electron = undefined;
-  console.log('PASS: Day/System themes, restricted website link, host-ready handoff and early Quit.');
+  console.log('PASS: Signature Band, Day/System themes, accessible license help, compact reflow, restricted website link, host-ready handoff and early Quit.');
 } finally {
   await electron?.close().catch(() => {});
   await rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
