@@ -9,7 +9,7 @@ export function RoomShareCard({ bridge, override, enabled }: { bridge: InternetS
   const [code, setCode] = useState<{ url: string; src: string } | null>(null);
   const [feedback, setFeedback] = useState('');
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) { setStatus(null); return; }
     let active = true, received = false;
     const unsubscribe = bridge.subscribe(value => { received = true; if (active) setStatus(value); });
     void bridge.status().then(value => { if (active && !received) setStatus(value); }).catch(() => {});

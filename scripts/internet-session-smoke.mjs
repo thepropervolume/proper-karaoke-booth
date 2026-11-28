@@ -92,6 +92,17 @@ try {
   const link = await host.getByLabel('Singer link').inputValue(); assert.equal(link, `${publicOrigin}/${slug}`);
   await host.getByRole('button', { name: 'Copy Link', exact: true }).click();
   assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), link);
+  const qr = host.getByRole('button', { name: 'Copy public room link', exact: true });
+  await qr.locator('img[src^="data:image/png"]').waitFor();
+  await qr.click();
+  assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), link);
+  const custom = 'https://example.test/open-mic';
+  await host.evaluate(roomQrUrl => window.tpv.saveSettings({ roomQrUrl }), custom);
+  await qr.click();
+  assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), custom);
+  await host.evaluate(() => window.tpv.saveSettings({ showRoomQr: false }));
+  await qr.waitFor({ state: 'detached' });
+  await host.evaluate(() => window.tpv.saveSettings({ roomQrUrl: '', showRoomQr: true }));
   const chrome = process.env.TPV_QA_CHROME ?? (process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : undefined);
   if (!chrome) throw new Error('Set TPV_QA_CHROME to a Chromium executable.');
   browser = await chromium.launch({ executablePath: chrome, headless: true });
@@ -191,7 +202,7 @@ try {
   await host.getByLabel('Singer link').waitFor(); assert.equal(relayStore.lookup(slug)?.active, true);
   await browser.close(); browser = undefined;
   await app.close(); app = undefined; assert.equal(relayStore.lookup(slug)?.active, false, 'application shutdown must close its internet session');
-  console.log('PASS: desktop room lifecycle, singer requests, mobile web applause to the actual Electron singer display, both visual cues, credits and points. Synthetic video was muted and the real relay ran on loopback.');
+  console.log('PASS: desktop room lifecycle, share QR and clipboard, singer requests, mobile applause, both visual cues, credits and points. Synthetic video was muted and the relay ran on loopback.');
 } catch (error) {
   if (host && !host.isClosed()) console.error('Host session diagnostic:', JSON.stringify(await host.evaluate(() => window.tpv?.internetSessions.status()).catch(() => null)));
   if (mobile && !mobile.isClosed()) console.error('Mobile view diagnostic:', (await mobile.locator('body').innerText({ timeout: 1000 }).catch(() => '')).slice(0, 2000));
